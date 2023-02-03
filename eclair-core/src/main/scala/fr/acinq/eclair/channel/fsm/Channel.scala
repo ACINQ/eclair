@@ -250,16 +250,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // A watch-confirmed will be set at reconnection if necessary 
             watchFundingTx(commitment)
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
-            val fundingMinDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, data.metaCommitments.params.localParams.initFeatures, fundingTx.fundingParams)
-            val fundingMinDepth = fundingMinDepth_opt.getOrElse {
-              val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
-              // If we are in state WAIT_FOR_DUAL_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
-              // have skipped this state. Maybe the computation method was changed and eclair was restarted?
-              // TODO: put minDepth once and for all in DualFundedUnconfirmedFundingTx instead?
-              log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
-              defaultMinDepth.toLong
+            fundingTx.fundingParams.minDepth_opt match {
+              case Some(fundingMinDepth) =>
+                blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
+              case None =>
+                // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
+                // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
+                blockchain ! WatchPublished(self, commitment.fundingTxId)
+                blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, nodeParams.channelConf.minDepthBlocks)
             }
-            blockchain ! WatchFundingConfirmed(self, fundingTx.sharedTx.txId, fundingMinDepth)
           case fundingTx: LocalFundingStatus.PublishedFundingTx =>
             // those are zero-conf channels, the min-depth isn't critical, we use the default
             val fundingMinDepth = nodeParams.channelConf.minDepthBlocks.toLong

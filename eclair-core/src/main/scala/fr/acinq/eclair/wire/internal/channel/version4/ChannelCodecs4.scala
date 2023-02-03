@@ -220,6 +220,7 @@ private[channel] object ChannelCodecs4 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
+        ("minDepth_opt" | optional(bool8, uint32)) ::
         ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (

@@ -26,7 +26,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
@@ -383,15 +382,15 @@ object Helpers {
      *  - our peer may also contribute to the funding transaction
      *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
      */
-    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], fundingParams: InteractiveTxBuilder.InteractiveTxParams): Option[Long] = {
-      if (fundingParams.isInitiator && fundingParams.remoteAmount == 0.sat) {
+    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], isInitiator: Boolean, localAmount: Satoshi, remoteAmount: Satoshi): Option[Long] = {
+      if (isInitiator && remoteAmount == 0.sat) {
         if (localFeatures.hasFeature(Features.ZeroConf)) {
           None
         } else {
           Some(channelConf.minDepthBlocks)
         }
       } else {
-        minDepthFundee(channelConf, localFeatures, fundingParams.fundingAmount)
+        minDepthFundee(channelConf, localFeatures, localAmount + remoteAmount)
       }
     }
 

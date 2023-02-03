@@ -147,8 +147,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
-          val totalFundingAmount = open.fundingAmount + d.init.fundingContribution_opt.getOrElse(0 sat)
-          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.init.localParams.initFeatures, totalFundingAmount)
+          val localAmount = d.init.fundingContribution_opt.getOrElse(0 sat)
+          val remoteAmount = open.fundingAmount
+          val minDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, d.init.localParams.initFeatures, isInitiator = localParams.isInitiator, localAmount = localAmount, remoteAmount = remoteAmount)
           val upfrontShutdownScript_opt = localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
           val tlvs: Set[AcceptDualFundedChannelTlv] = Set(
             upfrontShutdownScript_opt,
@@ -158,11 +159,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           ).flatten
           val accept = AcceptDualFundedChannel(
             temporaryChannelId = open.temporaryChannelId,
-            fundingAmount = d.init.fundingContribution_opt.getOrElse(0 sat),
+            fundingAmount = localAmount,
             dustLimit = localParams.dustLimit,
             maxHtlcValueInFlightMsat = UInt64(localParams.maxHtlcValueInFlightMsat.toLong),
             htlcMinimum = localParams.htlcMinimum,
-            minimumDepth = minimumDepth.getOrElse(0),
+            minimumDepth = minDepth_opt.getOrElse(0),
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = localFundingPubkey,
@@ -205,6 +206,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             open.lockTime,
             open.dustLimit.max(accept.dustLimit),
             open.fundingFeerate,
+            minDepth_opt,
             RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
           )
           val commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
@@ -257,16 +259,20 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // We start the interactive-tx funding protocol.
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
+          val localAmount = d.lastSent.fundingAmount
+          val remoteAmount = accept.fundingAmount
+          val minDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, d.init.localParams.initFeatures, isInitiator = localParams.isInitiator, localAmount = localAmount, remoteAmount = remoteAmount)
           val fundingParams = InteractiveTxParams(
-            channelId,
-            localParams.isInitiator,
-            d.lastSent.fundingAmount,
-            accept.fundingAmount,
-            fundingPubkeyScript,
-            d.lastSent.lockTime,
-            d.lastSent.dustLimit.max(accept.dustLimit),
-            d.lastSent.fundingFeerate,
-            RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
+            channelId = channelId,
+            isInitiator = localParams.isInitiator,
+            localAmount = localAmount,
+            remoteAmount = remoteAmount,
+            fundingPubkeyScript = fundingPubkeyScript,
+            lockTime = d.lastSent.lockTime,
+            dustLimit = d.lastSent.dustLimit.max(accept.dustLimit),
+            targetFeerate = d.lastSent.fundingFeerate,
+            minDepth_opt = minDepth_opt,
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
           )
           val commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint, accept.secondPerCommitmentPoint)
@@ -330,7 +336,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
         d.deferred.foreach(self ! _)
-        Funding.minDepthDualFunding(nodeParams.channelConf, d.commitmentParams.localParams.initFeatures, fundingTx.fundingParams) match {
+        fundingTx.fundingParams.minDepth_opt match {
           case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
           // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
           // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
@@ -398,7 +404,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       val replyTo = if (cmd.replyTo == ActorRef.noSender) sender() else cmd.replyTo
-      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.latestFundingTx.fundingParams).isEmpty
+      val zeroConf = d.latestFundingTx.fundingParams.minDepth_opt.isEmpty
       if (!d.latestFundingTx.fundingParams.isInitiator) {
         replyTo ! Status.Failure(InvalidRbfNonInitiator(d.channelId))
         stay()
@@ -423,7 +429,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(msg: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val zeroConf = Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.latestFundingTx.fundingParams).isEmpty
+      val zeroConf = d.latestFundingTx.fundingParams.minDepth_opt.isEmpty
       if (d.latestFundingTx.fundingParams.isInitiator) {
         // Only the initiator is allowed to initiate RBF.
         log.info("rejecting tx_init_rbf, we're the initiator, not them!")
@@ -539,7 +545,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
         // We now have more than one version of the funding tx, so we cannot use zero-conf.
-        val fundingMinDepth = Funding.minDepthDualFunding(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, fundingTx.fundingParams).getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
+        val fundingMinDepth = fundingTx.fundingParams.minDepth_opt.getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
         blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
         // we add the latest commitments to the list
         val metaCommitments1 = d.metaCommitments.add(commitment)

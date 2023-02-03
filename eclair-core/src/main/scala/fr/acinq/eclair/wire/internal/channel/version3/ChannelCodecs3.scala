@@ -323,6 +323,7 @@ private[channel] object ChannelCodecs3 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
+        ("minDepth_opt" | provide(Option(3L))) :: // backward compat, feature was previously experimental so the value doesn't matter very much
         ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     val metaCommitmentsCodec: Codec[MetaCommitments] = commitmentsCodec

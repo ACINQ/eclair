@@ -112,6 +112,7 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
+                                 minDepth_opt: Option[Long],
                                  requireConfirmedInputs: RequireConfirmedInputs) {
     require(localAmount >= 0.sat && remoteAmount >= 0.sat, "funding amount cannot be negative")
     val fundingAmount: Satoshi = localAmount + remoteAmount
