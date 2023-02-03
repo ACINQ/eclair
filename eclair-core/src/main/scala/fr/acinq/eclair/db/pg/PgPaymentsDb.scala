@@ -74,6 +74,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       def migration78(statement: Statement): Unit = {
         statement.executeUpdate("ALTER TABLE payments.sent ADD COLUMN offer_id TEXT")
         statement.executeUpdate("ALTER TABLE payments.sent ADD COLUMN payer_key TEXT")
+        statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON payments.sent(offer_id)")
       }
 
       getVersion(statement, DB_NAME) match {
@@ -85,6 +86,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
 
           statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON payments.sent(parent_id)")
           statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
+          statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON payments.sent(offer_id)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
         case Some(v@(4 | 5 | 6 | 7)) =>

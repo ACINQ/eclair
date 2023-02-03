@@ -105,6 +105,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     def migration56(statement: Statement): Unit = {
       statement.executeUpdate("ALTER TABLE sent_payments ADD COLUMN offer_id BLOB")
       statement.executeUpdate("ALTER TABLE sent_payments ADD COLUMN payer_key BLOB")
+      statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON sent_payments(offer_id)")
     }
 
     getVersion(statement, DB_NAME) match {
@@ -114,6 +115,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
         statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON sent_payments(payment_hash)")
+        statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON sent_payments(offer_id)")
         statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
       case Some(v@(1 | 2 | 3 | 4 | 5)) =>
