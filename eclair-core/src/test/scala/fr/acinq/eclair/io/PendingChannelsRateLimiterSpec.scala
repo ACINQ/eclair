@@ -205,7 +205,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
   }
 
-  test("after channel id change and channel open, private nodes are below rate limit") { f =>
+  test("after channel id change and channel aborted, private nodes are below rate limit") { f =>
     import f._
 
     // accept two channels from private node
@@ -226,8 +226,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
 
     // remove channel from private node
-    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, remoteNodeId, channelId))
-    eventListener.expectMessageType[ChannelOpened]
+    system.eventStream ! Publish(ChannelAborted(TestProbe[Any]().ref.toClassic, remoteNodeId, channelId))
+    eventListener.expectMessageType[ChannelAborted]
 
     // accept new channel from private node
     limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())

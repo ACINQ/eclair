@@ -6,7 +6,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.{ChannelIdAssigned, ChannelOpened, DATA_WAIT_FOR_CHANNEL_READY, DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, DATA_WAIT_FOR_DUAL_FUNDING_READY, DATA_WAIT_FOR_FUNDING_CONFIRMED, PersistentChannelData}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.Command
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
@@ -68,6 +68,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
       case None =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
         registering(pendingPeerChannels, pendingPrivateNodeChannels)
     }
   }
