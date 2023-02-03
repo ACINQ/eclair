@@ -6,7 +6,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.{ChannelIdAssigned, ChannelOpened, PersistentChannelData}
+import fr.acinq.eclair.channel.{ChannelIdAssigned, ChannelOpened, DATA_WAIT_FOR_CHANNEL_READY, DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, DATA_WAIT_FOR_DUAL_FUNDING_READY, DATA_WAIT_FOR_FUNDING_CONFIRMED, PersistentChannelData}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.Command
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
@@ -34,27 +34,36 @@ object PendingChannelsRateLimiter {
   case object ChannelRateLimited extends Response
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, router: ActorRef[Any]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, router: ActorRef[Any], channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
-      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(nodeParams.db.channels.listLocalChannels(), Map(), Seq())
+      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(channels), Map(), Seq())
     }
+  }
+
+  private def filterPendingChannels(channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
+    channels.filter {
+      case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
+      case _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => true
+      case _: DATA_WAIT_FOR_CHANNEL_READY => true
+      case _: DATA_WAIT_FOR_DUAL_FUNDING_READY => true
+      case _ => false
+    }.groupBy(_.metaCommitments.remoteNodeId)
   }
 }
 
 private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRef[Any], context: ActorContext[Command]) {
   import PendingChannelsRateLimiter._
 
-  private def restoring(persistentChannelData: Seq[PersistentChannelData], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
-    persistentChannelData.headOption match {
+  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
+    channels.headOption match {
       case Some(d) =>
-        val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(d.channelId, r, None))
-        router ! GetNode(adapter, d.metaCommitments.remoteNodeId )
+        val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(d._2.head.channelId, r, None))
+        router ! GetNode(adapter, d._1)
         Behaviors.receiveMessagePartial[Command] {
-          case WrappedGetNodeResponse(temporaryChannelId, PublicNode(announcement, _, _), _) =>
-            val pendingPeerChannels1 = pendingPeerChannels + (announcement.nodeId -> (temporaryChannelId +: pendingPeerChannels.getOrElse(announcement.nodeId, Seq())))
-            restoring(persistentChannelData.tail, pendingPeerChannels1, pendingPrivateNodeChannels)
-          case WrappedGetNodeResponse(temporaryChannelId, UnknownNode(_), _) =>
-            restoring(persistentChannelData.tail, pendingPeerChannels, pendingPrivateNodeChannels :+ temporaryChannelId)
+          case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
+            restoring(channels.tail, pendingPeerChannels + (announcement.nodeId -> d._2.map(_.channelId)), pendingPrivateNodeChannels)
+          case WrappedGetNodeResponse(_, UnknownNode(_), _) =>
+            restoring(channels.tail, pendingPeerChannels, pendingPrivateNodeChannels ++ d._2.map(_.channelId))
         }
       case None =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
