@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
@@ -128,7 +128,8 @@ object TestConstants {
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
-        maxTotalPendingChannelsPrivateNodes = 99
+        maxTotalPendingChannelsPrivateNodes = 99,
+        remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
@@ -281,7 +282,8 @@ object TestConstants {
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
-        maxTotalPendingChannelsPrivateNodes = 99
+        maxTotalPendingChannelsPrivateNodes = 99,
+        remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),

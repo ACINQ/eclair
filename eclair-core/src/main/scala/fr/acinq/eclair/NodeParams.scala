@@ -488,7 +488,8 @@ object NodeParams extends Logging {
         requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding"),
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
-        maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes
+        maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
+        remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks"))
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

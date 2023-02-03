@@ -448,12 +448,19 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         val minNextFeerate = d.latestFundingTx.fundingParams.minNextFeerate
         d.rbfStatus match {
           case RbfStatus.NoRbf =>
+            val remainingRbfAttempts = nodeParams.channelConf.remoteRbfLimits.maxAttempts - d.previousFundingTxs.length
             if (msg.feerate < minNextFeerate) {
               log.info("rejecting rbf attempt: the new feerate must be at least {} (proposed={})", minNextFeerate, msg.feerate)
               stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfFeerate(d.channelId, msg.feerate, minNextFeerate).getMessage)
             } else if (d.remotePushAmount > msg.fundingContribution) {
               log.info("rejecting rbf attempt: invalid amount pushed (fundingAmount={}, pushAmount={})", msg.fundingContribution, d.remotePushAmount)
               stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, InvalidPushAmount(d.channelId, d.remotePushAmount, msg.fundingContribution.toMilliSatoshi).getMessage)
+            } else if (remainingRbfAttempts <= 0) {
+              log.info("rejecting rbf attempt: maximum number of attempts reached (max={})", nodeParams.channelConf.remoteRbfLimits.maxAttempts)
+              stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfAttemptsExhausted(d.channelId, nodeParams.channelConf.remoteRbfLimits.maxAttempts).getMessage)
+            } else if (nodeParams.currentBlockHeight < d.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks) {
+              log.info("rejecting rbf attempt: last attempt was less than {} blocks ago", nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)
+              stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, d.latestFundingTx.createdAt, d.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
             } else {
               log.info("our peer wants to raise the feerate of the funding transaction (previous={} target={})", d.latestFundingTx.fundingParams.targetFeerate, msg.feerate)
               val fundingParams = d.latestFundingTx.fundingParams.copy(
@@ -469,7 +476,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
               txBuilder ! InteractiveTxBuilder.Start(self)
-              stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending TxAckRbf(d.channelId, fundingParams.localAmount)
+              val toSend = Seq(
+                Some(TxAckRbf(d.channelId, fundingParams.localAmount)),
+                if (remainingRbfAttempts <= 3) Some(Warning(d.channelId, s"will accept at most ${remainingRbfAttempts - 1} future rbf attempts")) else None,
+              ).flatten
+              stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending toSend
             }
           case RbfStatus.RbfAborted =>
             log.info("rejecting rbf attempt: our previous tx_abort was not acked")

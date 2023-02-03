@@ -400,6 +400,23 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
   }
 
+  test("recv TxInitRbf (exhausted RBF attempts)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.RejectRbfAttempts)) { f =>
+    import f._
+
+    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat)
+    assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidRbfAttemptsExhausted(channelId(bob), 0).getMessage)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
+  test("recv TxInitRbf (RBF attempt too soon)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.DelayRbfAttempts)) { f =>
+    import f._
+
+    val currentBlockHeight = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.createdAt
+    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat)
+    assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidRbfAttemptTooSoon(channelId(bob), currentBlockHeight, currentBlockHeight + 1).getMessage)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
   test("recv TxInitRbf (invalid push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
     import f._
 
