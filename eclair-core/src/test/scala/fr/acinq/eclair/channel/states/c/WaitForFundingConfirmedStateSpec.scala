@@ -262,6 +262,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
     awaitCond(bob.stateName == CLOSING)
+    listener.expectMsgType[ChannelAborted]
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, tx)

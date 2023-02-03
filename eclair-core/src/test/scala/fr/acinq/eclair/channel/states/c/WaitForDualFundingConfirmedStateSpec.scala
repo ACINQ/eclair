@@ -667,6 +667,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Alice receives an error and force-closes using the latest funding transaction.
     alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
     awaitCond(alice.stateName == CLOSING)
+    aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx2.tx.txid)
     val claimMain2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain2.input.txid == aliceCommitTx2.tx.txid)
@@ -698,6 +699,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
     awaitCond(bob.stateName == CLOSING)
+    bobListener.expectMsgType[ChannelAborted]
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, commitTx)
