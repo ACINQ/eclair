@@ -10,8 +10,7 @@ import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.OfferTypes.InvoiceRequest
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, OfferTypes}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector

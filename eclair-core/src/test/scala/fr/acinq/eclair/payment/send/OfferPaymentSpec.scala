@@ -42,12 +42,12 @@ import scala.concurrent.duration.DurationInt
 
 class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(offerPayment: ActorRef[Command], nodeParams: NodeParams, postman: TypedProbe[Postman.Command], paymentInitiator: akka.testkit.TestProbe, routeParams: RouteParams)
+  case class FixtureParam(offerPayment: ActorRef[Command], nodeParams: NodeParams, postman: TypedProbe[Postman.Command], paymentInitiator: TestProbe, routeParams: RouteParams)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Alice.nodeParams
     val postman = TypedProbe[Postman.Command]("postman")
-    val paymentInitiator = akka.testkit.TestProbe("paymentInitiator")(system.toClassic)
+    val paymentInitiator = TestProbe("paymentInitiator")(system.toClassic)
     val offerPayment = testKit.spawn(OfferPayment(nodeParams, postman.ref, paymentInitiator.ref))
     val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
     try {
@@ -79,11 +79,6 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send.invoice == invoice)
 
-    val paymentId = UUID.randomUUID()
-    send.replyTo ! paymentId
-    val uuid = probe.expectMsgType[UUID]
-    assert(uuid == paymentId)
-
     TypedProbe().expectTerminated(offerPayment)
   }
 
@@ -104,7 +99,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       replyTo ! Postman.NoReply
     }
     probe.expectMsg(NoInvoice)
-    paymentInitiator.expectNoMessage()
+    paymentInitiator.expectNoMessage(50 millis)
     TypedProbe().expectTerminated(offerPayment)
   }
 
@@ -127,7 +122,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     replyTo ! Postman.Response(FinalPayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
 
     probe.expectMsgType[InvalidInvoice]
-    paymentInitiator.expectNoMessage()
+    paymentInitiator.expectNoMessage(50 millis)
 
     TypedProbe().expectTerminated(offerPayment)
   }

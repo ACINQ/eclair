@@ -17,22 +17,19 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
+import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomKey}
 
-import java.util.UUID
 import scala.util.Random
 
 object OfferPayment {
@@ -47,8 +44,6 @@ object OfferPayment {
   case class QuantityTooHigh(quantityMax: Long) extends Failure
 
   case class AmountInsufficient(amountNeeded: MilliSatoshi) extends Failure
-
-  case class InvalidSignature(signature: ByteVector64) extends Failure
 
   case object NoInvoice extends Failure
 
