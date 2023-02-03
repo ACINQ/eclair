@@ -4,7 +4,18 @@
 
 ## Major changes
 
-<insert changes>
+### Offers
+
+Eclair now supports paying offers:
+```shell
+$ ./eclair-cli payoffer --offer=<offer-to-pay> --amountMsat=<amountToPay>
+```
+If the offer supports it, you can also specify `--quantity` to buy more than one at a time.
+All the parameters from `payinvoice` are also supported.
+
+Eclair will request an invoice and pay it (assuming it matches our request) without further interaction.
+
+Offers are still experimental and some details could still change before they are widely supported.
 
 ### API changes
 
@@ -14,6 +25,7 @@
 - `node` returns high-level information about a remote node (#2568)
 - `channel-created` is a new websocket event that is published when a channel's funding transaction has been broadcast (#2567)
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
+- `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 
 ### Miscellaneous improvements and bug fixes
 
