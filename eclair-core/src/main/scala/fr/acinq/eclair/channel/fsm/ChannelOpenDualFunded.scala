@@ -336,12 +336,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
         d.deferred.foreach(self ! _)
-        fundingTx.fundingParams.minDepth_opt match {
-          case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
-          // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
-          // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
-          case None => blockchain ! WatchPublished(self, commitment.fundingTxId)
-        }
+        watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
         val metaCommitments = MetaCommitments(d.commitmentParams, d.commitmentCommon, commitment :: Nil)
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
         fundingTx.sharedTx match {
@@ -487,7 +482,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             // we don't change our funding contribution
             remoteAmount = msg.fundingContribution,
             lockTime = cmd.lockTime,
-            targetFeerate = cmd.targetFeerate
+            targetFeerate = cmd.targetFeerate,
+            // we now have more than one version of the funding tx, so we cannot use zero-conf.
+            minDepth_opt = d.latestFundingTx.fundingParams.minDepth_opt.orElse(Some(nodeParams.channelConf.minDepthBlocks.toLong))
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
@@ -544,9 +541,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => msg match {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
-        // We now have more than one version of the funding tx, so we cannot use zero-conf.
-        val fundingMinDepth = fundingTx.fundingParams.minDepth_opt.getOrElse(nodeParams.channelConf.minDepthBlocks.toLong)
-        blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
+        watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
         // we add the latest commitments to the list
         val metaCommitments1 = d.metaCommitments.add(commitment)
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)

@@ -245,20 +245,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case LocalFundingStatus.UnknownFundingTx =>
             // Legacy single-funded channels. The funding tx may or may not be confirmed, a watch-confirmed will be set
             // at reconnection if necessary
-            watchFundingTx(commitment)
+            watchFundingSpent(commitment)
           case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
             // A watch-confirmed will be set at reconnection if necessary 
-            watchFundingTx(commitment)
+            watchFundingSpent(commitment)
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
-            fundingTx.fundingParams.minDepth_opt match {
-              case Some(fundingMinDepth) =>
-                blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, fundingMinDepth)
-              case None =>
-                // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
-                // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
-                blockchain ! WatchPublished(self, commitment.fundingTxId)
-                blockchain ! WatchFundingConfirmed(self, commitment.fundingTxId, nodeParams.channelConf.minDepthBlocks)
-            }
+            watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
           case fundingTx: LocalFundingStatus.PublishedFundingTx =>
             // those are zero-conf channels, the min-depth isn't critical, we use the default
             val fundingMinDepth = nodeParams.channelConf.minDepthBlocks.toLong
@@ -267,7 +259,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             if (!data.isInstanceOf[DATA_CLOSING]) {
               // the CLOSING state is handled differently, because the funding tx may already have been permanently spent
               // in all other states, we watch the funding tx
-              watchFundingTx(commitment)
+              watchFundingSpent(commitment)
             }
         }
       }
@@ -300,7 +292,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               doPublish(c.revokedCommitPublished)
             case None =>
               // in all other cases we need to be ready for any type of closing
-              watchFundingTx(data.metaCommitments.latest.commitment, closing.spendingTxs.map(_.txid).toSet)
+              watchFundingSpent(data.metaCommitments.latest.commitment, closing.spendingTxs.map(_.txid).toSet)
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.metaCommitments.latest))
               closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.metaCommitments.latest))
@@ -1107,7 +1099,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // to negotiate a mutual close.
             log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
             val commitments = metaCommitments.latest
-            watchFundingTx(commitments.commitment)
+            watchFundingSpent(commitments.commitment)
             context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
             val commitTx = commitments.fullySignedLocalCommitTx(keyManager).tx
             val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, d.finalScriptPubKey)

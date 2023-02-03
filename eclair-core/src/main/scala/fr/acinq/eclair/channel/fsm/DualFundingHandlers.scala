@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchPublished}
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
+import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, UnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -67,7 +68,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map { metaCommitments1 =>
       // first of all, we watch the funding tx that is now confirmed
       val commitments = metaCommitments1.commitments.find(_.fundingTxId == w.tx.txid).get // TODO: rework this
-      watchFundingTx(commitments)
+      watchFundingSpent(commitments)
       // we can forget all other transactions, they have been double spent by the tx that just confirmed
       val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
         .filter(c => c.fundingTxId != commitments.fundingTxId)

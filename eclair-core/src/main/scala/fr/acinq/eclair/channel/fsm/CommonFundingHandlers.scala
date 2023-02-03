@@ -20,7 +20,7 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingSpent}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingDeeplyBuried, WatchFundingSpent, WatchPublished}
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
@@ -37,9 +37,18 @@ trait CommonFundingHandlers extends CommonHandlers {
 
   this: Channel =>
 
-  def watchFundingTx(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
+  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
     val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.txid).toSet ++ additionalKnownSpendingTxs
     blockchain ! WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+  }
+
+  def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long]): Unit = {
+    minDepth_opt match {
+      case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
+      // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
+      // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
+      case None => blockchain ! WatchPublished(self, fundingTxId)
+    }
   }
 
   def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {
