@@ -39,7 +39,7 @@ import scala.concurrent.duration._
 
 class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
@@ -62,14 +62,16 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val commitTxFeerate = if (channelType.isInstanceOf[ChannelTypes.AnchorOutputs] || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val listener = TestProbe()
     within(30 seconds) {
+      alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
       val fundingAmount = if (test.tags.contains(ChannelStateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, listener)))
     }
   }
 
@@ -132,6 +134,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     bob2alice.forward(alice, accept.copy(tlvStream = TlvStream.empty))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -155,6 +158,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // type negotiation so Alice needs to abort because the channel types won't match.
     bob2alice.forward(alice, accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -187,6 +191,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val invalidAccept = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
     bob2alice.forward(alice, invalidAccept)
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -199,6 +204,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -211,6 +217,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUST_LIMIT).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -222,6 +229,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(dustLimitSatoshis = highDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, Alice.nodeParams.channelConf.maxRemoteDustLimit).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -233,6 +241,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(toSelfDelay = delayTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -245,6 +254,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -256,6 +266,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -268,6 +279,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(channelReserveSatoshis = reserveTooSmall)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -280,6 +292,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(dustLimitSatoshis = dustTooBig)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -319,6 +332,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef"))))
     bob2alice.forward(alice, accept1)
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -326,6 +340,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv Error") { f =>
     import f._
     alice ! Error(ByteVector32.Zeroes, "oops")
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -336,6 +351,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val c = CMD_CLOSE(sender.ref, None, None)
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
   }
@@ -343,6 +359,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
     alice ! INPUT_DISCONNECTED
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }
@@ -350,6 +367,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv TickChannelOpenTimeout") { f =>
     import f._
     alice ! TickChannelOpenTimeout
+    listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOrigin.expectMsgType[Status.Failure]
   }

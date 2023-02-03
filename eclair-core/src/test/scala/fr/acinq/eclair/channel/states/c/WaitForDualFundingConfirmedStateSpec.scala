@@ -50,10 +50,14 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionPublished])
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[TransactionConfirmed])
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ShortChannelIdAssigned])
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelClosed])
     val bobListener = TestProbe()
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionPublished])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[TransactionConfirmed])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelClosed])
 
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
@@ -418,6 +422,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -432,6 +437,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -441,6 +447,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -452,6 +459,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -511,10 +519,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Bob broadcasts his commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx
     alice ! WatchFundingSpentTriggered(bobCommitTx.tx)
+    aliceListener.expectMsgType[TransactionPublished]
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
   }
 
@@ -536,10 +546,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
+    aliceListener.expectMsgType[TransactionPublished]
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
   }
 
@@ -629,6 +641,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "force-closing channel, bye-bye")
     awaitCond(alice.stateName == CLOSING)
+    aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx.txid)
     val claimMainLocal = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainLocal.input.txid == aliceCommitTx.txid)
@@ -659,6 +672,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Alice receives an error and force-closes using the latest funding transaction.
     alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
     awaitCond(alice.stateName == CLOSING)
+    aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx2.tx.txid)
     val claimMain2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain2.input.txid == aliceCommitTx2.tx.txid)
@@ -690,10 +704,13 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! Error(ByteVector32.Zeroes, "please help me recover my funds")
     // We have nothing at stake, but we publish our commitment to help our peer recover their funds more quickly.
     awaitCond(bob.stateName == CLOSING)
+    bobListener.expectMsgType[ChannelAborted]
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(42), 1, commitTx)
+    bobListener.expectMsgType[TransactionConfirmed]
     awaitCond(bob.stateName == CLOSED)
+    bobListener.expectMsgType[ChannelClosed]
   }
 
   test("recv CMD_CLOSE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -710,6 +727,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
+    aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == commitTx.txid)
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == commitTx.txid)

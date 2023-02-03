@@ -42,9 +42,11 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val aliceListener = TestProbe()
     alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelCreated])
     alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelIdAssigned])
+    alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
     val bobListener = TestProbe()
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelCreated])
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelIdAssigned])
+    bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
 
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
@@ -121,6 +123,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(chainHash = chain)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, Block.RegtestGenesisBlock.hash, chain).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -130,6 +133,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(fundingAmount = 100 sat)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100 sat, Bob.nodeParams.channelConf.minFundingSatoshis(false), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -139,6 +143,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(fundingAmount = 50_000 sat, tlvStream = open.tlvStream.copy(records = open.tlvStream.records + ChannelTlv.PushAmountTlv(50_000_001 msat)))
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidPushAmount(open.temporaryChannelId, 50_000_001 msat, 50_000_000 msat).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -149,6 +154,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -159,6 +165,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(toSelfDelay = delayTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -169,6 +176,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(dustLimit = dustLimitTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, Bob.nodeParams.channelConf.maxRemoteDustLimit).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -179,12 +187,14 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob ! open.copy(dustLimit = dustLimitTooSmall)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, DustLimitTooSmall(open.temporaryChannelId, dustLimitTooSmall, Channel.MIN_DUST_LIMIT).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     bob ! Error(ByteVector32.Zeroes, "dual funding not supported")
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -194,12 +204,14 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val cmd = CMD_CLOSE(sender.ref, None, None)
     bob ! cmd
     sender.expectMsg(RES_SUCCESS(cmd, ByteVector32.Zeroes))
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv INPUT_DISCONNECTED", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     bob ! INPUT_DISCONNECTED
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 

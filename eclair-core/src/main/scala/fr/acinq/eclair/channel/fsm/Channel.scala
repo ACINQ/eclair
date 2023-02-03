@@ -241,6 +241,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         // NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
+          context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
           goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           val isInitiator = closing.metaCommitments.params.localParams.isInitiator
@@ -1052,7 +1053,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_CLOSING) if getTxResponse.txid == d.metaCommitments.latest.fundingTxId =>
       // NB: waitingSinceBlock contains the block at which closing was initiated, not the block at which funding was initiated.
-          // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
+      // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
       // waitingSinceBlock (e.g. closingWaitingSinceBlock and fundingWaitingSinceBlock).
       handleGetFundingTx(getTxResponse, d.waitingSince, d.metaCommitments.latest.localFundingStatus.signedTx_opt)
 
@@ -1211,7 +1212,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // then let's see if any of the possible close scenarios can be considered done
       val closingType_opt = Closing.isClosed(d1, Some(tx))
-      // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay() (note that we don't store the state)
+      // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay()
       closingType_opt match {
         case Some(closingType) =>
           log.info(s"channel closed (type=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
@@ -1683,6 +1684,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case (_: DATA_WAIT_FOR_CHANNEL_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case (_: DATA_WAIT_FOR_DUAL_FUNDING_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case _ => ()
+      }
+
+      // Notify when the channel was aborted.
+      (stateData, nextState) match {
+        case (_: TransientChannelData, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+        case (_: DATA_WAIT_FOR_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_CHANNEL_READY, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
         case _ => ()
       }
   }

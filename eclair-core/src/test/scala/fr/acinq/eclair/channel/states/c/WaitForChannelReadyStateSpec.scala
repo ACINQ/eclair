@@ -41,7 +41,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   val relayFees: RelayFees = RelayFees(999 msat, 1234)
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, router: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, router: TestProbe, aliceListener: TestProbe, bobListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init(tags = test.tags)
@@ -52,8 +52,12 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val pushMsat = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val aliceListener = TestProbe()
+    val bobListener = TestProbe()
 
     within(30 seconds) {
+      alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
+      bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
       alice.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(bobParams.nodeId, relayFees)
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, pushMsat, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -88,7 +92,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
       alice2bob.expectMsgType[ChannelReady]
       awaitCond(alice.stateName == WAIT_FOR_CHANNEL_READY)
       awaitCond(bob.stateName == WAIT_FOR_CHANNEL_READY)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, aliceListener, bobListener)))
     }
   }
 
@@ -249,6 +253,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     alice ! WatchFundingSpentTriggered(tx)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
   }
 
@@ -262,6 +267,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
@@ -272,6 +278,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "funding double-spent")
+    bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
@@ -290,6 +297,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val sender = TestProbe()
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]

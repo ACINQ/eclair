@@ -39,7 +39,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
+  case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
@@ -64,7 +64,9 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
+    val listener = TestProbe()
     within(30 seconds) {
+      bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
@@ -74,7 +76,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-      withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain, listener)))
     }
   }
 
@@ -113,12 +115,14 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv Error") { f =>
     import f._
     bob ! Error(ByteVector32.Zeroes, "oops")
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -128,6 +132,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val c = CMD_CLOSE(sender.ref, None, None)
     bob ! c
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -139,6 +144,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val c = CMD_CLOSE(ActorRef.noSender, None, None)
     sender.send(bob, c)
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
 
