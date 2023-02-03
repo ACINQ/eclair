@@ -1948,7 +1948,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("funding amount drops below reserve") {
-    withFixture(250_000 sat, Seq(300_000 sat), 0 sat, Nil, FeeratePerKw(1000 sat), 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    withFixture(500_000 sat, Seq(600_000 sat), 400_000 sat, Seq(450_000 sat), FeeratePerKw(1000 sat), 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       val probe = TestProbe()
@@ -1957,12 +1957,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
-      // Alice <-- tx_complete --- Bob
-      fwd.forwardBob2Alice[TxComplete]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
       // Alice --- tx_add_output --> Bob
       fwd.forwardAlice2Bob[TxAddOutput]
-      // Alice <-- tx_complete --- Bob
-      fwd.forwardBob2Alice[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_output --> Bob
       fwd.forwardAlice2Bob[TxAddOutput]
       // Alice <-- tx_complete --- Bob
@@ -1980,11 +1980,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.publishTransaction(successA.sharedTx.signedTx_opt.get).pipeTo(probe.ref)
       probe.expectMsg(successA.sharedTx.txId)
 
-      // Alice splices too much funds out, which makes her drop below the channel reserve.
-      val spliceOutputsA = List(TxOut(247_000 sat, Script.pay2wpkh(randomKey().publicKey)))
+      // Bob splices too much funds out, which makes him drop below the channel reserve.
+      val spliceOutputsA = List(TxOut(99_000 sat, Script.pay2wpkh(randomKey().publicKey)))
+      val spliceOutputsB = List(TxOut(397_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(successA.commitment, successB.commitment)
-      val fundingParamsA1 = aliceParams.copy(localAmount = 2000 sat, remoteAmount = 0 sat, sharedInput_opt = Some(sharedInputA), localOutputs = spliceOutputsA)
-      val fundingParamsB1 = bobParams.copy(localAmount = 0 sat, remoteAmount = 2000 sat, sharedInput_opt = Some(sharedInputB), localOutputs = Nil)
+      val fundingParamsA1 = aliceParams.copy(localAmount = 400_000 sat, remoteAmount = 2000 sat, sharedInput_opt = Some(sharedInputA), localOutputs = spliceOutputsA)
+      val fundingParamsB1 = bobParams.copy(localAmount = 2000 sat, remoteAmount = 400_000 sat, sharedInput_opt = Some(sharedInputB), localOutputs = spliceOutputsB)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(fundingParamsA1, successA.commitment, walletA)
       val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(fundingParamsB1, successB.commitment, walletB)
       val fwdSplice = TypeCheckedForwarder(aliceSplice, bobSplice, alice2bob, bob2alice)
@@ -1994,8 +1995,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Alice --- tx_add_input --> Bob
       fwdSplice.forwardAlice2Bob[TxAddInput]
-      // Alice <-- tx_complete --- Bob
-      fwdSplice.forwardBob2Alice[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      fwdSplice.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_output --> Bob
       fwdSplice.forwardAlice2Bob[TxAddOutput]
       // Alice <-- tx_complete --- Bob
@@ -2006,8 +2007,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       fwdSplice.forwardBob2Alice[TxComplete]
       // Alice --- tx_complete --> Bob
       fwdSplice.forwardAlice2Bob[TxComplete]
-      // Bob detects that Alice will drop below the channel reserve and fails.
-      assert(bob2alice.expectMsgType[RemoteFailure].cause == CannotAffordFees(bobParams.channelId, missing = 2470 sat, reserve = 1000 sat, fees = 3470 sat))
+      // Alice detects that Bob will drop below the channel reserve and fails.
+      assert(alice2bob.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(bobParams.channelId))
     }
   }
 
