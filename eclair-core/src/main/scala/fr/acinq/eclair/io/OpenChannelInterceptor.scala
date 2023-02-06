@@ -57,7 +57,7 @@ object OpenChannelInterceptor {
     val channelFlags: ChannelFlags = open.fold(_.channelFlags, _.channelFlags)
     val channelType_opt: Option[ChannelType] = open.fold(_.channelType_opt, _.channelType_opt)
   }
-  case class OpenChannelInitiator(replyTo: ActorRef[Any], remoteNodeId: PublicKey, open: Peer.OpenChannel, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any]) extends WaitForRequestCommands
+  case class OpenChannelInitiator(replyTo: ActorRef[Any], remoteNodeId: PublicKey, open: Peer.OpenChannel, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]) extends WaitForRequestCommands
 
   private sealed trait CheckRateLimitsCommands extends Command
   private case class PendingChannelsRateLimiterResponse(response: PendingChannelsRateLimiter.Response) extends CheckRateLimitsCommands
