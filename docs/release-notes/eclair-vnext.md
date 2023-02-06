@@ -40,13 +40,13 @@ We have added parameters to `eclair.conf` to allow nodes to manage the number of
 The new configuration options and defaults are as follows:
 ```conf
 // a list of public keys; we will ignore limits on pending channels from these peers
-channel-opener-whitelist = [] 
+channel.channel-open-limits.channel-opener-whitelist = [] 
 
 // maximum number of pending channels we will accept from a given peer
-max-pending-channels-per-peer = 99 
+channel.channel-open-limits.max-pending-channels-per-peer = 3 
 
 // maximum number of pending channels we will accept from all private nodes
-max-total-pending-channels-private-nodes = 99 
+channel.channel-open-limits.max-total-pending-channels-private-nodes = 99 
 ```
 
 ## Verifying signatures
