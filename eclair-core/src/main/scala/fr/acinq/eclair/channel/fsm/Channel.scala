@@ -443,7 +443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_SIGN, d: DATA_NORMAL) =>
       d.metaCommitments.common.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.common.localHasChanges =>
+        case _ if !d.metaCommitments.changes.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -468,7 +468,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.latest.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
-              handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.common.localChanges.signed)
+              handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.changes.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
         case Left(_) =>
@@ -480,7 +480,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.metaCommitments.receiveCommit(commit, keyManager) match {
         case Right((metaCommitments1, revocation)) =>
           log.debug("received a new sig, spec:\n{}", metaCommitments1.latest.specs2String)
-          if (metaCommitments1.common.localHasChanges) {
+          if (metaCommitments1.changes.localHasChanges) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN()
           }
@@ -512,10 +512,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          if (metaCommitments1.common.localHasChanges) {
+          if (metaCommitments1.changes.localHasChanges) {
             self ! CMD_SIGN()
           }
-          if (d.remoteShutdown.isDefined && !metaCommitments1.common.localHasUnsignedOutgoingHtlcs) {
+          if (d.remoteShutdown.isDefined && !metaCommitments1.changes.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val finalScriptPubKey = metaCommitments1.params.localParams.upfrontShutdownScript_opt.getOrElse(getOrGenerateFinalScriptPubKey(d))
             val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
@@ -533,10 +533,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
       if (d.localShutdown.isDefined) {
         handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-      } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) {
+      } else if (d.metaCommitments.changes.localHasUnsignedOutgoingHtlcs) {
         // NB: simplistic behavior, we could also sign-then-close
         handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-      } else if (d.metaCommitments.common.localHasUnsignedOutgoingUpdateFee) {
+      } else if (d.metaCommitments.changes.localHasUnsignedOutgoingUpdateFee) {
         handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
       } else {
         val localScriptPubKey = c.scriptPubKey.getOrElse(d.metaCommitments.params.localParams.upfrontShutdownScript_opt.getOrElse(getOrGenerateFinalScriptPubKey(d)))
@@ -569,11 +569,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           //      we did not send a shutdown message
           //        there are pending signed changes  => go to SHUTDOWN
           //        there are no htlcs                => go to NEGOTIATING
-          if (d.metaCommitments.common.remoteHasUnsignedOutgoingHtlcs) {
+          if (d.metaCommitments.changes.remoteHasUnsignedOutgoingHtlcs) {
             handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
-          } else if (d.metaCommitments.common.remoteHasUnsignedOutgoingUpdateFee) {
+          } else if (d.metaCommitments.changes.remoteHasUnsignedOutgoingUpdateFee) {
             handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
-          } else if (d.metaCommitments.common.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
+          } else if (d.metaCommitments.changes.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
             require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
             // are we in the middle of a signature?
             d.metaCommitments.common.remoteNextCommitInfo match {
@@ -711,11 +711,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
-      if (d.metaCommitments.common.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
+      if (d.metaCommitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
         val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.metaCommitments.params.maxHtlcAmount, isPrivate = !d.metaCommitments.announceChannel, enable = false)
         // NB: the htlcs stay() in the commitments.localChange, they will be cleaned up after reconnection
-        d.metaCommitments.common.localChanges.proposed.collect {
+        d.metaCommitments.changes.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.common.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
         }
         goto(OFFLINE) using d.copy(channelUpdate = channelUpdate1) storing()
@@ -809,7 +809,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_SIGN, d: DATA_SHUTDOWN) =>
       d.metaCommitments.common.remoteNextCommitInfo match {
-        case _ if !d.metaCommitments.common.localHasChanges =>
+        case _ if !d.metaCommitments.changes.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
@@ -829,7 +829,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               context.system.eventStream.publish(ChannelSignatureSent(self, metaCommitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.latest.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
-              handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.common.localChanges.signed)
+              handleCommandSuccess(c, d.copy(metaCommitments = metaCommitments1)).storing().sending(commit).acking(metaCommitments1.changes.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
         case Left(_) =>
@@ -853,7 +853,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
             }
           } else {
-            if (metaCommitments1.common.localHasChanges) {
+            if (metaCommitments1.changes.localHasChanges) {
               // if we have newly acknowledged changes let's sign them
               self ! CMD_SIGN()
             }
@@ -893,7 +893,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               goto(NEGOTIATING) using DATA_NEGOTIATING(metaCommitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
-            if (metaCommitments1.common.localHasChanges) {
+            if (metaCommitments1.changes.localHasChanges) {
               self ! CMD_SIGN()
             }
             stay() using d.copy(metaCommitments = metaCommitments1) storing()
@@ -1328,7 +1328,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
-      Syncing.checkSync(keyManager, d.metaCommitments.params, d.metaCommitments.common, channelReestablish) match {
+      Syncing.checkSync(keyManager, d.metaCommitments, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
@@ -1358,7 +1358,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           }
 
           // do I have something to sign?
-          if (metaCommitments1.common.localHasChanges) {
+          if (metaCommitments1.changes.localHasChanges) {
             self ! CMD_SIGN()
           }
 
@@ -1414,7 +1414,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
-      Syncing.checkSync(keyManager, d.metaCommitments.params, d.metaCommitments.common, channelReestablish) match {
+      Syncing.checkSync(keyManager, d.metaCommitments, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
@@ -1744,7 +1744,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case NORMAL -> CLOSING =>
       (nextStateData: @unchecked) match {
         case d: DATA_CLOSING =>
-          d.metaCommitments.common.localChanges.proposed.collect {
+          d.metaCommitments.changes.localChanges.proposed.collect {
             case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.common.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
           }
       }
@@ -1925,7 +1925,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         } else if (almostTimedOutIncoming.nonEmpty) {
           // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
           // that are still in our commitment (upstream will try to timeout on-chain).
-          val relayedFulfills = d.metaCommitments.common.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
+          val relayedFulfills = d.metaCommitments.changes.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
           val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
           if (offendingRelayedHtlcs.nonEmpty) {
             handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))

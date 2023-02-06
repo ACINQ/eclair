@@ -85,8 +85,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState
-      .modify(_.metaCommitments.common.localNextHtlcId).setTo(1)
-      .modify(_.metaCommitments.common.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
       .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> add.origin)))
   }
 
@@ -123,8 +123,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState
-      .modify(_.metaCommitments.common.localNextHtlcId).setTo(1)
-      .modify(_.metaCommitments.common.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
       .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
@@ -142,8 +142,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     assert(htlc.id == 0 && htlc.paymentHash == h)
     awaitCond(alice.stateData == initialState
-      .modify(_.metaCommitments.common.localNextHtlcId).setTo(1)
-      .modify(_.metaCommitments.common.localChanges.proposed).setTo(htlc :: Nil)
+      .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
+      .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
       .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
@@ -585,8 +585,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, 150000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None)
     bob ! htlc
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ htlc)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(1))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ htlc)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(1))
     // bob won't forward the add before it is cross-signed
     bob2relayer.expectNoMessage()
   }
@@ -925,8 +925,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.localCommit.spec.htlcs.collect(incoming).exists(_.id == htlc.id))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.localCommit.spec.toLocal == initialState.metaCommitments.latest.localCommit.spec.toLocal)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteChanges.acked.size == 0)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteChanges.signed.size == 1)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteChanges.acked.size == 0)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteChanges.signed.size == 1)
   }
 
   test("recv CommitSig (one htlc sent)") { f =>
@@ -1063,7 +1063,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
 
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -1154,7 +1154,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteNextCommitInfo.isRight)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localChanges.acked.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.localChanges.acked.size == 1)
   }
 
   test("recv RevokeAndAck (one htlc received)") { f =>
@@ -1516,7 +1516,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     bob ! CMD_FULFILL_HTLC(htlc.id, r)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fulfill))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fulfill))
   }
 
   test("recv CMD_FULFILL_HTLC") {
@@ -1600,7 +1600,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fulfill))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fulfill))
     // alice immediately propagates the fulfill upstream
     val forward = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]]
     assert(forward.result.fulfill == fulfill)
@@ -1685,7 +1685,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.id == htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
-    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_HTLC") {
@@ -1715,7 +1715,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.id == htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
-      awaitCond(bob.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail))
+      awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
@@ -1768,7 +1768,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { f =>
@@ -1813,7 +1813,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fail))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fail))
     // alice won't forward the fail before it is cross-signed
     alice2relayer.expectNoMessage()
   }
@@ -1846,7 +1846,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
 
-    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fail))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fail))
     // alice won't forward the fail before it is cross-signed
     alice2relayer.expectNoMessage()
 
@@ -1926,7 +1926,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat))
     val fee = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fee))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fee))
   }
 
   test("recv CMD_UPDATE_FEE") {
@@ -2041,7 +2041,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[UpdateFee]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(30000 sat))
     val fee2 = alice2bob.expectMsgType[UpdateFee]
-    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fee2))
+    awaitCond(alice.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fee2))
   }
 
   test("recv CMD_UPDATE_FEE (when fundee)") { f =>
@@ -2060,8 +2060,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fee)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(0))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -2071,8 +2071,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fee = UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw * 0.8)
     bob ! fee
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fee)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(0))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (two in a row)") { f =>
@@ -2083,8 +2083,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fee2 = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(14000 sat))
     bob ! fee2
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fee2)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(0))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fee2)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(0))
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>
@@ -2161,8 +2161,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fee = UpdateFee(initialState.channelId, TestConstants.anchorOutputsFeeratePerKw * 3)
     alice2bob.send(bob, fee)
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ add :+ fee)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(1))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ add :+ fee)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(1))
     bob2alice.expectNoMessage(250 millis) // we don't close because we're using anchor outputs
   }
 
@@ -2176,8 +2176,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fee = UpdateFee(initialState.channelId, FeeratePerKw(FeeratePerByte(2 sat)))
     alice2bob.send(bob, fee)
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ add :+ fee)
-      .modify(_.metaCommitments.common.remoteNextHtlcId).setTo(1))
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ add :+ fee)
+      .modify(_.metaCommitments.changes.remoteNextHtlcId).setTo(1))
     bob2alice.expectNoMessage(250 millis) // we don't close because we're using anchor outputs
   }
 
@@ -2485,7 +2485,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 1)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 1)
 
     // actual test starts here
     alice ! CMD_FORCECLOSE(sender.ref)
@@ -3014,7 +3014,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 1)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 1)
 
     // actual test starts here
     // bob publishes his current commit tx
@@ -3103,7 +3103,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 1)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 1)
 
     // actual test starts here
     // bob publishes his current commit tx
@@ -3236,7 +3236,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 1)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 1)
 
     // actual test starts here
     // bob publishes his current commit tx
@@ -3435,7 +3435,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 1)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 1)
 
     // actual test starts here
     alice ! Error(ByteVector32.Zeroes, "oops")
@@ -3690,7 +3690,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 2)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 2)
 
     // actual test starts here
     Thread.sleep(1100)
@@ -3737,7 +3737,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceData.metaCommitments.common.localChanges.proposed.size == 2)
+    assert(aliceData.metaCommitments.changes.localChanges.proposed.size == 2)
 
     // actual test starts here
     Thread.sleep(1100)

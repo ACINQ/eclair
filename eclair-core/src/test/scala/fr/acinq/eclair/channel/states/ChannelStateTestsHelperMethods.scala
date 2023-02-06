@@ -398,7 +398,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(htlc)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.changes.remoteChanges.proposed.contains(htlc)))
     htlc
   }
 
@@ -406,21 +406,21 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(fulfill)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.changes.remoteChanges.proposed.contains(fulfill)))
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure()))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(fail)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.changes.remoteChanges.proposed.contains(fail)))
   }
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
     val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
     val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
-    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localHasChanges
+    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]

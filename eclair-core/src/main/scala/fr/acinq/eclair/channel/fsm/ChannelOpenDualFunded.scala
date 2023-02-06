@@ -343,14 +343,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         d.deferred.foreach(self ! _)
         watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
         val common = Common(
-          LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-          localNextHtlcId = 0, remoteNextHtlcId = 0,
           localCommitIndex = 0, remoteCommitIndex = 0,
           originChannels = Map.empty,
           remoteNextCommitInfo = Right(d.secondRemotePerCommitmentPoint),
           remotePerCommitmentSecrets = ShaChain.init
         )
-        val metaCommitments = MetaCommitments(d.channelParams, common, commitment :: Nil)
+        val metaCommitments = MetaCommitments(d.channelParams, common, CommitmentChanges.init(), commitment :: Nil)
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
         fundingTx.sharedTx match {
           case sharedTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending sharedTx.localSigs

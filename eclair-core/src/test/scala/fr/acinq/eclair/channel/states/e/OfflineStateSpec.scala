@@ -118,8 +118,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage(500 millis)
     bob2alice.expectNoMessage(500 millis)
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localNextHtlcId == 1)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteNextHtlcId == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.localNextHtlcId == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteNextHtlcId == 1)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
   }
@@ -162,8 +162,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage(500 millis)
     bob2alice.expectNoMessage(500 millis)
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localNextHtlcId == 1)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteNextHtlcId == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.localNextHtlcId == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteNextHtlcId == 1)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
   }
@@ -208,8 +208,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage(500 millis)
     bob2alice.expectNoMessage(500 millis)
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localNextHtlcId == 1)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteNextHtlcId == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.localNextHtlcId == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteNextHtlcId == 1)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
 

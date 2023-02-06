@@ -26,12 +26,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 
 // @formatter:off
-case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
-  def all: List[UpdateMessage] = proposed ++ signed ++ acked
-}
-case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage]) {
-  def all: List[UpdateMessage] = proposed ++ signed ++ acked
-}
 case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
@@ -65,7 +59,9 @@ case class Commitments(channelId: ByteVector32,
 
   def params: ChannelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
 
-  def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
+  def common: Common = Common(localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
+
+  def changes: CommitmentChanges = CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId)
 
   def commitment: Commitment = Commitment(localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.swap.map(_.nextRemoteCommit).toOption)
 
@@ -91,9 +87,9 @@ case class Commitments(channelId: ByteVector32,
 
   def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(params)
 
-  def availableBalanceForSend: MilliSatoshi = commitment.availableBalanceForSend(params, common)
+  def availableBalanceForSend: MilliSatoshi = commitment.availableBalanceForSend(params, changes)
 
-  def availableBalanceForReceive: MilliSatoshi = commitment.availableBalanceForReceive(params, common)
+  def availableBalanceForReceive: MilliSatoshi = commitment.availableBalanceForReceive(params, changes)
 
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitment.getOutgoingHtlcCrossSigned(htlcId)
 
@@ -125,7 +121,7 @@ case class Commitments(channelId: ByteVector32,
 object Commitments {
 
   /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
-  def apply(params: ChannelParams, common: Common, commitment: Commitment): Commitments = Commitments(
+  def apply(params: ChannelParams, common: Common, changes: CommitmentChanges, commitment: Commitment): Commitments = Commitments(
     channelId = params.channelId,
     channelConfig = params.channelConfig,
     channelFeatures = params.channelFeatures,
@@ -134,10 +130,10 @@ object Commitments {
     channelFlags = params.channelFlags,
     localCommit = commitment.localCommit,
     remoteCommit = commitment.remoteCommit,
-    localChanges = common.localChanges,
-    remoteChanges = common.remoteChanges,
-    localNextHtlcId = common.localNextHtlcId,
-    remoteNextHtlcId = common.remoteNextHtlcId,
+    localChanges = changes.localChanges,
+    remoteChanges = changes.remoteChanges,
+    localNextHtlcId = changes.localNextHtlcId,
+    remoteNextHtlcId = changes.remoteNextHtlcId,
     originChannels = common.originChannels,
     remoteNextCommitInfo = common.remoteNextCommitInfo.swap.map(waitForRev => WaitingForRevocation(commitment.nextRemoteCommit_opt.get, waitForRev.sent, waitForRev.sentAfterLocalCommitIndex)).swap,
     localFundingStatus = commitment.localFundingStatus,

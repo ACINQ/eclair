@@ -65,7 +65,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteChanges.proposed == htlc1 :: Nil)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteChanges.proposed == htlc1 :: Nil)
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val recipient2 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 200_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r2)
@@ -74,7 +74,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.changes.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
       // alice signs
       alice ! CMD_SIGN()
       alice2bob.expectMsgType[CommitSig]
@@ -118,7 +118,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FULFILL_HTLC(0, r1)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fulfill)
+      .modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fulfill)
     )
   }
 
@@ -174,7 +174,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fulfill = UpdateFulfillHtlc(ByteVector32.Zeroes, 0, r1)
     alice ! fulfill
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.common.remoteChanges).setTo(initialState.metaCommitments.common.remoteChanges.copy(initialState.metaCommitments.common.remoteChanges.proposed :+ fulfill)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.changes.remoteChanges).setTo(initialState.metaCommitments.changes.remoteChanges.copy(initialState.metaCommitments.changes.remoteChanges.proposed :+ fulfill)))
   }
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>
@@ -210,7 +210,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FAIL_HTLC(1, Right(PermanentChannelFailure()))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail)
+      .modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail)
     )
   }
 
@@ -240,7 +240,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState
-      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fail)
+      .modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail)
     )
   }
 
@@ -279,7 +279,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailHtlc(ByteVector32.Zeroes, 1, ByteVector.fill(152)(0))
     alice ! fail
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.common.remoteChanges).setTo(initialState.metaCommitments.common.remoteChanges.copy(initialState.metaCommitments.common.remoteChanges.proposed :+ fail)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.changes.remoteChanges).setTo(initialState.metaCommitments.changes.remoteChanges.copy(initialState.metaCommitments.changes.remoteChanges.proposed :+ fail)))
   }
 
   test("recv UpdateFailHtlc (unknown htlc id)") { f =>
@@ -300,7 +300,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, 1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION)
     alice ! fail
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.common.remoteChanges).setTo(initialState.metaCommitments.common.remoteChanges.copy(initialState.metaCommitments.common.remoteChanges.proposed :+ fail)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments == initialState.metaCommitments.modify(_.changes.remoteChanges).setTo(initialState.metaCommitments.changes.remoteChanges.copy(initialState.metaCommitments.changes.remoteChanges.proposed :+ fail)))
   }
 
   test("recv UpdateFailMalformedHtlc (invalid failure_code)") { f =>
@@ -519,7 +519,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_FEE]]
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState
-      .modify(_.metaCommitments.common.localChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fee)
     )
   }
 
@@ -538,7 +538,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     bob ! fee
     awaitCond(bob.stateData == initialData
-      .modify(_.metaCommitments.common.remoteChanges.proposed).using(_ :+ fee)
+      .modify(_.metaCommitments.changes.remoteChanges.proposed).using(_ :+ fee)
     )
   }
 

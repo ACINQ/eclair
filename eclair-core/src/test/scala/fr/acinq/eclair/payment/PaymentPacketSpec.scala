@@ -710,7 +710,8 @@ object PaymentPacketSpec {
     val channelFlags = ChannelFlags.Private
     new MetaCommitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags),
-      Common(localChanges, remoteChanges, 0, 0, 0, 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
+      Common(0, 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
+      CommitmentChanges(localChanges, remoteChanges, 0, 0),
       List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
     ) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)

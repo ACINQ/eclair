@@ -188,7 +188,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
-    assert(CheckBalance.computeLocalCloseBalance(commitments.common, LocalClose(commitments.commitments.last.localCommit, localCommitPublished), knownPreimages) ==
+    assert(CheckBalance.computeLocalCloseBalance(commitments.changes, LocalClose(commitments.commitments.last.localCommit, localCommitPublished), commitments.common.originChannels, knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = Map.empty,
@@ -219,7 +219,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 4)
 
-    assert(CheckBalance.computeLocalCloseBalance(commitments.common, LocalClose(commitments.commitments.last.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ==
+    assert(CheckBalance.computeLocalCloseBalance(commitments.changes, LocalClose(commitments.commitments.last.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), commitments.common.originChannels, knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcDelayedTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,

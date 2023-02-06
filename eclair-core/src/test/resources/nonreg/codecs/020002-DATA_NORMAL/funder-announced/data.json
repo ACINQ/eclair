@@ -67,6 +67,13 @@
       }
     },
     "common" : {
+      "localCommitIndex" : 4,
+      "remoteCommitIndex" : 4,
+      "originChannels" : { },
+      "remoteNextCommitInfo" : "03fd10fe44564e2d7e1550099785c2c1bad32a5ae0feeef6e27f0c108d18b4931d",
+      "remotePerCommitmentSecrets" : null
+    },
+    "changes" : {
       "localChanges" : {
         "proposed" : [ ],
         "signed" : [ ],
@@ -78,12 +85,7 @@
         "signed" : [ ]
       },
       "localNextHtlcId" : 0,
-      "remoteNextHtlcId" : 0,
-      "localCommitIndex" : 4,
-      "remoteCommitIndex" : 4,
-      "originChannels" : { },
-      "remoteNextCommitInfo" : "03fd10fe44564e2d7e1550099785c2c1bad32a5ae0feeef6e27f0c108d18b4931d",
-      "remotePerCommitmentSecrets" : null
+      "remoteNextHtlcId" : 0
     },
     "commitments" : [ {
       "fundingTx" : {
