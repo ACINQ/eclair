@@ -80,6 +80,9 @@ object OpenChannelInterceptor {
   private object PluginTimeoutError extends ErrorResponse {
     override def toString: String = "plugin timeout"
   }
+  private case class PluginRejectedError(error: Error) extends ErrorResponse {
+    override def toString: String = error.toAscii
+  }
   // @formatter:on
 
   /** DefaultParams are a subset of ChannelData.LocalParams that can be modified by an InterceptOpenChannelPlugin */
@@ -205,7 +208,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
           peer ! SpawnChannelNonInitiator(nonInitiator.open, channelConfig, channelType, localParams1, nonInitiator.peerConnection.toClassic)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
-          peer ! Peer.OutgoingMessage(pluginResponse.error, nonInitiator.peerConnection.toClassic)
+          sendFailure(PluginRejectedError(pluginResponse.error), nonInitiator)
           waitForRequest()
         case PluginTimeout =>
           context.log.error(s"timed out while waiting for plugin: ${plugin.name}")
