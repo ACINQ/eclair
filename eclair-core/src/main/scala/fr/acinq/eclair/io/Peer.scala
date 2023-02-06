@@ -182,9 +182,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         }
 
       case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, peerConnection), d: ConnectedData) =>
+        val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
           val channel = spawnChannel(None)
-          val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
           log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
           open match {
             case Left(open) =>
@@ -197,7 +197,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
           }
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         } else {
-          // we got disconnected or reconnected and this message was for the previous connection
+          log.warning("ignoring open_channel request that reconnected during channel intercept, temporaryChannelId={}", temporaryChannelId)
+          context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
           stay()
         }
 

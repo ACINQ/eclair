@@ -35,6 +35,7 @@ import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.localParams
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.{Tag, TestData}
@@ -672,6 +673,18 @@ class PeerSpec extends FixtureSpec {
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.RelayUnknownMessage(unknownMessage))
     peerConnection.expectMsgType[UnknownMessage]
+  }
+
+  test("abort channel open request if peer reconnects before channel is accepted") { f =>
+    import f._
+    val probe = TestProbe()
+    val open = createOpenChannelMessage()
+    system.eventStream.subscribe(probe.ref, classOf[ChannelAborted])
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), localParams, ActorRef.noSender)
+    val channelAborted = probe.expectMsgType[ChannelAborted]
+    assert(channelAborted.remoteNodeId == remoteNodeId)
+    assert(channelAborted.channelId == open.temporaryChannelId)
   }
 }
 
