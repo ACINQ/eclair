@@ -317,14 +317,14 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
       .typecase(0x02, provide(RemoteFundingStatus.Locked))
 
-    val paramsCodec: Codec[Params] = (
+    val paramsCodec: Codec[ChannelParams] = (
       ("channelId" | bytes32) ::
         ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
           ("localParams" | localParamsCodec(channelFeatures)) ::
             ("remoteParams" | remoteParamsCodec(channelFeatures)) ::
             ("channelFlags" | channelflags)
-        })).as[Params]
+        })).as[ChannelParams]
 
     val waitForRevCodec: Codec[WaitForRev] = (
       ("sent" | lengthDelimited(commitSigCodec)) ::

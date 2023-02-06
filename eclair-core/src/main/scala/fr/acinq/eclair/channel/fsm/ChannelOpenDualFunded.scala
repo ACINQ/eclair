@@ -212,15 +212,15 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             minDepth_opt = minDepth_opt,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
           )
-          val commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
+          val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
           val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
-            commitmentParams, purpose,
+            channelParams, purpose,
             localPushAmount = accept.pushAmount, remotePushAmount = open.pushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, commitmentParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, None) sending accept
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, None) sending accept
       }
 
     case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
@@ -279,15 +279,15 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             minDepth_opt = minDepth_opt,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
           )
-          val commitmentParams = Params(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
+          val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
-            commitmentParams, purpose,
+            channelParams, purpose,
             localPushAmount = d.lastSent.pushAmount, remotePushAmount = accept.pushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, commitmentParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, None)
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, None)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
@@ -350,7 +350,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           remoteNextCommitInfo = Right(d.secondRemotePerCommitmentPoint),
           remotePerCommitmentSecrets = ShaChain.init
         )
-        val metaCommitments = MetaCommitments(d.commitmentParams, common, commitment :: Nil)
+        val metaCommitments = MetaCommitments(d.channelParams, common, commitment :: Nil)
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
         fundingTx.sharedTx match {
           case sharedTx: PartiallySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending sharedTx.localSigs
@@ -465,7 +465,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               )
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 nodeParams, fundingParams,
-                commitmentParams = d.metaCommitments.params,
+                channelParams = d.metaCommitments.params,
                 purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.commitments.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
@@ -501,7 +501,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
-            commitmentParams = d.metaCommitments.params,
+            channelParams = d.metaCommitments.params,
             purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.commitments.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))

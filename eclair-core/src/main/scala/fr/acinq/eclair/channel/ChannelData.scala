@@ -463,21 +463,21 @@ final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_I
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: Params,
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
                                                 remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
-final case class DATA_WAIT_FOR_FUNDING_CREATED(params: Params,
+final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
                                                commitTxFeerate: FeeratePerKw,
                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: Params,
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               fundingTx: Transaction,
                                               fundingTxFee: Satoshi,
                                               localSpec: CommitmentSpec,
@@ -502,7 +502,7 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
   val channelId: ByteVector32 = lastSent.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
-                                                    commitmentParams: Params,
+                                                    channelParams: ChannelParams,
                                                     secondRemotePerCommitmentPoint: PublicKey,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,

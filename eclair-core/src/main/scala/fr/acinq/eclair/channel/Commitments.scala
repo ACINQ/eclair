@@ -63,7 +63,7 @@ case class Commitments(channelId: ByteVector32,
 
   def nextRemoteCommit_opt: Option[RemoteCommit] = remoteNextCommitInfo.swap.toOption.map(_.nextRemoteCommit)
 
-  def params: Params = Params(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
+  def params: ChannelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
 
   def common: Common = Common(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId, localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
 
@@ -125,7 +125,7 @@ case class Commitments(channelId: ByteVector32,
 object Commitments {
 
   /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
-  def apply(params: Params, common: Common, commitment: Commitment): Commitments = Commitments(
+  def apply(params: ChannelParams, common: Common, commitment: Commitment): Commitments = Commitments(
     channelId = params.channelId,
     channelConfig = params.channelConfig,
     channelFeatures = params.channelFeatures,
