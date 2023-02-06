@@ -87,7 +87,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState
       .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
       .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
-      .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> add.origin)))
+      .modify(_.metaCommitments.originChannels).setTo(Map(0L -> add.origin)))
   }
 
   test("recv CMD_ADD_HTLC (empty origin)") { f =>
@@ -125,7 +125,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState
       .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
       .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
-      .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> cmd.origin)))
+      .modify(_.metaCommitments.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
   test("recv CMD_ADD_HTLC (trampoline relayed htlc)") { f =>
@@ -144,7 +144,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState
       .modify(_.metaCommitments.changes.localNextHtlcId).setTo(1)
       .modify(_.metaCommitments.changes.localChanges.proposed).setTo(htlc :: Nil)
-      .modify(_.metaCommitments.common.originChannels).setTo(Map(0L -> cmd.origin)))
+      .modify(_.metaCommitments.originChannels).setTo(Map(0L -> cmd.origin)))
   }
 
   test("recv CMD_ADD_HTLC (expiry too small)") { f =>

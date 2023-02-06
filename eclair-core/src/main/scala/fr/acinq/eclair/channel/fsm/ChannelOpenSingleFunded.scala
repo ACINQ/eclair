@@ -279,7 +279,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val params1 = params.copy(channelId = channelId)
               val common = Common(
                 localCommitIndex = 0L, remoteCommitIndex = 0L,
-                originChannels = Map.empty,
                 remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                 remotePerCommitmentSecrets = ShaChain.init
               )
@@ -289,7 +288,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteSig), htlcTxsAndRemoteSigs = Nil),
                 remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
                 nextRemoteCommit_opt = None)
-              val metaCommitments = MetaCommitments(params1, common, CommitmentChanges.init(), List(commitment))
+              val metaCommitments = MetaCommitments(params1, common, CommitmentChanges.init(), List(commitment), Map.empty)
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
               txPublisher ! SetChannelId(remoteNodeId, channelId)
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
@@ -325,7 +324,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Success(_) =>
           val common = Common(
             localCommitIndex = 0L, remoteCommitIndex = 0L,
-            originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
             remotePerCommitmentSecrets = ShaChain.init
           )
@@ -336,7 +334,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             remoteCommit = remoteCommit,
             nextRemoteCommit_opt = None
           )
-          val metaCommitments = MetaCommitments(params, common, CommitmentChanges.init(), List(commitment))
+          val metaCommitments = MetaCommitments(params, common, CommitmentChanges.init(), List(commitment), Map.empty)
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")

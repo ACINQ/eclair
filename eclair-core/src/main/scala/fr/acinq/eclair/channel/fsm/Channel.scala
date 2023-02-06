@@ -716,7 +716,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.metaCommitments.params.maxHtlcAmount, isPrivate = !d.metaCommitments.announceChannel, enable = false)
         // NB: the htlcs stay() in the commitments.localChange, they will be cleaned up after reconnection
         d.metaCommitments.changes.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.common.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
         }
         goto(OFFLINE) using d.copy(channelUpdate = channelUpdate1) storing()
       } else {
@@ -1139,7 +1139,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       log.debug(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.metaCommitments.latest.localCommit, tx)
       extracted.foreach { case (htlc, preimage) =>
-        d.metaCommitments.common.originChannels.get(htlc.id) match {
+        d.metaCommitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
             log.info(s"fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} origin=$origin")
             relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
@@ -1187,7 +1187,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
       }
       timedOutHtlcs.foreach { add =>
-        d.metaCommitments.common.originChannels.get(add.id) match {
+        d.metaCommitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
             relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
@@ -1198,7 +1198,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
       Closing.overriddenOutgoingHtlcs(d, tx).foreach { add =>
-        d.metaCommitments.common.originChannels.get(add.id) match {
+        d.metaCommitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
             relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
@@ -1210,7 +1210,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
         .onChainOutgoingHtlcs(d.metaCommitments.latest.localCommit, d.metaCommitments.latest.remoteCommit, d.metaCommitments.latest.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
-        .map(add => (add, d.metaCommitments.common.originChannels.get(add.id).collect { case o: Origin.Local => o.id })) // we resolve the payment id if this was a local payment
+        .map(add => (add, d.metaCommitments.originChannels.get(add.id).collect { case o: Origin.Local => o.id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // then let's see if any of the possible close scenarios can be considered done
       val closingType_opt = Closing.isClosed(d1, Some(tx))
@@ -1745,7 +1745,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       (nextStateData: @unchecked) match {
         case d: DATA_CLOSING =>
           d.metaCommitments.changes.localChanges.proposed.collect {
-            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.common.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
+            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.metaCommitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
           }
       }
   }

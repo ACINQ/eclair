@@ -334,7 +334,6 @@ private[channel] object ChannelCodecs4 {
     val commonCodec: Codec[Common] = (
       ("localCommitIndex" | uint64overflow) ::
         ("remoteCommitIndex" | uint64overflow) ::
-        ("originChannels" | originsMapCodec) ::
         ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
         ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
       ).as[Common]
@@ -358,6 +357,7 @@ private[channel] object ChannelCodecs4 {
         ("common" | commonCodec) ::
         ("changes" | changesCodec) ::
         ("commitments" | listOfN(uint16, commitmentCodec)) ::
+        ("originChannels" | originsMapCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
       ).as[MetaCommitments]
 

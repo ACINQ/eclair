@@ -503,7 +503,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, aliceCommitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.common.originChannels(htlc.id)
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)
@@ -558,7 +558,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.commitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.common.originChannels(htlc.id)
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)
@@ -632,7 +632,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.common.originChannels(htlc.id)
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(2 seconds)

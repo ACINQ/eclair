@@ -55,7 +55,6 @@
     "common" : {
       "localCommitIndex" : 7675,
       "remoteCommitIndex" : 7779,
-      "originChannels" : { },
       "remoteNextCommitInfo" : "034dcc0704325064a1fa68edc13adb5fd173051775df73a298ec291f22ad9d19f6",
       "remotePerCommitmentSecrets" : null
     },
@@ -112,7 +111,8 @@
         "txid" : "ac994c4f64875ab22b45cba175a04cec4051bbe660932570744dad822e6bf8be",
         "remotePerCommitmentPoint" : "03daadaed37bcfed40d15e34979fbf2a0643e748e8960363bb8e930cefe2255c35"
       }
-    } ]
+    } ],
+    "originChannels" : { }
   },
   "shortIds" : {
     "real" : {

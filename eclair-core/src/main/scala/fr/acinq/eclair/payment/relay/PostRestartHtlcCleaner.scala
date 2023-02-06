@@ -407,7 +407,7 @@ object PostRestartHtlcCleaner {
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
-        c.metaCommitments.common.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
+        c.metaCommitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
     groupByOrigin(htlcsOut, htlcsIn)
   }

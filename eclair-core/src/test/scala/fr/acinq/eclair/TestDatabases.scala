@@ -67,8 +67,7 @@ object TestDatabases {
         case c: Origin.Cold => c
       }
 
-      def freeze2(input: MetaCommitments): MetaCommitments = input
-        .modifyAll(_.common.originChannels.each).using(freeze1)
+      def freeze2(input: MetaCommitments): MetaCommitments = input.modifyAll(_.originChannels.each).using(freeze1)
 
       // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
       // serialized and deserialized we need to turn "hot" payments into cold ones

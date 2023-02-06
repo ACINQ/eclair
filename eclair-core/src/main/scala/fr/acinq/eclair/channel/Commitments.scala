@@ -59,7 +59,7 @@ case class Commitments(channelId: ByteVector32,
 
   def params: ChannelParams = ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags)
 
-  def common: Common = Common(localCommit.index, remoteCommit.index, originChannels, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
+  def common: Common = Common(localCommit.index, remoteCommit.index, remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap, remotePerCommitmentSecrets)
 
   def changes: CommitmentChanges = CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId)
 
@@ -121,7 +121,7 @@ case class Commitments(channelId: ByteVector32,
 object Commitments {
 
   /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
-  def apply(params: ChannelParams, common: Common, changes: CommitmentChanges, commitment: Commitment): Commitments = Commitments(
+  def apply(params: ChannelParams, common: Common, changes: CommitmentChanges, commitment: Commitment, originChannels: Map[Long, Origin]): Commitments = Commitments(
     channelId = params.channelId,
     channelConfig = params.channelConfig,
     channelFeatures = params.channelFeatures,
@@ -134,7 +134,7 @@ object Commitments {
     remoteChanges = changes.remoteChanges,
     localNextHtlcId = changes.localNextHtlcId,
     remoteNextHtlcId = changes.remoteNextHtlcId,
-    originChannels = common.originChannels,
+    originChannels = originChannels,
     remoteNextCommitInfo = common.remoteNextCommitInfo.swap.map(waitForRev => WaitingForRevocation(commitment.nextRemoteCommit_opt.get, waitForRev.sent, waitForRev.sentAfterLocalCommitIndex)).swap,
     localFundingStatus = commitment.localFundingStatus,
     remoteFundingStatus = commitment.remoteFundingStatus,

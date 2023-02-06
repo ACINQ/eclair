@@ -234,7 +234,7 @@ object CheckBalance {
                   }
               }
               r.modify(_.closing.mutualCloseBalance.toLocal).using(_ + (mutualClose.tx.txid -> amount))
-            case Some(localClose: LocalClose) => r.modify(_.closing.localCloseBalance).using(updatePossiblyPublishedBalance(computeLocalCloseBalance(d.metaCommitments.changes, localClose, d.metaCommitments.common.originChannels, knownPreimages)))
+            case Some(localClose: LocalClose) => r.modify(_.closing.localCloseBalance).using(updatePossiblyPublishedBalance(computeLocalCloseBalance(d.metaCommitments.changes, localClose, d.metaCommitments.originChannels, knownPreimages)))
             case _ if d.remoteCommitPublished.nonEmpty || d.nextRemoteCommitPublished.nonEmpty =>
               // We have seen the remote commit, it may or may not have been confirmed. We may have published our own
               // local commit too, which may take precedence. But if we are aware of the remote commit, it means that
