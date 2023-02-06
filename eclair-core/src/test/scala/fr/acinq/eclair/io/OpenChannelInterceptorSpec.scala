@@ -19,12 +19,13 @@ package fr.acinq.eclair.io
 import akka.actor
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
+import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, DeterministicWallet, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
+import fr.acinq.eclair.channel.{ChannelAborted, ChannelFlags, LocalParams}
 import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.Peer.{ChannelId, OutgoingMessage, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
@@ -60,12 +61,14 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     }
     val pluginParams = TestConstants.Alice.nodeParams.pluginParams :+ plugin
     val nodeParams = TestConstants.Alice.nodeParams.copy(pluginParams = pluginParams)
+    val eventListener = TestProbe[ChannelAborted]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
 
     val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, nodeParams, wallet, pendingChannelsRateLimiter.ref, 10 millis))
-    withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor, pendingChannelsRateLimiter, peerConnection)))
+    withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor, pendingChannelsRateLimiter, peerConnection, eventListener)))
   }
 
-  case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any])
+  case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any], eventListener: TestProbe[ChannelAborted])
 
   test("reject channel open if timeout waiting for plugin to respond") { f =>
     import f._
@@ -75,6 +78,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived]
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("plugin timeout"))
+    eventListener.expectMessageType[ChannelAborted]
   }
 
   test("continue channel open if pending channels rate limiter and interceptor plugin accept it") { f =>
@@ -113,6 +117,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! RejectOpenChannel(temporaryChannelId, Error(temporaryChannelId, "rejected"))
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejected"))
+    eventListener.expectMessageType[ChannelAborted]
   }
 
   test("reject open channel request if pending channels rate limit reached") { f =>
@@ -122,6 +127,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rate limit reached"))
+    eventListener.expectMessageType[ChannelAborted]
   }
 
   test("reject open channel request if concurrent request in progress") { f =>
@@ -142,5 +148,6 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // original request accepted after plugin accepts it
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(temporaryChannelId, defaultParams)
     peer.expectMessageType[SpawnChannelNonInitiator]
+    eventListener.expectMessageType[ChannelAborted]
   }
 }

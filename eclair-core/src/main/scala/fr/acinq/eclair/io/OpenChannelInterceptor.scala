@@ -16,7 +16,9 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor
 import akka.actor.Status
+import akka.actor.typed.eventstream.EventStream.Publish
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
@@ -219,6 +221,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def sendFailure(error: ErrorResponse, nonInitiator: OpenChannelNonInitiator): Unit = {
     peer ! Peer.OutgoingMessage(Error(nonInitiator.temporaryChannelId, error.toString), nonInitiator.peerConnection.toClassic)
+    context.system.eventStream ! Publish(ChannelAborted(actor.ActorRef.noSender, nonInitiator.remoteNodeId, nonInitiator.temporaryChannelId))
   }
 
   private def receiveCommandMessage[B <: Command : ClassTag](context: ActorContext[Command], stateName: String)(f: B => Behavior[Command]): Behavior[Command] = {
