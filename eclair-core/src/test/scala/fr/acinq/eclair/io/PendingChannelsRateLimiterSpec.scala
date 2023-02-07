@@ -24,6 +24,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.PendingChannelsRateLimiter.{AcceptOpenChannel, AddOrRejectChannel, ChannelRateLimited}
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec._
 import fr.acinq.eclair.wire.protocol._
@@ -112,7 +113,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     // reject third channel open from private node
     limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, channelId)
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    probe.expectMessage(ChannelRateLimited)
   }
 
   test("after restore accept channel open from new public node") { f =>
@@ -124,9 +125,9 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
     // accept open channel with different node id as the restored pending public channel
     val otherRemoteNodeId = PrivateKey(randomBytes32()).publicKey
-    restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, otherRemoteNodeId, randomBytes32())
+    restoredLimiter ! AddOrRejectChannel(probe.ref, otherRemoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(otherRemoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
   }
 
   test("after restore accept channel from new private node channel id") { f =>
@@ -138,9 +139,9 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
 
     // accept open channel with different channel id as the restored pending private channel
-    restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    restoredLimiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
   }
 
   test("after restore only reject channel open from public node above rate limit") { f =>
@@ -152,15 +153,15 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
 
     // reject new open channel from same node id as the restored pending public channel
-    restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    restoredLimiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    probe.expectMessage(ChannelRateLimited)
 
     // accept new open channel from different node id as the restored pending public channel
     val otherRemoteNodeId = PrivateKey(randomBytes32()).publicKey
-    restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, otherRemoteNodeId, randomBytes32())
+    restoredLimiter ! AddOrRejectChannel(probe.ref, otherRemoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(otherRemoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
   }
 
   test("after restore reject channel open from private node when above rate limit") { f =>
@@ -173,66 +174,66 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
 
     // reject new open channel from private node
-    restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    restoredLimiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    probe.expectMessage(ChannelRateLimited)
   }
 
   test("after channel id change and channel is opened, remote node is below rate limit") { f =>
     import f._
 
     // accept one channel from a public node
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
 
     // change temporary channel id
     system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, remoteNodeId, temporaryChannelId, channelId))
     eventListener.expectMessageType[ChannelIdAssigned]
 
     // reject new channel from same node id until under rate limit
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    probe.expectMessage(ChannelRateLimited)
 
     // remove new channel id
     system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, remoteNodeId, channelId))
     eventListener.expectMessageType[ChannelOpened]
 
     // accept new channel from same node id
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
   }
 
   test("after channel id change and channel aborted, private nodes are below rate limit") { f =>
     import f._
 
     // accept two channels from private node
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, temporaryChannelId)
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    probe.expectMessage(AcceptOpenChannel)
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
 
     // change temporary channel id from private node
     system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, remoteNodeId, temporaryChannelId, channelId))
     eventListener.expectMessageType[ChannelIdAssigned]
 
     // reject new channel from private node (over rate limit)
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    probe.expectMessage(ChannelRateLimited)
 
     // remove channel from private node
     system.eventStream ! Publish(ChannelAborted(TestProbe[Any]().ref.toClassic, remoteNodeId, channelId))
     eventListener.expectMessageType[ChannelAborted]
 
     // accept new channel from private node
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(remoteNodeId)
-    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+    probe.expectMessage(AcceptOpenChannel)
   }
 
   test("after restore, accept more channels after a pending channel is opened/closed/aborted") { f =>
@@ -253,18 +254,18 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       ChannelAborted(TestProbe[Any]().ref.toClassic, remoteNodeId, channelId)
     ).foreach { e =>
       // reject new public channel from same node id
-      restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+      restoredLimiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
       router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-      probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+      probe.expectMessage(ChannelRateLimited)
 
       // remove pending public channel from rate limiter
       system.eventStream ! Publish(e)
       eventListener.expectMessageType[ChannelEvent]
 
       // accept new channel from same public node id
-      restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, remoteNodeId, channelId)
+      restoredLimiter ! AddOrRejectChannel(probe.ref, remoteNodeId, channelId)
       router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
-      probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+      probe.expectMessage(AcceptOpenChannel)
     }
 
     Seq(
@@ -273,19 +274,28 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       ChannelAborted(TestProbe[Any]().ref.toClassic, randomNodeId(), temporaryChannelId)
     ).foreach { e =>
       // reject new private channel
-      restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+      restoredLimiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
       router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
-      probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+      probe.expectMessage(ChannelRateLimited)
 
       // remove pending private channel from rate limiter
       system.eventStream ! Publish(e)
       eventListener.expectMessageType[ChannelEvent]
 
       // accept new private channel
-      restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomNodeId(), temporaryChannelId)
+      restoredLimiter ! AddOrRejectChannel(probe.ref, randomNodeId(), temporaryChannelId)
       router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
-      probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+      probe.expectMessage(AcceptOpenChannel)
     }
   }
 
+  test("reject any requests that come in during the restore") { f =>
+    import f._
+
+    val restoredLimiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, Seq(publicPending, privatePending(channelId = temporaryChannelId), privatePending())))
+    router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
+
+    restoredLimiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    probe.expectMessage(ChannelRateLimited)
+  }
 }

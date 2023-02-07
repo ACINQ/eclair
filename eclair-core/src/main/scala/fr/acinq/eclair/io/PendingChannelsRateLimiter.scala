@@ -60,6 +60,9 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
         val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(d._2.head.channelId, r, None))
         router ! GetNode(adapter, d._1)
         Behaviors.receiveMessagePartial[Command] {
+          case AddOrRejectChannel(replyTo, _, _) =>
+            replyTo ! ChannelRateLimited
+            Behaviors.same
           case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
             restoring(channels.tail, pendingPeerChannels + (announcement.nodeId -> d._2.map(_.channelId)), pendingPrivateNodeChannels)
           case WrappedGetNodeResponse(_, UnknownNode(_), _) =>
