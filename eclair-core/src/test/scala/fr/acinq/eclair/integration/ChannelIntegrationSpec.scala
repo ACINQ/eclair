@@ -672,7 +672,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(initialStateDataF.metaCommitments.params.channelType == expectedChannelType)
-    val initialCommitmentIndex = initialStateDataF.metaCommitments.common.localCommitIndex
+    val initialCommitmentIndex = initialStateDataF.metaCommitments.localCommitIndex
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
     val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.metaCommitments.params.remoteParams.paymentBasepoint))
@@ -701,7 +701,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    val commitmentIndex = stateDataF.metaCommitments.common.localCommitIndex
+    val commitmentIndex = stateDataF.metaCommitments.localCommitIndex
     val commitTx = stateDataF.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 

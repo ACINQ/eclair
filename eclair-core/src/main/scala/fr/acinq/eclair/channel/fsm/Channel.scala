@@ -442,7 +442,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(c: CMD_SIGN, d: DATA_NORMAL) =>
-      d.metaCommitments.common.remoteNextCommitInfo match {
+      d.metaCommitments.remoteNextCommitInfo match {
         case _ if !d.metaCommitments.changes.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
@@ -576,7 +576,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           } else if (d.metaCommitments.changes.localHasUnsignedOutgoingHtlcs) { // do we have unsigned outgoing htlcs?
             require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
             // are we in the middle of a signature?
-            d.metaCommitments.common.remoteNextCommitInfo match {
+            d.metaCommitments.remoteNextCommitInfo match {
               case Left(_) =>
                 // we already have a signature in progress, will resign when we receive the revocation
                 ()
@@ -808,7 +808,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(c: CMD_SIGN, d: DATA_SHUTDOWN) =>
-      d.metaCommitments.common.remoteNextCommitInfo match {
+      d.metaCommitments.remoteNextCommitInfo match {
         case _ if !d.metaCommitments.changes.localHasChanges =>
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
@@ -1150,7 +1150,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
-        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.common.remotePerCommitmentSecrets, rev, tx, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)
+        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.remotePerCommitmentSecrets, rev, tx, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)
         penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
         penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, hints = Set(claimTx.tx.txid)))
         rev1
@@ -1272,15 +1272,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: PersistentChannelData) =>
       activeConnection = r
 
-      val remotePerCommitmentSecrets = d.metaCommitments.common.remotePerCommitmentSecrets
+      val remotePerCommitmentSecrets = d.metaCommitments.remotePerCommitmentSecrets
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val channelKeyPath = keyManager.keyPath(d.metaCommitments.params.localParams, d.metaCommitments.params.channelConfig)
-      val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.metaCommitments.common.localCommitIndex)
+      val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.metaCommitments.localCommitIndex)
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = d.metaCommitments.common.localCommitIndex + 1,
-        nextRemoteRevocationNumber = d.metaCommitments.common.remoteCommitIndex,
+        nextLocalCommitmentNumber = d.metaCommitments.localCommitIndex + 1,
+        nextRemoteRevocationNumber = d.metaCommitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
       )
@@ -1335,7 +1335,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           var sendQueue = Queue.empty[LightningMessage]
           // normal case, our data is up-to-date
 
-          if (channelReestablish.nextLocalCommitmentNumber == 1 && d.metaCommitments.common.localCommitIndex == 0) {
+          if (channelReestablish.nextLocalCommitmentNumber == 1 && d.metaCommitments.localCommitIndex == 0) {
             // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
             log.debug("re-sending channelReady")
             val channelKeyPath = keyManager.keyPath(d.metaCommitments.params.localParams, d.metaCommitments.params.channelConfig)
@@ -1350,10 +1350,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // then we clean up unsigned updates
           val metaCommitments1 = d.metaCommitments.discardUnsignedUpdates()
 
-          metaCommitments1.common.remoteNextCommitInfo match {
+          metaCommitments1.remoteNextCommitInfo match {
             case Left(_) =>
               // we expect them to (re-)send the revocation immediately
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.common.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
+              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(metaCommitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
             case _ => ()
           }
 
@@ -1840,8 +1840,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: PersistentChannelData) = {
-    d.metaCommitments.common.remoteNextCommitInfo match {
-      case Left(_) if revocationTimeout.remoteCommitNumber + 1 == d.metaCommitments.common.nextRemoteCommitIndex =>
+    d.metaCommitments.remoteNextCommitInfo match {
+      case Left(_) if revocationTimeout.remoteCommitNumber + 1 == d.metaCommitments.nextRemoteCommitIndex =>
         log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
         revocationTimeout.peer ! Peer.Disconnect(remoteNodeId)
       case _ => ()

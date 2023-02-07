@@ -418,7 +418,6 @@ object Helpers {
         toRemote = remoteFundingAmount.toMilliSatoshi + localPushAmount - remotePushAmount,
         commitTxFeerate, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, commitmentIndex = 0)
 
-
     /**
      * This creates commitment transactions for both sides at an arbitrary `commitmentIndex`. There are no htlcs, only
      * local/remote balances are provided.
@@ -485,8 +484,8 @@ object Helpers {
 
       // step 2: we check the remote commitment
       def checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
-        metaCommitments.common.remoteNextCommitInfo match {
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == metaCommitments.common.nextRemoteCommitIndex =>
+        metaCommitments.remoteNextCommitInfo match {
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == metaCommitments.nextRemoteCommitIndex =>
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = metaCommitments.changes.localChanges.signed
@@ -494,54 +493,54 @@ object Helpers {
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates :+ commitSig)
-              case Some(revocation) if metaCommitments.common.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
+              case Some(revocation) if metaCommitments.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
                 SyncResult.Success(retransmit = signedUpdates :+ commitSig :+ revocation)
               case Some(revocation) =>
                 SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
             }
-          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.common.nextRemoteCommitIndex + 1) =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber < metaCommitments.common.nextRemoteCommitIndex =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber < metaCommitments.nextRemoteCommitIndex =>
             // they are behind
             SyncResult.RemoteLate
           case Left(_) =>
             // we are behind
             SyncResult.LocalLateUnproven(
-              ourRemoteCommitmentNumber = metaCommitments.common.nextRemoteCommitIndex,
+              ourRemoteCommitmentNumber = metaCommitments.nextRemoteCommitIndex,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
-          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.common.remoteCommitIndex + 1) =>
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.remoteCommitIndex + 1) =>
             // they have acknowledged the last commit_sig we sent
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (metaCommitments.common.remoteCommitIndex + 1) =>
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (metaCommitments.remoteCommitIndex + 1) =>
             // they are behind
             SyncResult.RemoteLate
           case Right(_) =>
             // we are behind
             SyncResult.LocalLateUnproven(
-              ourRemoteCommitmentNumber = metaCommitments.common.remoteCommitIndex,
+              ourRemoteCommitmentNumber = metaCommitments.remoteCommitIndex,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
         }
       }
 
       // step 1: we check our local commitment
-      if (metaCommitments.common.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber) {
+      if (metaCommitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber) {
         // our local commitment is in sync, let's check the remote commitment
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = None)
-      } else if (metaCommitments.common.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+      } else if (metaCommitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
         // they just sent a new commit_sig, we have received it but they didn't receive our revocation
         val channelKeyPath = keyManager.keyPath(metaCommitments.params.localParams, metaCommitments.params.channelConfig)
-        val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, metaCommitments.common.localCommitIndex - 1)
-        val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, metaCommitments.common.localCommitIndex + 1)
+        val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, metaCommitments.localCommitIndex - 1)
+        val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, metaCommitments.localCommitIndex + 1)
         val revocation = RevokeAndAck(
           channelId = metaCommitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
           nextPerCommitmentPoint = localNextPerCommitmentPoint
         )
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
-      } else if (metaCommitments.common.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+      } else if (metaCommitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
         SyncResult.RemoteLate
       } else {
         // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
@@ -549,13 +548,13 @@ object Helpers {
         val channelKeyPath = keyManager.keyPath(metaCommitments.params.localParams, metaCommitments.params.channelConfig)
         if (keyManager.commitmentSecret(channelKeyPath, remoteChannelReestablish.nextRemoteRevocationNumber - 1) == remoteChannelReestablish.yourLastPerCommitmentSecret) {
           SyncResult.LocalLateProven(
-            ourLocalCommitmentNumber = metaCommitments.common.localCommitIndex,
+            ourLocalCommitmentNumber = metaCommitments.localCommitIndex,
             theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber
           )
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
           SyncResult.RemoteLying(
-            ourLocalCommitmentNumber = metaCommitments.common.localCommitIndex,
+            ourLocalCommitmentNumber = metaCommitments.localCommitIndex,
             theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber,
             invalidPerCommitmentSecret = remoteChannelReestablish.yourLastPerCommitmentSecret
           )

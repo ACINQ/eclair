@@ -284,8 +284,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localCommitIndex == 4)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.common.localCommitIndex == 4)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.localCommitIndex == 4)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.localCommitIndex == 4)
   }
 
   test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates)) { f =>
@@ -819,12 +819,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceCommitments = alice.stateData.asInstanceOf[PersistentChannelData].metaCommitments
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
       TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.params.localParams, aliceCommitments.params.channelConfig),
-      aliceCommitments.common.localCommitIndex)
+      aliceCommitments.localCommitIndex)
 
     val bobCommitments = bob.stateData.asInstanceOf[PersistentChannelData].metaCommitments
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
       TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
-      bobCommitments.common.localCommitIndex)
+      bobCommitments.localCommitIndex)
 
     (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint)
   }

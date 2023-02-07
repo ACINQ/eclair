@@ -67,12 +67,6 @@
         "announceChannel" : false
       }
     },
-    "common" : {
-      "localCommitIndex" : 0,
-      "remoteCommitIndex" : 0,
-      "remoteNextCommitInfo" : "02a7d9d163632731c7211ced4ee21ae181bb0dfa73f5538607c081dd63d89f9820",
-      "remotePerCommitmentSecrets" : null
-    },
     "changes" : {
       "localChanges" : {
         "proposed" : [ ],
@@ -127,6 +121,8 @@
         "remotePerCommitmentPoint" : "037d0b91e7bf58eec2eddf033d457b17140a341533808a346c869ada9ecea0cec0"
       }
     } ],
+    "remoteNextCommitInfo" : "02a7d9d163632731c7211ced4ee21ae181bb0dfa73f5538607c081dd63d89f9820",
+    "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
   },
   "shortIds" : {

@@ -332,7 +332,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo.isLeft)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo.isLeft)
   }
 
   test("recv CMD_SIGN (no changes)") { f =>
@@ -351,13 +351,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     bob2alice.expectMsgType[CommitSig]
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo.isLeft)
-    val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo.left.toOption.get
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo.isLeft)
+    val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo.left.toOption.get
 
     // actual test starts here
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectNoMessage(300 millis)
-    assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo == Left(waitForRevocation))
+    assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo == Left(waitForRevocation))
   }
 
   test("recv CommitSig") { f =>
@@ -441,7 +441,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
-    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo.isLeft)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo.isLeft)
     bob ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
@@ -454,7 +454,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv RevokeAndAck (unexpectedly)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.common.remoteNextCommitInfo.isRight)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].metaCommitments.remoteNextCommitInfo.isRight)
     alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)

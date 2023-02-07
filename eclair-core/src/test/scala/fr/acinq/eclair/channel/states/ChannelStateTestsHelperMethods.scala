@@ -418,8 +418,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
-    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
-    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
+    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex
+    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex
     val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
@@ -437,17 +437,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == sCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == rCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.remoteCommitIndex == sCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex == rCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.remoteCommitIndex == rCommitIndex + 1)
       }
     } else {
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == sCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == rCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.remoteCommitIndex == sCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.localCommitIndex == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.remoteCommitIndex == rCommitIndex + 1)
       }
     }
   }

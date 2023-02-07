@@ -139,15 +139,6 @@ object CommitmentChanges {
   }
 }
 
-case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
-
-/** Dynamic values shared by all commitments, independently of the funding tx. */
-case class Common(localCommitIndex: Long, remoteCommitIndex: Long,
-                  remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
-                  remotePerCommitmentSecrets: ShaChain) {
-  val nextRemoteCommitIndex = remoteCommitIndex + 1
-}
-
 /** A minimal commitment for a given funding tx. */
 case class Commitment(localFundingStatus: LocalFundingStatus,
                       remoteFundingStatus: RemoteFundingStatus,
@@ -385,14 +376,17 @@ object Commitment {
   }
 }
 
+case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
+
 /**
  * @param commitments           all potentially valid commitments
  * @param remoteChannelData_opt peer backup
  */
 case class MetaCommitments(params: ChannelParams,
-                           common: Common,
                            changes: CommitmentChanges,
                            commitments: List[Commitment],
+                           remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
+                           remotePerCommitmentSecrets: ShaChain,
                            originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                            remoteChannelData_opt: Option[ByteVector] = None) {
 
@@ -405,11 +399,16 @@ case class MetaCommitments(params: ChannelParams,
   val remoteNodeId: PublicKey = params.remoteNodeId
   val announceChannel: Boolean = params.announceChannel
 
+  // Commitment numbers are the same for all active commitments.
+  val localCommitIndex = commitments.head.localCommit.index
+  val remoteCommitIndex = commitments.head.remoteCommit.index
+  val nextRemoteCommitIndex = remoteCommitIndex + 1
+
   lazy val availableBalanceForSend: MilliSatoshi = commitments.map(_.availableBalanceForSend(params, changes)).min
   lazy val availableBalanceForReceive: MilliSatoshi = commitments.map(_.availableBalanceForReceive(params, changes)).min
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest = Commitments(params, common, changes, commitments.head, originChannels)
+  val latest = Commitments(params, changes, commitments.head, remoteNextCommitInfo, remotePerCommitmentSecrets, originChannels)
 
   def add(commitment: Commitment): MetaCommitments = copy(commitments = commitment +: commitments)
 
@@ -745,7 +744,7 @@ case class MetaCommitments(params: ChannelParams,
   }
 
   def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, CommitSig)] = {
-    common.remoteNextCommitInfo match {
+    remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges =>
         Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
@@ -777,8 +776,8 @@ case class MetaCommitments(params: ChannelParams,
             localChanges = changes.localChanges.copy(proposed = Nil, signed = changes.localChanges.proposed),
             remoteChanges = changes.remoteChanges.copy(acked = Nil, signed = changes.remoteChanges.acked),
           ),
-          common = common.copy(remoteNextCommitInfo = Left(WaitForRev(commitSig, common.localCommitIndex))),
           commitments = commitments1,
+          remoteNextCommitInfo = Left(WaitForRev(commitSig, localCommitIndex))
         )
         Right(metaCommitments1, commitSig)
       case Left(_) =>
@@ -853,8 +852,8 @@ case class MetaCommitments(params: ChannelParams,
     })
 
     // we will send our revocation preimage + our next revocation hash
-    val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, common.localCommitIndex)
-    val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, common.localCommitIndex + 2)
+    val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, localCommitIndex)
+    val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 2)
     val revocation = RevokeAndAck(
       channelId = channelId,
       perCommitmentSecret = localPerCommitmentSecret,
@@ -866,7 +865,6 @@ case class MetaCommitments(params: ChannelParams,
         localChanges = changes.localChanges.copy(acked = Nil),
         remoteChanges = changes.remoteChanges.copy(proposed = Nil, acked = changes.remoteChanges.acked ++ changes.remoteChanges.proposed),
       ),
-      common = common.copy(localCommitIndex = common.localCommitIndex + 1),
       commitments = commitments1
     )
 
@@ -875,7 +873,7 @@ case class MetaCommitments(params: ChannelParams,
 
   def receiveRevocation(revocation: RevokeAndAck, maxDustExposure: Satoshi): Either[ChannelException, (MetaCommitments, Seq[PostRevocationAction])] = {
     // we receive a revocation because we just sent them a sig for their next commit tx
-    common.remoteNextCommitInfo match {
+    remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.head.remoteCommit.remotePerCommitmentPoint =>
         Left(InvalidRevocation(channelId))
       case Left(_) =>
@@ -946,12 +944,9 @@ case class MetaCommitments(params: ChannelParams,
             localChanges = changes.localChanges.copy(signed = Nil, acked = changes.localChanges.acked ++ changes.localChanges.signed),
             remoteChanges = changes.remoteChanges.copy(signed = Nil),
           ),
-          common = common.copy(
-            remoteCommitIndex = common.remoteCommitIndex + 1,
-            remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-            remotePerCommitmentSecrets = common.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - common.remoteCommitIndex),
-          ),
           commitments = commitments1,
+          remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+          remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommitIndex),
           originChannels = originChannels1,
         )
         Right(metaCommitments1, actions)
@@ -1009,9 +1004,10 @@ object MetaCommitments {
   /** A 1:1 conversion helper to facilitate migration, nothing smart here. */
   def apply(commitments: Commitments): MetaCommitments = MetaCommitments(
     params = commitments.params,
-    common = commitments.common,
     changes = commitments.changes,
     commitments = commitments.commitment +: Nil,
+    remoteNextCommitInfo = commitments.remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap,
+    remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
     originChannels = commitments.originChannels,
   )
 

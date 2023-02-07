@@ -491,9 +491,10 @@ object CommitmentsSpec {
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey)
     MetaCommitments(
       ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
-      Common(localCommitIndex = 0, remoteCommitIndex = 0, Right(randomKey().publicKey), ShaChain.init),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
       List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      Right(randomKey().publicKey),
+      ShaChain.init,
       Map.empty,
     )
   }
@@ -507,9 +508,10 @@ object CommitmentsSpec {
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey)
     MetaCommitments(
       ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
-      Common(localCommitIndex = 0, remoteCommitIndex = 0, Right(randomKey().publicKey), ShaChain.init),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
       List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      Right(randomKey().publicKey),
+      ShaChain.init,
       Map.empty,
     )
   }

@@ -116,7 +116,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
     blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
     val metaCommitments1 = metaCommitments
-      .modify(_.common.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
+      .modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
       .modify(_.commitments.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
     DATA_NORMAL(metaCommitments1, shortIds1, None, initialChannelUpdate, None, None, None)
   }

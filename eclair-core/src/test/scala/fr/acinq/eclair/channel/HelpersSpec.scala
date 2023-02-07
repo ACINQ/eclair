@@ -372,7 +372,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       DATA_CLOSING(
         metaCommitments = commitments
           .modify(_.commitments.at(0).nextRemoteCommit_opt).setTo(Some(commitments.commitments.head.remoteCommit))
-          .modify(_.common.remoteNextCommitInfo).setTo(Left(WaitForRev(null, 7))),
+          .modify(_.remoteNextCommitInfo).setTo(Left(WaitForRev(null, 7))),
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,

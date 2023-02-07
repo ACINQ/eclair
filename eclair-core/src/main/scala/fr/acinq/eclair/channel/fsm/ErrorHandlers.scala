@@ -295,7 +295,7 @@ trait ErrorHandlers extends CommonHandlers {
     val commitments = d.metaCommitments.latest
     log.warning(s"funding tx spent in txid=${tx.txid}")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.common.remotePerCommitmentSecrets, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey) match {
+    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.metaCommitments.params, d.metaCommitments.remotePerCommitmentSecrets, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitments.commitInput, tx, d.metaCommitments.params.localParams.isInitiator), "revoked-commit"))
