@@ -1,9 +1,8 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
@@ -11,9 +10,8 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.protocol.CommitSigTlv.{AlternativeCommitSig, AlternativeCommitSigsTlv}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
 import scodec.bits.ByteVector
@@ -77,13 +75,14 @@ case class ChannelParams(channelId: ByteVector32,
 
 }
 
+// @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
-
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
+// @formatter:on
 
 /** Changes are applied to all commitments, and must be be valid for all commitments. */
 case class CommitmentChanges(localChanges: LocalChanges, remoteChanges: RemoteChanges, localNextHtlcId: Long, remoteNextHtlcId: Long) {
@@ -139,10 +138,18 @@ object CommitmentChanges {
   }
 }
 
+// @formatter:off
+case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
+case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
+case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
+case class NextRemoteCommit(sig: CommitSig, commit: RemoteCommit)
+// @formatter:on
+
 /** A minimal commitment for a given funding tx. */
 case class Commitment(localFundingStatus: LocalFundingStatus,
                       remoteFundingStatus: RemoteFundingStatus,
-                      localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit]) {
+                      localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: ByteVector32 = commitInput.outPoint.txid
   val capacity: Satoshi = commitInput.txOut.amount
@@ -190,7 +197,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
   def availableBalanceForSend(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi = {
     import params._
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
+    val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localChannelReserve(params)).max(0 msat)
     if (localParams.isInitiator) {
@@ -260,7 +267,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
 
     localCommit.spec.htlcs.collect(DirectedHtlc.outgoing).filter(expired) ++
       remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired) ++
-      nextRemoteCommit_opt.toSeq.flatMap(_.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired).toSet)
+      nextRemoteCommit_opt.toSeq.flatMap(_.commit.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired).toSet)
   }
 
   /**
@@ -271,7 +278,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
+    localSigned <- nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -286,7 +293,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    localSigned <- nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -376,7 +383,7 @@ object Commitment {
   }
 }
 
-case class WaitForRev(sent: CommitSig, sentAfterLocalCommitIndex: Long)
+case class WaitForRev(sentAfterLocalCommitIndex: Long)
 
 /**
  * @param commitments           all potentially valid commitments
@@ -412,19 +419,15 @@ case class MetaCommitments(params: ChannelParams,
 
   def add(commitment: Commitment): MetaCommitments = copy(commitments = commitment +: commitments)
 
-  def hasNoPendingHtlcs: Boolean = commitments.head.hasNoPendingHtlcs
-
+  // @formatter:off
+  // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = commitments.head.hasNoPendingHtlcsOrFeeUpdate(changes)
-
   def hasPendingOrProposedHtlcs: Boolean = commitments.head.hasPendingOrProposedHtlcs(changes)
-
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = commitments.head.timedOutOutgoingHtlcs(currentHeight)
-
   def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = commitments.head.almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety)
-
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getOutgoingHtlcCrossSigned(htlcId)
-
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getIncomingHtlcCrossSigned(htlcId)
+  // @formatter:on
 
   /**
    * @param cmd add HTLC command
@@ -467,7 +470,7 @@ case class MetaCommitments(params: ChannelParams,
       }
 
       // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-      val remoteCommit1 = commitment.nextRemoteCommit_opt.getOrElse(commitment.remoteCommit)
+      val remoteCommit1 = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
       val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes1.remoteChanges.acked, changes1.localChanges.proposed)
       // the HTLC we are about to create is outgoing, but from their point of view it is incoming
       val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
@@ -743,12 +746,12 @@ case class MetaCommitments(params: ChannelParams,
     }
   }
 
-  def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, CommitSig)] = {
+  def sendCommit(keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, Seq[CommitSig])] = {
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges =>
         Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
-        val (commitments1, commitSigs) = commitments.map(c => {
+        val commitments1 = commitments.map(c => {
           // remote commitment will includes all local changes + remote acked changes
           val spec = CommitmentSpec.reduce(c.remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
           val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, c.remoteCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, remoteNextPerCommitmentPoint, spec)
@@ -762,30 +765,27 @@ case class MetaCommitments(params: ChannelParams,
           log.info(s"built remote commit number=${c.remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} tx={}", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), remoteCommitTx.tx)
           Metrics.recordHtlcsInFlight(spec, c.remoteCommit.spec)
 
-          val commitment1 = c.copy(nextRemoteCommit_opt = Some(RemoteCommit(c.remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)))
-          (commitment1, AlternativeCommitSig(commitment1.fundingTxId, sig, htlcSigs.toList))
-        }).unzip
-        val commitSig = if (commitments1.size > 1) {
-          // we set all commit_sigs as tlv of the first commit_sig (the first sigs will be duplicated)
-          CommitSig(channelId, commitSigs.head.signature, commitSigs.head.htlcSignatures, TlvStream(AlternativeCommitSigsTlv(commitSigs)))
-        } else {
-          CommitSig(channelId, commitSigs.head.signature, commitSigs.head.htlcSignatures)
-        }
+          val nextRemoteCommit = NextRemoteCommit(
+            CommitSig(channelId, sig, htlcSigs.toList, TlvStream(CommitSigTlv.FundingTxIdTlv(c.fundingTxId))),
+            RemoteCommit(c.remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)
+          )
+          c.copy(nextRemoteCommit_opt = Some(nextRemoteCommit))
+        })
         val metaCommitments1 = copy(
           changes = changes.copy(
             localChanges = changes.localChanges.copy(proposed = Nil, signed = changes.localChanges.proposed),
             remoteChanges = changes.remoteChanges.copy(acked = Nil, signed = changes.remoteChanges.acked),
           ),
           commitments = commitments1,
-          remoteNextCommitInfo = Left(WaitForRev(commitSig, localCommitIndex))
+          remoteNextCommitInfo = Left(WaitForRev(localCommitIndex))
         )
-        Right(metaCommitments1, commitSig)
+        Right(metaCommitments1, commitments1.map(_.nextRemoteCommit_opt.get.sig))
       case Left(_) =>
         Left(CannotSignBeforeRevocation(channelId))
     }
   }
 
-  def receiveCommit(commit: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
+  def receiveCommit(commits: Seq[CommitSig], keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
     // ourCommit.index -> our current revocation hash, which is about to become our old revocation hash
@@ -801,24 +801,13 @@ case class MetaCommitments(params: ChannelParams,
       log.warning("received a commit sig with no changes (probably coming from lnd)")
     }
 
-    val sigs: Map[ByteVector32, CommitSig] = commit.alternativeCommitSigs match {
-      case Nil => Map(commitments.head.fundingTxId -> commit) // no alternative sigs: we use the commit_sig message as-is, we assume it is for the first commitments
-      case alternativeCommitSigs =>
-        // if there are alternative sigs, then we expand the sigs to build n individual commit_sig that we will apply to the corresponding commitments
-        alternativeCommitSigs.map { altSig =>
-          altSig.fundingTxId -> commit
-            .modify(_.signature).setTo(altSig.signature)
-            .modify(_.htlcSignatures).setTo(altSig.htlcSignatures)
-            .modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[AlternativeCommitSigsTlv]))
-        }.toMap
-    }
-
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val commitments1 = commitments.map(c => {
       val spec = CommitmentSpec.reduce(c.localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, c.localCommit.index + 1)
       val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, c.localCommit.index + 1, params.localParams, params.remoteParams, c.commitInput, localPerCommitmentPoint, spec)
-      sigs.get(c.fundingTxId) match {
+      val sig_opt = if (commits.length == 1) Some(commits.head) else commits.find(_.fundingTxId_opt.contains(c.fundingTxId))
+      sig_opt match {
         case Some(sig) =>
           log.info(s"built local commit number=${c.localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), localCommitTx.tx)
           if (!Transactions.checkSig(localCommitTx, sig.signature, params.remoteParams.fundingPubKey, Transactions.TxOwner.Remote, params.commitmentFormat)) {
@@ -878,7 +867,7 @@ case class MetaCommitments(params: ChannelParams,
         Left(InvalidRevocation(channelId))
       case Left(_) =>
         // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
-        val theirFirstNextCommitSpec = commitments.head.nextRemoteCommit_opt.get.spec
+        val theirFirstNextCommitSpec = commitments.head.nextRemoteCommit_opt.get.commit.spec
         // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.
         val receivedHtlcs = changes.remoteChanges.signed.collect {
           // we forward adds downstream only when they have been committed by both sides
@@ -936,7 +925,7 @@ case class MetaCommitments(params: ChannelParams,
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.map(c => c.copy(
-          remoteCommit = c.nextRemoteCommit_opt.get,
+          remoteCommit = c.nextRemoteCommit_opt.get.commit,
           nextRemoteCommit_opt = None,
         ))
         val metaCommitments1 = copy(
@@ -1006,7 +995,7 @@ object MetaCommitments {
     params = commitments.params,
     changes = commitments.changes,
     commitments = commitments.commitment +: Nil,
-    remoteNextCommitInfo = commitments.remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sent, waitingForRevocation.sentAfterLocalCommitIndex)).swap,
+    remoteNextCommitInfo = commitments.remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sentAfterLocalCommitIndex)).swap,
     remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
     originChannels = commitments.originChannels,
   )

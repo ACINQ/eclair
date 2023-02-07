@@ -329,7 +329,7 @@ object Helpers {
    */
   def aboveReserve(commitments: MetaCommitments)(implicit log: LoggingAdapter): Boolean = {
     commitments.commitments.forall(commitment => {
-      val remoteCommit = commitment.nextRemoteCommit_opt.getOrElse(commitment.remoteCommit)
+      val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
       val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
       // NB: this is an approximation (we don't take network fees into account)
       val localReserve = commitment.localChannelReserve(commitments.params)
@@ -489,14 +489,14 @@ object Helpers {
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = metaCommitments.changes.localChanges.signed
-            val commitSig = waitingForRevocation.sent
+            val commitSigs = metaCommitments.commitments.flatMap(_.nextRemoteCommit_opt).map(_.sig)
             retransmitRevocation_opt match {
               case None =>
-                SyncResult.Success(retransmit = signedUpdates :+ commitSig)
+                SyncResult.Success(retransmit = signedUpdates ++ commitSigs)
               case Some(revocation) if metaCommitments.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
-                SyncResult.Success(retransmit = signedUpdates :+ commitSig :+ revocation)
+                SyncResult.Success(retransmit = signedUpdates ++ commitSigs ++ Seq(revocation))
               case Some(revocation) =>
-                SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
+                SyncResult.Success(retransmit = Seq(revocation) ++ signedUpdates ++ commitSigs)
             }
           case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation

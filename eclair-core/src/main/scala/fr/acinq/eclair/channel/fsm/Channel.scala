@@ -477,7 +477,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(commit: CommitSig, d: DATA_NORMAL) =>
-      d.metaCommitments.receiveCommit(commit, keyManager) match {
+      d.metaCommitments.receiveCommit(Seq(commit), keyManager) match {
         case Right((metaCommitments1, revocation)) =>
           log.debug("received a new sig, spec:\n{}", metaCommitments1.latest.specs2String)
           if (metaCommitments1.changes.localHasChanges) {
@@ -838,7 +838,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown, closingFeerates)) =>
-      d.metaCommitments.receiveCommit(commit, keyManager) match {
+      d.metaCommitments.receiveCommit(Seq(commit), keyManager) match {
         case Right((metaCommitments1, revocation)) =>
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", metaCommitments1.latest.specs2String)

@@ -146,7 +146,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
     val knownPreimages = Set((commitments.channelId, htlcb1.id))
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.commitments.last.nextRemoteCommit_opt.get, remoteCommitPublished), knownPreimages) ==
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.commitments.last.nextRemoteCommit_opt.get.commit, remoteCommitPublished), knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
@@ -154,7 +154,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       ))
     // assuming alice gets the preimage for the 2nd htlc
     val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
-    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.commitments.last.nextRemoteCommit_opt.get, remoteCommitPublished), knownPreimages1) ==
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.commitments.last.nextRemoteCommit_opt.get.commit, remoteCommitPublished), knownPreimages1) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,

@@ -42,7 +42,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -1031,6 +1031,26 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.size == 5)
   }
 
+  test("recv CommitSig (multiple htlcs in both directions) (without fundingTxId tlv)") { f =>
+    import f._
+
+    addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(1_100_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
+    addHtlc(1_100_000 msat, bob, alice, bob2alice, alice2bob)
+
+    alice ! CMD_SIGN()
+    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob, aliceCommitSig.copy(tlvStream = TlvStream.empty))
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice, bobCommitSig.copy(tlvStream = TlvStream.empty))
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.localCommitIndex == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.localCommitIndex == 1)
+  }
+
   test("recv CommitSig (only fee update)") { f =>
     import f._
 
@@ -1715,7 +1735,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(fail.id == htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
-      awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail))
+    awaitCond(bob.stateData == initialState.modify(_.metaCommitments.changes.localChanges.proposed).using(_ :+ fail))
   }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>

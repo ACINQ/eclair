@@ -170,6 +170,10 @@ private[channel] object ChannelCodecs4 {
         ("txid" | bytes32) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
+    val nextRemoteCommitCodec: Codec[NextRemoteCommit] = (
+      ("sig" | lengthDelimited(commitSigCodec)) ::
+        ("commit" | remoteCommitCodec)).as[NextRemoteCommit]
+
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
     val localChangesCodec: Codec[LocalChanges] = (
@@ -326,10 +330,7 @@ private[channel] object ChannelCodecs4 {
             ("channelFlags" | channelflags)
         })).as[ChannelParams]
 
-    val waitForRevCodec: Codec[WaitForRev] = (
-      ("sent" | lengthDelimited(commitSigCodec)) ::
-        ("sentAfterLocalCommitIndex" | uint64overflow)
-      ).as[WaitForRev]
+    val waitForRevCodec: Codec[WaitForRev] = ("sentAfterLocalCommitIndex" | uint64overflow).as[WaitForRev]
 
     val changesCodec: Codec[CommitmentChanges] = (
       ("localChanges" | localChangesCodec) ::
@@ -342,7 +343,7 @@ private[channel] object ChannelCodecs4 {
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec) ::
         ("remoteCommit" | remoteCommitCodec) ::
-        ("nextRemoteCommit_opt" | optional(bool8, remoteCommitCodec))
+        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec))
       ).as[Commitment]
 
     val metaCommitmentsCodec: Codec[MetaCommitments] = (
