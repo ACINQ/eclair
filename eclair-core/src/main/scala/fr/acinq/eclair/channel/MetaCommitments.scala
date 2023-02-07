@@ -376,6 +376,50 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
     None
   }
 
+  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
+    // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
+    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
+    val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
+      case Some(feerate) => return Some(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case None =>
+    }
+
+    // let's compute the current commitment *as seen by us* including this additional htlc
+    val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
+    val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
+
+    // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
+    val fees = Transactions.commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+    // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
+    // We could enforce it once we're confident a large portion of the network implements it.
+    val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
+    val missingForReceiver = reduced.toLocal - localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
+    if (missingForSender < 0.sat) {
+      return Some(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
+    } else if (missingForReceiver < 0.sat) {
+      if (params.localParams.isInitiator) {
+        return Some(CannotAffordFees(params.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = localChannelReserve(params), fees = fees))
+      } else {
+        // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      }
+    }
+
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
+    val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
+    if (params.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
+      return Some(HtlcValueTooHighInFlight(params.channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+    }
+
+    if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
+      return Some(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
+    }
+
+    None
+  }
+
   /**
    * Return a fully signed commit tx, that can be published as-is.
    */
@@ -540,49 +584,11 @@ case class MetaCommitments(params: ChannelParams,
     }
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
-
-    // let's compute the current commitment *as seen by us* including this change
-    commitments.foreach(commitment => {
-      // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
-      // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
-      // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, params.channelType, commitment.capacity, None)
-      val remoteFeeratePerKw = commitment.localCommit.spec.commitTxFeerate +: changes1.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-      remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
-        case Some(feerate) => return Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
-        case None =>
-      }
-
-      val reduced = CommitmentSpec.reduce(commitment.localCommit.spec, changes1.localChanges.acked, changes1.remoteChanges.proposed)
-      val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
-
-      // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-      val fees = Transactions.commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
-      // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
-      // We could enforce it once we're confident a large portion of the network implements it.
-      val missingForSender = reduced.toRemote - commitment.remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
-      val missingForReceiver = reduced.toLocal - commitment.localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
-      if (missingForSender < 0.sat) {
-        return Left(InsufficientFunds(channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitment.remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
-      } else if (missingForReceiver < 0.sat) {
-        if (params.localParams.isInitiator) {
-          return Left(CannotAffordFees(channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitment.localChannelReserve(params), fees = fees))
-        } else {
-          // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
-        }
-      }
-
-      // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
-      val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
-      if (params.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-        return Left(HtlcValueTooHighInFlight(channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
-      }
-
-      if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
-        return Left(TooManyAcceptedHtlcs(channelId, maximum = params.localParams.maxAcceptedHtlcs))
-      }
+    // we verify that this htlc is allowed in every active commitment
+    commitments.foreach(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf) match {
+      case Some(f) => return Left(f)
+      case None => // ok
     })
-
     Right(copy(changes = changes1))
   }
 
