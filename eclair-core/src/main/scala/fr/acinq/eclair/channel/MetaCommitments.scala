@@ -250,7 +250,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
     }
   }
 
-  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
+  private def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
 
   def hasNoPendingHtlcsOrFeeUpdate(changes: CommitmentChanges): Boolean =
     nextRemoteCommit_opt.isEmpty &&
@@ -310,6 +310,70 @@ case class Commitment(localFundingStatus: LocalFundingStatus,
     def nearlyExpired(add: UpdateAddHtlc): Boolean = currentHeight >= (add.cltvExpiry - fulfillSafety).blockHeight
 
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
+  }
+
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
+    // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
+    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
+    val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
+      case Some(feerate) => return Some(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case None =>
+    }
+
+    // let's compute the current commitments *as seen by them* with the additional htlc
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
+    // the HTLC we are about to create is outgoing, but from their point of view it is incoming
+    val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
+
+    // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
+    val fees = Transactions.commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+    // the initiator needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
+    // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
+    val funderFeeBuffer = Transactions.commitTxTotalCostMsat(params.remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), params.commitmentFormat) + Transactions.htlcOutputFee(reduced.commitTxFeerate * 2, params.commitmentFormat)
+    // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
+    // which may result in a lower commit tx fee; this is why we take the max of the two.
+    val missingForSender = reduced.toRemote - localChannelReserve(params) - (if (params.localParams.isInitiator) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
+    val missingForReceiver = reduced.toLocal - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
+    if (missingForSender < 0.msat) {
+      return Some(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = localChannelReserve(params), fees = if (params.localParams.isInitiator) fees else 0.sat))
+    } else if (missingForReceiver < 0.msat) {
+      if (params.localParams.isInitiator) {
+        // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else {
+        return Some(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = fees))
+      }
+    }
+
+    // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
+    val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
+    val allowedHtlcValueInFlight = params.maxHtlcAmount
+    if (allowedHtlcValueInFlight < htlcValueInFlight) {
+      return Some(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
+    }
+    if (Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
+      return Some(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
+    }
+
+    // If sending this htlc would overflow our dust exposure, we reject it.
+    val maxDustExposure = feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.maxExposure
+    val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
+    val localDustExposureAfterAdd = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
+    if (localDustExposureAfterAdd > maxDustExposure) {
+      return Some(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterAdd))
+    }
+    val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit1.spec, changes.remoteChanges.all, changes.localChanges.all)
+    val remoteDustExposureAfterAdd = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
+    if (remoteDustExposureAfterAdd > maxDustExposure) {
+      return Some(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
+    }
+
+    None
   }
 
   /**
@@ -456,69 +520,11 @@ case class MetaCommitments(params: ChannelParams,
     // we increment the local htlc index and add an entry to the origins map
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
-
-    // let's compute the current commitments *as seen by them* with this change taken into account
-    commitments.foreach(commitment => {
-      // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
-      // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
-      // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(remoteNodeId, params.channelType, commitment.capacity, None)
-      val remoteFeeratePerKw = commitment.localCommit.spec.commitTxFeerate +: changes1.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-      remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
-        case Some(feerate) => return Left(FeerateTooDifferent(channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
-        case None =>
-      }
-
-      // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-      val remoteCommit1 = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
-      val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes1.remoteChanges.acked, changes1.localChanges.proposed)
-      // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-      val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
-
-      // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-      val fees = Transactions.commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
-      // the initiator needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
-      // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
-      val funderFeeBuffer = Transactions.commitTxTotalCostMsat(params.remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), params.commitmentFormat) + Transactions.htlcOutputFee(reduced.commitTxFeerate * 2, params.commitmentFormat)
-      // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
-      // which may result in a lower commit tx fee; this is why we take the max of the two.
-      val missingForSender = reduced.toRemote - commitment.localChannelReserve(params) - (if (params.localParams.isInitiator) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
-      val missingForReceiver = reduced.toLocal - commitment.remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
-      if (missingForSender < 0.msat) {
-        return Left(InsufficientFunds(channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitment.localChannelReserve(params), fees = if (params.localParams.isInitiator) fees else 0.sat))
-      } else if (missingForReceiver < 0.msat) {
-        if (params.localParams.isInitiator) {
-          // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
-        } else {
-          return Left(RemoteCannotAffordFeesForNewHtlc(channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitment.remoteChannelReserve(params), fees = fees))
-        }
-      }
-
-      // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
-      // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
-      val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
-      val allowedHtlcValueInFlight = params.maxHtlcAmount
-      if (allowedHtlcValueInFlight < htlcValueInFlight) {
-        return Left(HtlcValueTooHighInFlight(channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
-      }
-      if (Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
-        return Left(TooManyAcceptedHtlcs(channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
-      }
-
-      // If sending this htlc would overflow our dust exposure, we reject it.
-      val maxDustExposure = feeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure
-      val localReduced = DustExposure.reduceForDustExposure(commitment.localCommit.spec, changes1.localChanges.all, changes1.remoteChanges.all)
-      val localDustExposureAfterAdd = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
-      if (localDustExposureAfterAdd > maxDustExposure) {
-        return Left(LocalDustHtlcExposureTooHigh(channelId, maxDustExposure, localDustExposureAfterAdd))
-      }
-      val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit1.spec, changes1.remoteChanges.all, changes1.localChanges.all)
-      val remoteDustExposureAfterAdd = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
-      if (remoteDustExposureAfterAdd > maxDustExposure) {
-        return Left(RemoteDustHtlcExposureTooHigh(channelId, maxDustExposure, remoteDustExposureAfterAdd))
-      }
+    // we verify that this htlc is allowed in every active commitment
+    commitments.foreach(_.canSendAdd(add.amountMsat, params, changes1, feeConf) match {
+      case Some(f) => return Left(f)
+      case None => // ok
     })
-
     Right(copy(changes = changes1, originChannels = originChannels1), add)
   }
 
