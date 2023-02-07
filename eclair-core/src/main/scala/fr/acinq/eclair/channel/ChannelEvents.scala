@@ -92,4 +92,4 @@ case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelI
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
-case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: MetaCommitments)
+case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: MetaCommitments) extends ChannelEvent
