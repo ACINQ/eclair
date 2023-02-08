@@ -228,11 +228,11 @@ private[channel] object ChannelCodecs0 {
         ("htlcSignatures" | listofsignatures) ::
         ("tlvStream" | provide(TlvStream.empty[CommitSigTlv]))).as[CommitSig]
 
-    val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
+    val waitingForRevocationCodec: Codec[ChannelTypes0.WaitingForRevocation] = (
       ("nextRemoteCommit" | remoteCommitCodec) ::
         ("sent" | commitSigCodec) ::
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
-        ("reSignAsap" | ignore(1))).as[WaitingForRevocation].decodeOnly
+        ("reSignAsap" | ignore(1))).as[ChannelTypes0.WaitingForRevocation].decodeOnly
 
     val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
@@ -273,7 +273,7 @@ private[channel] object ChannelCodecs0 {
       (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
     )
 
-    val commitmentsCodec: Codec[Commitments] = (
+    val metaCommitmentsCodec: Codec[MetaCommitments] = (
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
         ("localParams" | localParamsCodec(channelVersion)) ::
           ("remoteParams" | remoteParamsCodec) ::
@@ -289,11 +289,7 @@ private[channel] object ChannelCodecs0 {
           ("commitInput" | inputInfoCodec) ::
           ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
           ("channelId" | bytes32)
-      }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
-
-    val metaCommitmentsCodec: Codec[MetaCommitments] = commitmentsCodec
-      .map(commitments => MetaCommitments(commitments))
-      .decodeOnly
+      }).as[ChannelTypes0.Commitments].decodeOnly.map[MetaCommitments](_.migrate()).decodeOnly
 
     val closingSignedCodec: Codec[ClosingSigned] = (
       ("channelId" | bytes32) ::

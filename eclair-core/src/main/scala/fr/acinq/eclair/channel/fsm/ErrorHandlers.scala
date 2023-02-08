@@ -192,19 +192,18 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def doPublish(localCommitPublished: LocalCommitPublished, commitments: Commitments): Unit = {
+  def doPublish(localCommitPublished: LocalCommitPublished, commitment: FullCommitment): Unit = {
     import localCommitPublished._
 
-    val commitInput = commitments.commitInput.outPoint
-    val isInitiator = commitments.localParams.isInitiator
-    val publishQueue = commitments.commitmentFormat match {
+    val isInitiator = commitment.localParams.isInitiator
+    val publishQueue = commitment.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isInitiator), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
+        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, isInitiator), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitments))
-        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitments) }
-        List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isInitiator), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+        val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitment))
+        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitment) }
+        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, isInitiator), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
@@ -254,29 +253,28 @@ trait ErrorHandlers extends CommonHandlers {
   }
 
   def handleRemoteSpentNext(commitTx: Transaction, d: PersistentChannelData) = {
-    val commitments = d.metaCommitments.latest
+    val commitment = d.metaCommitments.latest
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
-    require(commitments.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
-    val Left(waitingForRevocation) = commitments.remoteNextCommitInfo
-    val remoteCommit = waitingForRevocation.nextRemoteCommit
+    require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
+    val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, d.metaCommitments.params.localParams.isInitiator), "next-remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
+    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput, commitTx, d.metaCommitments.params.localParams.isInitiator), "next-remote-commit"))
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitment, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.metaCommitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
       // NB: if there is a next commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
       case _ => DATA_CLOSING(d.metaCommitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
-    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, commitments)
+    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, commitment)
   }
 
-  def doPublish(remoteCommitPublished: RemoteCommitPublished, commitments: Commitments): Unit = {
+  def doPublish(remoteCommitPublished: RemoteCommitPublished, commitment: FullCommitment): Unit = {
     import remoteCommitPublished._
 
-    val redeemableHtlcTxs = claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitments))
+    val redeemableHtlcTxs = claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitment))
     val publishQueue = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 

@@ -224,11 +224,11 @@ private[channel] object ChannelCodecs3 {
         ("acked" | listOfN(uint16, updateMessageCodec)) ::
         ("signed" | listOfN(uint16, updateMessageCodec))).as[RemoteChanges]
 
-    val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
+    val waitingForRevocationCodec: Codec[ChannelTypes3.WaitingForRevocation] = (
       ("nextRemoteCommit" | remoteCommitCodec) ::
         ("sent" | lengthDelimited(commitSigCodec)) ::
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
-        ("reSignAsap" | ignore(8))).as[WaitingForRevocation]
+        ("reSignAsap" | ignore(8))).as[ChannelTypes3.WaitingForRevocation]
 
     val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
@@ -257,7 +257,7 @@ private[channel] object ChannelCodecs3 {
 
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
-    val commitmentsCodec: Codec[Commitments] = (
+    val metaCommitmentsCodec: Codec[MetaCommitments] = (
       ("channelId" | bytes32) ::
         ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
@@ -276,16 +276,12 @@ private[channel] object ChannelCodecs3 {
             ("fundingTxStatus" | provide(SingleFundedUnconfirmedFundingTx(None)).upcast[LocalFundingStatus]) ::
             ("remoteFundingTxStatus" | provide(RemoteFundingStatus.Locked).upcast[RemoteFundingStatus]) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
-        })).as[Commitments].decodeOnly
+        })).as[ChannelTypes3.Commitments].decodeOnly.map[MetaCommitments](_.migrate()).decodeOnly
 
     /** Once a dual funding tx has been signed, we must remember the associated commitments. */
-    case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: Commitments)
+    case class DualFundingTx(fundingTx: SignedSharedTransaction, commitments: ChannelTypes3.Commitments)
 
     private val dualFundingTxCodec: Codec[DualFundingTx] = fail[DualFundingTx](Err("you have been running dual funding before it was officially released! contact developers"))
-
-    val metaCommitmentsCodec: Codec[MetaCommitments] = commitmentsCodec
-      .map(commitments => MetaCommitments(commitments))
-      .decodeOnly
 
     val closingFeeratesCodec: Codec[ClosingFeerates] = (
       ("preferred" | feeratePerKw) ::

@@ -243,8 +243,7 @@ object CheckBalance {
               val remoteClose = if (d.remoteCommitPublished.isDefined) {
                 CurrentRemoteClose(d.metaCommitments.latest.remoteCommit, d.remoteCommitPublished.get)
               } else {
-                val Left(waitingForRevocation) = d.metaCommitments.latest.remoteNextCommitInfo
-                NextRemoteClose(waitingForRevocation.nextRemoteCommit, d.nextRemoteCommitPublished.get)
+                NextRemoteClose(d.metaCommitments.latest.nextRemoteCommit_opt.get.commit, d.nextRemoteCommitPublished.get)
               }
               r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.metaCommitments, remoteClose, knownPreimages)))
             case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.metaCommitments, knownPreimages))

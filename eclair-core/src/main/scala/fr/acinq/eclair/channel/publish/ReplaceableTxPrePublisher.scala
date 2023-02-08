@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Transac
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
-import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
+import fr.acinq.eclair.channel.{FullCommitment, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
@@ -129,8 +129,8 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
     //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
-    val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
-    val fundingOutpoint = cmd.commitments.commitInput.outPoint
+    val commitTx = cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
+    val fundingOutpoint = cmd.commitment.commitInput.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
         // The funding transaction was found, let's see if we can still spend it.
@@ -176,12 +176,12 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
-  private def getRemoteCommitConfirmations(commitments: Commitments): Future[Option[Int]] = {
-    bitcoinClient.getTxConfirmations(commitments.remoteCommit.txid).transformWith {
+  private def getRemoteCommitConfirmations(commitment: FullCommitment): Future[Option[Int]] = {
+    bitcoinClient.getTxConfirmations(commitment.remoteCommit.txid).transformWith {
       // NB: this handles the case where the remote commit is in the mempool because we will get Some(0).
       case Success(Some(remoteCommitConfirmations)) => Future.successful(Some(remoteCommitConfirmations))
-      case notFoundOrFailed => commitments.nextRemoteCommit_opt match {
-        case Some(nextRemoteCommit) => bitcoinClient.getTxConfirmations(nextRemoteCommit.txid)
+      case notFoundOrFailed => commitment.nextRemoteCommit_opt match {
+        case Some(nextRemoteCommit) => bitcoinClient.getTxConfirmations(nextRemoteCommit.commit.txid)
         case None => Future.fromTry(notFoundOrFailed)
       }
     }
@@ -191,14 +191,14 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     // We verify that:
     //  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
     //  - if this is an htlc-success transaction, we have the preimage
-    context.pipeToSelf(getRemoteCommitConfirmations(cmd.commitments)) {
+    context.pipeToSelf(getRemoteCommitConfirmations(cmd.commitment)) {
       case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => RemoteCommitTxConfirmed
       case Success(_) => ParentTxOk
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        extractHtlcWitnessData(htlcTx, cmd.commitments) match {
+        extractHtlcWitnessData(htlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
@@ -210,7 +210,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case UnknownFailure(reason) =>
         log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
-        extractHtlcWitnessData(htlcTx, cmd.commitments) match {
+        extractHtlcWitnessData(htlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
@@ -218,14 +218,14 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
-  private def extractHtlcWitnessData(htlcTx: HtlcTx, commitments: Commitments): Option[ReplaceableTxWithWitnessData] = {
+  private def extractHtlcWitnessData(htlcTx: HtlcTx, commitment: FullCommitment): Option[ReplaceableTxWithWitnessData] = {
     htlcTx match {
       case tx: HtlcSuccessTx =>
-        commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
+        commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
           case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) =>
-            commitments.localChanges.all.collectFirst {
+            commitment.changes.localChanges.all.collectFirst {
               case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
             } match {
               case Some(preimage) => Some(HtlcSuccessWithWitnessData(tx, remoteSig, preimage))
@@ -238,7 +238,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             None
         }
       case tx: HtlcTimeoutTx =>
-        commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
+        commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
           case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
@@ -253,14 +253,14 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     // We verify that:
     //  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
     //  - if this is a claim-htlc-success transaction, we have the preimage
-    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
       case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => LocalCommitTxConfirmed
       case Success(_) => ParentTxOk
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitments) match {
+        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
@@ -272,7 +272,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case UnknownFailure(reason) =>
         log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
-        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitments) match {
+        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
@@ -280,10 +280,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
-  private def extractClaimHtlcWitnessData(claimHtlcTx: ClaimHtlcTx, commitments: Commitments): Option[ReplaceableTxWithWitnessData] = {
+  private def extractClaimHtlcWitnessData(claimHtlcTx: ClaimHtlcTx, commitment: FullCommitment): Option[ReplaceableTxWithWitnessData] = {
     claimHtlcTx match {
       case tx: LegacyClaimHtlcSuccessTx =>
-        commitments.localChanges.all.collectFirst {
+        commitment.changes.localChanges.all.collectFirst {
           case u: UpdateFulfillHtlc if u.id == tx.htlcId => u.paymentPreimage
         } match {
           case Some(preimage) => Some(LegacyClaimHtlcSuccessWithWitnessData(tx, preimage))
@@ -292,7 +292,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             None
         }
       case tx: ClaimHtlcSuccessTx =>
-        commitments.localChanges.all.collectFirst {
+        commitment.changes.localChanges.all.collectFirst {
           case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
         } match {
           case Some(preimage) => Some(ClaimHtlcSuccessWithWitnessData(tx, preimage))

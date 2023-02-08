@@ -258,7 +258,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.txid
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.commit.txid
 
       val nextRemoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
       assert(nextRemoteCommit.tx.txid == nextRemoteCommitTxId)
@@ -771,7 +771,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.txid
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.commit.txid
 
       // Force-close channel.
       probe.send(alice, CMD_FORCECLOSE(probe.ref))

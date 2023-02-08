@@ -450,7 +450,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           d.metaCommitments.sendCommit(keyManager) match {
             case Right((metaCommitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", metaCommitments1.latest.specs2String)
-              val nextRemoteCommit = metaCommitments1.latest.nextRemoteCommit_opt.get
+              val nextRemoteCommit = metaCommitments1.latest.nextRemoteCommit_opt.get.commit
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
@@ -816,7 +816,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           d.metaCommitments.sendCommit(keyManager) match {
             case Right((metaCommitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", metaCommitments1.latest.specs2String)
-              val nextRemoteCommit = metaCommitments1.latest.nextRemoteCommit_opt.get
+              val nextRemoteCommit = metaCommitments1.latest.nextRemoteCommit_opt.get.commit
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
@@ -1044,7 +1044,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           val commitment = metaCommitments1.latest
           val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(keyManager, commitment)))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitment, commitment.remoteCommit, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)))
-          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitment, commitment.nextRemoteCommit_opt.get, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)))
+          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitment, commitment.nextRemoteCommit_opt.get.commit, nodeParams.onChainFeeConf.feeEstimator, d.finalScriptPubKey)))
 
           def republish(): Unit = {
             localCommitPublished1.foreach(lcp => doPublish(lcp, commitment))
@@ -1117,7 +1117,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       } else if (tx.txid == d.metaCommitments.latest.remoteCommit.txid) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.metaCommitments.latest.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) {
+      } else if (d.metaCommitments.latest.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
       } else if (tx.txIn.map(_.outPoint.txid).contains(d.metaCommitments.latest.fundingTxId)) {
@@ -1209,7 +1209,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
-        .onChainOutgoingHtlcs(d.metaCommitments.latest.localCommit, d.metaCommitments.latest.remoteCommit, d.metaCommitments.latest.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit), tx)
+        .onChainOutgoingHtlcs(d.metaCommitments.latest.localCommit, d.metaCommitments.latest.remoteCommit, d.metaCommitments.latest.nextRemoteCommit_opt.map(_.commit), tx)
         .map(add => (add, d.metaCommitments.originChannels.get(add.id).collect { case o: Origin.Local => o.id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // then let's see if any of the possible close scenarios can be considered done
@@ -1620,7 +1620,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) =>
       if (tx.txid == d.metaCommitments.latest.remoteCommit.txid) {
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.metaCommitments.latest.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid)) {
+      } else if (d.metaCommitments.latest.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid)) {
         handleRemoteSpentNext(tx, d)
       } else if (tx.txid == d.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
         log.warning(s"processing local commit spent from the outside")
