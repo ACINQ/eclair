@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.Command
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
@@ -78,6 +79,8 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
   }
 
   private def registering(pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
+    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPeerChannels.flatMap(_._2).size)
+    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.size)
     Behaviors.receiveMessagePartial[Command] {
       case AddOrRejectChannel(replyTo, remoteNodeId, _) if nodeParams.channelConf.channelOpenerWhitelist.contains(remoteNodeId) =>
         replyTo ! AcceptOpenChannel
