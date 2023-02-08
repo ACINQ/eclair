@@ -58,17 +58,17 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
 
   private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
     channels.headOption match {
-      case Some(d) =>
-        val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(d._2.head.channelId, r, None))
-        router ! GetNode(adapter, d._1)
+      case Some((remoteNodeId, pendingChannels)) =>
+        val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(pendingChannels.head.channelId, r, None))
+        router ! GetNode(adapter, remoteNodeId)
         Behaviors.receiveMessagePartial[Command] {
           case AddOrRejectChannel(replyTo, _, _) =>
             replyTo ! ChannelRateLimited
             Behaviors.same
           case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
-            restoring(channels.tail, pendingPeerChannels + (announcement.nodeId -> d._2.map(_.channelId)), pendingPrivateNodeChannels)
+            restoring(channels.tail, pendingPeerChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels)
           case WrappedGetNodeResponse(_, UnknownNode(_), _) =>
-            restoring(channels.tail, pendingPeerChannels, pendingPrivateNodeChannels ++ d._2.map(_.channelId))
+            restoring(channels.tail, pendingPeerChannels, pendingPrivateNodeChannels ++ pendingChannels.map(_.channelId))
         }
       case None =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
@@ -82,7 +82,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
   private def registering(pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPeerChannels.flatMap(_._2).size)
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.size)
-    Behaviors.receiveMessagePartial[Command] {
+    Behaviors.receiveMessagePartial {
       case AddOrRejectChannel(replyTo, remoteNodeId, _) if nodeParams.channelConf.channelOpenerWhitelist.contains(remoteNodeId) =>
         replyTo ! AcceptOpenChannel
         Behaviors.same
