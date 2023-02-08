@@ -34,7 +34,7 @@ object PendingChannelsRateLimiter {
   case object ChannelRateLimited extends Response
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, router: ActorRef[Any], channels: Seq[PersistentChannelData]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, router: ActorRef[Router.GetNode], channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
       new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(channels), Map(), Seq())
     }
@@ -51,7 +51,7 @@ object PendingChannelsRateLimiter {
   }
 }
 
-private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRef[Any], context: ActorContext[Command]) {
+private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRef[Router.GetNode], context: ActorContext[Command]) {
   import PendingChannelsRateLimiter._
 
   private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {

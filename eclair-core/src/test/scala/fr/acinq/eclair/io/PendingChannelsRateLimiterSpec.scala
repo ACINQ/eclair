@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.{AcceptOpenChannel, AddOrRejectChannel, ChannelRateLimited}
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec._
 import fr.acinq.eclair.wire.protocol._
@@ -44,7 +45,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   def announcement(nodeId: PublicKey): NodeAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val router = TestProbe[Any]()
+    val router = TestProbe[Router.GetNode]()
     val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(maxPendingChannelsPerPeer = 1, maxTotalPendingChannelsPrivateNodes = 2))
     val probe = TestProbe[PendingChannelsRateLimiter.Response]()
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, Seq(normal, normal, normal)))
@@ -59,7 +60,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, BlockHeight(0), None, Left(FundingCreated(channelId, ByteVector32.Zeroes, 3, randomBytes64())))
   }
 
-  case class FixtureParam(router: TestProbe[Any], nodeParams: NodeParams, probe: TestProbe[PendingChannelsRateLimiter.Response], limiter: ActorRef[PendingChannelsRateLimiter.Command], eventListener: TestProbe[ChannelEvent])
+  case class FixtureParam(router: TestProbe[Router.GetNode], nodeParams: NodeParams, probe: TestProbe[PendingChannelsRateLimiter.Response], limiter: ActorRef[PendingChannelsRateLimiter.Command], eventListener: TestProbe[ChannelEvent])
 
   test("accept channel open if remote node id on channel opener white list") { f =>
     import f._
