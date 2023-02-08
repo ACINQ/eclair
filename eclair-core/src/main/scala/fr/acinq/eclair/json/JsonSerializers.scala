@@ -372,8 +372,9 @@ object NodeAddressSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class DirectedHtlcJson(direction: String, add: UpdateAddHtlc)
-object DirectedHtlcSerializer extends ConvertClassSerializer[DirectedHtlc](h => DirectedHtlcJson(direction = h.direction, add = h.add))
+// We only keep the most important htlc fields: serializing the onion and the tlv stream would waste memory for no good reason.
+private case class DirectedHtlcJson(direction: String, id: Long, amountMsat: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry)
+object DirectedHtlcSerializer extends ConvertClassSerializer[DirectedHtlc](h => DirectedHtlcJson(h.direction, h.add.id, h.add.amountMsat, h.add.paymentHash, h.add.cltvExpiry))
 // @formatter:on
 
 object InvoiceSerializer extends MinimalSerializer({

@@ -1,5 +1,7 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
+import com.softwaremill.quicklens.ModifyPimp
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel.LocalFundingStatus._
@@ -346,15 +348,105 @@ private[channel] object ChannelCodecs4 {
         ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec))
       ).as[Commitment]
 
+    /**
+     * When multiple commitments are active, htlcs are shared between all of these commitments.
+     * There may be up to 2 * 483 = 966 htlcs, and every htlc uses at least 1452 bytes and at most 65536 bytes.
+     * The resulting htlc set size is thus between 1,4 MB and 64 MB, which can be pretty large.
+     * To avoid writing that htlc set multiple times to disk, we encode it separately.
+     */
+    case class EncodedMetaCommitments(params: ChannelParams,
+                                      changes: CommitmentChanges,
+                                      // The direction we use is from our local point of view.
+                                      htlcs: Set[DirectedHtlc],
+                                      localHtlcs: Set[(Boolean, Long)],
+                                      remoteHtlcs: Set[(Boolean, Long)],
+                                      nextRemoteHtlcs: Set[(Boolean, Long)],
+                                      active: List[Commitment],
+                                      remoteNextCommitInfo: Either[WaitForRev, PublicKey],
+                                      remotePerCommitmentSecrets: ShaChain,
+                                      originChannels: Map[Long, Origin],
+                                      remoteChannelData_opt: Option[ByteVector]) {
+      def toMetaCommitments: MetaCommitments = {
+        // The direction that was used to store htlcs is from our local point of view, so we need to invert everything
+        // for remote commitments.
+        val localHtlcs1: Set[DirectedHtlc] = htlcs.collect {
+          case IncomingHtlc(add) if localHtlcs.contains((true, add.id)) => IncomingHtlc(add)
+          case OutgoingHtlc(add) if localHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
+        }
+        val remoteHtlcs1: Set[DirectedHtlc] = htlcs.collect {
+          case IncomingHtlc(add) if remoteHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
+          case OutgoingHtlc(add) if remoteHtlcs.contains((true, add.id)) => IncomingHtlc(add)
+        }
+        val nextRemoteHtlcs1: Set[DirectedHtlc] = htlcs.collect {
+          case IncomingHtlc(add) if nextRemoteHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
+          case OutgoingHtlc(add) if nextRemoteHtlcs.contains((true, add.id)) => IncomingHtlc(add)
+        }
+        MetaCommitments(
+          params = params,
+          changes = changes,
+          active = active.map(c => c.copy(
+            localCommit = c.localCommit.modify(_.spec.htlcs).setTo(localHtlcs1),
+            remoteCommit = c.remoteCommit.modify(_.spec.htlcs).setTo(remoteHtlcs1),
+            nextRemoteCommit_opt = c.nextRemoteCommit_opt.map(_.modify(_.commit.spec.htlcs).setTo(nextRemoteHtlcs1)),
+          )),
+          remoteNextCommitInfo,
+          remotePerCommitmentSecrets,
+          originChannels,
+          remoteChannelData_opt
+        )
+      }
+    }
+
+    object EncodedMetaCommitments {
+      def apply(commitments: MetaCommitments): EncodedMetaCommitments = {
+        // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both
+        // local and remote commitments.
+        val htlcs = commitments.active.head.localCommit.spec.htlcs ++
+          commitments.active.head.remoteCommit.spec.htlcs.map(_.opposite) ++
+          commitments.active.head.nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(_.opposite)).getOrElse(Set.empty)
+        EncodedMetaCommitments(
+          params = commitments.params,
+          changes = commitments.changes,
+          htlcs = htlcs,
+          localHtlcs = commitments.active.head.localCommit.spec.htlcs.map(htlcRef),
+          remoteHtlcs = commitments.active.head.remoteCommit.spec.htlcs.map(htlcRef),
+          nextRemoteHtlcs = commitments.active.head.nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(htlcRef)).getOrElse(Set.empty),
+          active = commitments.active.map(c => c.copy(
+            localCommit = c.localCommit.modify(_.spec.htlcs).setTo(Set.empty),
+            remoteCommit = c.remoteCommit.modify(_.spec.htlcs).setTo(Set.empty),
+            nextRemoteCommit_opt = c.nextRemoteCommit_opt.map(_.modify(_.commit.spec.htlcs).setTo(Set.empty)),
+          )).toList,
+          remoteNextCommitInfo = commitments.remoteNextCommitInfo,
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
+          originChannels = commitments.originChannels,
+          remoteChannelData_opt = commitments.remoteChannelData_opt
+        )
+      }
+
+      private def htlcRef(htlc: DirectedHtlc): (Boolean, Long) = htlc match {
+        case IncomingHtlc(add) => (true, add.id)
+        case OutgoingHtlc(add) => (false, add.id)
+      }
+    }
+
+    private val htlcRefCodec: Codec[(Boolean, Long)] = (("incoming" | bool8) :: ("id" | uint64overflow)).as[(Boolean, Long)]
+
     val metaCommitmentsCodec: Codec[MetaCommitments] = (
       ("params" | paramsCodec) ::
         ("changes" | changesCodec) ::
+        ("htlcs" | setCodec(htlcCodec)) ::
+        ("localHtlcs" | setCodec(htlcRefCodec)) ::
+        ("remoteHtlcs" | setCodec(htlcRefCodec)) ::
+        ("nextRemoteHtlcs" | setCodec(htlcRefCodec)) ::
         ("active" | listOfN(uint16, commitmentCodec)) ::
         ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
         ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
         ("originChannels" | originsMapCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
-      ).as[MetaCommitments]
+      ).as[EncodedMetaCommitments].xmap(
+      encoded => encoded.toMetaCommitments,
+      commitments => EncodedMetaCommitments(commitments)
+    )
 
     val closingFeeratesCodec: Codec[ClosingFeerates] = (
       ("preferred" | feeratePerKw) ::

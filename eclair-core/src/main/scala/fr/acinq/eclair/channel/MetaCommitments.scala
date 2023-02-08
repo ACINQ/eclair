@@ -622,7 +622,7 @@ case class WaitForRev(sentAfterLocalCommitIndex: Long)
  */
 case class MetaCommitments(params: ChannelParams,
                            changes: CommitmentChanges,
-                           active: List[Commitment],
+                           active: Seq[Commitment],
                            remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
                            remotePerCommitmentSecrets: ShaChain,
                            originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
