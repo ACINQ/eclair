@@ -20,7 +20,7 @@ import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Props, Status}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
@@ -44,7 +44,6 @@ import scodec.bits.ByteVector
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
-import scala.util.Success
 
 class PeerSpec extends FixtureSpec {
 
