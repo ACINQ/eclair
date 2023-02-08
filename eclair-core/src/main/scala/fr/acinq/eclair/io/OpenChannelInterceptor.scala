@@ -43,7 +43,7 @@ import scala.reflect.ClassTag
  * configuring local parameters for all open channel requests. It only handles one channel request at a time.
  * If a concurrent request comes while still evaluating a previous one, the later request is immediately rejected.
  *
- * Note: If the remote peer disconnects before the plugin fails or continues the non-initiator flow, according to the
+ * Note: If the remote peer disconnects before the interceptor fails or continues the non-initiator flow, according to the
  * Lightning spec the flow should be canceled. Therefore any response sent by this actor with a different `peerConnection`
  * should be ignored and not forwarded to the remote peer.
  */
@@ -129,11 +129,6 @@ object OpenChannelInterceptor {
 
 }
 
-/**
- * @param peer parent Peer actor
- * @param pendingChannelsRateLimiter actor that will tell us whether we should accept a channel request
- * @param pluginTimeout timeout for the plugin to respond
- */
 private class OpenChannelInterceptor(peer: ActorRef[Any],
                                      pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command],
                                      pluginTimeout: FiniteDuration,

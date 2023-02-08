@@ -15,11 +15,12 @@ import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
 /**
  * A singleton actor that tracks pending channels and rate limits their creation.
  *
- * This actor should be initialized with the list of currently pending channels, keeps track of the number of pending
- * channels in real-time and applies the configured rate limits.
+ * This actor should be initialized with the list of current persistent channels. It will track the pending channels
+ * in real-time and apply the configured rate limits for new requests.
  *
  * It accepts the command AddOrRejectChannel and will respond with AcceptChannel or ChannelRateLimited. It also tracks
- * when channels are assigned a channel id or confirmed on-chain and will update its internal state accordingly.
+ * when channels are assigned a channel id, confirmed on-chain, closed or aborted and will update its internal state
+ * accordingly.
  *
  */
 object PendingChannelsRateLimiter {
