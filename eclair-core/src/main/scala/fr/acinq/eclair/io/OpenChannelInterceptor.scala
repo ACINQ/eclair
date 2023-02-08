@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.Peer.SpawnChannelNonInitiator
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.Error
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, MilliSatoshi, NodeParams, RejectOpenChannel, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -94,9 +94,11 @@ object OpenChannelInterceptor {
                            toSelfDelay: CltvExpiryDelta,
                            maxAcceptedHtlcs: Int)
 
-  def apply(peer: ActorRef[Any], nodeParams: NodeParams, wallet: OnchainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
-    Behaviors.setup {
-      context => new OpenChannelInterceptor(peer, pendingChannelsRateLimiter, pluginTimeout, nodeParams, wallet, context).waitForRequest()
+  def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
+    Behaviors.setup { context =>
+      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+         new OpenChannelInterceptor(peer, pendingChannelsRateLimiter, pluginTimeout, nodeParams, wallet, context).waitForRequest()
+      }
     }
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {

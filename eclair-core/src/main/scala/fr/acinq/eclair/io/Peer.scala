@@ -384,7 +384,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   }
 
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
-  private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
+  private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
   def stopPeer(): State = {
     log.info("removing peer from db")

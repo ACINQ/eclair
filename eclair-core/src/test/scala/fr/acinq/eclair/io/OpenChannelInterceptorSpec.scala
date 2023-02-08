@@ -64,7 +64,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val eventListener = TestProbe[ChannelAborted]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
 
-    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, nodeParams, wallet, pendingChannelsRateLimiter.ref, 10 millis))
+    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter.ref, 10 millis))
     withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor, pendingChannelsRateLimiter, peerConnection, eventListener)))
   }
 
@@ -101,7 +101,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     // no open channel interceptor plugin registered
     val wallet = new DummyOnChainWallet()
-    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, TestConstants.Alice.nodeParams, wallet, pendingChannelsRateLimiter.ref, 10 millis))
+    val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, TestConstants.Alice.nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter.ref, 10 millis))
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
