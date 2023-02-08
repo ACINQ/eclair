@@ -75,7 +75,7 @@
       "localNextHtlcId" : 0,
       "remoteNextHtlcId" : 0
     },
-    "commitments" : [ {
+    "active" : [ {
       "fundingTx" : {
         "outPoint" : "7d314422179e4e93e201da84b7b86cf9a23470933877f10db675f9ada8dea683:0",
         "amountSatoshis" : 1000000

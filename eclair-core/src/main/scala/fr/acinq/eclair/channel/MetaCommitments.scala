@@ -617,12 +617,12 @@ object Commitment {
 case class WaitForRev(sentAfterLocalCommitIndex: Long)
 
 /**
- * @param commitments           all potentially valid commitments
+ * @param active                all currently valid commitments
  * @param remoteChannelData_opt peer backup
  */
 case class MetaCommitments(params: ChannelParams,
                            changes: CommitmentChanges,
-                           commitments: List[Commitment],
+                           active: List[Commitment],
                            remoteNextCommitInfo: Either[WaitForRev, PublicKey], // this one is tricky, it must be kept in sync with Commitment.nextRemoteCommit_opt
                            remotePerCommitmentSecrets: ShaChain,
                            originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
@@ -630,7 +630,7 @@ case class MetaCommitments(params: ChannelParams,
 
   import MetaCommitments._
 
-  require(commitments.nonEmpty, "there must be at least one commitments")
+  require(active.nonEmpty, "there must be at least one commitments")
 
   val channelId: ByteVector32 = params.channelId
   val localNodeId: PublicKey = params.localNodeId
@@ -638,26 +638,26 @@ case class MetaCommitments(params: ChannelParams,
   val announceChannel: Boolean = params.announceChannel
 
   // Commitment numbers are the same for all active commitments.
-  val localCommitIndex = commitments.head.localCommit.index
-  val remoteCommitIndex = commitments.head.remoteCommit.index
+  val localCommitIndex = active.head.localCommit.index
+  val remoteCommitIndex = active.head.remoteCommit.index
   val nextRemoteCommitIndex = remoteCommitIndex + 1
 
-  lazy val availableBalanceForSend: MilliSatoshi = commitments.map(_.availableBalanceForSend(params, changes)).min
-  lazy val availableBalanceForReceive: MilliSatoshi = commitments.map(_.availableBalanceForReceive(params, changes)).min
+  lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
+  lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest = Commitments(params, changes, commitments.head, remoteNextCommitInfo, remotePerCommitmentSecrets, originChannels)
+  val latest = Commitments(params, changes, active.head, remoteNextCommitInfo, remotePerCommitmentSecrets, originChannels)
 
-  def add(commitment: Commitment): MetaCommitments = copy(commitments = commitment +: commitments)
+  def add(commitment: Commitment): MetaCommitments = copy(active = commitment +: active)
 
   // @formatter:off
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def hasNoPendingHtlcsOrFeeUpdate: Boolean = commitments.head.hasNoPendingHtlcsOrFeeUpdate(changes)
-  def hasPendingOrProposedHtlcs: Boolean = commitments.head.hasPendingOrProposedHtlcs(changes)
-  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = commitments.head.timedOutOutgoingHtlcs(currentHeight)
-  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = commitments.head.almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety)
-  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getOutgoingHtlcCrossSigned(htlcId)
-  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = commitments.head.getIncomingHtlcCrossSigned(htlcId)
+  def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
+  def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
+  def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
+  def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = active.head.almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety)
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getOutgoingHtlcCrossSigned(htlcId)
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getIncomingHtlcCrossSigned(htlcId)
   // @formatter:on
 
   /**
@@ -688,7 +688,7 @@ case class MetaCommitments(params: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    commitments.foreach(_.canSendAdd(add.amountMsat, params, changes1, feeConf) match {
+    active.foreach(_.canSendAdd(add.amountMsat, params, changes1, feeConf) match {
       case Some(f) => return Left(f)
       case None => // ok
     })
@@ -708,7 +708,7 @@ case class MetaCommitments(params: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    commitments.foreach(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf) match {
+    active.foreach(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf) match {
       case Some(f) => return Left(f)
       case None => // ok
     })
@@ -799,7 +799,7 @@ case class MetaCommitments(params: ChannelParams,
       val fee = UpdateFee(channelId, cmd.feeratePerKw)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(localChanges = changes.localChanges.copy(proposed = changes.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      commitments.foreach(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf) match {
+      active.foreach(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf) match {
         case Some(f) => return Left(f)
         case None => // ok
       })
@@ -814,11 +814,11 @@ case class MetaCommitments(params: ChannelParams,
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
       Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, commitments.head.capacity, None)
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, active.head.capacity, None)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      commitments.foreach(_.canReceiveFee(fee.feeratePerKw, params, changes1, feeConf) match {
+      active.foreach(_.canReceiveFee(fee.feeratePerKw, params, changes1, feeConf) match {
         case Some(f) => return Left(f)
         case None => // ok
       })
@@ -830,13 +830,13 @@ case class MetaCommitments(params: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
-        val (commitments1, sigs) = commitments.map(_.sendCommit(keyManager, params, changes, remoteNextPerCommitmentPoint)).unzip
+        val (commitments1, sigs) = active.map(_.sendCommit(keyManager, params, changes, remoteNextPerCommitmentPoint)).unzip
         val metaCommitments1 = copy(
           changes = changes.copy(
             localChanges = changes.localChanges.copy(proposed = Nil, signed = changes.localChanges.proposed),
             remoteChanges = changes.remoteChanges.copy(acked = Nil, signed = changes.remoteChanges.acked),
           ),
-          commitments = commitments1,
+          active = commitments1,
           remoteNextCommitInfo = Left(WaitForRev(localCommitIndex))
         )
         Right(metaCommitments1, sigs)
@@ -847,7 +847,7 @@ case class MetaCommitments(params: ChannelParams,
   def receiveCommit(commits: Seq[CommitSig], keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (MetaCommitments, RevokeAndAck)] = {
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 1)
-    val commitments1 = commitments.map(_.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commits) match {
+    val commitments1 = active.map(_.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commits) match {
       case Left(f) => return Left(f)
       case Right(commitment1) => commitment1
     })
@@ -864,7 +864,7 @@ case class MetaCommitments(params: ChannelParams,
         localChanges = changes.localChanges.copy(acked = Nil),
         remoteChanges = changes.remoteChanges.copy(proposed = Nil, acked = changes.remoteChanges.acked ++ changes.remoteChanges.proposed),
       ),
-      commitments = commitments1
+      active = commitments1
     )
     Right(metaCommitments1, revocation)
   }
@@ -873,7 +873,7 @@ case class MetaCommitments(params: ChannelParams,
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
       case Right(_) => Left(UnexpectedRevocation(channelId))
-      case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.head.remoteCommit.remotePerCommitmentPoint => Left(InvalidRevocation(channelId))
+      case Left(_) if revocation.perCommitmentSecret.publicKey != active.head.remoteCommit.remotePerCommitmentPoint => Left(InvalidRevocation(channelId))
       case Left(_) =>
         // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.
         val receivedHtlcs = changes.remoteChanges.signed.collect {
@@ -881,7 +881,7 @@ case class MetaCommitments(params: ChannelParams,
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
           case add: UpdateAddHtlc => add
         }
-        val remoteSpec = commitments.head.remoteCommit.spec
+        val remoteSpec = active.head.remoteCommit.spec
         val failedHtlcs = changes.remoteChanges.signed.collect {
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
@@ -898,13 +898,13 @@ case class MetaCommitments(params: ChannelParams,
           // the received htlcs have already been added to commitments (they've been signed by our peer), and may already
           // overflow our dust exposure (we cannot prevent them from adding htlcs): we artificially remove them before
           // deciding which we'll keep and relay and which we'll fail without relaying.
-          val localSpec = commitments.head.localCommit.spec
+          val localSpec = active.head.localCommit.spec
           val localSpecWithoutNewHtlcs = localSpec.copy(htlcs = localSpec.htlcs.filter {
             case IncomingHtlc(add) if receivedHtlcs.contains(add) => false
             case _ => true
           })
           // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
-          val nextRemoteSpec = commitments.head.nextRemoteCommit_opt.get.commit.spec
+          val nextRemoteSpec = active.head.nextRemoteCommit_opt.get.commit.spec
           val remoteSpecWithoutNewHtlcs = nextRemoteSpec.copy(htlcs = nextRemoteSpec.htlcs.filter {
             case OutgoingHtlc(add) if receivedHtlcs.contains(add) => false
             case _ => true
@@ -939,7 +939,7 @@ case class MetaCommitments(params: ChannelParams,
         }
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = originChannels -- completedOutgoingHtlcs
-        val commitments1 = commitments.map(c => c.copy(
+        val commitments1 = active.map(c => c.copy(
           remoteCommit = c.nextRemoteCommit_opt.get.commit,
           nextRemoteCommit_opt = None,
         ))
@@ -948,7 +948,7 @@ case class MetaCommitments(params: ChannelParams,
             localChanges = changes.localChanges.copy(signed = Nil, acked = changes.localChanges.acked ++ changes.localChanges.signed),
             remoteChanges = changes.remoteChanges.copy(signed = Nil),
           ),
-          commitments = commitments1,
+          active = commitments1,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           remotePerCommitmentSecrets = remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret.value, 0xFFFFFFFFFFFFL - remoteCommitIndex),
           originChannels = originChannels1,
@@ -965,17 +965,17 @@ case class MetaCommitments(params: ChannelParams,
     val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey
     val remoteFundingKey = params.remoteParams.fundingPubKey
     val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-    commitments.forall(_.commitInput.redeemScript == fundingScript)
+    active.forall(_.commitInput.redeemScript == fundingScript)
   }
 
   def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): MetaCommitments = {
-    val metaCommitments1 = copy(commitments = commitments.map {
+    val metaCommitments1 = copy(active = active.map {
       case c if c.fundingTxId == txid =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
         c.copy(localFundingStatus = status)
       case c => c
     }).pruneCommitments()
-    if (!this.commitments.exists(_.fundingTxId == txid)) {
+    if (!active.exists(_.fundingTxId == txid)) {
       log.error(s"funding txid=$txid doesn't match any of our funding txs")
     } else if (metaCommitments1 == this) {
       log.warning(s"setting status=${status.getClass.getSimpleName} for funding txid=$txid was a no-op")
@@ -988,14 +988,14 @@ case class MetaCommitments(params: ChannelParams,
    * double-spend each other and can be pruned once one of them confirms.
    */
   def pruneCommitments()(implicit log: LoggingAdapter): MetaCommitments = {
-    commitments
+    active
       .find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx]) match {
       case Some(lastConfirmed) =>
         // we can prune all other commitments with the same or lower funding index
-        val pruned = commitments.filter(c => c.fundingTxId != lastConfirmed.fundingTxId)
-        val commitments1 = commitments diff pruned
+        val pruned = active.filter(c => c.fundingTxId != lastConfirmed.fundingTxId)
+        val active1 = active diff pruned
         pruned.foreach(c => log.info("pruning commitment fundingTxid={}", c.fundingTxId))
-        copy(commitments = commitments1)
+        copy(active = active1)
       case _ =>
         this
     }
@@ -1007,7 +1007,7 @@ object MetaCommitments {
   def apply(commitments: Commitments): MetaCommitments = MetaCommitments(
     params = commitments.params,
     changes = commitments.changes,
-    commitments = commitments.commitment +: Nil,
+    active = commitments.commitment +: Nil,
     remoteNextCommitInfo = commitments.remoteNextCommitInfo.swap.map(waitingForRevocation => WaitForRev(waitingForRevocation.sentAfterLocalCommitIndex)).swap,
     remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
     originChannels = commitments.originChannels,

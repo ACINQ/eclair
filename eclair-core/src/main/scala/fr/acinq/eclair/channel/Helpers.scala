@@ -328,7 +328,7 @@ object Helpers {
    * this tells if we can use the channel to make a payment.
    */
   def aboveReserve(commitments: MetaCommitments)(implicit log: LoggingAdapter): Boolean = {
-    commitments.commitments.forall(commitment => {
+    commitments.active.forall(commitment => {
       val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
       val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
       // NB: this is an approximation (we don't take network fees into account)
@@ -489,7 +489,7 @@ object Helpers {
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = metaCommitments.changes.localChanges.signed
-            val commitSigs = metaCommitments.commitments.flatMap(_.nextRemoteCommit_opt).map(_.sig)
+            val commitSigs = metaCommitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig)
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates ++ commitSigs)
@@ -581,7 +581,7 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: PersistentChannelData): Boolean = data.metaCommitments.commitments.forall(nothingAtStake)
+    def nothingAtStake(data: PersistentChannelData): Boolean = data.metaCommitments.active.forall(nothingAtStake)
 
     def nothingAtStake(commitment: Commitment): Boolean =
       commitment.localCommit.index == 0 &&

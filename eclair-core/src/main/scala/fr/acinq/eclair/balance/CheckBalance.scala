@@ -93,7 +93,7 @@ object CheckBalance {
 
   def updateMainAndHtlcBalance(c: MetaCommitments, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
     // We take the last commitment into account: it's the most likely to (eventually) confirm.
-    val commitment = c.commitments.last
+    val commitment = c.latest
     val toLocal = commitment.localCommit.spec.toLocal.truncateToSatoshi
     // we only count htlcs in if we know the preimage
     val htlcIn = commitment.localCommit.spec.htlcs.collect(incoming)

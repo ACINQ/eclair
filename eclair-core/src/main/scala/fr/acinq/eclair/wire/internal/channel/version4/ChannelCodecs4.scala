@@ -349,7 +349,7 @@ private[channel] object ChannelCodecs4 {
     val metaCommitmentsCodec: Codec[MetaCommitments] = (
       ("params" | paramsCodec) ::
         ("changes" | changesCodec) ::
-        ("commitments" | listOfN(uint16, commitmentCodec)) ::
+        ("active" | listOfN(uint16, commitmentCodec)) ::
         ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
         ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
         ("originChannels" | originsMapCodec) ::

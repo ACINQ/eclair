@@ -66,7 +66,7 @@
       "localNextHtlcId" : 9288,
       "remoteNextHtlcId" : 151
     },
-    "commitments" : [ {
+    "active" : [ {
       "fundingTx" : {
         "outPoint" : "115641011cceeb4a1709a6cbd8f5f1b387460ee5fd2e48be3fbd1ae0e9e1cf6e:0",
         "amountSatoshis" : 15000000

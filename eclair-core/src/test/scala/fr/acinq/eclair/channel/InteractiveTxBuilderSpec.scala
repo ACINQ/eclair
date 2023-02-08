@@ -2359,7 +2359,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(1000 sat), 330 sat, 0)
-    val commitment = CommitmentsSpec.makeCommitments(250_000_000 msat, 150_000_000 msat).commitments.head
+    val commitment = CommitmentsSpec.makeCommitments(250_000_000 msat, 150_000_000 msat).active.head
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(params.dummySharedInputB(50_000 sat))), commitment, wallet)
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
@@ -2394,7 +2394,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
-    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).commitments.head
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingParams = params.fundingParamsB.copy(sharedInput_opt = Some(Multisig2of2Input(previousCommitment.commitInput, randomKey().publicKey, randomKey().publicKey)))
     val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
     bob ! Start(probe.ref)
@@ -2409,7 +2409,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
-    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).commitments.head
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
     val sharedInput = Multisig2of2Input(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Nil), randomKey().publicKey, randomKey().publicKey)
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)

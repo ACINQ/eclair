@@ -394,7 +394,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sigListener.expectNoMessage(1 second)
     assert(commitmentsF.params.commitmentFormat == commitmentFormat)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
-    val localCommitF = commitmentsF.commitments.last.localCommit
+    val localCommitF = commitmentsF.latest.localCommit
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
       case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
@@ -430,7 +430,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
-    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.commitments.last.localCommit.index.toInt)
+    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommitIndex)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
       val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)

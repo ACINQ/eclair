@@ -285,7 +285,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val metaCommitments = MetaCommitments(
                 params = params.copy(channelId = channelId),
                 changes = CommitmentChanges.init(),
-                commitments = List(commitment),
+                active = List(commitment),
                 remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
                 remotePerCommitmentSecrets = ShaChain.init,
                 originChannels = Map.empty)
@@ -332,7 +332,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val metaCommitments = MetaCommitments(
             params = params,
             changes = CommitmentChanges.init(),
-            commitments = List(commitment),
+            active = List(commitment),
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
             remotePerCommitmentSecrets = ShaChain.init,
             originChannels = Map.empty)

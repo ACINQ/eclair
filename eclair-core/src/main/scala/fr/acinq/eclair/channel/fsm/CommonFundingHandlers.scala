@@ -71,13 +71,13 @@ trait CommonFundingHandlers extends CommonHandlers {
     val fundingStatus = ConfirmedFundingTx(w.tx)
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
-    require(metaCommitments1.commitments.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
+    require(metaCommitments1.active.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
     // first of all, we watch the funding tx that is now confirmed
-    val commitment = metaCommitments1.commitments.head
+    val commitment = metaCommitments1.active.head
     require(commitment.fundingTxId == w.tx.txid)
     watchFundingSpent(commitment)
     // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
-    val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
+    val otherFundingTxs = d.metaCommitments.active // note how we use the unpruned original commitments
       .filter(c => c.fundingTxId != commitment.fundingTxId)
       .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
     rollbackDualFundingTxs(otherFundingTxs)
@@ -117,7 +117,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
     val metaCommitments1 = metaCommitments
       .modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
-      .modify(_.commitments.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
+      .modify(_.active.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
     DATA_NORMAL(metaCommitments1, shortIds1, None, initialChannelUpdate, None, None, None)
   }
 

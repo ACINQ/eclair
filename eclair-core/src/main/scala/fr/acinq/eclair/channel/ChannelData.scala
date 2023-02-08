@@ -515,7 +515,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommi
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
-  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = metaCommitments.commitments.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
+  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = metaCommitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
   def latestFundingTx: DualFundedUnconfirmedFundingTx = metaCommitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }

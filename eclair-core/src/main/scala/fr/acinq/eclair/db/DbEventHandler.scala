@@ -124,8 +124,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelEvent.EventType.Closed(e.closingType)
-      // We use the first known capacity: other commitments are most likely unconfirmed.
-      val capacity = e.commitments.commitments.head.capacity
+      val capacity = e.commitments.latest.capacity
       auditDb.add(ChannelEvent(e.channelId, e.commitments.params.remoteParams.nodeId, capacity, e.commitments.params.localParams.isInitiator, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 

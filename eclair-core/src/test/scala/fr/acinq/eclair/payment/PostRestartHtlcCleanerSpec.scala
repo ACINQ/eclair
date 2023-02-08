@@ -138,7 +138,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.commitments.at(0).localCommit.spec.htlcs).setTo(Set.empty)
+    val data1 = channels.head.modify(_.metaCommitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.metaCommitments)))
     channel.expectNoMessage(100 millis)
 
@@ -210,7 +210,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.commitments.at(0).localCommit.spec.htlcs).setTo(Set.empty)
+    val data1 = channels.head.modify(_.metaCommitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
     system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.metaCommitments)))
     channel.expectNoMessage(100 millis)
 

@@ -345,7 +345,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         val metaCommitments = MetaCommitments(
           params = d.channelParams,
           changes = CommitmentChanges.init(),
-          commitments = List(commitment),
+          active = List(commitment),
           remoteNextCommitInfo = Right(d.secondRemotePerCommitmentPoint),
           remotePerCommitmentSecrets = ShaChain.init,
           originChannels = Map.empty
@@ -394,7 +394,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
             val dfu1 = d.latestFundingTx.copy(sharedTx = fundingTx)
-            val d1 = d.modify(_.metaCommitments.commitments.at(0).localFundingStatus).setTo(dfu1)
+            val d1 = d.modify(_.metaCommitments.active.at(0).localFundingStatus).setTo(dfu1)
             stay() using d1 storing() calling publishFundingTx(dfu1)
         }
         case _: FullySignedSharedTransaction =>
@@ -465,7 +465,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 nodeParams, fundingParams,
                 channelParams = d.metaCommitments.params,
-                purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.commitments.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+                purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.active.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
               txBuilder ! InteractiveTxBuilder.Start(self)
@@ -501,7 +501,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             channelParams = d.metaCommitments.params,
-            purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.commitments.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+            purpose = InteractiveTxBuilder.PreviousTxRbf(d.metaCommitments.active.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
@@ -606,7 +606,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)
       //  - they didn't contribute to the funding output or we trust them to not double-spend
       val canUseZeroConf = remoteChannelReady.alias_opt.isDefined &&
-        d.metaCommitments.commitments.size == 1 &&
+        d.metaCommitments.active.size == 1 &&
         (d.latestFundingTx.fundingParams.remoteAmount == 0.sat || d.metaCommitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf))
       if (canUseZeroConf) {
         log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
