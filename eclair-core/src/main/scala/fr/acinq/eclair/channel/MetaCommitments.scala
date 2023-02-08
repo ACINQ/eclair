@@ -872,38 +872,40 @@ case class MetaCommitments(params: ChannelParams,
   def receiveRevocation(revocation: RevokeAndAck, maxDustExposure: Satoshi): Either[ChannelException, (MetaCommitments, Seq[PostRevocationAction])] = {
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.head.remoteCommit.remotePerCommitmentPoint =>
-        Left(InvalidRevocation(channelId))
+      case Right(_) => Left(UnexpectedRevocation(channelId))
+      case Left(_) if revocation.perCommitmentSecret.publicKey != commitments.head.remoteCommit.remotePerCommitmentPoint => Left(InvalidRevocation(channelId))
       case Left(_) =>
-        // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
-        val theirFirstNextCommitSpec = commitments.head.nextRemoteCommit_opt.get.commit.spec
         // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.
         val receivedHtlcs = changes.remoteChanges.signed.collect {
           // we forward adds downstream only when they have been committed by both sides
           // it always happen when we receive a revocation, because they send the add, then they sign it, then we sign it
           case add: UpdateAddHtlc => add
         }
+        val remoteSpec = commitments.head.remoteCommit.spec
         val failedHtlcs = changes.remoteChanges.signed.collect {
           // same for fails: we need to make sure that they are in neither commitment before propagating the fail upstream
           case fail: UpdateFailHtlc =>
             val origin = originChannels(fail.id)
-            val add = commitments.head.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            val add = remoteSpec.findIncomingHtlcById(fail.id).map(_.add).get
             RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(fail))
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = originChannels(fail.id)
-            val add = commitments.head.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
+            val add = remoteSpec.findIncomingHtlcById(fail.id).map(_.add).get
             RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFailMalformed(fail))
         }
         val (acceptedHtlcs, rejectedHtlcs) = {
           // the received htlcs have already been added to commitments (they've been signed by our peer), and may already
           // overflow our dust exposure (we cannot prevent them from adding htlcs): we artificially remove them before
           // deciding which we'll keep and relay and which we'll fail without relaying.
-          val localSpecWithoutNewHtlcs = commitments.head.localCommit.spec.copy(htlcs = commitments.head.localCommit.spec.htlcs.filter {
+          val localSpec = commitments.head.localCommit.spec
+          val localSpecWithoutNewHtlcs = localSpec.copy(htlcs = localSpec.htlcs.filter {
             case IncomingHtlc(add) if receivedHtlcs.contains(add) => false
             case _ => true
           })
-          val remoteSpecWithoutNewHtlcs = theirFirstNextCommitSpec.copy(htlcs = theirFirstNextCommitSpec.htlcs.filter {
+          // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
+          val nextRemoteSpec = commitments.head.nextRemoteCommit_opt.get.commit.spec
+          val remoteSpecWithoutNewHtlcs = nextRemoteSpec.copy(htlcs = nextRemoteSpec.htlcs.filter {
             case OutgoingHtlc(add) if receivedHtlcs.contains(add) => false
             case _ => true
           })
@@ -930,7 +932,11 @@ case class MetaCommitments(params: ChannelParams,
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
-        val completedOutgoingHtlcs = commitments.head.remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming).map(_.id) -- theirFirstNextCommitSpec.htlcs.collect(DirectedHtlc.incoming).map(_.id)
+        val completedOutgoingHtlcs = changes.remoteChanges.signed.collect {
+          case fulfill: UpdateFulfillHtlc => fulfill.id
+          case fail: UpdateFailHtlc => fail.id
+          case fail: UpdateFailMalformedHtlc => fail.id
+        }
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.map(c => c.copy(
@@ -948,8 +954,6 @@ case class MetaCommitments(params: ChannelParams,
           originChannels = originChannels1,
         )
         Right(metaCommitments1, actions)
-      case Right(_) =>
-        Left(UnexpectedRevocation(channelId))
     }
   }
 
