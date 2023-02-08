@@ -120,30 +120,30 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.metaCommitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_1.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // channel 2 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).metaCommitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val fails_ab_2 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_2.toSet == Set(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the fails, and gets connected again:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1_bis = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_1_bis.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
-    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.metaCommitments)))
+    val data1 = channels.head.modify(_.commitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
+    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
     // post-restart cleaner has cleaned up the htlcs, so next time it won't fail them anymore, even if we artificially submit the former state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectNoMessage(100 millis)
   }
 
@@ -180,7 +180,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val expected1 = Set(
       CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure()), commit = true),
       CMD_FULFILL_HTLC(3, preimage, commit = true),
@@ -192,7 +192,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // channel 2 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val expected2 = Set(
       CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true),
       CMD_FAIL_HTLC(3, Right(TemporaryNodeFailure()), commit = true),
@@ -204,18 +204,18 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the updates, and gets connected again:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val received3 = expected1.map(_ => channel.expectMsgType[Command])
     assert(received3 == expected1)
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
-    val data1 = channels.head.modify(_.metaCommitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
-    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.metaCommitments)))
+    val data1 = channels.head.modify(_.commitments.active.at(0).localCommit.spec.htlcs).setTo(Set.empty)
+    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMessage(100 millis)
 
     // post-restart cleaner has cleaned up the htlcs, so next time it won't fail them anymore, even if we artificially submit the former state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectNoMessage(100 millis)
   }
 
@@ -399,9 +399,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, data_upstream_1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_1.metaCommitments)))
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_2.ref, data_upstream_2.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_2.metaCommitments)))
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, data_upstream_3.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_3.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, data_upstream_1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_1.commitments)))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_2.ref, data_upstream_2.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_2.commitments)))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, data_upstream_3.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_3.commitments)))
 
     // Payment 1 should fail instantly.
     channel_upstream_1.expectMsg(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure()), commit = true))
@@ -468,11 +468,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
       // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
       // commit we accept it as such, so it simplifies the test.
-      val revokedCommitTx = normal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
+      val revokedCommitTx = normal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
       val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
       val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, Nil), dummyClaimMainTx)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
-      DATA_CLOSING(normal.metaCommitments, BlockHeight(0), Script.write(Script.pay2wpkh(randomKey().publicKey)), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
+      DATA_CLOSING(normal.commitments, BlockHeight(0), Script.write(Script.pay2wpkh(randomKey().publicKey)), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
     }
 
     val channels = List(upstreamChannel, downstreamChannel)
@@ -625,7 +625,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // Standard channel goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, c.metaCommitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.metaCommitments)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, c.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.commitments)))
     channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure()), commit = true))
     channel.expectNoMessage(100 millis)
   }

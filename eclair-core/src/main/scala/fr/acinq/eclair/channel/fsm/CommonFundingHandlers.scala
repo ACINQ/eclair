@@ -21,7 +21,7 @@ import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingSpent, WatchPublished}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
@@ -54,13 +54,13 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
   }
 
-  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): MetaCommitments = {
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Commitments = {
     log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
-    d.metaCommitments.latest.localFundingStatus match {
+    d.commitments.latest.localFundingStatus match {
       case _: SingleFundedUnconfirmedFundingTx =>
         // in the single-funding case, as fundee, it is the first time we see the full funding tx, we must verify that it is
         // valid (it pays the correct amount to the correct script). We also check as funder even if it's not really useful
-        Try(Transaction.correctlySpends(d.metaCommitments.latest.fullySignedLocalCommitTx(keyManager).tx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+        Try(Transaction.correctlySpends(d.commitments.latest.fullySignedLocalCommitTx(keyManager).tx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
           case Success(_) => ()
           case Failure(t) =>
             log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
@@ -70,18 +70,18 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
     val fundingStatus = ConfirmedFundingTx(w.tx)
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
-    require(metaCommitments1.active.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
+    val commitments1 = d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+    require(commitments1.active.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
     // first of all, we watch the funding tx that is now confirmed
-    val commitment = metaCommitments1.active.head
+    val commitment = commitments1.active.head
     require(commitment.fundingTxId == w.tx.txid)
     watchFundingSpent(commitment)
     // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
-    val otherFundingTxs = d.metaCommitments.active // note how we use the unpruned original commitments
+    val otherFundingTxs = d.commitments.active // note how we use the unpruned original commitments
       .filter(c => c.fundingTxId != commitment.fundingTxId)
       .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
     rollbackDualFundingTxs(otherFundingTxs)
-    metaCommitments1
+    commitments1
   }
 
   def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {
@@ -99,26 +99,25 @@ trait CommonFundingHandlers extends CommonHandlers {
     ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
   }
 
-  def receiveChannelReady(shortIds: ShortIds, channelReady: ChannelReady, metaCommitments: MetaCommitments): DATA_NORMAL = {
-    val commitments = metaCommitments.latest
+  def receiveChannelReady(shortIds: ShortIds, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
     val shortIds1 = shortIds.copy(remoteAlias_opt = channelReady.alias_opt)
-    shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, metaCommitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
+    shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
     log.info("shortIds: real={} localAlias={} remoteAlias={}", shortIds1.real.toOption.getOrElse("none"), shortIds1.localAlias, shortIds1.remoteAlias_opt.getOrElse("none"))
     // we notify that the channel is now ready to route payments
-    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, metaCommitments.channelId))
+    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, commitments.channelId))
     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, shortIds1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
-    val relayFees = getRelayFees(nodeParams, remoteNodeId, metaCommitments.announceChannel)
-    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, metaCommitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, metaCommitments.params.maxHtlcAmount, isPrivate = !metaCommitments.announceChannel, enable = Helpers.aboveReserve(metaCommitments))
+    val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments.announceChannel)
+    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, commitments.params.maxHtlcAmount, isPrivate = !commitments.announceChannel, enable = Helpers.aboveReserve(commitments))
     // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-    blockchain ! WatchFundingDeeplyBuried(self, commitments.fundingTxId, ANNOUNCEMENTS_MINCONF)
-    val metaCommitments1 = metaCommitments
+    blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
+    val commitments1 = commitments
       .modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
       .modify(_.active.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
-    DATA_NORMAL(metaCommitments1, shortIds1, None, initialChannelUpdate, None, None, None)
+    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

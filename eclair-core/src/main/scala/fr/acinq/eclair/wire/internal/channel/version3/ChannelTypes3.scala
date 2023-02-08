@@ -41,7 +41,7 @@ private[channel] object ChannelTypes3 {
                          localFundingStatus: LocalFundingStatus,
                          remoteFundingStatus: RemoteFundingStatus,
                          remotePerCommitmentSecrets: ShaChain) {
-    def migrate(): channel.MetaCommitments = channel.MetaCommitments(
+    def migrate(): channel.Commitments = channel.Commitments(
       ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
       Seq(Commitment(localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit)))),

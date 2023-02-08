@@ -1,6 +1,6 @@
 {
   "type" : "DATA_WAIT_FOR_DUAL_FUNDING_READY",
-  "metaCommitments" : {
+  "commitments" : {
     "params" : {
       "channelId" : "f5cafea10bc83c2fe9de16d04bb73c1ddaed2ce9d600dd91301a7d995f7b9134",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],

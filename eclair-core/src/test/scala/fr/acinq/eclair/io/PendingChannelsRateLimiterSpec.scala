@@ -86,7 +86,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       DATA_NORMAL(commitments(privatePeer2, randomBytes32()), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None), None, null, None, None, None),
     )
     val publicChannels = channelsOnWhitelistAtLimit ++ channelsAtLimit1 ++ channelsAtLimit2 ++ channelsBelowLimit1 ++ channelsBelowLimit2
-    val publicPeers = publicChannels.map(_.metaCommitments.params.remoteNodeId).toSet
+    val publicPeers = publicChannels.map(_.commitments.remoteNodeId).toSet
     assert(Set(peerOnWhitelistAtLimit, peerAtLimit1, peerAtLimit2, peerBelowLimit1, peerBelowLimit2) == publicPeers)
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, publicChannels ++ privateChannels))
     filterPendingChannels(publicChannels ++ privateChannels).foreach {
@@ -100,7 +100,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
   def announcement(nodeId: PublicKey): NodeAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
 
-  def commitments(remoteNodeId: PublicKey, channelId: ByteVector32): MetaCommitments = {
+  def commitments(remoteNodeId: PublicKey, channelId: ByteVector32): Commitments = {
     val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announceChannel = true)
     commitments.copy(params = commitments.params.copy(channelId = channelId))
   }

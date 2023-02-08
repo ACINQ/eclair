@@ -192,7 +192,7 @@ private[channel] object ChannelTypes0 {
                          remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                          commitInput: InputInfo,
                          remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
-    def migrate(): channel.MetaCommitments = {
+    def migrate(): channel.Commitments = {
       val channelConfig = if (channelVersion.hasPubkeyKeyPath) {
         ChannelConfig(ChannelConfig.FundingPubKeyBasedChannelKeyPath)
       } else {
@@ -215,7 +215,7 @@ private[channel] object ChannelTypes0 {
         LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked,
         localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
-      channel.MetaCommitments(
+      channel.Commitments(
         ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         Seq(commitment),

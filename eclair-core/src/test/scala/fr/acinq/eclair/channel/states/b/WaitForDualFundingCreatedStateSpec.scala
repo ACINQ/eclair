@@ -104,7 +104,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     bob2alice.expectMsgType[TxSignatures]
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
@@ -116,7 +116,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
@@ -150,7 +150,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     bob2alice.expectMsgType[TxSignatures]
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
     assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
@@ -163,7 +163,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
@@ -205,16 +205,16 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     bob2alice.expectMsgType[TxSignatures]
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.metaCommitments.latest.localCommit.spec.toLocal == expectedBalanceBob)
-    assert(bobData.metaCommitments.latest.localCommit.spec.toRemote == expectedBalanceAlice)
+    assert(bobData.commitments.latest.localCommit.spec.toLocal == expectedBalanceBob)
+    assert(bobData.commitments.latest.localCommit.spec.toRemote == expectedBalanceAlice)
 
     // Alice receives Bob's signatures and sends her own signatures.
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.metaCommitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
-    assert(aliceData.metaCommitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
+    assert(aliceData.commitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
+    assert(aliceData.commitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
   }
 
   test("recv invalid interactive-tx message", Tag(ChannelStateTestsTags.DualFunding)) { f =>

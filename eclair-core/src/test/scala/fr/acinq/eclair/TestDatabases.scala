@@ -67,20 +67,20 @@ object TestDatabases {
         case c: Origin.Cold => c
       }
 
-      def freeze2(input: MetaCommitments): MetaCommitments = input.modifyAll(_.originChannels.each).using(freeze1)
+      def freeze2(input: Commitments): Commitments = input.modifyAll(_.originChannels.each).using(freeze1)
 
       // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
       // serialized and deserialized we need to turn "hot" payments into cold ones
       def freeze3(input: PersistentChannelData): PersistentChannelData = input match {
-        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_NORMAL => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_CLOSING => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_NEGOTIATING => d.copy(metaCommitments = freeze2(d.metaCommitments))
-        case d: DATA_SHUTDOWN => d.copy(metaCommitments = freeze2(d.metaCommitments))
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 
       super.addOrUpdateChannel(data)

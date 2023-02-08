@@ -453,8 +453,8 @@ case object Nothing extends TransientChannelData {
 }
 
 sealed trait PersistentChannelData extends ChannelData {
-  val channelId: ByteVector32 = metaCommitments.channelId
-  def metaCommitments: MetaCommitments
+  val channelId: ByteVector32 = commitments.channelId
+  def commitments: Commitments
 }
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
@@ -486,13 +486,13 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               lastSent: FundingCreated) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments: MetaCommitments,
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData {
-  def fundingTx_opt: Option[Transaction] = metaCommitments.latest.localFundingStatus.signedTx_opt
+  def fundingTx_opt: Option[Transaction] = commitments.latest.localFundingStatus.signedTx_opt
 }
-final case class DATA_WAIT_FOR_CHANNEL_READY(metaCommitments: MetaCommitments,
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
                                              shortIds: ShortIds) extends PersistentChannelData
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
@@ -508,36 +508,36 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[ChannelReady]) extends TransientChannelData
-final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(metaCommitments: MetaCommitments,
+final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
                                                       deferred: Option[ChannelReady]) extends PersistentChannelData {
-  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = metaCommitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
-  def latestFundingTx: DualFundedUnconfirmedFundingTx = metaCommitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
+  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
+  def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments: MetaCommitments,
+final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
                                                   shortIds: ShortIds) extends PersistentChannelData
 
-final case class DATA_NORMAL(metaCommitments: MetaCommitments,
+final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData
-final case class DATA_SHUTDOWN(metaCommitments: MetaCommitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData
-final case class DATA_NEGOTIATING(metaCommitments: MetaCommitments,
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData
+final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends PersistentChannelData {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
-  require(!metaCommitments.params.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+  require(!commitments.params.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
-final case class DATA_CLOSING(metaCommitments: MetaCommitments,
+final case class DATA_CLOSING(commitments: Commitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
                               finalScriptPubKey: ByteVector, // where to send all on-chain funds
                               mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
@@ -551,7 +551,7 @@ final case class DATA_CLOSING(metaCommitments: MetaCommitments,
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
 
-final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(metaCommitments: MetaCommitments, remoteChannelReestablish: ChannelReestablish) extends PersistentChannelData
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends PersistentChannelData
 
 /**
  * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these

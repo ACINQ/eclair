@@ -118,7 +118,7 @@ trait CommonHandlers {
     case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
     case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
-    case d => d.metaCommitments.params.localParams.upfrontShutdownScript_opt.getOrElse(generateFinalScriptPubKey())
+    case d => d.commitments.params.localParams.upfrontShutdownScript_opt.getOrElse(generateFinalScriptPubKey())
   }
 
   private def generateFinalScriptPubKey(): ByteVector = {

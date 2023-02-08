@@ -51,15 +51,15 @@ object Helpers {
    */
   def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NORMAL => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_SHUTDOWN => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NEGOTIATING => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_CLOSING => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modify(_.metaCommitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NORMAL => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_SHUTDOWN => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_NEGOTIATING => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_CLOSING => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
     }
   }
 
@@ -327,7 +327,7 @@ object Helpers {
    * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
    * this tells if we can use the channel to make a payment.
    */
-  def aboveReserve(commitments: MetaCommitments)(implicit log: LoggingAdapter): Boolean = {
+  def aboveReserve(commitments: Commitments)(implicit log: LoggingAdapter): Boolean = {
     commitments.active.forall(commitment => {
       val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
       val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
@@ -475,7 +475,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(keyManager: ChannelKeyManager, metaCommitments: MetaCommitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+    def checkSync(keyManager: ChannelKeyManager, commitments: Commitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
@@ -484,77 +484,77 @@ object Helpers {
 
       // step 2: we check the remote commitment
       def checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
-        metaCommitments.remoteNextCommitInfo match {
-          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == metaCommitments.nextRemoteCommitIndex =>
+        commitments.remoteNextCommitInfo match {
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex =>
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
-            val signedUpdates = metaCommitments.changes.localChanges.signed
-            val commitSigs = metaCommitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig)
+            val signedUpdates = commitments.changes.localChanges.signed
+            val commitSigs = commitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig)
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates ++ commitSigs)
-              case Some(revocation) if metaCommitments.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
+              case Some(revocation) if commitments.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
                 SyncResult.Success(retransmit = signedUpdates ++ commitSigs ++ Seq(revocation))
               case Some(revocation) =>
                 SyncResult.Success(retransmit = Seq(revocation) ++ signedUpdates ++ commitSigs)
             }
-          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.nextRemoteCommitIndex + 1) =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber < metaCommitments.nextRemoteCommitIndex =>
+          case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber < commitments.nextRemoteCommitIndex =>
             // they are behind
             SyncResult.RemoteLate
           case Left(_) =>
             // we are behind
             SyncResult.LocalLateUnproven(
-              ourRemoteCommitmentNumber = metaCommitments.nextRemoteCommitIndex,
+              ourRemoteCommitmentNumber = commitments.nextRemoteCommitIndex,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
-          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (metaCommitments.remoteCommitIndex + 1) =>
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) =>
             // they have acknowledged the last commit_sig we sent
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
-          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (metaCommitments.remoteCommitIndex + 1) =>
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) =>
             // they are behind
             SyncResult.RemoteLate
           case Right(_) =>
             // we are behind
             SyncResult.LocalLateUnproven(
-              ourRemoteCommitmentNumber = metaCommitments.remoteCommitIndex,
+              ourRemoteCommitmentNumber = commitments.remoteCommitIndex,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
         }
       }
 
       // step 1: we check our local commitment
-      if (metaCommitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber) {
+      if (commitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber) {
         // our local commitment is in sync, let's check the remote commitment
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = None)
-      } else if (metaCommitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+      } else if (commitments.localCommitIndex == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
         // they just sent a new commit_sig, we have received it but they didn't receive our revocation
-        val channelKeyPath = keyManager.keyPath(metaCommitments.params.localParams, metaCommitments.params.channelConfig)
-        val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, metaCommitments.localCommitIndex - 1)
-        val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, metaCommitments.localCommitIndex + 1)
+        val channelKeyPath = keyManager.keyPath(commitments.params.localParams, commitments.params.channelConfig)
+        val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, commitments.localCommitIndex - 1)
+        val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
         val revocation = RevokeAndAck(
-          channelId = metaCommitments.channelId,
+          channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
           nextPerCommitmentPoint = localNextPerCommitmentPoint
         )
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
-      } else if (metaCommitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+      } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
         SyncResult.RemoteLate
       } else {
         // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
         // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
-        val channelKeyPath = keyManager.keyPath(metaCommitments.params.localParams, metaCommitments.params.channelConfig)
+        val channelKeyPath = keyManager.keyPath(commitments.params.localParams, commitments.params.channelConfig)
         if (keyManager.commitmentSecret(channelKeyPath, remoteChannelReestablish.nextRemoteRevocationNumber - 1) == remoteChannelReestablish.yourLastPerCommitmentSecret) {
           SyncResult.LocalLateProven(
-            ourLocalCommitmentNumber = metaCommitments.localCommitIndex,
+            ourLocalCommitmentNumber = commitments.localCommitIndex,
             theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber
           )
         } else {
           // they lied! the last per_commitment_secret they claimed to have received from us is invalid
           SyncResult.RemoteLying(
-            ourLocalCommitmentNumber = metaCommitments.localCommitIndex,
+            ourLocalCommitmentNumber = commitments.localCommitIndex,
             theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber,
             invalidPerCommitmentSecret = remoteChannelReestablish.yourLastPerCommitmentSecret
           )
@@ -581,7 +581,7 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: PersistentChannelData): Boolean = data.metaCommitments.active.forall(nothingAtStake)
+    def nothingAtStake(data: PersistentChannelData): Boolean = data.commitments.active.forall(nothingAtStake)
 
     def nothingAtStake(commitment: Commitment): Boolean =
       commitment.localCommit.index == 0 &&
@@ -603,11 +603,11 @@ object Helpers {
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
       closing match {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
-          Some(LocalClose(closing.metaCommitments.latest.localCommit, closing.localCommitPublished.get))
+          Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-          Some(CurrentRemoteClose(closing.metaCommitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+          Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.metaCommitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -629,11 +629,11 @@ object Helpers {
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
-        Some(LocalClose(closing.metaCommitments.latest.localCommit, closing.localCommitPublished.get))
+        Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
-        Some(CurrentRemoteClose(closing.metaCommitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+        Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.metaCommitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
@@ -1319,9 +1319,9 @@ object Helpers {
      * It could be because only us had signed them, or because a revoked commitment got confirmed.
      */
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
-      val localCommit = d.metaCommitments.latest.localCommit
-      val remoteCommit = d.metaCommitments.latest.remoteCommit
-      val nextRemoteCommit_opt = d.metaCommitments.latest.nextRemoteCommit_opt.map(_.commit)
+      val localCommit = d.commitments.latest.localCommit
+      val remoteCommit = d.commitments.latest.remoteCommit
+      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
       if (localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
         val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)

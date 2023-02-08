@@ -128,7 +128,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == NORMAL)
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
-    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     val aliceUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(aliceUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     assert(aliceUpdate.feeBaseMsat == 20.msat)
@@ -136,7 +136,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
-    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     val bobUpdate = bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(bobUpdate.shortChannelId == bobChannelReady.alias_opt.value)
     assert(bobUpdate.feeBaseMsat == 25.msat)
@@ -168,12 +168,12 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == NORMAL)
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
-    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
-    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == bobChannelReady.alias_opt.value)
     assert(bobCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     assert(bobCommitments.localChannelReserve == bobCommitments.remoteChannelReserve)
@@ -195,7 +195,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // bob publishes his commitment tx
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
@@ -212,7 +212,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
-    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "dual funding failure")
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
@@ -233,7 +233,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CMD_FORCECLOSE", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val sender = TestProbe()
-    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)

@@ -349,7 +349,7 @@ object PostRestartHtlcCleaner {
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     channels
-      .flatMap(_.metaCommitments.latest.remoteCommit.spec.htlcs)
+      .flatMap(_.commitments.latest.remoteCommit.spec.htlcs)
       .collect(outgoing)
       .map(IncomingPaymentPacket.decrypt(_, privateKey, features))
       .collect(decryptedIncomingHtlcs(paymentsDb))
@@ -398,16 +398,16 @@ object PostRestartHtlcCleaner {
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
                 val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.metaCommitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.metaCommitments.params.localParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx))
               case Some(c: Closing.RemoteClose) =>
                 val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.metaCommitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.metaCommitments.params.remoteParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
-        c.metaCommitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
+        c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
     groupByOrigin(htlcsOut, htlcsIn)
   }
