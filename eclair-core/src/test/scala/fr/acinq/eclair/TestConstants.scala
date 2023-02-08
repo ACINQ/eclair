@@ -127,7 +127,7 @@ object TestConstants {
         maxFundingSatoshis = 16777215 sat,
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
-        maxPendingChannelsPerPeer = 99,
+        maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99
       ),
       onChainFeeConf = OnChainFeeConf(
@@ -279,7 +279,7 @@ object TestConstants {
         maxFundingSatoshis = 16777215 sat,
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
-        maxPendingChannelsPerPeer = 99,
+        maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99
       ),
       onChainFeeConf = OnChainFeeConf(
