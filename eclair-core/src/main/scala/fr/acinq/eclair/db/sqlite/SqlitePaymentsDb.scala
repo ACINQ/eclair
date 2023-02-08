@@ -394,14 +394,37 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = withMetrics("payments/list-overview") {
-    // This query is an UNION of the ``sent_payments`` and ``received_payments`` table
-    // - missing fields set to NULL when needed.
-    // - only retrieve incoming payments that did receive funds.
-    // - outgoing payments are grouped by parent_id.
-    // - order by completion date (or creation date if nothing else).
+  override def countAllPaymentsOverview(): Long = using(sqlite.prepareStatement(
+    """
+      |SELECT SUM(c) as payments_count FROM (
+      |  SELECT COUNT(payment_hash) as c
+      |  FROM received_payments
+      |  WHERE received_msat > 0
+      |UNION ALL
+      |  SELECT COUNT(DISTINCT parent_id) as c
+      |  FROM sent_payments
+      |)
+      """.stripMargin
+  )) {
+    statement =>
+      val rs = statement.executeQuery()
+      if (rs.next()) {
+        rs.getLong("payments_count")
+      } else 0L
+  }
+
+  override def listPaymentsOverview(limit: Option[Int]): Seq[PlainPayment] = {
+  // This query is an UNION of the ``sent_payments`` and ``received_payments`` table
+  // - missing fields set to NULL when needed.
+  // - only retrieve incoming payments that did receive funds.
+  // - outgoing payments are grouped by parent_id.
+  // - order by completion date (or creation date if nothing else).
+    val limitParam = limit match {
+      case Some(_) => s"LIMIT ?"
+      case _ => ""
+    }
     using(sqlite.prepareStatement(
-      """
+      s"""
         |SELECT * FROM (
         |	 SELECT 'received' as type,
         |	   NULL as parent_id,
@@ -434,10 +457,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         |  GROUP BY parent_id
         |)
         |ORDER BY coalesce(completed_at, created_at) DESC
-        |LIMIT ?
+        |$limitParam
       """.stripMargin
     )) { statement =>
-      statement.setInt(1, limit)
+      if (limit.isDefined) statement.setInt(1, limit.get)
       val rs = statement.executeQuery()
       var q: Queue[PlainPayment] = Queue()
       while (rs.next()) {

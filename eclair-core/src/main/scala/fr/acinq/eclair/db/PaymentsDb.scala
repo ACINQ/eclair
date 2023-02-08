@@ -215,7 +215,8 @@ object FailureSummary {
 }
 
 trait PaymentsOverviewDb {
-  def listPaymentsOverview(limit: Int): Seq[PlainPayment]
+  def countAllPaymentsOverview(): Long
+  def listPaymentsOverview(limit: Option[Int]): Seq[PlainPayment]
 }
 
 /**

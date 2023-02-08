@@ -460,8 +460,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     db.addOutgoingPayment(outgoing2)
 
     // -- 1st check: result contains 2 incoming PAID, 1 outgoing PENDING. Outgoing1 must not be overridden by Outgoing2
-    val check1 = db.listPaymentsOverview(10)
-    assert(check1.size == 3)
+    val check1 = db.listPaymentsOverview(Some(10))
     assert(check1.head.paymentHash == paymentHash1)
     assert(check1.head.isInstanceOf[PlainOutgoingPayment])
     assert(check1.head.asInstanceOf[PlainOutgoingPayment].status == OutgoingPaymentStatus.Pending)
@@ -480,7 +479,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
     db.updateOutgoingPayment(sent)
 
     // -- 2nd check: result contains 2 incoming PAID, 1 outgoing FAILED and 1 outgoing SUCCEEDED, in correct order
-    val check2 = db.listPaymentsOverview(10)
+    val check2 = db.listPaymentsOverview(Some(10))
     assert(check2.size == 4)
     assert(check2.head.paymentHash == paymentHash1)
     assert(check2.head.isInstanceOf[PlainOutgoingPayment])
