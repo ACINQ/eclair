@@ -117,7 +117,13 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
         }
       case RemoveChannelId(remoteNodeId, channelId) =>
         pendingPeerChannels.get(remoteNodeId) match {
-          case Some(pendingChannels) => registering((pendingPeerChannels + (remoteNodeId -> pendingChannels.filterNot(_ == channelId))).filter(_._2.nonEmpty), pendingPrivateNodeChannels)
+          case Some(pendingChannels) =>
+            val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
+            if (pendingChannels1.isEmpty) {
+              registering(pendingPeerChannels - remoteNodeId, pendingPrivateNodeChannels)
+            } else {
+              registering(pendingPeerChannels + (remoteNodeId -> pendingChannels1), pendingPrivateNodeChannels)
+            }
           case None => registering(pendingPeerChannels, pendingPrivateNodeChannels.filterNot(_ == channelId))
         }
     }
