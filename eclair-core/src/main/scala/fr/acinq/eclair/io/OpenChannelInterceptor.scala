@@ -67,24 +67,6 @@ object OpenChannelInterceptor {
   private sealed trait QueryPluginCommands extends Command
   private case class PluginOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends QueryPluginCommands
   private case object PluginTimeout extends QueryPluginCommands
-
-  private sealed trait ErrorResponse
-  private object RateLimitError extends ErrorResponse {
-    override def toString: String = "rate limit reached"
-  }
-  private case class ChannelExceptionError(ex: ChannelException) extends ErrorResponse {
-    override def toString: String = ex.getMessage
-  }
-
-  private object ConcurrentRequestError extends ErrorResponse {
-    override def toString: String = "concurrent request rejected"
-  }
-  private object PluginTimeoutError extends ErrorResponse {
-    override def toString: String = "plugin timeout"
-  }
-  private case class PluginRejectedError(error: Error) extends ErrorResponse {
-    override def toString: String = error.toAscii
-  }
   // @formatter:on
 
   /** DefaultParams are a subset of ChannelData.LocalParams that can be modified by an InterceptOpenChannelPlugin */
@@ -140,8 +122,8 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def waitForRequest(): Behavior[Command] = {
     receiveCommandMessage[WaitForRequestCommands](context, "waitForRequest") {
-      case initiator: OpenChannelInitiator => sanityCheckInitiator(initiator)
-      case nonInitiator: OpenChannelNonInitiator => checkRateLimits(nonInitiator)
+      case request: OpenChannelInitiator => sanityCheckInitiator(request)
+      case request: OpenChannelNonInitiator => sanityCheckNonInitiator(request)
     }
   }
 
@@ -167,30 +149,34 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def checkRateLimits(nonInitiator: OpenChannelNonInitiator): Behavior[Command] = {
+  private def sanityCheckNonInitiator(nonInitiator: OpenChannelNonInitiator): Behavior[Command] = {
+    validateRemoteChannelType(nonInitiator.temporaryChannelId, nonInitiator.channelFlags, nonInitiator.channelType_opt, nonInitiator.localFeatures, nonInitiator.remoteFeatures) match {
+      case Right(channelType) =>
+        val dualFunded = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.DualFunding)
+        val upfrontShutdownScript = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.UpfrontShutdownScript)
+        val localParams = createLocalParams(nodeParams, nonInitiator.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, nonInitiator.fundingAmount, disableMaxHtlcValueInFlight = false)
+        checkRateLimits(nonInitiator, channelType, localParams)
+      case Left(ex) =>
+        context.log.warn(s"ignoring remote channel open: ${ex.getMessage}")
+        sendFailure(ex.getMessage, nonInitiator)
+        waitForRequest()
+    }
+  }
+
+  private def checkRateLimits(nonInitiator: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalParams): Behavior[Command] = {
     val adapter = context.messageAdapter[PendingChannelsRateLimiter.Response](PendingChannelsRateLimiterResponse)
     pendingChannelsRateLimiter ! AddOrRejectChannel(adapter, nonInitiator.remoteNodeId, nonInitiator.temporaryChannelId)
     receiveCommandMessage[CheckRateLimitsCommands](context, "checkRateLimits") {
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.AcceptOpenChannel) =>
-        validateRemoteChannelType(nonInitiator.temporaryChannelId, nonInitiator.channelFlags, nonInitiator.channelType_opt, nonInitiator.localFeatures, nonInitiator.remoteFeatures) match {
-          case Right(channelType) =>
-            val dualFunded = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.DualFunding)
-            val upfrontShutdownScript = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.UpfrontShutdownScript)
-            val localParams = createLocalParams(nodeParams, nonInitiator.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, nonInitiator.fundingAmount, disableMaxHtlcValueInFlight = false)
-            nodeParams.pluginOpenChannelInterceptor match {
-              case Some(plugin) => queryPlugin(plugin, nonInitiator, localParams, ChannelConfig.standard, channelType)
-              case None =>
-                peer ! SpawnChannelNonInitiator(nonInitiator.open, ChannelConfig.standard, channelType, localParams, nonInitiator.peerConnection.toClassic)
-                waitForRequest()
-            }
-          case Left(ex) =>
-            context.log.warn(s"ignoring remote channel open: ${ex.getMessage}")
-            sendFailure(ChannelExceptionError(ex), nonInitiator)
+        nodeParams.pluginOpenChannelInterceptor match {
+          case Some(plugin) => queryPlugin(plugin, nonInitiator, localParams, ChannelConfig.standard, channelType)
+          case None =>
+            peer ! SpawnChannelNonInitiator(nonInitiator.open, ChannelConfig.standard, channelType, localParams, nonInitiator.peerConnection.toClassic)
             waitForRequest()
         }
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.ChannelRateLimited) =>
         context.log.warn(s"ignoring remote channel open: rate limited")
-        sendFailure(RateLimitError, nonInitiator)
+        sendFailure("rate limit reached", nonInitiator)
         waitForRequest()
     }
   }
@@ -205,19 +191,21 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
           peer ! SpawnChannelNonInitiator(nonInitiator.open, channelConfig, channelType, localParams1, nonInitiator.peerConnection.toClassic)
+          timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
-          sendFailure(PluginRejectedError(pluginResponse.error), nonInitiator)
+          sendFailure(pluginResponse.error.toAscii, nonInitiator)
+          timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginTimeout =>
           context.log.error(s"timed out while waiting for plugin: ${plugin.name}")
-          sendFailure(PluginTimeoutError, nonInitiator)
+          sendFailure("plugin timeout", nonInitiator)
           waitForRequest()
       }
     }
 
-  private def sendFailure(error: ErrorResponse, nonInitiator: OpenChannelNonInitiator): Unit = {
-    peer ! Peer.OutgoingMessage(Error(nonInitiator.temporaryChannelId, error.toString), nonInitiator.peerConnection.toClassic)
+  private def sendFailure(error: String, nonInitiator: OpenChannelNonInitiator): Unit = {
+    peer ! Peer.OutgoingMessage(Error(nonInitiator.temporaryChannelId, error), nonInitiator.peerConnection.toClassic)
     context.system.eventStream ! Publish(ChannelAborted(actor.ActorRef.noSender, nonInitiator.remoteNodeId, nonInitiator.temporaryChannelId))
   }
 
@@ -229,9 +217,10 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
         Behaviors.same
       case o: OpenChannelNonInitiator =>
         context.log.warn(s"ignoring remote channel open: concurrent request rejected")
-        sendFailure(ConcurrentRequestError, o)
+        sendFailure("concurrent request rejected", o)
         Behaviors.same
-      case m => context.log.error(s"$stateName: received unhandled message $m")
+      case m =>
+        context.log.error(s"$stateName: received unhandled message $m")
         Behaviors.same
     }
   }
