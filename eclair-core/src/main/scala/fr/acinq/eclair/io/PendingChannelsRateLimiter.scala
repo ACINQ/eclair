@@ -100,7 +100,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             registering(pendingPeerChannels + (announcement.nodeId -> (temporaryChannelId +: peerChannels)), pendingPrivateNodeChannels)
           case None =>
             replyTo ! AcceptOpenChannel
-            registering(Map(announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
+            registering(pendingPeerChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
       case WrappedGetNodeResponse(temporaryChannelId, UnknownNode(_), Some(replyTo)) =>
         if (pendingPrivateNodeChannels.size >= nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {

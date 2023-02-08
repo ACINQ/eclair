@@ -299,4 +299,62 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     restoredLimiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
     probe.expectMessage(ChannelRateLimited)
   }
+
+  test("reject public node after accepting new public and private nodes") { f =>
+    import f._
+
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
+    probe.expectMessage(AcceptOpenChannel)
+
+    limiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(randomNodeId()), 1, 1 sat)
+    probe.expectMessage(AcceptOpenChannel)
+
+    limiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
+    probe.expectMessage(AcceptOpenChannel)
+
+    // first public node is still rate limited
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
+    probe.expectMessage(ChannelRateLimited)
+  }
+
+  test("reject public node after rejecting new public and private nodes") { f =>
+    import f._
+
+    // first public node and first two private nodes are accepted
+    val publicNode1 = PrivateKey(randomBytes32()).publicKey
+    limiter ! AddOrRejectChannel(probe.ref, publicNode1, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(publicNode1), 1, 1 sat)
+    probe.expectMessage(AcceptOpenChannel)
+    limiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
+    probe.expectMessage(AcceptOpenChannel)
+    limiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
+    probe.expectMessage(AcceptOpenChannel)
+
+    // second public node is accepted
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
+    probe.expectMessage(AcceptOpenChannel)
+
+    // first public node is rate limited
+    limiter ! AddOrRejectChannel(probe.ref, publicNode1, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(publicNode1), 1, 1 sat)
+    probe.expectMessage(ChannelRateLimited)
+
+    // new private node is rate limited
+    limiter ! AddOrRejectChannel(probe.ref, randomNodeId(), randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! UnknownNode(randomNodeId())
+    probe.expectMessage(ChannelRateLimited)
+
+    // second public node is still rate limited
+    limiter ! AddOrRejectChannel(probe.ref, remoteNodeId, randomBytes32())
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(remoteNodeId), 1, 1 sat)
+    probe.expectMessage(ChannelRateLimited)
+  }
+
 }
