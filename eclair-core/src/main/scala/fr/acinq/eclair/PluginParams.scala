@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
-import fr.acinq.eclair.wire.protocol.{Error, OpenChannel, OpenDualFundedChannel}
+import fr.acinq.eclair.wire.protocol.Error
 
 /** Custom plugin parameters. */
 trait PluginParams {
