@@ -1078,36 +1078,33 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_CLOSING) => handleFundingTimeout(d)
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
-      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx)) match {
-        case Some(metaCommitments) =>
-          if (d.metaCommitments.latest.fundingTxId == w.tx.txid) {
-            // The best funding tx candidate has been confirmed, alternative commitments have been pruned
-            stay() using d.copy(metaCommitments = metaCommitments) storing()
-          } else {
-            // This is a corner case where:
-            //  - we are using dual funding
-            //  - *and* the funding tx was RBF-ed
-            //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
-            //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
-            //
-            // This means that:
-            //  - the whole current commitment tree has been double-spent and can safely be forgotten
-            //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
-            //
-            // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
-            // to negotiate a mutual close.
-            log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-            val commitments = metaCommitments.latest
-            watchFundingSpent(commitments.commitment)
-            context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-            val commitTx = commitments.fullySignedLocalCommitTx(keyManager).tx
-            val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, d.finalScriptPubKey)
-            val d1 = DATA_CLOSING(metaCommitments, d.waitingSince, d.finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
-            stay() using d1 storing() calling doPublish(localCommitPublished, commitments)
-          }
-        case None =>
-          stay()
+      val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, LocalFundingStatus.ConfirmedFundingTx(w.tx))
+      if (d.metaCommitments.latest.fundingTxId == w.tx.txid) {
+        // The best funding tx candidate has been confirmed, alternative commitments have been pruned
+        stay() using d.copy(metaCommitments = metaCommitments1) storing()
+      } else {
+        // This is a corner case where:
+        //  - we are using dual funding
+        //  - *and* the funding tx was RBF-ed
+        //  - *and* we went to CLOSING before any funding tx got confirmed (probably due to a local or remote error)
+        //  - *and* an older version of the funding tx confirmed and reached min depth (it won't be re-orged out)
+        //
+        // This means that:
+        //  - the whole current commitment tree has been double-spent and can safely be forgotten
+        //  - from now on, we only need to keep track of the commitment associated to the funding tx that got confirmed
+        //
+        // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
+        // to negotiate a mutual close.
+        log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
+        val commitments = metaCommitments1.latest
+        watchFundingSpent(commitments.commitment)
+        context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+        val commitTx = commitments.fullySignedLocalCommitTx(keyManager).tx
+        val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitments, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, d.finalScriptPubKey)
+        val d1 = DATA_CLOSING(metaCommitments1, d.waitingSince, d.finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+        stay() using d1 storing() calling doPublish(localCommitPublished, commitments)
       }
+
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
@@ -1589,46 +1586,38 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(TickChannelOpenTimeout, _) => stay()
 
     case Event(w: WatchPublishedTriggered, d: PersistentChannelData) =>
+      log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
-      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
-        case Some(metaCommitments1) =>
-          log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
-          val d1 = d match {
-            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
-          }
-          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
-          stay() using d1 storing()
-        case None =>
-          stay()
+      val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+      val d1 = d match {
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
       }
+      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+      stay() using d1 storing()
 
     case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
-      acceptFundingTxConfirmed(w, d) match {
-        case Some(metaCommitments1) =>
-          log.info(s"funding txid=${w.tx.txid} has been confirmed")
-          val d1 = d match {
-            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
-            case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
-          }
-          stay() using d1 storing()
-        case None =>
-          stay()
+      log.info(s"funding txid=${w.tx.txid} has been confirmed")
+      val metaCommitments1 = acceptFundingTxConfirmed(w, d)
+      val d1 = d match {
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
       }
+      stay() using d1 storing()
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       // they can publish a closing tx with any sig we sent them, even if we are not done negotiating

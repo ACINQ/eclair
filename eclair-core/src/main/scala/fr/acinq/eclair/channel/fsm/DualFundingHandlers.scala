@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchPublished}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, UnconfirmedFundingTx}
+import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -61,21 +60,22 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Option[MetaCommitments] = {
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): MetaCommitments = {
     log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
     val fundingStatus = ConfirmedFundingTx(w.tx)
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map { metaCommitments1 =>
-      // first of all, we watch the funding tx that is now confirmed
-      val commitments = metaCommitments1.commitments.find(_.fundingTxId == w.tx.txid).get // TODO: rework this
-      watchFundingSpent(commitments)
-      // we can forget all other transactions, they have been double spent by the tx that just confirmed
-      val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
-        .filter(c => c.fundingTxId != commitments.fundingTxId)
-        .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-      rollbackDualFundingTxs(otherFundingTxs)
-      metaCommitments1
-    }
+    val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+    require(metaCommitments1.commitments.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
+    // first of all, we watch the funding tx that is now confirmed
+    val commitments = metaCommitments1.commitments.head
+    require(commitments.fundingTxId == w.tx.txid)
+    watchFundingSpent(commitments)
+    // we can forget all other transactions, they have been double spent by the tx that just confirmed
+    val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
+      .filter(c => c.fundingTxId != commitments.fundingTxId)
+      .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+    rollbackDualFundingTxs(otherFundingTxs)
+    metaCommitments1
   }
 
   def handleNewBlockDualFundingUnconfirmed(c: CurrentBlockHeight, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {

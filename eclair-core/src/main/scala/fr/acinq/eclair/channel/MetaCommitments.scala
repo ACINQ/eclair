@@ -959,34 +959,19 @@ case class MetaCommitments(params: Params,
     commitments.forall(_.commitInput.redeemScript == fundingScript)
   }
 
-  def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): Option[MetaCommitments] = {
+  def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): MetaCommitments = {
     val metaCommitments1 = copy(commitments = commitments.map {
       case c if c.fundingTxId == txid =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
         c.copy(localFundingStatus = status)
       case c => c
     }).pruneCommitments()
-    if (metaCommitments1 != this) {
-      Some(metaCommitments1)
-    } else {
+    if (!this.commitments.exists(_.fundingTxId == txid)) {
       log.error(s"funding txid=$txid doesn't match any of our funding txs")
-      None
+    } else if (metaCommitments1 == this) {
+      log.warning(s"setting status=${status.getClass.getSimpleName} for funding txid=$txid was a no-op")
     }
-  }
-
-  def updateRemoteFundingStatus(txid: ByteVector32)(implicit log: LoggingAdapter): Option[MetaCommitments] = {
-    val metaCommitments1 = copy(commitments = commitments.map {
-      case c if c.fundingTxId == txid =>
-        log.info(s"setting remoteFundingStatus=${RemoteFundingStatus.Locked.getClass.getSimpleName} for funding txid=$txid")
-        c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
-      case c => c
-    })
-    if (metaCommitments1 != this) {
-      Some(metaCommitments1)
-    } else {
-      log.error(s"funding txid=$txid doesn't match any of our funding txs")
-      None
-    }
+    metaCommitments1
   }
 
   /**

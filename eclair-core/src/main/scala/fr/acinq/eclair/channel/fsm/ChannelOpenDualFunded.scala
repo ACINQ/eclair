@@ -557,40 +557,33 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
-      d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
-        case Some(metaCommitments) =>
-          // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
-          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
-          val realScidStatus = RealScidStatus.Unknown
-          val shortIds = createShortIds(d.channelId, realScidStatus)
-          val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
-          d.deferred.foreach(self ! _)
-          goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments, shortIds) storing() sending channelReady
-        case None => stay()
-      }
+      val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+      // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
+      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+      val realScidStatus = RealScidStatus.Unknown
+      val shortIds = createShortIds(d.channelId, realScidStatus)
+      val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
+      d.deferred.foreach(self ! _)
+      goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds) storing() sending channelReady
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
-      acceptFundingTxConfirmed(w, d) match {
-        case Some(metaCommitments) =>
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
-          val shortIds = createShortIds(d.channelId, realScidStatus)
-          val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
-          val toSend = d.rbfStatus match {
-            case RbfStatus.RbfInProgress(txBuilder) =>
-              txBuilder ! InteractiveTxBuilder.Abort
-              Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
-            case RbfStatus.RbfRequested(cmd) =>
-              cmd.replyTo ! Status.Failure(InvalidRbfTxConfirmed(d.channelId))
-              Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
-            case RbfStatus.NoRbf | RbfStatus.RbfAborted =>
-              Seq(channelReady)
-          }
-          d.deferred.foreach(self ! _)
-          goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments, shortIds) storing() sending toSend
-        case None =>
-          stay()
+      val metaCommitments1 = acceptFundingTxConfirmed(w, d)
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+      val shortIds = createShortIds(d.channelId, realScidStatus)
+      val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
+      val toSend = d.rbfStatus match {
+        case RbfStatus.RbfInProgress(txBuilder) =>
+          txBuilder ! InteractiveTxBuilder.Abort
+          Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
+        case RbfStatus.RbfRequested(cmd) =>
+          cmd.replyTo ! Status.Failure(InvalidRbfTxConfirmed(d.channelId))
+          Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
+        case RbfStatus.NoRbf | RbfStatus.RbfAborted =>
+          Seq(channelReady)
       }
+      d.deferred.foreach(self ! _)
+      goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds) storing() sending toSend
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)
 
