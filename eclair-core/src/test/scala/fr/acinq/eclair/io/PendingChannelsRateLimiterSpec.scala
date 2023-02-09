@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, NodeParams, TestConstants, TimestampSecondLong, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecondLong, randomBytes32, randomBytes64}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -40,6 +40,10 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   def randomNodeId(): Crypto.PublicKey = PrivateKey(randomBytes32()).publicKey
   val temporaryChannelId: ByteVector32 = ByteVector32.Zeroes
   val channelId: ByteVector32 = normal.channelId
+  def makeChannelDataPending(remoteNodeId: Crypto.PublicKey, channelId: ByteVector32): DATA_WAIT_FOR_CHANNEL_READY = {
+    val metaCommitments = makeChannelDataNormal(Seq(), Map()).metaCommitments.copy(params = normal.metaCommitments.params.copy(channelId = channelId, remoteParams = normal.metaCommitments.params.remoteParams.copy(nodeId = remoteNodeId)))
+    DATA_WAIT_FOR_CHANNEL_READY(metaCommitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None))
+  }
   val publicPending: PersistentChannelData = makeChannelDataPending(remoteNodeId, channelId)
   def privatePending(nodeId: Crypto.PublicKey = randomNodeId(), channelId: ByteVector32 = randomBytes32()): PersistentChannelData = makeChannelDataPending(nodeId, channelId)
   def announcement(nodeId: PublicKey): NodeAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
