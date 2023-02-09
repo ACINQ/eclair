@@ -995,8 +995,7 @@ case class MetaCommitments(params: Params,
    */
   def pruneCommitments()(implicit log: LoggingAdapter): MetaCommitments = {
     commitments
-      .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
-      .lastOption match {
+      .find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx]) match {
       case Some(lastConfirmed) =>
         // we can prune all other commitments with the same or lower funding index
         val pruned = commitments.filter(c => c.fundingTxId != lastConfirmed.fundingTxId)
