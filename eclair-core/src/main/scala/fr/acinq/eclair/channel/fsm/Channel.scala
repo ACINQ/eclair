@@ -251,7 +251,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             watchFundingSpent(commitment)
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
             watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
-          case fundingTx: LocalFundingStatus.PublishedFundingTx =>
+          case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
             // those are zero-conf channels, the min-depth isn't critical, we use the default
             val fundingMinDepth = nodeParams.channelConf.minDepthBlocks.toLong
             blockchain ! WatchFundingConfirmed(self, fundingTx.tx.txid, fundingMinDepth)
@@ -1590,7 +1590,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(TickChannelOpenTimeout, _) => stay()
 
     case Event(w: WatchPublishedTriggered, d: PersistentChannelData) =>
-      val fundingStatus = LocalFundingStatus.PublishedFundingTx(w.tx)
+      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
       d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Some(metaCommitments1) =>
           log.info(s"zero-conf funding txid=${w.tx.txid} has been published")

@@ -556,7 +556,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
-      val fundingStatus = LocalFundingStatus.PublishedFundingTx(w.tx)
+      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
       d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Some(metaCommitments) =>
           blockchain ! WatchFundingConfirmed(self, w.tx.txid, nodeParams.channelConf.minDepthBlocks)
