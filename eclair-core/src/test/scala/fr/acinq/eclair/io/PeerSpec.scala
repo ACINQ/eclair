@@ -17,7 +17,8 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Props, Status}
+import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
+import akka.testkit.TestActor.KeepRunning
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
@@ -91,16 +92,17 @@ class PeerSpec extends FixtureSpec {
       }
     }
 
-    object MockLimiter extends Actor {
-      def receive: Receive = {
-        case msg: PendingChannelsRateLimiter.AddOrRejectChannel => msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-      }
-    }
-    val mockLimiter = system.actorOf(Props(MockLimiter)).ref
+    val mockLimiter = TestProbe()
+    mockLimiter.setAutoPilot((_: ActorRef, msg: Any) => msg match {
+      case msg: PendingChannelsRateLimiter.AddOrRejectChannel =>
+        msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+        KeepRunning
+      case _ => KeepRunning
+    })
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, mockLimiter))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, mockLimiter.ref))
 
-    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, mockLimiter)
+    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, mockLimiter.ref)
   }
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
