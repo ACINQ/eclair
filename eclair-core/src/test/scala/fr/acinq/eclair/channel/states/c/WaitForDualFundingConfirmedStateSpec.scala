@@ -178,6 +178,20 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
+  test("recv WatchPublishedTriggered (offline)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    alice ! WatchPublishedTriggered(fundingTx)
+    // Alice processes the event while offline and changes state
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real == RealScidStatus.Unknown)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+    alice2bob.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
+    assert(alice.stateName == OFFLINE)
+  }
+
   test("recv WatchFundingConfirmedTriggered (initiator)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
@@ -198,6 +212,22 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.expectMsgType[ChannelReady]
     assert(bobListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+  }
+
+  test("recv WatchFundingConfirmedTriggered (offline)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
+    // Alice processes the event while offline and changes state
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
+    assert(alice.stateName == OFFLINE)
   }
 
   test("recv WatchFundingConfirmedTriggered (rbf in progress)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -513,7 +543,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // The funding tx confirms while we're offline.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
+    assert(alice.stateName == OFFLINE)
     // Bob broadcasts his commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx
     alice ! WatchFundingSpentTriggered(bobCommitTx.tx)
@@ -541,7 +576,14 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // A previous funding tx confirms while we're offline.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
+    assert(alice.stateName == OFFLINE)
+
+
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     aliceListener.expectMsgType[TransactionPublished]

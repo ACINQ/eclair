@@ -1591,7 +1591,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
       val d1 = d match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
+          val realScidStatus = RealScidStatus.Unknown
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
+          DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
@@ -1608,7 +1612,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val metaCommitments1 = acceptFundingTxConfirmed(w, d)
       val d1 = d match {
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
+          DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_NORMAL => d.copy(metaCommitments = metaCommitments1)
@@ -1681,7 +1689,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // We only send the channel_update directly to the peer if we are connected AND the channel hasn't been announced
       val emitEvent_opt: Option[EmitLocalChannelEvent] = (state, nextState, stateData, nextStateData) match {
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("restore", d, sendToPeer = false))
-        case (WAIT_FOR_FUNDING_CONFIRMED | WAIT_FOR_DUAL_FUNDING_CONFIRMED, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
         case (WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
         case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.shortIds.real.toOption != d2.shortIds.real.toOption || d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty && d1.channelUpdate != d2.channelUpdate))
         case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty))
