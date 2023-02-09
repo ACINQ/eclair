@@ -302,7 +302,11 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           Behaviors.stopped
         }
       case claimHtlcTx: ClaimHtlcWithWitnessData =>
-        val sig = keyManager.sign(claimHtlcTx.txInfo, keyManager.htlcPoint(channelKeyPath), cmd.commitments.remoteCommit.remotePerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
+        val remotePerCommitmentPoint = cmd.commitments.remoteNextCommitInfo match {
+          case Left(w) if claimHtlcTx.txInfo.input.outPoint.txid == w.nextRemoteCommit.txid => w.nextRemoteCommit.remotePerCommitmentPoint
+          case _ => cmd.commitments.remoteCommit.remotePerCommitmentPoint
+        }
+        val sig = keyManager.sign(claimHtlcTx.txInfo, keyManager.htlcPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedTx = claimHtlcTx match {
           case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => ClaimHtlcSuccessWithWitnessData(addSigs(txInfo, sig, preimage), preimage)
           case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess

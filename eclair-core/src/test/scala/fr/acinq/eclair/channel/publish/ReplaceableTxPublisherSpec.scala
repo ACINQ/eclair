@@ -38,6 +38,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -121,6 +122,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
+
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
     }
 
@@ -229,9 +231,41 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       import f._
 
       val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
+      assert(remoteCommit.tx.txOut.length == 4) // 2 main outputs + 2 anchor outputs
       val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
       wallet.publishTransaction(remoteCommit.tx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommit.tx.txid)
+      generateBlocks(1)
+
+      setFeerate(FeeratePerKw(10_000 sat))
+      publisher ! Publish(probe.ref, anchorTx)
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd == anchorTx)
+      assert(result.reason == TxSkipped(retryNextBlock = false))
+    }
+  }
+
+  test("next remote commit tx confirmed, not spending anchor output") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      // Add a partially signed htlc Alice -> Bob.
+      addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+      probe.send(alice, CMD_SIGN(Some(probe.ref)))
+      probe.expectMsgType[CommandSuccess[CMD_SIGN]]
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.expectMsgType[CommitSig]
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.nonEmpty)
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.txid
+
+      val nextRemoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
+      assert(nextRemoteCommit.tx.txid == nextRemoteCommitTxId)
+      assert(nextRemoteCommit.tx.txOut.length == 5) // 2 main outputs + 2 anchor outputs + 1 htlc
+      val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
+      wallet.publishTransaction(nextRemoteCommit.tx).pipeTo(probe.ref)
+      probe.expectMsg(nextRemoteCommit.tx.txid)
       generateBlocks(1)
 
       setFeerate(FeeratePerKw(10_000 sat))
@@ -722,6 +756,51 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("next remote commit tx confirmed, not publishing htlc tx") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      // Add one htlc in the current commitment and one htlc in the next commitment.
+      addHtlc(5_000_000 msat, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      addHtlc(4_000_000 msat, alice, bob, alice2bob, bob2alice)
+      probe.send(alice, CMD_SIGN(Some(probe.ref)))
+      probe.expectMsgType[CommandSuccess[CMD_SIGN]]
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.expectMsgType[CommitSig]
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.nonEmpty)
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.nextRemoteCommit_opt.get.txid
+
+      // Force-close channel.
+      probe.send(alice, CMD_FORCECLOSE(probe.ref))
+      probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+      alice2blockchain.expectMsgType[PublishFinalTx]
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
+      val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
+
+      // Ensure remote commit tx confirms.
+      val nextRemoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
+      assert(nextRemoteCommitTx.tx.txid == nextRemoteCommitTxId)
+      assert(nextRemoteCommitTx.tx.txOut.length == 6) // 2 main outputs + 2 anchor outputs + 2 htlcs
+      wallet.publishTransaction(nextRemoteCommitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(nextRemoteCommitTx.tx.txid)
+      generateBlocks(5)
+
+      // Verify that HTLC transactions immediately fail to publish.
+      setFeerate(FeeratePerKw(15_000 sat))
+      val htlcTimeoutPublisher = createPublisher()
+      htlcTimeoutPublisher ! Publish(probe.ref, htlcTimeout)
+      val result2 = probe.expectMsgType[TxRejected]
+      assert(result2.cmd == htlcTimeout)
+      assert(result2.reason == ConflictingTxConfirmed)
+      htlcTimeoutPublisher ! Stop
+    }
+  }
+
   def closeChannelWithHtlcs(f: Fixture, overrideHtlcTarget: BlockHeight): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
     import f._
 
@@ -1194,14 +1273,23 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  def remoteCloseChannelWithHtlcs(f: Fixture, overrideHtlcTarget: BlockHeight): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
+  def remoteCloseChannelWithHtlcs(f: Fixture, overrideHtlcTarget: BlockHeight, nextCommit: Boolean): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
     import f._
 
     // Add htlcs in both directions and ensure that preimages are available.
-    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
     val (r, htlc) = addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    if (nextCommit) {
+      probe.send(alice, CMD_SIGN(Some(probe.ref)))
+      probe.expectMsgType[CommandSuccess[CMD_SIGN]]
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.expectMsgType[CommitSig]
+    } else {
+      crossSign(alice, bob, alice2bob, bob2alice)
+    }
     probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
@@ -1220,12 +1308,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     generateBlocks(1)
 
     alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
-    val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
-    val claimHtlcTimeoutTx = claimHtlcTimeout.txInfo.asInstanceOf[ClaimHtlcTimeoutTx].copy(confirmBefore = overrideHtlcTarget)
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
     val claimHtlcSuccessTx = claimHtlcSuccess.txInfo.asInstanceOf[ClaimHtlcSuccessTx].copy(confirmBefore = overrideHtlcTarget)
+    val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
+    val claimHtlcTimeoutTx = claimHtlcTimeout.txInfo.asInstanceOf[ClaimHtlcTimeoutTx].copy(confirmBefore = overrideHtlcTarget)
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
@@ -1290,7 +1378,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       import f._
 
       val currentFeerate = alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(2)
-      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50)
+      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50, nextCommit = false)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, currentFeerate)
       assert(claimHtlcSuccess.txInfo.fee > 0.sat)
       assert(claimHtlcSuccessTx.txIn.length == 1)
@@ -1300,12 +1388,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("claim htlc tx feerate too low, lowering output amount") {
+  def testClaimHtlcTxFeerateTooLowAnchors(nextCommit: Boolean): Unit = {
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs()) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
-      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 32)
+      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 32, nextCommit)
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target than what's provided.
       setFeerate(targetFeerate, blockTarget = 12)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, targetFeerate)
@@ -1319,12 +1407,20 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("claim htlc tx feerate too low, lowering output amount (standard commitment format)") {
+  test("claim htlc tx feerate too low, lowering output amount") {
+    testClaimHtlcTxFeerateTooLowAnchors(nextCommit = false)
+  }
+
+  test("claim htlc tx feerate too low, lowering output amount (next remote commit)") {
+    testClaimHtlcTxFeerateTooLowAnchors(nextCommit = true)
+  }
+
+  def testClaimHtlcTxFeerateTooLowStandard(nextCommit: Boolean): Unit = {
     withFixture(Seq(11 millibtc), ChannelTypes.Standard()) { f =>
       import f._
 
       val targetFeerate = FeeratePerKw(15_000 sat)
-      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
+      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300, nextCommit)
 
       // The Claim-HTLC-success tx will be immediately published.
       setFeerate(targetFeerate)
@@ -1359,11 +1455,19 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("claim htlc tx feerate too low, lowering output amount (standard commitment format)") {
+    testClaimHtlcTxFeerateTooLowStandard(nextCommit = false)
+  }
+
+  test("claim htlc tx feerate too low, lowering output amount (next remote commit, standard commitment format)") {
+    testClaimHtlcTxFeerateTooLowStandard(nextCommit = true)
+  }
+
   test("claim htlc tx feerate way too low, skipping output") {
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs()) { f =>
       import f._
 
-      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
+      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300, nextCommit = false)
 
       setFeerate(FeeratePerKw(50_000 sat))
       val claimHtlcSuccessPublisher = createPublisher()
@@ -1395,7 +1499,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val initialFeerate = FeeratePerKw(15_000 sat)
       val targetFeerate = FeeratePerKw(20_000 sat)
 
-      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 144)
+      val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 144, nextCommit = false)
 
       val listener = TestProbe()
       system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
@@ -1451,7 +1555,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputs()) { f =>
       import f._
 
-      val (remoteCommitTx, claimHtlcSuccess, _) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300)
+      val (remoteCommitTx, claimHtlcSuccess, _) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 300, nextCommit = false)
 
       val listener = TestProbe()
       system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
