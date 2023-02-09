@@ -253,8 +253,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
           case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
             // those are zero-conf channels, the min-depth isn't critical, we use the default
-            val fundingMinDepth = nodeParams.channelConf.minDepthBlocks.toLong
-            blockchain ! WatchFundingConfirmed(self, fundingTx.tx.txid, fundingMinDepth)
+            watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
           case _: LocalFundingStatus.ConfirmedFundingTx =>
             if (!data.isInstanceOf[DATA_CLOSING]) {
               // the CLOSING state is handled differently, because the funding tx may already have been permanently spent
@@ -1342,7 +1341,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         defaultMinDepth.toLong
       }
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      blockchain ! WatchFundingConfirmed(self, d.metaCommitments.latest.fundingTxId, minDepth)
+      watchFundingConfirmed(d.metaCommitments.latest.fundingTxId, Some(minDepth))
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
@@ -1605,7 +1604,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
             case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
           }
-          blockchain ! WatchFundingConfirmed(self, w.tx.txid, nodeParams.channelConf.minDepthBlocks)
+          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
           stay() using d1 storing()
         case None =>
           stay()

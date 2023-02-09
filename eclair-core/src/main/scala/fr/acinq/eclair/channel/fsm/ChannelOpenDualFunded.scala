@@ -559,7 +559,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
       d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Some(metaCommitments) =>
-          blockchain ! WatchFundingConfirmed(self, w.tx.txid, nodeParams.channelConf.minDepthBlocks)
+          // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
+          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
           val realScidStatus = RealScidStatus.Unknown
           val shortIds = createShortIds(d.channelId, realScidStatus)
           val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
