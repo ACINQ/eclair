@@ -247,18 +247,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // at reconnection if necessary
             watchFundingSpent(commitment)
           case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
+            blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
             // A watch-confirmed will be set at reconnection if necessary 
             watchFundingSpent(commitment)
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+            publishFundingTx(fundingTx)
             watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
           case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
             // those are zero-conf channels, the min-depth isn't critical, we use the default
             watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
           case _: LocalFundingStatus.ConfirmedFundingTx =>
-            if (!data.isInstanceOf[DATA_CLOSING]) {
-              // the CLOSING state is handled differently, because the funding tx may already have been permanently spent
-              // in all other states, we watch the funding tx
-              watchFundingSpent(commitment)
+            data match {
+              case closing: DATA_CLOSING if Closing.nothingAtStake(closing) || Closing.isClosingTypeAlreadyKnown(closing).isDefined =>
+                // no need to do anything
+                ()
+              case closing: DATA_CLOSING =>
+                // in all other cases we need to be ready for any type of closing
+                watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet)
+              case _ =>
+                watchFundingSpent(commitment)
             }
         }
       }
@@ -290,23 +297,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case Some(c: Closing.RevokedClose) =>
               doPublish(c.revokedCommitPublished)
             case None =>
-              // in all other cases we need to be ready for any type of closing
-              watchFundingSpent(data.metaCommitments.latest.commitment, closing.spendingTxs.map(_.txid).toSet)
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isInitiator))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.metaCommitments.latest))
               closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.metaCommitments.latest))
               closing.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.metaCommitments.latest))
               closing.revokedCommitPublished.foreach(doPublish)
               closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.metaCommitments.latest))
-
-              // if commitment number is zero, we also need to make sure that the funding tx has been published
-              if (closing.metaCommitments.common.localCommitIndex == 0 && closing.metaCommitments.common.remoteCommitIndex == 0) {
-                if (closing.metaCommitments.params.channelFeatures.hasFeature(Features.DualFunding)) {
-                  closing.metaCommitments.latest.localFundingStatus.signedTx_opt.foreach(tx => wallet.publishTransaction(tx))
-                } else {
-                  blockchain ! GetTxWithMeta(self, closing.metaCommitments.latest.fundingTxId)
-                }
-              }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
@@ -328,16 +324,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           context.system.scheduler.scheduleWithFixedDelay(initialDelay = periodicRefreshInitialDelay, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
           goto(OFFLINE) using normal
-
-        case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(self, funding.metaCommitments.latest.fundingTxId)
-          goto(OFFLINE) using funding
-
-        case funding: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
-          // we make sure that the funding tx with the highest feerate has been published
-          publishFundingTx(funding.latestFundingTx)
-          goto(OFFLINE) using funding
 
         case _ =>
           goto(OFFLINE) using data
@@ -1104,7 +1090,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         val d1 = DATA_CLOSING(metaCommitments1, d.waitingSince, d.finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
         stay() using d1 storing() calling doPublish(localCommitPublished, commitments)
       }
-      
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
