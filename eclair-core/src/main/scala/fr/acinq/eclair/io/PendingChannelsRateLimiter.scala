@@ -42,7 +42,7 @@ object PendingChannelsRateLimiter {
     }
   }
 
-  private def filterPendingChannels(channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
+  private[io] def filterPendingChannels(channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
     channels.filter {
       case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => true
       case _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => true
