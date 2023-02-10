@@ -1587,7 +1587,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case d: DATA_SHUTDOWN => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_NEGOTIATING => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
-        case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
+        case d: DATA_CLOSING => d.copy(metaCommitments = metaCommitments1)
       }
       watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
       stay() using d1 storing()
