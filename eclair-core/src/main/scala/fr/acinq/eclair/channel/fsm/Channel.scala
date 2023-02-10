@@ -1104,8 +1104,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         val d1 = DATA_CLOSING(metaCommitments1, d.waitingSince, d.finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
         stay() using d1 storing() calling doPublish(localCommitPublished, commitments)
       }
-
-
+      
     case Event(WatchFundingSpentTriggered(tx), d: DATA_CLOSING) =>
       if (d.mutualClosePublished.exists(_.tx.txid == tx.txid)) {
         // we already know about this tx, probably because we have published it ourselves after successful negotiation
