@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.Status.Failure
 import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
 import akka.testkit.TestActor.KeepRunning
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
@@ -28,9 +27,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -344,91 +341,6 @@ class PeerSpec extends FixtureSpec {
     channel.expectNoMessage(100 millis)
     peerConnection.expectNoMessage(100 millis)
     assert(peer.stateData.channels.size == 1)
-  }
-
-  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard)
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
-  }
-
-  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.Wumbo)) { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
-  }
-
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag(ChannelStateTestsTags.Wumbo)) { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Btc(1).toSatoshi
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
-  }
-
-  test("don't spawn a channel if we don't support their channel type") { f =>
-    import f._
-
-    connect(remoteNodeId, peer, peerConnection, switchboard)
-    assert(peer.stateData.channels.isEmpty)
-
-    // They only support anchor outputs and we don't.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
-    }
-    // They only support anchor outputs with zero fee htlc txs and we don't.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
-    }
-    // They want to use a channel type that doesn't exist in the spec.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"))
-    }
-    // They want to use a channel type we don't support yet.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
-    }
-  }
-
-  test("don't spawn a channel is channel type is missing with the feature bit set", Tag(ChannelStateTestsTags.ChannelType)) { f =>
-    import f._
-
-    val remoteInit = protocol.Init(Features(ChannelType -> Optional))
-    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = remoteInit)
-    assert(peer.stateData.channels.isEmpty)
-    val open = createOpenChannelMessage()
-    peerConnection.send(peer, open)
-    peerConnection.expectMsg(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
   }
 
   test("don't spawn a dual funded channel if not supported") { f =>

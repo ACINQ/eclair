@@ -16,38 +16,36 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor
+import akka.actor.Status
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, DeterministicWallet, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong}
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.Features.{AnchorOutputs, ChannelType, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelAborted, ChannelFlags, LocalParams}
-import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
-import fr.acinq.eclair.io.Peer.{ChannelId, OutgoingMessage, SpawnChannelNonInitiator}
+import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
+import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.states.ChannelStateTestsTags
+import fr.acinq.eclair.channel.{ChannelAborted, ChannelTypes}
+import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelInitiator, OpenChannelNonInitiator}
+import fr.acinq.eclair.io.Peer.{OutgoingMessage, SpawnChannelNonInitiator}
+import fr.acinq.eclair.io.PeerSpec.createOpenChannelMessage
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
-import fr.acinq.eclair.wire.protocol.{Error, Init, NodeAddress, OpenChannel}
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UInt64, randomBytes32}
-import org.scalatest.Outcome
+import fr.acinq.eclair.payment.Bolt11Invoice.defaultFeatures.initFeatures
+import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, OpenChannel, OpenChannelTlv, TlvStream}
+import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.ByteVector
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration.DurationInt
 
 class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
-  val fundingAmount: Satoshi = 1 sat
-  val publicKey: Crypto.PublicKey = PrivateKey(ByteVector32.One).publicKey
-  val remoteNodeId: Crypto.PublicKey = PrivateKey(ByteVector32.One).publicKey
-  val temporaryChannelId: ByteVector32 = ByteVector32.Zeroes
-  val openChannel: OpenChannel = OpenChannel(ByteVector32.Zeroes, temporaryChannelId, fundingAmount, 0 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey, publicKey, publicKey, publicKey, publicKey, publicKey, ChannelFlags.Private)
-  val localParams: LocalParams = LocalParams(remoteNodeId, DeterministicWallet.KeyPath(Seq(42L)), 1 sat, Long.MaxValue.msat, Some(500 sat), 1 msat, CltvExpiryDelta(144), 50, isInitiator = false, None, None, Features.empty)
+  val remoteNodeId: Crypto.PublicKey = randomKey().publicKey
   val defaultParams: DefaultParams = DefaultParams(100 sat, 100000 msat, 100 msat, CltvExpiryDelta(288), 10)
-  val channels: Map[Peer.FinalChannelId, actor.ActorRef] = Map(Peer.FinalChannelId(randomBytes32()) -> system.classicSystem.deadLetters)
-  val connectedData: Peer.ConnectedData = Peer.ConnectedData(NodeAddress.fromParts("1.2.3.4", 42000).get, system.classicSystem.deadLetters, Init(TestConstants.Alice.nodeParams.features.initFeatures()), Init(TestConstants.Bob.nodeParams.features.initFeatures()), channels.map { case (k: ChannelId, v) => (k, v) })
-  def publicKey(fill: Byte): Crypto.PublicKey = PrivateKey(ByteVector.fill(32)(fill)).publicKey
+  val openChannel: OpenChannel = createOpenChannelMessage()
 
   override def withFixture(test: OneArgTest): Outcome = {
     val peer = TestProbe[Any]()
@@ -65,15 +63,15 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
 
     val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter.ref, 10 millis))
-    withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor, pendingChannelsRateLimiter, peerConnection, eventListener)))
+    withFixture(test.toNoArgTest(FixtureParam(openChannelInterceptor, peer, pluginInterceptor, pendingChannelsRateLimiter, peerConnection, eventListener, wallet)))
   }
 
-  case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any], eventListener: TestProbe[ChannelAborted])
+  case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any], eventListener: TestProbe[ChannelAborted], wallet: DummyOnChainWallet)
 
   test("reject channel open if timeout waiting for plugin to respond") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived]
@@ -84,10 +82,10 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("continue channel open if pending channels rate limiter and interceptor plugin accept it") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(temporaryChannelId, defaultParams)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
     val updatedLocalParams = peer.expectMessageType[SpawnChannelNonInitiator].localParams
     assert(updatedLocalParams.dustLimit == defaultParams.dustLimit)
     assert(updatedLocalParams.htlcMinimum == defaultParams.htlcMinimum)
@@ -102,7 +100,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // no open channel interceptor plugin registered
     val wallet = new DummyOnChainWallet()
     val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, TestConstants.Alice.nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter.ref, 10 millis))
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectNoMessage(10 millis)
@@ -112,10 +110,10 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if rejected by the plugin") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! RejectOpenChannel(temporaryChannelId, Error(temporaryChannelId, "rejected"))
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! RejectOpenChannel(randomBytes32(), Error(randomBytes32(), "rejected"))
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejected"))
     eventListener.expectMessageType[ChannelAborted]
   }
@@ -123,7 +121,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if pending channels rate limit reached") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rate limit reached"))
@@ -133,7 +131,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if concurrent request in progress") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), connectedData.localFeatures, connectedData.remoteFeatures, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
     openChannelInterceptor ! openChannelNonInitiator
 
     // waiting for rate limiter to respond to the first request, do not accept any other requests
@@ -146,8 +144,84 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // original request accepted after plugin accepts it
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(temporaryChannelId, defaultParams)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
     peer.expectMessageType[SpawnChannelNonInitiator]
     eventListener.expectMessageType[ChannelAborted]
   }
+
+  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), Features.empty, Features.empty)
+
+    assert(probe.expectMessageType[Status.Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+  }
+
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.Wumbo)) { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), initFeatures().add(Wumbo, Optional), Features.empty)
+
+    assert(probe.expectMessageType[Status.Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
+  }
+
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag(ChannelStateTestsTags.Wumbo)) { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), initFeatures().add(Wumbo, Optional), initFeatures().add(Wumbo, Optional))
+
+    assert(probe.expectMessageType[Status.Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
+  }
+
+  test("don't spawn a channel if we don't support their channel type") { f =>
+    import f._
+
+    // They only support anchor outputs and we don't.
+    {
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"), peerConnection.ref.toClassic))
+      eventListener.expectMessageType[ChannelAborted]
+    }
+    // They only support anchor outputs with zero fee htlc txs and we don't.
+    {
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"), peerConnection.ref.toClassic))
+      eventListener.expectMessageType[ChannelAborted]
+    }
+    // They want to use a channel type that doesn't exist in the spec.
+    {
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"), peerConnection.ref.toClassic))
+      eventListener.expectMessageType[ChannelAborted]
+    }
+    // They want to use a channel type we don't support yet.
+    {
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"), peerConnection.ref.toClassic))
+      eventListener.expectMessageType[ChannelAborted]
+    }
+  }
+
+  test("don't spawn a channel if channel type is missing with the feature bit set", Tag(ChannelStateTestsTags.ChannelType)) { f =>
+    import f._
+
+    val open = createOpenChannelMessage()
+    openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), initFeatures().add(ChannelType, Optional), initFeatures().add(ChannelType, Optional), peerConnection.ref)
+    peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"), peerConnection.ref.toClassic))
+    eventListener.expectMessageType[ChannelAborted]
+  }
+
 }
