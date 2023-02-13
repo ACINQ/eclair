@@ -91,6 +91,9 @@ trait ErrorHandlers extends CommonHandlers {
         // We publish our commitment even if we have nothing at stake: it's a nice thing to do because it lets our peer
         // get their funds back without delays.
         cause match {
+          case _: InvalidFundingTx =>
+            // invalid funding tx in the single-funding case: we just close the channel
+            goto(CLOSED)
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
             spendLocalCurrent(dd) sending error

@@ -243,13 +243,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       data.metaCommitments.commitments.foreach { commitment =>
         commitment.localFundingStatus match {
           case LocalFundingStatus.UnknownFundingTx =>
-            // Legacy single-funded channels. The funding tx may or may not be confirmed, a watch-confirmed will be set
-            // at reconnection if necessary
-            watchFundingSpent(commitment)
+            // Legacy single-funded channels. The funding tx may or may not be confirmed. If it was confirmed, the watch
+            // will trigger instantly, the state will be updated and a watch-spent will be set.
+
+            watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
           case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
             blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
-            // A watch-confirmed will be set at reconnection if necessary 
-            watchFundingSpent(commitment)
+            watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
             publishFundingTx(fundingTx)
             watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
@@ -1309,21 +1309,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      val minDepth_opt = if (d.metaCommitments.params.localParams.isInitiator) {
-        Helpers.Funding.minDepthFunder(d.metaCommitments.params.localParams.initFeatures)
-      } else {
-        // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
-        Helpers.Funding.minDepthFundee(nodeParams.channelConf, d.metaCommitments.params.localParams.initFeatures, d.metaCommitments.latest.commitInput.txOut.amount)
-      }
-      val minDepth = minDepth_opt.getOrElse {
-        val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
-        // If we are in state WAIT_FOR_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
-        // have skipped this state. Maybe the computation method was changed and eclair was restarted?
-        log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
-        defaultMinDepth.toLong
-      }
-      // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      watchFundingConfirmed(d.metaCommitments.latest.fundingTxId, Some(minDepth))
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
@@ -1574,12 +1559,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
       val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
       val d1 = d match {
-        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          val realScidStatus = RealScidStatus.Unknown
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
           val realScidStatus = RealScidStatus.Unknown
           val shortIds = createShortIds(d.channelId, realScidStatus)
-          // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
           DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)
@@ -1589,18 +1578,20 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_CLOSING => d.copy(metaCommitments = metaCommitments1)
       }
-      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
       stay() using d1 storing()
 
     case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
       log.info(s"funding txid=${w.tx.txid} has been confirmed")
       val metaCommitments1 = acceptFundingTxConfirmed(w, d)
       val d1 = d match {
-        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(metaCommitments = metaCommitments1)
+        // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
           val shortIds = createShortIds(d.channelId, realScidStatus)
-          // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
           DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(metaCommitments = metaCommitments1)

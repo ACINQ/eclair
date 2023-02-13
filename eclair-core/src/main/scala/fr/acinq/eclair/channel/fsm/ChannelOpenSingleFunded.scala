@@ -298,7 +298,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitment.fundingTxId}")
-              watchFundingSpent(commitment)
               watchFundingConfirmed(commitment.fundingTxId, Funding.minDepthFundee(nodeParams.channelConf, params.localParams.initFeatures, fundingAmount))
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(metaCommitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
@@ -345,7 +344,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, metaCommitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")
-          watchFundingSpent(commitment)
           watchFundingConfirmed(commitment.fundingTxId, Funding.minDepthFunder(params.localParams.initFeatures))
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
@@ -387,14 +385,25 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       log.debug("received their channel_ready, deferring message")
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
 
-    case Event(WatchPublishedTriggered(fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info("funding txid={} was successfully published for zero-conf channelId={}", fundingTx.txid, d.channelId)
-      acceptSingleFundingTx(d, fundingTx, RealScidStatus.Unknown)
+    case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
+      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
+      val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+      // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
+      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+      val realScidStatus = RealScidStatus.Unknown
+      val shortIds = createShortIds(d.channelId, realScidStatus)
+      val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
+      d.deferred.foreach(self ! _)
+      goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds) storing() sending channelReady
 
-    case Event(WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info(s"channelId=${d.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
-      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(blockHeight, txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
-      acceptSingleFundingTx(d, fundingTx, realScidStatus)
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      val metaCommitments1 = acceptFundingTxConfirmed(w, d)
+      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+      val shortIds = createShortIds(d.channelId, realScidStatus)
+      val channelReady = createChannelReady(shortIds, d.metaCommitments.params)
+      d.deferred.foreach(self ! _)
+      goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds) storing() sending channelReady
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.metaCommitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)

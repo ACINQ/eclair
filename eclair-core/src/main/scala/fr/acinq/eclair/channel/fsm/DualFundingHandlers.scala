@@ -60,24 +60,6 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): MetaCommitments = {
-    log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
-    val fundingStatus = ConfirmedFundingTx(w.tx)
-    context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
-    require(metaCommitments1.commitments.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
-    // first of all, we watch the funding tx that is now confirmed
-    val commitment = metaCommitments1.commitments.head
-    require(commitment.fundingTxId == w.tx.txid)
-    watchFundingSpent(commitment)
-    // we can forget all other transactions, they have been double spent by the tx that just confirmed
-    val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
-      .filter(c => c.fundingTxId != commitment.fundingTxId)
-      .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-    rollbackDualFundingTxs(otherFundingTxs)
-    metaCommitments1
-  }
-
   def handleNewBlockDualFundingUnconfirmed(c: CurrentBlockHeight, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
     // We regularly notify the node operator that they may want to RBF this channel.
     val blocksSinceOpen = c.blockHeight - d.waitingSince
