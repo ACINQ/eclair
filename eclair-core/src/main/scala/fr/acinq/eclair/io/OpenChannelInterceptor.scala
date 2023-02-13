@@ -127,86 +127,86 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def sanityCheckInitiator(initiator: OpenChannelInitiator): Behavior[Command] = {
-    if (initiator.open.fundingAmount >= Channel.MAX_FUNDING && !initiator.localFeatures.hasFeature(Wumbo)) {
-      initiator.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${initiator.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+  private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
+    if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.localFeatures.hasFeature(Wumbo)) {
+      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
       waitForRequest()
-    } else if (initiator.open.fundingAmount >= Channel.MAX_FUNDING && !initiator.remoteFeatures.hasFeature(Wumbo)) {
-      initiator.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${initiator.open.fundingAmount} is too big, the remote peer doesn't support wumbo"))
+    } else if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.remoteFeatures.hasFeature(Wumbo)) {
+      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo"))
       waitForRequest()
-    } else if (initiator.open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
-      initiator.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${initiator.open.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+    } else if (request.open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
+      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
       waitForRequest()
     } else {
       // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
-      val channelFlags = initiator.open.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags)
-      val channelType = initiator.open.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(initiator.localFeatures, initiator.remoteFeatures, channelFlags.announceChannel))
-      val dualFunded = Features.canUseFeature(initiator.localFeatures, initiator.remoteFeatures, Features.DualFunding)
-      val upfrontShutdownScript = Features.canUseFeature(initiator.localFeatures, initiator.remoteFeatures, Features.UpfrontShutdownScript)
-      val localParams = createLocalParams(nodeParams, initiator.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, initiator.open.fundingAmount, initiator.open.disableMaxHtlcValueInFlight)
-      peer ! Peer.SpawnChannelInitiator(initiator.open, ChannelConfig.standard, channelType, localParams, initiator.replyTo.toClassic)
+      val channelFlags = request.open.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags)
+      val channelType = request.open.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(request.localFeatures, request.remoteFeatures, channelFlags.announceChannel))
+      val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
+      val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
+      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
+      peer ! Peer.SpawnChannelInitiator(request.open, ChannelConfig.standard, channelType, localParams, request.replyTo.toClassic)
       waitForRequest()
     }
   }
 
-  private def sanityCheckNonInitiator(nonInitiator: OpenChannelNonInitiator): Behavior[Command] = {
-    validateRemoteChannelType(nonInitiator.temporaryChannelId, nonInitiator.channelFlags, nonInitiator.channelType_opt, nonInitiator.localFeatures, nonInitiator.remoteFeatures) match {
+  private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
+    validateRemoteChannelType(request.temporaryChannelId, request.channelFlags, request.channelType_opt, request.localFeatures, request.remoteFeatures) match {
       case Right(channelType) =>
-        val dualFunded = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.DualFunding)
-        val upfrontShutdownScript = Features.canUseFeature(nonInitiator.localFeatures, nonInitiator.remoteFeatures, Features.UpfrontShutdownScript)
-        val localParams = createLocalParams(nodeParams, nonInitiator.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, nonInitiator.fundingAmount, disableMaxHtlcValueInFlight = false)
-        checkRateLimits(nonInitiator, channelType, localParams)
+        val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
+        val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
+        val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, request.fundingAmount, disableMaxHtlcValueInFlight = false)
+        checkRateLimits(request, channelType, localParams)
       case Left(ex) =>
         context.log.warn(s"ignoring remote channel open: ${ex.getMessage}")
-        sendFailure(ex.getMessage, nonInitiator)
+        sendFailure(ex.getMessage, request)
         waitForRequest()
     }
   }
 
-  private def checkRateLimits(nonInitiator: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalParams): Behavior[Command] = {
+  private def checkRateLimits(request: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalParams): Behavior[Command] = {
     val adapter = context.messageAdapter[PendingChannelsRateLimiter.Response](PendingChannelsRateLimiterResponse)
-    pendingChannelsRateLimiter ! AddOrRejectChannel(adapter, nonInitiator.remoteNodeId, nonInitiator.temporaryChannelId)
+    pendingChannelsRateLimiter ! AddOrRejectChannel(adapter, request.remoteNodeId, request.temporaryChannelId)
     receiveCommandMessage[CheckRateLimitsCommands](context, "checkRateLimits") {
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.AcceptOpenChannel) =>
         nodeParams.pluginOpenChannelInterceptor match {
-          case Some(plugin) => queryPlugin(plugin, nonInitiator, localParams, ChannelConfig.standard, channelType)
+          case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
           case None =>
-            peer ! SpawnChannelNonInitiator(nonInitiator.open, ChannelConfig.standard, channelType, localParams, nonInitiator.peerConnection.toClassic)
+            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, request.peerConnection.toClassic)
             waitForRequest()
         }
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.ChannelRateLimited) =>
         context.log.warn(s"ignoring remote channel open: rate limited")
-        sendFailure("rate limit reached", nonInitiator)
+        sendFailure("rate limit reached", request)
         waitForRequest()
     }
   }
 
-  private def queryPlugin(plugin: InterceptOpenChannelPlugin, nonInitiator: OpenChannelInterceptor.OpenChannelNonInitiator, localParams: LocalParams, channelConfig: ChannelConfig, channelType: SupportedChannelType): Behavior[Command] =
+  private def queryPlugin(plugin: InterceptOpenChannelPlugin, request: OpenChannelInterceptor.OpenChannelNonInitiator, localParams: LocalParams, channelConfig: ChannelConfig, channelType: SupportedChannelType): Behavior[Command] =
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(PluginTimeout, pluginTimeout)
       val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](PluginOpenChannelResponse)
       val defaultParams = DefaultParams(localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs)
-      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, nonInitiator, defaultParams)
+      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, request, defaultParams)
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(nonInitiator.open, channelConfig, channelType, localParams1, nonInitiator.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
-          sendFailure(pluginResponse.error.toAscii, nonInitiator)
+          sendFailure(pluginResponse.error.toAscii, request)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginTimeout =>
           context.log.error(s"timed out while waiting for plugin: ${plugin.name}")
-          sendFailure("plugin timeout", nonInitiator)
+          sendFailure("plugin timeout", request)
           waitForRequest()
       }
     }
 
-  private def sendFailure(error: String, nonInitiator: OpenChannelNonInitiator): Unit = {
-    peer ! Peer.OutgoingMessage(Error(nonInitiator.temporaryChannelId, error), nonInitiator.peerConnection.toClassic)
-    context.system.eventStream ! Publish(ChannelAborted(actor.ActorRef.noSender, nonInitiator.remoteNodeId, nonInitiator.temporaryChannelId))
+  private def sendFailure(error: String, request: OpenChannelNonInitiator): Unit = {
+    peer ! Peer.OutgoingMessage(Error(request.temporaryChannelId, error), request.peerConnection.toClassic)
+    context.system.eventStream ! Publish(ChannelAborted(actor.ActorRef.noSender, request.remoteNodeId, request.temporaryChannelId))
   }
 
   private def receiveCommandMessage[B <: Command : ClassTag](context: ActorContext[Command], stateName: String)(f: B => Behavior[Command]): Behavior[Command] = {
