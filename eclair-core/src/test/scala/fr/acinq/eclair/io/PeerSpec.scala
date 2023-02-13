@@ -91,6 +91,9 @@ class PeerSpec extends FixtureSpec {
 
     val mockLimiter = TestProbe()
     mockLimiter.setAutoPilot((_: ActorRef, msg: Any) => msg match {
+      case msg: PendingChannelsRateLimiter.AddOrRejectChannel if testData.tags.contains("rate_limited") =>
+        msg.replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
+        KeepRunning
       case msg: PendingChannelsRateLimiter.AddOrRejectChannel =>
         msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
         KeepRunning
@@ -343,6 +346,17 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.size == 1)
   }
 
+  test("handle OpenChannelInterceptor spawning a user initiated open channel request ") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    assert(peer.stateData.channels.isEmpty)
+
+    val open = Peer.OpenChannel(remoteNodeId, 10000 sat, None, None, None, None, None)
+    peerConnection.send(peer, open)
+    channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
+  }
+
   test("don't spawn a dual funded channel if not supported") { f =>
     import f._
 
@@ -412,6 +426,28 @@ class PeerSpec extends FixtureSpec {
     // We can create channels that use features that we haven't enabled.
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs()), None, None, None, None))
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs())
+  }
+
+  test("handle OpenChannelInterceptor accepting an open channel message") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+
+    val open = createOpenChannelMessage()
+    peerConnection.send(peer, open)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
+    channel.expectMsg(open)
+  }
+
+  test("handle OpenChannelInterceptor rejecting an open channel message", Tag("rate_limited")) { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+
+    val open = createOpenChannelMessage()
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, "rate limit reached"))
+    assert(peer.stateData.channels.isEmpty)
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
