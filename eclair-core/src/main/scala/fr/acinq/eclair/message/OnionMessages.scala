@@ -159,15 +159,11 @@ object OnionMessages {
 
   case class DecodedEncryptedData(payload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey)
 
-  private def decryptEncryptedData(privateKey: PrivateKey, blinding: PublicKey, payload: TlvStream[OnionMessagePayloadTlv]): Either[DropReason, DecodedEncryptedData] = {
-    payload.get[OnionMessagePayloadTlv.EncryptedData] match {
-      case Some(OnionMessagePayloadTlv.EncryptedData(encryptedData)) =>
-        RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, encryptedData) match {
-          case Left(RouteBlindingEncryptedDataCodecs.CannotDecryptData(f)) => Left(CannotDecryptBlindedPayload(f))
-          case Left(RouteBlindingEncryptedDataCodecs.CannotDecodeData(f)) => Left(CannotDecodeBlindedPayload(f))
-          case Right(decoded) => Right(DecodedEncryptedData(decoded.tlvs, decoded.nextBlinding))
-        }
-      case None => Left(CannotDecryptBlindedPayload("encrypted_data is missing"))
+  private def decryptEncryptedData(privateKey: PrivateKey, blinding: PublicKey, encryptedData: ByteVector): Either[DropReason, DecodedEncryptedData] = {
+    RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, encryptedData) match {
+      case Left(RouteBlindingEncryptedDataCodecs.CannotDecryptData(f)) => Left(CannotDecryptBlindedPayload(f))
+      case Left(RouteBlindingEncryptedDataCodecs.CannotDecodeData(f)) => Left(CannotDecodeBlindedPayload(f))
+      case Right(decoded) => Right(DecodedEncryptedData(decoded.tlvs, decoded.nextBlinding))
     }
   }
 
@@ -176,16 +172,24 @@ object OnionMessages {
     val blindedPrivateKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
     decryptOnion(blindedPrivateKey, msg.onionRoutingPacket) match {
       case Left(f) => DropMessage(f)
-      case Right(DecodedOnionPacket(payload, nextPacket_opt)) => decryptEncryptedData(privateKey, msg.blindingKey, payload) match {
-        case Left(f) => DropMessage(f)
-        case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
-          case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-            case SendMessage(nextNodeId, nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
-            case action => action
+      case Right(DecodedOnionPacket(payload, nextPacket_opt)) =>
+        payload.get[OnionMessagePayloadTlv.EncryptedData] match {
+          case Some(OnionMessagePayloadTlv.EncryptedData(encryptedData)) =>
+            decryptEncryptedData(privateKey, msg.blindingKey, encryptedData) match {
+              case Left(f) => DropMessage(f)
+              case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
+                case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
+                  case SendMessage(nextNodeId, nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
+                  case action => action
+                }
+                case None => validateFinalPayload(payload, blindedPayload)
+              }
+            }
+          case None => nextPacket_opt match {
+            case Some(_) => DropMessage(CannotDecryptBlindedPayload("encrypted_data is missing"))
+            case None => validateFinalPayload(payload, TlvStream.empty)
           }
-          case None => validateFinalPayload(payload, blindedPayload)
         }
-      }
     }
   }
 

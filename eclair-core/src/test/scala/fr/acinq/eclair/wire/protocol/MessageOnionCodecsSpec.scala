@@ -38,7 +38,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
     ).route
     val testCases = Map(
       TlvStream[OnionMessagePayloadTlv](EncryptedData(hex"deadbeef")) -> hex"06 0404deadbeef",
-      TlvStream[OnionMessagePayloadTlv](ReplyPath(blindedRoute), EncryptedData(hex"deadbeef")) -> hex"f6 02ee02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661902c5ee5d5d559475814916957e167b8c257e06532ae6bfcbe4553e4549b9142ec7039dcddf597c0ea5bfe3c4de00630182d26c8f3cb588fa02c8cd19391a110f41a200330840ad82edc7378794e568deb3a836e3b9bc2e4a684412c34dbc5e50159ecf0b9c3844719f8656af9ff283e1eecb503f5e45b302aa42066bc9802597cac8f9f7193b8fd24b8671e3807e9c61dae8b330b695de780033d76f6388daa82694bcc63d43eaac1c5d189722cb84d0edb3b8b7dccb833c886eda7adb483f44498789f4139b2c12a0bfe8436a 0404deadbeef",
+      TlvStream[OnionMessagePayloadTlv](ReplyPath(blindedRoute), EncryptedData(hex"deadbeef")) -> hex"f7 02ef02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661902c5ee5d5d559475814916957e167b8c257e06532ae6bfcbe4553e4549b9142ec702039dcddf597c0ea5bfe3c4de00630182d26c8f3cb588fa02c8cd19391a110f41a200330840ad82edc7378794e568deb3a836e3b9bc2e4a684412c34dbc5e50159ecf0b9c3844719f8656af9ff283e1eecb503f5e45b302aa42066bc9802597cac8f9f7193b8fd24b8671e3807e9c61dae8b330b695de780033d76f6388daa82694bcc63d43eaac1c5d189722cb84d0edb3b8b7dccb833c886eda7adb483f44498789f4139b2c12a0bfe8436a 0404deadbeef",
     )
 
     for ((expected, bin) <- testCases) {
@@ -56,7 +56,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       // Missing encrypted data.
       (MissingRequiredTlv(UInt64(4)), hex"00", TlvStream(OutgoingNodeId(PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")))),
       // Forbidden reply path.
-      (ForbiddenTlv(UInt64(2)), hex"f8 02ee02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661902c5ee5d5d559475814916957e167b8c257e06532ae6bfcbe4553e4549b9142ec7039dcddf597c0ea5bfe3c4de00630182d26c8f3cb588fa02c8cd19391a110f41a200330840ad82edc7378794e568deb3a836e3b9bc2e4a684412c34dbc5e50159ecf0b9c3844719f8656af9ff283e1eecb503f5e45b302aa42066bc9802597cac8f9f7193b8fd24b8671e3807e9c61dae8b330b695de780033d76f6388daa82694bcc63d43eaac1c5d189722cb84d0edb3b8b7dccb833c886eda7adb483f44498789f4139b2c12a0bfe8436a 0406010203040506", TlvStream(OutgoingNodeId(PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")))),
+      (ForbiddenTlv(UInt64(2)), hex"f9 02ef02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661902c5ee5d5d559475814916957e167b8c257e06532ae6bfcbe4553e4549b9142ec702039dcddf597c0ea5bfe3c4de00630182d26c8f3cb588fa02c8cd19391a110f41a200330840ad82edc7378794e568deb3a836e3b9bc2e4a684412c34dbc5e50159ecf0b9c3844719f8656af9ff283e1eecb503f5e45b302aa42066bc9802597cac8f9f7193b8fd24b8671e3807e9c61dae8b330b695de780033d76f6388daa82694bcc63d43eaac1c5d189722cb84d0edb3b8b7dccb833c886eda7adb483f44498789f4139b2c12a0bfe8436a 0406010203040506", TlvStream(OutgoingNodeId(PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")))),
       // Missing encrypted outgoing node id.
       (MissingRequiredTlv(UInt64(4)), hex"08 0406010203040506", TlvStream.empty),
       // Forbidden encrypted path id.
@@ -71,8 +71,6 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
 
   test("decode invalid final per-hop payload") {
     val testCases = Seq[(InvalidTlvPayload, ByteVector, TlvStream[RouteBlindingEncryptedDataTlv])](
-      // Missing encrypted data.
-      (MissingRequiredTlv(UInt64(4)), hex"00", TlvStream(PathId(hex"deadbeef"))),
       // Forbidden encrypted payment relay data.
       (ForbiddenTlv(UInt64(10)), hex"06 040411223344", TlvStream(PathId(hex"deadbeef"), PaymentRelay(CltvExpiryDelta(48), 250, 25 msat))),
       // Forbidden encrypted payment constraints.
