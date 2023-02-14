@@ -1001,19 +1001,20 @@ case class Commitments(params: ChannelParams,
     active.forall(_.commitInput.redeemScript == fundingScript)
   }
 
-  def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): Commitments = {
-    val commitments1 = copy(active = active.map {
-      case c if c.fundingTxId == txid =>
-        log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
-        c.copy(localFundingStatus = status)
-      case c => c
-    }).pruneCommitments()
-    if (!active.exists(_.fundingTxId == txid)) {
-      log.error(s"funding txid=$txid doesn't match any of our funding txs")
-    } else if (commitments1 == this) {
-      log.warning(s"setting status=${status.getClass.getSimpleName} for funding txid=$txid was a no-op")
+  def updateLocalFundingStatus(txId: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
+    if (!this.active.exists(_.fundingTxId == txId)) {
+      log.error(s"funding txid=$txId doesn't match any of our funding txs")
+      Left(this)
+    } else {
+      val commitments1 = copy(active = active.map {
+        case c if c.fundingTxId == txId =>
+          log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txId")
+          c.copy(localFundingStatus = status)
+        case c => c
+      }).pruneCommitments()
+      val commitment = commitments1.active.find(_.fundingTxId == txId).get
+      Right(commitments1, commitment)
     }
-    commitments1
   }
 
   /**
