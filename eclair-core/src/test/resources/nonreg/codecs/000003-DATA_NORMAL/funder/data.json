@@ -77,7 +77,7 @@
         "amountSatoshis" : 15000000
       },
       "localFunding" : {
-        "status" : "unknown"
+        "status" : "unconfirmed"
       },
       "remoteFunding" : {
         "status" : "locked"

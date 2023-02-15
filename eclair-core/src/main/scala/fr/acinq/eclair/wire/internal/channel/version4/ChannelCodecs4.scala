@@ -264,7 +264,6 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x02, dualFundedUnconfirmedFundingTxCodec)
       .typecase(0x03, txCodec.as[ZeroconfPublishedFundingTx])
       .typecase(0x04, txCodec.as[ConfirmedFundingTx])
-      .typecase(0x05, provide(UnknownFundingTx))
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))

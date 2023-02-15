@@ -242,12 +242,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // (there can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf)
       data.metaCommitments.commitments.foreach { commitment =>
         commitment.localFundingStatus match {
-          case LocalFundingStatus.UnknownFundingTx =>
-            // Legacy single-funded channels. The funding tx may or may not be confirmed. If it was confirmed, the watch
-            // will trigger instantly, the state will be updated and a watch-spent will be set.
-            blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
-            watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
           case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
+            // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
+            // the channel fully operational). We could have set a specific Unknown status, but it would have forced
+            // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
+            // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
+            // once, because at the next restore, the status of the funding tx will be "confirmed".
             blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
             watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
           case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
