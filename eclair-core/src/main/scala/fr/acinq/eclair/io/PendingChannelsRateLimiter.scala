@@ -38,7 +38,7 @@ object PendingChannelsRateLimiter {
 
   def apply(nodeParams: NodeParams, router: ActorRef[Router.GetNode], channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
-      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(channels), Map(), Seq())
+      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(channels), Map(), Map())
     }
   }
 
@@ -56,7 +56,7 @@ object PendingChannelsRateLimiter {
 private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRef[Router.GetNode], context: ActorContext[Command]) {
   import PendingChannelsRateLimiter._
 
-  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
+  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
     channels.headOption match {
       case Some((remoteNodeId, pendingChannels)) =>
         val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(pendingChannels.head.channelId, r, None))
@@ -67,8 +67,8 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             Behaviors.same
           case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
             restoring(channels.tail, pendingPeerChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels)
-          case WrappedGetNodeResponse(_, UnknownNode(_), _) =>
-            restoring(channels.tail, pendingPeerChannels, pendingPrivateNodeChannels ++ pendingChannels.map(_.channelId))
+          case WrappedGetNodeResponse(_, UnknownNode(nodeId), _) =>
+            restoring(channels.tail, pendingPeerChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)))
         }
       case None =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
@@ -79,7 +79,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
     }
   }
 
-  private def registering(pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Seq[ByteVector32]): Behavior[Command] = {
+  private def registering(pendingPeerChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPeerChannels.flatMap(_._2).size)
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.size)
     Behaviors.receiveMessagePartial {
@@ -102,22 +102,31 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             replyTo ! AcceptOpenChannel
             registering(pendingPeerChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
-      case WrappedGetNodeResponse(temporaryChannelId, UnknownNode(_), Some(replyTo)) =>
-        if (pendingPrivateNodeChannels.size >= nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {
+      case WrappedGetNodeResponse(temporaryChannelId, UnknownNode(nodeId), Some(replyTo)) =>
+        if (pendingPrivateNodeChannels.flatMap(_._2).size >= nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {
           replyTo ! ChannelRateLimited
           Behaviors.same
         } else {
           replyTo ! AcceptOpenChannel
-          registering(pendingPeerChannels, pendingPrivateNodeChannels :+ temporaryChannelId)
+          pendingPrivateNodeChannels.get(nodeId) match {
+            case Some(peerChannels) =>
+              registering(pendingPeerChannels, pendingPrivateNodeChannels + (nodeId -> (temporaryChannelId +: peerChannels)))
+            case None =>
+              registering(pendingPeerChannels, pendingPrivateNodeChannels + (nodeId -> Seq(temporaryChannelId)))
+          }
         }
       case ReplaceChannelId(remoteNodeId, temporaryChannelId, channelId) =>
         pendingPeerChannels.get(remoteNodeId) match {
           case Some(channels) if channels.contains(temporaryChannelId) =>
             registering(pendingPeerChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId)), pendingPrivateNodeChannels)
           case Some(_) => Behaviors.same
-          case None if pendingPrivateNodeChannels.contains(temporaryChannelId) =>
-            registering(pendingPeerChannels, pendingPrivateNodeChannels.filterNot(_ == temporaryChannelId) :+ channelId)
-          case None => Behaviors.same
+          case None =>
+            pendingPrivateNodeChannels.get(remoteNodeId) match {
+              case Some(channels) if channels.contains(temporaryChannelId) =>
+                registering(pendingPeerChannels, pendingPrivateNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId)))
+              case Some(_) => Behaviors.same
+              case None => Behaviors.same
+            }
         }
       case RemoveChannelId(remoteNodeId, channelId) =>
         pendingPeerChannels.get(remoteNodeId) match {
@@ -128,9 +137,18 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             } else {
               registering(pendingPeerChannels + (remoteNodeId -> pendingChannels1), pendingPrivateNodeChannels)
             }
-          case None => registering(pendingPeerChannels, pendingPrivateNodeChannels.filterNot(_ == channelId))
+          case None =>
+            pendingPrivateNodeChannels.get(remoteNodeId) match {
+              case Some(pendingChannels) =>
+                val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
+                if (pendingChannels1.isEmpty) {
+                  registering(pendingPeerChannels, pendingPrivateNodeChannels - remoteNodeId)
+                } else {
+                  registering(pendingPeerChannels, pendingPrivateNodeChannels + (remoteNodeId -> pendingChannels1))
+                }
+              case None => Behaviors.same
+            }
         }
     }
   }
-
 }
