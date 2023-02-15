@@ -508,10 +508,10 @@ object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIds
 // @formatter:on
 
 // @formatter:off
-private case class FundingTxStatusJson(status: String, tx: Option[Transaction])
+private case class FundingTxStatusJson(status: String, txid: Option[ByteVector32])
 object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStatus]({
-  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt)
-  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt)
+  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid))
+  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid))
 })
 // @formatter:on
 
