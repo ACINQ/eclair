@@ -145,7 +145,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     // original request accepted after plugin accepts it
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
-    peer.expectMessageType[SpawnChannelNonInitiator]
+    assert(peer.expectMessageType[SpawnChannelNonInitiator].open == Left(openChannel))
     eventListener.expectMessageType[ChannelAborted]
   }
 
@@ -171,7 +171,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(probe.expectMessageType[Status.Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
 
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag(ChannelStateTestsTags.Wumbo)) { f =>
+  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
 
     val probe = TestProbe[Any]()

@@ -19,7 +19,6 @@ package fr.acinq.eclair.io
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream.Publish
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction, TxOut}
@@ -37,7 +36,6 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 import scala.concurrent.duration.DurationInt
 
 class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
-  val channelId0: ByteVector32 = ByteVector32.Zeroes
   val channelIdBelowLimit1: ByteVector32 = ByteVector32(hex"0111111110000000000000000000000000000000000000000000000000000000")
   val channelIdBelowLimit2: ByteVector32 = ByteVector32(hex"0222222220000000000000000000000000000000000000000000000000000000")
   val newChannelId1: ByteVector32 = ByteVector32(hex"0333333330000000000000000000000000000000000000000000000000000000")
@@ -45,6 +43,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   val channelIdPrivate1: ByteVector32 = ByteVector32(hex"0555555550000000000000000000000000000000000000000000000000000000")
   val channelIdPrivate2: ByteVector32 = ByteVector32(hex"0666666660000000000000000000000000000000000000000000000000000000")
   val newChannelIdPrivate1: ByteVector32 = ByteVector32(hex"077777770000000000000000000000000000000000000000000000000000000")
+  val channelIdAtLimit1: ByteVector32 = ByteVector32(hex"0888888880000000000000000000000000000000000000000000000000000000")
+  val channelIdAtLimit2: ByteVector32 = ByteVector32(hex"0999999990000000000000000000000000000000000000000000000000000000")
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val router = TestProbe[Router.GetNode]()
@@ -55,17 +55,17 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     val tx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
     val closingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil), Nil), tx, None)
     val channelsOnWhitelistAtLimit = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerOnWhitelistAtLimit, channelId0), BlockHeight(0), None, Left(FundingCreated(channelId0, ByteVector32.Zeroes, 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerOnWhitelistAtLimit, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), ByteVector32.Zeroes, 3, randomBytes64()))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerOnWhitelistAtLimit, randomBytes32()), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None)),
     )
     val peerAtLimit1 = randomKey().publicKey
     val channelsAtLimit1 = Seq(
-      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerAtLimit1, channelId0), BlockHeight(0), None, Left(FundingCreated(channelId0, ByteVector32.Zeroes, 3, randomBytes64()))),
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerAtLimit1, channelIdAtLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, ByteVector32.Zeroes, 3, randomBytes64()))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerAtLimit1, randomBytes32()), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None)),
     )
     val peerAtLimit2 = randomKey().publicKey
     val channelsAtLimit2 = Seq(
-      DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments(peerAtLimit2, channelId0), 0 msat, 0 msat, BlockHeight(0), BlockHeight(0), RbfStatus.NoRbf, None),
+      DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments(peerAtLimit2, channelIdAtLimit2), 0 msat, 0 msat, BlockHeight(0), BlockHeight(0), RbfStatus.NoRbf, None),
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(peerAtLimit2, randomBytes32()), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None)),
     )
     val peerBelowLimit1 = randomKey().publicKey
@@ -149,21 +149,20 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     }
 
     // when new channel ids assigned, stop tracking the old channel id and only track the new one
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, peersBelowLimit.head, channelIdBelowLimit1, newChannelId1))
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, peersBelowLimit.last, channelIdBelowLimit2, newChannelId2))
+    system.eventStream ! Publish(ChannelIdAssigned(null, peersBelowLimit.head, channelIdBelowLimit1, newChannelId1))
+    system.eventStream ! Publish(ChannelIdAssigned(null, peersBelowLimit.last, channelIdBelowLimit2, newChannelId2))
 
     // ignore channel id assignments for untracked channels
     (peersBelowLimit ++ peersAtLimit).foreach { peer =>
-      system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, peer, randomBytes32(), randomBytes32()))
+      system.eventStream ! Publish(ChannelIdAssigned(null, peer, randomBytes32(), randomBytes32()))
     }
 
     // ignore channel id assignments for private peers
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, randomKey().publicKey, channelIdPrivate1, newChannelIdPrivate1))
+    system.eventStream ! Publish(ChannelIdAssigned(null, randomKey().publicKey, channelIdPrivate1, newChannelIdPrivate1))
 
     // ignore confirm/close/abort events for channels not tracked for a public peer
-    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, peersAtLimit.head, newChannelId1))
-    system.eventStream ! Publish(ChannelClosed(TestProbe[Any]().ref.toClassic, channelId0, null, commitments(peersBelowLimit.head, randomBytes32())))
-    system.eventStream ! Publish(ChannelAborted(TestProbe[Any]().ref.toClassic, peersBelowLimit.last, randomBytes32()))
+    system.eventStream ! Publish(ChannelOpened(null, peersAtLimit.head, newChannelId1))
+    system.eventStream ! Publish(ChannelAborted(null, peersBelowLimit.last, randomBytes32()))
 
     // after channel events for untracked channels, new channel requests for public peers are still rejected
     (peersBelowLimit ++ peersAtLimit).foreach { peer =>
@@ -173,9 +172,9 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     }
 
     // stop tracking channels that are confirmed/closed/aborted for a public peer
-    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, peersAtLimit.head, channelId0))
-    system.eventStream ! Publish(ChannelClosed(TestProbe[Any]().ref.toClassic, newChannelId1, null, commitments(peersBelowLimit.head, newChannelId1)))
-    system.eventStream ! Publish(ChannelAborted(TestProbe[Any]().ref.toClassic, peersBelowLimit.last, newChannelId2))
+    system.eventStream ! Publish(ChannelOpened(null, peersAtLimit.head, channelIdAtLimit1))
+    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, commitments(peersBelowLimit.head, newChannelId1)))
+    system.eventStream ! Publish(ChannelAborted(null, peersBelowLimit.last, newChannelId2))
 
     // new channel requests for peers below limit are accepted after matching confirmed/closed/aborted
     (peersBelowLimit :+ peersAtLimit.head).foreach { peer =>
@@ -213,19 +212,19 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     }
 
     // when new channel ids assigned, stop tracking the old channel id and only track the new one
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, randomKey().publicKey, channelIdPrivate1, newChannelIdPrivate1))
+    system.eventStream ! Publish(ChannelIdAssigned(null, randomKey().publicKey, channelIdPrivate1, newChannelIdPrivate1))
 
     // ignore channel id assignments for untracked channels
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, randomKey().publicKey, randomBytes32(), randomBytes32()))
+    system.eventStream ! Publish(ChannelIdAssigned(null, randomKey().publicKey, randomBytes32(), randomBytes32()))
 
     // ignore channel id assignments for public peer channels
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, peersBelowLimit.head, channelIdBelowLimit1, newChannelId1))
-    system.eventStream ! Publish(ChannelIdAssigned(TestProbe[Any]().ref.toClassic, peersBelowLimit.last, channelIdBelowLimit2, newChannelId2))
+    system.eventStream ! Publish(ChannelIdAssigned(null, peersBelowLimit.head, channelIdBelowLimit1, newChannelId1))
+    system.eventStream ! Publish(ChannelIdAssigned(null, peersBelowLimit.last, channelIdBelowLimit2, newChannelId2))
 
     // ignore confirm/close/abort events for channels not tracked for a private peer
-    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, randomKey().publicKey, newChannelId1))
-    system.eventStream ! Publish(ChannelClosed(TestProbe[Any]().ref.toClassic, newChannelId1, null, commitments(peersBelowLimit.head, newChannelId1)))
-    system.eventStream ! Publish(ChannelAborted(TestProbe[Any]().ref.toClassic, peersBelowLimit.last, newChannelIdPrivate1))
+    system.eventStream ! Publish(ChannelOpened(null, randomKey().publicKey, newChannelId1))
+    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, commitments(peersBelowLimit.head, newChannelId1)))
+    system.eventStream ! Publish(ChannelAborted(null, peersBelowLimit.last, newChannelIdPrivate1))
 
     // after channel events for untracked channels, new channel requests for private peers are still rejected
     limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomKey().publicKey, randomBytes32())
@@ -233,8 +232,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
 
     // stop tracking channels that are confirmed/closed/aborted for a private peer
-    system.eventStream ! Publish(ChannelOpened(TestProbe[Any]().ref.toClassic, randomKey().publicKey, newChannelIdPrivate1))
-    system.eventStream ! Publish(ChannelClosed(TestProbe[Any]().ref.toClassic, channelIdPrivate2, null, commitments(randomKey().publicKey, channelIdPrivate2)))
+    system.eventStream ! Publish(ChannelOpened(null, randomKey().publicKey, newChannelIdPrivate1))
+    system.eventStream ! Publish(ChannelClosed(null, channelIdPrivate2, null, commitments(randomKey().publicKey, channelIdPrivate2)))
 
     // new channel requests for peers below limit are accepted after matching confirmed/closed/aborted
     for (_ <- 0 until nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {
