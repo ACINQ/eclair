@@ -1586,11 +1586,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val d1 = d match {
         // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
         case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, metaCommitments1.latest.commitInput.outPoint.index.toInt))
           val shortIds = createShortIds(d.channelId, realScidStatus)
           DATA_WAIT_FOR_CHANNEL_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.metaCommitments.latest.commitInput.outPoint.index.toInt))
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, metaCommitments1.latest.commitInput.outPoint.index.toInt))
           val shortIds = createShortIds(d.channelId, realScidStatus)
           DATA_WAIT_FOR_DUAL_FUNDING_READY(metaCommitments1, shortIds)
         case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(metaCommitments = metaCommitments1)
