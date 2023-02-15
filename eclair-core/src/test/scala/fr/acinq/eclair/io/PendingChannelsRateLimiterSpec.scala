@@ -162,6 +162,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
     // ignore confirm/close/abort events for channels not tracked for a public peer
     system.eventStream ! Publish(ChannelOpened(null, peersAtLimit.head, newChannelId1))
+    system.eventStream ! Publish(ChannelClosed(null, channelIdAtLimit1, null, commitments(peersBelowLimit.head, randomBytes32())))
     system.eventStream ! Publish(ChannelAborted(null, peersBelowLimit.last, randomBytes32()))
 
     // after channel events for untracked channels, new channel requests for public peers are still rejected
