@@ -245,7 +245,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case LocalFundingStatus.UnknownFundingTx =>
             // Legacy single-funded channels. The funding tx may or may not be confirmed. If it was confirmed, the watch
             // will trigger instantly, the state will be updated and a watch-spent will be set.
-
+            blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
             watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
           case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
             blockchain ! GetTxWithMeta(self, commitment.fundingTxId)

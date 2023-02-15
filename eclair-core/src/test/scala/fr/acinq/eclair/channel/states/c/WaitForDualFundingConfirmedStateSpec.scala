@@ -261,7 +261,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     val fundingTx = aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
     val (alice2, bob2) = restartNodes(f, aliceData, bobData)
-    reconnectNodes(f, alice2, aliceData, bob2, bobData)
+    reconnectNodes(f, alice2, bob2)
 
     alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx)
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
@@ -286,7 +286,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     val (alice2, bob2) = restartNodes(f, aliceData, bobData)
-    reconnectNodes(f, alice2, aliceData, bob2, bobData)
+    reconnectNodes(f, alice2, bob2)
 
     alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
@@ -588,7 +588,6 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
     assert(alice.stateName == OFFLINE)
 
-
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     aliceListener.expectMsgType[TransactionPublished]
@@ -809,7 +808,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     (alice2, bob2)
   }
 
-  def reconnectNodes(f: FixtureParam, alice2: TestFSMRef[ChannelState, ChannelData, Channel], aliceData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, bob2: TestFSMRef[ChannelState, ChannelData, Channel], bobData: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Unit = {
+  def reconnectNodes(f: FixtureParam, alice2: TestFSMRef[ChannelState, ChannelData, Channel], bob2: TestFSMRef[ChannelState, ChannelData, Channel]): Unit = {
     import f._
 
     val aliceInit = Init(alice2.underlyingActor.nodeParams.features.initFeatures())
