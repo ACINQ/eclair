@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, Error, InteractiveTxMessage, UpdateAddHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
@@ -49,6 +49,7 @@ case class ChannelReserveTooHigh                   (override val channelId: Byte
 case class ChannelReserveBelowOurDustLimit         (override val channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"their channelReserve=$channelReserve is below our dustLimit=$dustLimit")
 case class ChannelReserveNotMet                    (override val channelId: ByteVector32, toLocal: MilliSatoshi, toRemote: MilliSatoshi, reserve: Satoshi) extends ChannelException(channelId, s"channel reserve is not met toLocal=$toLocal toRemote=$toRemote reserve=$reserve")
 case class ChannelFundingError                     (override val channelId: ByteVector32) extends ChannelException(channelId, "channel funding error")
+case class InvalidFundingTx                        (override val channelId: ByteVector32) extends ChannelException(channelId, s"invalid funding tx")
 case class InvalidSerialId                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"invalid serial_id=${serialId.toByteVector.toHex}")
 case class DuplicateSerialId                       (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"duplicate serial_id=${serialId.toByteVector.toHex}")
 case class UnknownSerialId                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"unknown serial_id=${serialId.toByteVector.toHex}")

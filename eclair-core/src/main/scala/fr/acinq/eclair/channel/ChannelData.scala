@@ -409,15 +409,19 @@ case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Op
 
 sealed trait LocalFundingStatus { def signedTx_opt: Option[Transaction] }
 object LocalFundingStatus {
-  /** Needed for backward compat */
-  case object UnknownFundingTx extends LocalFundingStatus {
-    override def signedTx_opt: Option[Transaction] = None
-  }
   sealed trait UnconfirmedFundingTx extends LocalFundingStatus
-  /** In single-funding, fundees only know the funding txid */
+  /**
+   * In single-funding, fundees only know the funding txid.
+   * We also set an empty funding tx in the backward compatibility context, for channels that were in a state where we
+   * didn't keep the funding tx at all, even as funder (e.g. NORMAL). However, right after restoring those channels we
+   * retrieve the funding tx and update the funding status immediately.
+   */
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx {
     override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+  }
+  case class ZeroconfPublishedFundingTx(tx: Transaction) extends UnconfirmedFundingTx {
+    override val signedTx_opt: Option[Transaction] = Some(tx)
   }
   case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus {
     override val signedTx_opt: Option[Transaction] = Some(tx)

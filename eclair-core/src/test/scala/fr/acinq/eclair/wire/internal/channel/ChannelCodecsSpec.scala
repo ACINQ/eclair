@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.LocalFundingStatus.UnknownFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.ShaChain
@@ -327,7 +326,7 @@ object ChannelCodecsSpec {
       remoteNextHtlcId = 4L,
       originChannels = origins,
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      localFundingStatus = UnknownFundingTx,
+      localFundingStatus = LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
       remoteFundingStatus = RemoteFundingStatus.NotLocked,
       remotePerCommitmentSecrets = ShaChain.init)
 

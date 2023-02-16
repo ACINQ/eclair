@@ -493,7 +493,7 @@ object CommitmentsSpec {
     MetaCommitments(
       Params(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
       Common(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1, localCommitIndex = 0, remoteCommitIndex = 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
-      List(Commitment(LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
+      List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
     )
   }
 
@@ -507,7 +507,7 @@ object CommitmentsSpec {
     MetaCommitments(
       Params(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
       Common(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1, localCommitIndex = 0, remoteCommitIndex = 0, Map.empty, Right(randomKey().publicKey), ShaChain.init),
-      List(Commitment(LocalFundingStatus.UnknownFundingTx, RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
+      List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None))
     )
   }
 

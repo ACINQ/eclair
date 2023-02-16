@@ -220,6 +220,7 @@ private[channel] object ChannelCodecs4 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
+        ("minDepth_opt" | optional(bool8, uint32)) ::
         ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
 
     private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
@@ -261,8 +262,8 @@ private[channel] object ChannelCodecs4 {
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
       .typecase(0x02, dualFundedUnconfirmedFundingTxCodec)
-      .typecase(0x03, txCodec.as[ConfirmedFundingTx])
-      .typecase(0x04, provide(UnknownFundingTx))
+      .typecase(0x03, txCodec.as[ZeroconfPublishedFundingTx])
+      .typecase(0x04, txCodec.as[ConfirmedFundingTx])
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))

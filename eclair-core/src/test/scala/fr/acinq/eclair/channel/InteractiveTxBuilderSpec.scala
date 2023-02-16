@@ -133,8 +133,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     val channelId = randomBytes32()
     val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(remoteParamsA.fundingPubKey, remoteParamsB.fundingPubKey)))
-    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, fundingScript, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
+    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, fundingScript, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
     val commitmentParamsA = Params(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public)
     val commitmentParamsB = Params(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public)
 
@@ -1471,7 +1471,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val nonInitiatorInput = TxAddInput(channelId, UInt64(11), parentTx, 2, 4294967293L)
     val nonInitiatorOutput = TxAddOutput(channelId, UInt64(33), 49999900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
 
-    val initiatorParams = InteractiveTxParams(channelId, isInitiator = true, 200_000_000 sat, 200_000_000 sat, hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 120, 330 sat, FeeratePerKw(253 sat), RequireConfirmedInputs(forLocal = false, forRemote = false))
+    val initiatorParams = InteractiveTxParams(channelId, isInitiator = true, 200_000_000 sat, 200_000_000 sat, hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 120, 330 sat, FeeratePerKw(253 sat), Some(3), RequireConfirmedInputs(forLocal = false, forRemote = false))
     val initiatorTx = SharedTransaction(List(initiatorInput), List(nonInitiatorInput).map(i => RemoteTxAddInput(i)), List(initiatorOutput, sharedOutput), List(nonInitiatorOutput).map(o => RemoteTxAddOutput(o)), lockTime = 120)
     assert(initiatorTx.localFees(initiatorParams) == 155.sat)
     val nonInitiatorParams = initiatorParams.copy(isInitiator = false)

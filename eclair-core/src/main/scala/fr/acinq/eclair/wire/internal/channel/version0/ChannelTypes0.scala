@@ -215,7 +215,10 @@ private[channel] object ChannelTypes0 {
         localNextHtlcId, remoteNextHtlcId,
         originChannels,
         remoteNextCommitInfo,
-        LocalFundingStatus.UnknownFundingTx,
+        // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
+        // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
+        // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
+        LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
         RemoteFundingStatus.Locked,
         remotePerCommitmentSecrets)
     }

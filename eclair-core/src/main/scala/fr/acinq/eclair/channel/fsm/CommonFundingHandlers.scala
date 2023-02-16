@@ -18,16 +18,19 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.ShortChannelId
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingDeeplyBuried, WatchFundingSpent}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingSpent, WatchPublished}
 import fr.acinq.eclair.channel.Helpers.getRelayFees
+import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
 
 import scala.concurrent.duration.DurationInt
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 18/08/2022.
@@ -37,9 +40,48 @@ trait CommonFundingHandlers extends CommonHandlers {
 
   this: Channel =>
 
-  def watchFundingTx(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
+  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
     val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.txid).toSet ++ additionalKnownSpendingTxs
     blockchain ! WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+  }
+
+  def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long]): Unit = {
+    minDepth_opt match {
+      case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
+      // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
+      // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
+      case None => blockchain ! WatchPublished(self, fundingTxId)
+    }
+  }
+
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): MetaCommitments = {
+    log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
+    d.metaCommitments.latest.localFundingStatus match {
+      case _: SingleFundedUnconfirmedFundingTx =>
+        // in the single-funding case, as fundee, it is the first time we see the full funding tx, we must verify that it is
+        // valid (it pays the correct amount to the correct script). We also check as funder even if it's not really useful
+        Try(Transaction.correctlySpends(d.metaCommitments.latest.fullySignedLocalCommitTx(keyManager).tx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+          case Success(_) => ()
+          case Failure(t) =>
+            log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
+            throw InvalidFundingTx(d.channelId)
+        }
+      case _ => () // in the dual-funding case, we have already verified the funding tx
+    }
+    val fundingStatus = ConfirmedFundingTx(w.tx)
+    context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+    val metaCommitments1 = d.metaCommitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
+    require(metaCommitments1.commitments.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
+    // first of all, we watch the funding tx that is now confirmed
+    val commitment = metaCommitments1.commitments.head
+    require(commitment.fundingTxId == w.tx.txid)
+    watchFundingSpent(commitment)
+    // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
+    val otherFundingTxs = d.metaCommitments.commitments // note how we use the unpruned original commitments
+      .filter(c => c.fundingTxId != commitment.fundingTxId)
+      .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+    rollbackDualFundingTxs(otherFundingTxs)
+    metaCommitments1
   }
 
   def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {

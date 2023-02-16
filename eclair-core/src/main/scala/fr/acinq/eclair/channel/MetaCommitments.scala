@@ -959,6 +959,38 @@ case class MetaCommitments(params: Params,
     commitments.forall(_.commitInput.redeemScript == fundingScript)
   }
 
+  def updateLocalFundingStatus(txid: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): MetaCommitments = {
+    val metaCommitments1 = copy(commitments = commitments.map {
+      case c if c.fundingTxId == txid =>
+        log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for funding txid=$txid")
+        c.copy(localFundingStatus = status)
+      case c => c
+    }).pruneCommitments()
+    if (!this.commitments.exists(_.fundingTxId == txid)) {
+      log.error(s"funding txid=$txid doesn't match any of our funding txs")
+    } else if (metaCommitments1 == this) {
+      log.warning(s"setting status=${status.getClass.getSimpleName} for funding txid=$txid was a no-op")
+    }
+    metaCommitments1
+  }
+
+  /**
+   * Current (pre-splice) implementation prune initial commitments. There can be several of them with RBF, but they all
+   * double-spend each other and can be pruned once one of them confirms.
+   */
+  def pruneCommitments()(implicit log: LoggingAdapter): MetaCommitments = {
+    commitments
+      .find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx]) match {
+      case Some(lastConfirmed) =>
+        // we can prune all other commitments with the same or lower funding index
+        val pruned = commitments.filter(c => c.fundingTxId != lastConfirmed.fundingTxId)
+        val commitments1 = commitments diff pruned
+        pruned.foreach(c => log.info("pruning commitment fundingTxid={}", c.fundingTxId))
+        copy(commitments = commitments1)
+      case _ =>
+        this
+    }
+  }
 }
 
 object MetaCommitments {

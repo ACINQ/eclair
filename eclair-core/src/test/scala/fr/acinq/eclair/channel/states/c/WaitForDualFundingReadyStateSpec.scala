@@ -91,14 +91,16 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
         assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
         alice ! WatchPublishedTriggered(fundingTx)
         bob ! WatchPublishedTriggered(fundingTx)
+        assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+        assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
       } else {
         assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
         assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
         alice ! WatchFundingConfirmedTriggered(BlockHeight(TestConstants.defaultBlockHeight), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(TestConstants.defaultBlockHeight), 42, fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingSpent]
+        bob2blockchain.expectMsgType[WatchFundingSpent]
       }
-      alice2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
       awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, listener)))

@@ -73,8 +73,6 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      alice2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[WatchFundingConfirmed]
       listener.expectMsgType[TransactionPublished] // alice has published the funding transaction
@@ -95,6 +93,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     // alice stops waiting for confirmations since bob is accepting the channel
     assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
     alice ! WatchPublishedTriggered(fundingTx)
+    alice2blockchain.expectMsgType[WatchFundingConfirmed]
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     assert(aliceChannelReady.alias_opt.nonEmpty)

@@ -112,6 +112,7 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
+                                 minDepth_opt: Option[Long],
                                  requireConfirmedInputs: RequireConfirmedInputs) {
     require(localAmount >= 0.sat && remoteAmount >= 0.sat, "funding amount cannot be negative")
     val fundingAmount: Satoshi = localAmount + remoteAmount
@@ -621,7 +622,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               case Success(_) =>
                 val common = purpose.common
                 val commitment = Commitment(
-                  localFundingStatus = LocalFundingStatus.UnknownFundingTx, // hacky, but we don't have the signed funding tx yet, we'll learn it at the next step
+                  localFundingStatus = null, // hacky, but we don't have the signed funding tx yet, we'll learn it at the next step
                   remoteFundingStatus = RemoteFundingStatus.NotLocked,
                   localCommit = LocalCommit(common.localCommitIndex, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil),
                   remoteCommit = RemoteCommit(common.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint),

@@ -82,15 +82,15 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     pipe ! (alice, bob)
     within(30 seconds) {
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      alice2blockchain.expectMsgType[WatchFundingSpent]
       alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx_opt.get
       alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
       bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
       pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)

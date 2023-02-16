@@ -84,10 +84,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         bob2alice.expectMsgType[FundingSigned]
         bob2alice.forward(alice)
         alice2blockchain.expectMsgType[SetChannelId]
-        alice2blockchain.expectMsgType[WatchFundingSpent]
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[SetChannelId]
-        bob2blockchain.expectMsgType[WatchFundingSpent]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)

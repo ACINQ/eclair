@@ -89,12 +89,12 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
+    val fundingTxId = watchConfirmed.txId
+    assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid == fundingTxId)
     assert(txPublished.miningFee > 0.sat)
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 
@@ -104,7 +104,6 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     // alice doesn't watch for the funding tx to confirm, she only waits for the transaction to be published
-    alice2blockchain.expectMsgType[WatchFundingSpent]
     alice2blockchain.expectMsgType[WatchPublished]
     alice2blockchain.expectNoMessage(100 millis)
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
@@ -115,7 +114,6 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
     aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
