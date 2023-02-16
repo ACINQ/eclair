@@ -80,8 +80,8 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
   }
 
   private def registering(pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
-    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPublicNodeChannels.flatMap(_._2).size)
-    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.size)
+    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPublicNodeChannels.map(_._2.length).sum)
+    Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.map(_._2.length).sum)
     Behaviors.receiveMessagePartial {
       case AddOrRejectChannel(replyTo, remoteNodeId, _) if nodeParams.channelConf.channelOpenerWhitelist.contains(remoteNodeId) =>
         replyTo ! AcceptOpenChannel
@@ -103,7 +103,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             registering(pendingPublicNodeChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
       case WrappedGetNodeResponse(temporaryChannelId, UnknownNode(nodeId), Some(replyTo)) =>
-        if (pendingPrivateNodeChannels.flatMap(_._2).size >= nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {
+        if (pendingPrivateNodeChannels.map(_._2.size).sum >= nodeParams.channelConf.maxTotalPendingChannelsPrivateNodes) {
           replyTo ! ChannelRateLimited
           Behaviors.same
         } else {
