@@ -124,7 +124,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  def checkAnchorPreconditions(localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
+  private def checkAnchorPreconditions(localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
@@ -176,11 +176,22 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkHtlcPreconditions(htlcTx: HtlcTx): Behavior[Command] = {
+  private def getRemoteCommitConfirmations(commitments: Commitments): Future[Option[Int]] = {
+    bitcoinClient.getTxConfirmations(commitments.remoteCommit.txid).transformWith {
+      // NB: this handles the case where the remote commit is in the mempool because we will get Some(0).
+      case Success(Some(remoteCommitConfirmations)) => Future.successful(Some(remoteCommitConfirmations))
+      case notFoundOrFailed => commitments.nextRemoteCommit_opt match {
+        case Some(nextRemoteCommit) => bitcoinClient.getTxConfirmations(nextRemoteCommit.txid)
+        case None => Future.fromTry(notFoundOrFailed)
+      }
+    }
+  }
+
+  private def checkHtlcPreconditions(htlcTx: HtlcTx): Behavior[Command] = {
     // We verify that:
     //  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
     //  - if this is an htlc-success transaction, we have the preimage
-    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.remoteCommit.txid)) {
+    context.pipeToSelf(getRemoteCommitConfirmations(cmd.commitments)) {
       case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => RemoteCommitTxConfirmed
       case Success(_) => ParentTxOk
       case Failure(reason) => UnknownFailure(reason)
@@ -238,7 +249,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkClaimHtlcPreconditions(claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
+  private def checkClaimHtlcPreconditions(claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
     //  - if this is a claim-htlc-success transaction, we have the preimage
