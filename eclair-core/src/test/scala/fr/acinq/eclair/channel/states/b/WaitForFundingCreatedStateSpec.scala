@@ -110,7 +110,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFees(fundingCreated.temporaryChannelId, missing, 0 sat, fees).getMessage))
+    assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFirstCommitFees(fundingCreated.temporaryChannelId, missing, fees).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

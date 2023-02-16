@@ -443,7 +443,7 @@ object Helpers {
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
         val missing = fees - toRemote.truncateToSatoshi
         if (missing > 0.sat) {
-          return Left(CannotAffordFees(channelId, missing = missing, reserve = 0 sat, fees = fees))
+          return Left(CannotAffordFirstCommitFees(channelId, missing = missing, fees = fees))
         }
       }
 
