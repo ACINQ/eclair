@@ -124,6 +124,8 @@ object Transactions {
     def confirmBefore: BlockHeight
   }
 
+  case class SpliceTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "splice-tx" }
+
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "commit-tx" }
   /**
    * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only

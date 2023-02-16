@@ -45,7 +45,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     funded += (tx.txid -> tx)
     Future.successful(FundTransactionResponse(tx, 0 sat, None))
   }
@@ -92,7 +92,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
 
   override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Promise().future // will never be completed
 
@@ -130,7 +130,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid)).map(_.txOut.head.amount).sum
     val amountOut = tx.txOut.map(_.amount).sum
     // We add a single input to reach the desired feerate.

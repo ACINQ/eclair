@@ -166,7 +166,7 @@ object LightningMessageCodecs {
   val txAddInputCodec: Codec[TxAddInput] = (
     ("channelId" | bytes32) ::
       ("serialId" | uint64) ::
-      ("previousTx" | variableSizeBytes(uint16, txCodec)) ::
+      ("previousTx" | variableSizeBytes(uint16, optional(bitsRemaining, txCodec))) ::
       ("previousTxOutput" | uint32) ::
       ("sequence" | uint32) ::
       ("tlvStream" | TxAddInputTlv.txAddInputTlvCodec)).as[TxAddInput]
