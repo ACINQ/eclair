@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
 import akka.actor.typed.Scheduler
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicSchedulerOps}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps, ClassicSchedulerOps, TypedActorRefOps}
+import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -42,11 +42,12 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
-import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.payment.send.PaymentInitiator._
+import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -118,7 +119,7 @@ trait Eclair {
 
   def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32(), maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
+  def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
   def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
@@ -163,6 +164,10 @@ trait Eclair {
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
+
+  def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
+
+  def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
   def stop(): Future[Unit]
 }
@@ -365,7 +370,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
-          case _ => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId_opt, routeParams = routeParams))
+          case _ => Right(SendPaymentToNode(ActorRef.noSender, amount, invoice, maxAttempts, externalId_opt, routeParams = routeParams))
         }
       case Left(t) => Left(t)
     }
@@ -398,11 +403,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sentInfo(id: Either[UUID, ByteVector32])(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = {
+  override def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]] = {
     Future {
       id match {
-        case Left(uuid) => appKit.nodeParams.db.payments.listOutgoingPayments(uuid)
-        case Right(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
+        case PaymentIdentifier.PaymentUUID(uuid) => appKit.nodeParams.db.payments.listOutgoingPayments(uuid)
+        case PaymentIdentifier.PaymentHash(paymentHash) => appKit.nodeParams.db.payments.listOutgoingPayments(paymentHash)
+        case PaymentIdentifier.OfferId(offerId) => appKit.nodeParams.db.payments.listOutgoingPaymentsToOffer(offerId)
       }
     }.flatMap(outgoingDbPayments => {
       if (!outgoingDbPayments.exists(_.status == OutgoingPaymentStatus.Pending)) {
@@ -414,10 +420,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case PaymentIsPending(paymentId, paymentHash, pending) =>
             val paymentType = "placeholder"
             val dummyOutgoingPayment = pending match {
-              case PendingSpontaneousPayment(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), None, OutgoingPaymentStatus.Pending)
-              case PendingPaymentToNode(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
-              case PendingPaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
-              case PendingTrampolinePayment(_, _, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), OutgoingPaymentStatus.Pending)
+              case PendingSpontaneousPayment(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
+              case PendingPaymentToNode(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), r.payerKey_opt, OutgoingPaymentStatus.Pending)
+              case PendingPaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), None, OutgoingPaymentStatus.Pending)
+              case PendingTrampolinePayment(_, _, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), None, OutgoingPaymentStatus.Pending)
             }
             dummyOutgoingPayment +: outgoingDbPayments
         }
@@ -570,7 +576,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Left(key) => OnionMessages.Recipient(key, None)
           case Right(route) => OnionMessages.BlindedPath(route)
         }
-        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout)).mapTo[Postman.OnionMessageResponse].map {
+        appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout)).map {
           case Postman.Response(payload) =>
             val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex)
             SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt, payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
@@ -580,6 +586,55 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"), response = None))
     }
+  }
+
+  def payOfferInternal(offer: Offer,
+                       amount: MilliSatoshi,
+                       quantity: Long,
+                       externalId_opt: Option[String],
+                       maxAttempts_opt: Option[Int],
+                       maxFeeFlat_opt: Option[Satoshi],
+                       maxFeePct_opt: Option[Double],
+                       pathFindingExperimentName_opt: Option[String],
+                       blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
+    if (externalId_opt.exists(_.length > externalIdMaxLength)) {
+      return Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
+    }
+    val routeParams = getRouteParams(pathFindingExperimentName_opt) match {
+      case Right(defaultRouteParams) =>
+        defaultRouteParams
+          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
+          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
+      case Left(t) => return Future.failed(t)
+    }
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking)
+    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.paymentInitiator))
+    offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
+      case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
+      case x => Future.successful(x)
+    }
+  }
+
+  override def payOffer(offer: Offer,
+                        amount: MilliSatoshi,
+                        quantity: Long,
+                        externalId_opt: Option[String],
+                        maxAttempts_opt: Option[Int],
+                        maxFeeFlat_opt: Option[Satoshi],
+                        maxFeePct_opt: Option[Double],
+                        pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
+    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = false).mapTo[UUID]
+  }
+
+  override def payOfferBlocking(offer: Offer,
+                                amount: MilliSatoshi,
+                                quantity: Long,
+                                externalId_opt: Option[String],
+                                maxAttempts_opt: Option[Int],
+                                maxFeeFlat_opt: Option[Satoshi],
+                                maxFeePct_opt: Option[Double],
+                                pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[PaymentEvent] = {
+    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
   override def stop(): Future[Unit] = {

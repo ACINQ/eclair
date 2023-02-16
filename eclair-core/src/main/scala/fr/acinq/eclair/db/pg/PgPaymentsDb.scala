@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PaymentsDb._
@@ -36,7 +36,7 @@ import scala.util.{Failure, Success, Try}
 
 object PgPaymentsDb {
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 }
 
 class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb with Logging {
@@ -71,18 +71,25 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.executeUpdate("ALTER TABLE payments.received ADD COLUMN path_ids BYTEA")
       }
 
+      def migration78(statement: Statement): Unit = {
+        statement.executeUpdate("ALTER TABLE payments.sent ADD COLUMN offer_id TEXT")
+        statement.executeUpdate("ALTER TABLE payments.sent ADD COLUMN payer_key TEXT")
+        statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON payments.sent(offer_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA payments")
 
           statement.executeUpdate("CREATE TABLE payments.received (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, path_ids BYTEA, payment_request TEXT NOT NULL, received_msat BIGINT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, expire_at TIMESTAMP WITH TIME ZONE NOT NULL, received_at TIMESTAMP WITH TIME ZONE)")
-          statement.executeUpdate("CREATE TABLE payments.sent (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at TIMESTAMP WITH TIME ZONE NOT NULL, completed_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE payments.sent (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, offer_id TEXT, payer_key TEXT, payment_route BYTEA, failures BYTEA, created_at TIMESTAMP WITH TIME ZONE NOT NULL, completed_at TIMESTAMP WITH TIME ZONE)")
 
           statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON payments.sent(parent_id)")
           statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
+          statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON payments.sent(offer_id)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
-        case Some(v@(4 | 5 | 6)) =>
+        case Some(v@(4 | 5 | 6 | 7)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -92,6 +99,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           }
           if (v < 7) {
             migration67(statement)
+          }
+          if (v < 8) {
+            migration78(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -103,7 +113,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = withMetrics("payments/add-outgoing", DbBackends.Postgres) {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO payments.sent (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO payments.sent (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request, offer_id, payer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, sent.id.toString)
         statement.setString(2, sent.parentId.toString)
         statement.setString(3, sent.externalId.orNull)
@@ -114,6 +124,13 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setString(8, sent.recipientNodeId.value.toHex)
         statement.setTimestamp(9, sent.createdAt.toSqlTimestamp)
         statement.setString(10, sent.invoice.map(_.toString).orNull)
+        val offerId = sent.invoice match {
+          case Some(invoice: Bolt12Invoice) => Some(invoice.invoiceRequest.offer.offerId)
+          case _ => None
+        }
+        statement.setString(11, offerId.map(_.toHex).orNull)
+        statement.setString(12, sent.payerKey_opt.map(_.toHex).orNull)
+
         statement.executeUpdate()
       }
     }
@@ -165,6 +182,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
       TimestampMilli(rs.getTimestamp("created_at").getTime),
       rs.getStringNullable("payment_request").map(Invoice.fromString(_).get),
+      rs.getByteVectorFromHexNullable("payer_key").map(PrivateKey(_)),
       status
     )
   }
@@ -223,6 +241,15 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.executeQuery().map { rs =>
           parseOutgoingPayment(rs)
         }.toSeq
+      }
+    }
+  }
+
+  override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-offer-id", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT * FROM payments.sent WHERE offer_id = ? ORDER BY created_at")) { statement =>
+        statement.setString(1, offerId.toHex)
+        statement.executeQuery().map(parseOutgoingPayment).toSeq
       }
     }
   }

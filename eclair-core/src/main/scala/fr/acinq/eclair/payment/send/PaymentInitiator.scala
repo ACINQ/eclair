@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
@@ -44,33 +44,34 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
   def main(pending: Map[UUID, PendingPayment]): Receive = {
     case r: SendPaymentToNode =>
+      val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
       val paymentId = UUID.randomUUID()
       if (!r.blockUntilComplete) {
         // Immediately return the paymentId
-        sender() ! paymentId
+        replyTo ! paymentId
       }
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.invoice.nodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.invoice.nodeId, Upstream.Local(paymentId), Some(r.invoice), r.payerKey_opt, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
       val finalExpiry = r.finalExpiry(nodeParams)
       val recipient = r.invoice match {
         case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
         case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
       }
       if (!nodeParams.features.invoiceFeatures().areSupported(recipient.features)) {
-        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
+        replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), recipient.features, Features.BasicMultiPartPayment)) {
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = !r.blockUntilComplete)
         fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams)
-        context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+        context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       } else {
         val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
         fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams)
-        context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+        context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       }
 
     case r: SendSpontaneousPayment =>
       val paymentId = UUID.randomUUID()
       sender() ! paymentId
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics)
       val finalExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, Channel.MIN_CLTV_EXPIRY_DELTA)
       val recipient = SpontaneousRecipient(r.recipientNodeId, r.recipientAmount, finalExpiry, r.paymentPreimage, r.userCustomTlvs)
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
@@ -109,7 +110,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           buildTrampolineRecipient(r, trampolineHop) match {
             case Success(recipient) =>
               sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(recipient.trampolinePaymentSecret))
-              val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
+              val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
               val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
               payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), recipient)
               context become main(pending + (paymentId -> PendingPaymentToRoute(sender(), r)))
@@ -119,7 +120,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           }
         case None =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
-          val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
+          val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
           val finalExpiry = r.finalExpiry(nodeParams)
           val recipient = r.invoice match {
             case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)
@@ -183,8 +184,12 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
     case GetPayment(id) =>
       val pending_opt = id match {
-        case Left(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
-        case Right(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
+        case PaymentIdentifier.PaymentUUID(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
+        case PaymentIdentifier.PaymentHash(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
+        case PaymentIdentifier.OfferId(offerId) => pending.collectFirst {
+          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
+            (paymentId, pp)
+        }
       }
       pending_opt match {
         case Some((paymentId, pp)) => sender() ! PaymentIsPending(paymentId, pp.paymentHash, pp)
@@ -208,7 +213,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
   private def sendTrampolinePayment(paymentId: UUID, r: SendTrampolinePayment, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Try[Unit] = {
     val trampolineHop = NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees)
-    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = false, recordPathFindingMetrics = true)
+    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), None, storeInDb = true, publishEvent = false, recordPathFindingMetrics = true)
     buildTrampolineRecipient(r, trampolineHop).map { recipient =>
       val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = false)
       fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, nodeParams.maxPaymentAttempts, r.routeParams)
@@ -216,6 +221,15 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
   }
 
 }
+
+// @formatter:off
+sealed trait PaymentIdentifier
+object PaymentIdentifier {
+  case class PaymentUUID(uuid: UUID) extends PaymentIdentifier
+  case class PaymentHash(hash: ByteVector32) extends PaymentIdentifier
+  case class OfferId(id: ByteVector32) extends PaymentIdentifier
+}
+// @formatter:on
 
 object PaymentInitiator {
 
@@ -251,9 +265,9 @@ object PaymentInitiator {
   // @formatter:on
 
   // @formatter:off
-  case class GetPayment(id: Either[UUID, ByteVector32])
+  case class GetPayment(id: PaymentIdentifier)
   sealed trait GetPaymentResponse
-  case class NoPendingPayment(id: Either[UUID, ByteVector32]) extends GetPaymentResponse
+  case class NoPendingPayment(id: PaymentIdentifier) extends GetPaymentResponse
   case class PaymentIsPending(paymentId: UUID, paymentHash: ByteVector32, pending: PendingPayment) extends GetPaymentResponse
   // @formatter:on
 
@@ -293,18 +307,21 @@ object PaymentInitiator {
 
   /**
    * @param recipientAmount    amount that should be received by the final recipient (usually from a Bolt 11 invoice).
-   * @param invoice            Bolt 11 invoice.
+   * @param invoice            invoice.
    * @param maxAttempts        maximum number of retries.
    * @param externalId         (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param routeParams        (optional) parameters to fine-tune the routing algorithm.
+   * @param payerKey_opt       (optional) private key associated with the invoice request when paying an offer.
    * @param userCustomTlvs     (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param blockUntilComplete (optional) if true, wait until the payment completes before returning a result.
    */
-  case class SendPaymentToNode(recipientAmount: MilliSatoshi,
+  case class SendPaymentToNode(replyTo: ActorRef,
+                               recipientAmount: MilliSatoshi,
                                invoice: Invoice,
                                maxAttempts: Int,
                                externalId: Option[String] = None,
                                routeParams: RouteParams,
+                               payerKey_opt: Option[PrivateKey] = None,
                                userCustomTlvs: Set[GenericTlv] = Set.empty,
                                blockUntilComplete: Boolean = false) extends SendRequestedPayment
 
@@ -402,6 +419,7 @@ object PaymentInitiator {
                                recipientNodeId: PublicKey,
                                upstream: Upstream,
                                invoice: Option[Invoice],
+                               payerKey_opt: Option[PrivateKey],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean,
                                recordPathFindingMetrics: Boolean) {

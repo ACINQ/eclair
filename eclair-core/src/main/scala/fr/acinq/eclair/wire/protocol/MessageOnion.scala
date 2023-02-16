@@ -95,7 +95,6 @@ object MessageOnion {
 
   object FinalPayload {
     def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, FinalPayload] = {
-      if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
       records.get[InvoiceRequest].map(i => OfferTypes.InvoiceRequest.validate(i.tlvs)) match {
         case Some(Left(failure)) => return Left(failure)
         case _ => // valid or missing
@@ -123,7 +122,7 @@ object MessageOnionCodecs {
 
   private val replyHopCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
 
-  val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | list(replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
+  val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
 
   private val replyPathCodec: Codec[ReplyPath] = tlvField(blindedRouteCodec)
 

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampMilli}
@@ -87,6 +87,9 @@ trait OutgoingPaymentsDb {
 
   /** List all the outgoing payment attempts in the given time range (milli-seconds). */
   def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment]
+
+  /** List all the outgoing payment attempts that tried to pay the given offer. */
+  def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment]
 
 }
 
@@ -183,6 +186,7 @@ case class OutgoingPayment(id: UUID,
                            recipientNodeId: PublicKey,
                            createdAt: TimestampMilli,
                            invoice: Option[Invoice],
+                           payerKey_opt: Option[PrivateKey],
                            status: OutgoingPaymentStatus)
 
 sealed trait OutgoingPaymentStatus

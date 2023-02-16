@@ -27,6 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.Future
@@ -51,6 +52,7 @@ trait ExtraDirectives extends Directives {
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
   val countFormParam: NameReceptacle[Int] = "count".as[Int]
   val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
+  val offerFormParam: NameUnmarshallerReceptacle[Offer] = "offer".as[Offer](offerUnmarshaller)
 
   // @formatter:off
   // We limit default values to avoid accidentally reading too much data from the DB.

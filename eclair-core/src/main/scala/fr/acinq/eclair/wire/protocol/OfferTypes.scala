@@ -242,6 +242,8 @@ object OfferTypes {
     }
 
     override def toString: String = encode()
+
+    val offerId: ByteVector32 = rootHash(records, OfferCodecs.offerTlvCodec)
   }
 
   object Offer {

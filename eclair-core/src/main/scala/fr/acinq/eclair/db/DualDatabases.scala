@@ -360,6 +360,11 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     runAsync(secondary.listOutgoingPayments(from, to))
     primary.listOutgoingPayments(from, to)
   }
+
+  override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = {
+    runAsync(secondary.listOutgoingPaymentsToOffer(offerId))
+    primary.listOutgoingPaymentsToOffer(offerId)
+  }
 }
 
 case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingCommandsDb) extends PendingCommandsDb {

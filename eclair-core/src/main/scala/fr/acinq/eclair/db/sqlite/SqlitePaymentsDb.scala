@@ -102,16 +102,23 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
     }
 
+    def migration56(statement: Statement): Unit = {
+      statement.executeUpdate("ALTER TABLE sent_payments ADD COLUMN offer_id BLOB")
+      statement.executeUpdate("ALTER TABLE sent_payments ADD COLUMN payer_key BLOB")
+      statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON sent_payments(offer_id)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, path_ids BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
-        statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, offer_id BLOB, payer_key BLOB, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
 
         statement.executeUpdate("CREATE INDEX sent_parent_id_idx ON sent_payments(parent_id)")
         statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON sent_payments(payment_hash)")
+        statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON sent_payments(offer_id)")
         statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
-      case Some(v@(1 | 2 | 3 | 4)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -125,6 +132,9 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         if (v < 5) {
           migration45(statement)
         }
+        if (v < 6) {
+          migration56(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -134,7 +144,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addOutgoingPayment(sent: OutgoingPayment): Unit = withMetrics("payments/add-outgoing", DbBackends.Sqlite) {
     require(sent.status == OutgoingPaymentStatus.Pending, s"outgoing payment isn't pending (${sent.status.getClass.getSimpleName})")
-    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent_payments (id, parent_id, external_id, payment_hash, payment_type, amount_msat, recipient_amount_msat, recipient_node_id, created_at, payment_request, offer_id, payer_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, sent.id.toString)
       statement.setString(2, sent.parentId.toString)
       statement.setString(3, sent.externalId.orNull)
@@ -145,6 +155,12 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(8, sent.recipientNodeId.value.toArray)
       statement.setLong(9, sent.createdAt.toLong)
       statement.setString(10, sent.invoice.map(_.toString).orNull)
+      val offerId = sent.invoice match {
+        case Some(invoice: Bolt12Invoice) => Some(invoice.invoiceRequest.offer.offerId)
+        case _ => None
+      }
+      statement.setBytes(11, offerId.map(_.toArray).orNull)
+      statement.setBytes(12, sent.payerKey_opt.map(_.value.toArray).orNull)
       statement.executeUpdate()
     }
   }
@@ -191,6 +207,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       PublicKey(rs.getByteVector("recipient_node_id")),
       TimestampMilli(rs.getLong("created_at")),
       rs.getStringNullable("payment_request").map(Invoice.fromString(_).get),
+      rs.getByteVectorNullable("payer_key").map(PrivateKey(_)),
       status
     )
   }
@@ -239,6 +256,13 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
+      statement.executeQuery().map(parseOutgoingPayment).toSeq
+    }
+  }
+
+  override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-offer-id", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE offer_id = ? ORDER BY created_at")) { statement =>
+      statement.setBytes(1, offerId.toArray)
       statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
@@ -366,5 +390,5 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
 object SqlitePaymentsDb {
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 5
+  val CURRENT_VERSION = 6
 }

@@ -553,6 +553,7 @@ object NodeParams extends Logging {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
+        maxAttempts = config.getInt("onion-messages.max-attempts"),
       ),
       purgeInvoicesInterval = purgeInvoicesInterval
     )

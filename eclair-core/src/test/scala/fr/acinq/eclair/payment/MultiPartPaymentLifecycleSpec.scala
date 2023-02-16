@@ -67,7 +67,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
-    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, randomKey().publicKey, Upstream.Local(id), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
+    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, randomKey().publicKey, Upstream.Local(id), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
     val nodeParams = TestConstants.Alice.nodeParams
     val (childPayFsm, router, sender, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentHandler = TestFSMRef(new MultiPartPaymentLifecycle(nodeParams, cfg, publishPreimage = true, router.ref, FakePaymentFactory(childPayFsm)))

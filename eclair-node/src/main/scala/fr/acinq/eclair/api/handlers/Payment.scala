@@ -22,6 +22,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, randomBytes32}
 
@@ -78,9 +79,11 @@ trait Payment {
 
   val getSentInfo: Route = postRequest("getsentinfo") { implicit t =>
     formFields("id".as[UUID]) { id =>
-      complete(eclairApi.sentInfo(Left(id)))
+      complete(eclairApi.sentInfo(PaymentIdentifier.PaymentUUID(id)))
     } ~ formFields(paymentHashFormParam) { paymentHash =>
-      complete(eclairApi.sentInfo(Right(paymentHash)))
+      complete(eclairApi.sentInfo(PaymentIdentifier.PaymentHash(paymentHash)))
+    } ~ formFields(offerFormParam) { offer =>
+      complete(eclairApi.sentInfo(PaymentIdentifier.OfferId(offer.offerId)))
     }
   }
 
@@ -92,6 +95,16 @@ trait Payment {
     }
   }
 
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
+  val payOffer: Route = postRequest("payoffer") { implicit t =>
+    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "blocking".as[Boolean].?) {
+      case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, blocking_opt) =>
+        blocking_opt match {
+          case Some(true) => complete(eclairApi.payOfferBlocking(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          case _ => complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+        }
+    }
+  }
+
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ payOffer
 
 }
