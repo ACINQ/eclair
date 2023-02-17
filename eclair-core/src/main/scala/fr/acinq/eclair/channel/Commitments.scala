@@ -878,16 +878,12 @@ case class Commitments(params: ChannelParams,
     }
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 1)
-    val active1 = active.map(commitment => {
-      val commit_opt = if (commits.length == 1) Some(commits.head) else commits.find(_.fundingTxId_opt.contains(commitment.fundingTxId))
-      commit_opt match {
-        case Some(commit) => commitment.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commit) match {
-          case Left(f) => return Left(f)
-          case Right(commitment1) => commitment1
-        }
-        case None => return Left(CommitSigMissing(channelId, commitment.fundingTxId))
+    val active1 = active.zip(commits).map { case (commitment, commit) =>
+      commitment.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commit) match {
+        case Left(f) => return Left(f)
+        case Right(commitment1) => commitment1
       }
-    })
+    }
     // we will send our revocation preimage + our next revocation hash
     val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, localCommitIndex)
     val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 2)
