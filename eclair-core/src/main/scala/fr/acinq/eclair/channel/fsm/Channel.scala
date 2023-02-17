@@ -59,6 +59,8 @@ import scala.util.Random
 
 object Channel {
 
+  case class RemoteRbfLimits(maxAttempts: Int, attemptDeltaBlocks: Int)
+
   case class ChannelConf(channelFlags: ChannelFlags,
                          dustLimit: Satoshi,
                          maxRemoteDustLimit: Satoshi,
@@ -84,7 +86,8 @@ object Channel {
                          requireConfirmedInputsForDualFunding: Boolean,
                          channelOpenerWhitelist: Set[PublicKey],
                          maxPendingChannelsPerPeer: Int,
-                         maxTotalPendingChannelsPrivateNodes: Int) {
+                         maxTotalPendingChannelsPrivateNodes: Int,
+                         remoteRbfLimits: RemoteRbfLimits) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
 
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
@@ -128,6 +131,8 @@ object Channel {
 
   // as a non-initiator, we will wait that many blocks for the funding tx to confirm (initiator will rely on the funding tx being double-spent)
   val FUNDING_TIMEOUT_FUNDEE = 2016
+  // when using dual-funding, the initiator has the ability to RBF, so we can use a shorter timeout
+  val DUAL_FUNDING_TIMEOUT_NON_INITIATOR = 720
 
   // pruning occurs if no new update has been received in two weeks (BOLT 7)
   val REFRESH_CHANNEL_UPDATE_INTERVAL: FiniteDuration = 10 days

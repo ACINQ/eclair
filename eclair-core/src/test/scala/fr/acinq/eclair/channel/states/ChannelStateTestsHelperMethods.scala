@@ -84,6 +84,10 @@ object ChannelStateTestsTags {
   val ScidAlias = "scid_alias"
   /** If set, we won't spend anchors to fee-bump commitments without htlcs (no funds at risk). */
   val DontSpendAnchorWithoutHtlcs = "dont-spend-anchor-without-htlcs"
+  /** If set, the non-initiator won't allow RBF attempts. */
+  val RejectRbfAttempts = "reject_rbf_attempts"
+  /** If set, the non-initiator will require a 1-block delay between RBF attempts. */
+  val DelayRbfAttempts = "delay_rbf_attempts"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -148,6 +152,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+      .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.RejectRbfAttempts))(0)
+      .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.DelayRbfAttempts))(1)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
     val wallet = wallet_opt match {
       case Some(wallet) => wallet

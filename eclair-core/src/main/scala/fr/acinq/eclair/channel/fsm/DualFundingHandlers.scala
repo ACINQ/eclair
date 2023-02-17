@@ -65,8 +65,8 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     if (d.latestFundingTx.fundingParams.isInitiator && (blocksSinceOpen % 288 == 0)) { // 288 blocks = 2 days
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"channelId=${d.channelId} is still unconfirmed after $blocksSinceOpen blocks, you may need to use the rbfopen RPC to make it confirm."))
     }
-    if (Channel.FUNDING_TIMEOUT_FUNDEE < blocksSinceOpen && Closing.nothingAtStake(d)) {
-      log.warning("funding transaction did not confirm in {} blocks and we have nothing at stake, forgetting channel", Channel.FUNDING_TIMEOUT_FUNDEE)
+    if (Channel.DUAL_FUNDING_TIMEOUT_NON_INITIATOR < blocksSinceOpen && Closing.nothingAtStake(d)) {
+      log.warning("funding transaction did not confirm in {} blocks and we have nothing at stake, forgetting channel", Channel.DUAL_FUNDING_TIMEOUT_NON_INITIATOR)
       handleFundingTimeout(d)
     } else if (d.lastChecked + 6 < c.blockHeight) {
       log.debug("checking if funding transactions have been double-spent")
