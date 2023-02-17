@@ -436,16 +436,14 @@ object Helpers {
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
       if (!localParams.isInitiator) {
-        // they initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
+        // They initiated the channel open, therefore they pay the fee: we need to make sure they can afford it!
+        // Note that the reserve may not be always be met: we could be using dual funding with a large funding amount on
+        // our side and a small funding amount on their side. But we shouldn't care as long as they can pay the fees for
+        // the commitment transaction.
         val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
-        val reserve = if (channelFeatures.hasFeature(Features.DualFunding)) {
-          (fundingAmount / 100).max(localParams.dustLimit)
-        } else {
-          localParams.requestedChannelReserve_opt.get
-        }
-        val missing = toRemote.truncateToSatoshi - reserve - fees
-        if (missing < 0.sat) {
-          return Left(CannotAffordFees(channelId, missing = -missing, reserve = reserve, fees = fees))
+        val missing = fees - toRemote.truncateToSatoshi
+        if (missing > 0.sat) {
+          return Left(CannotAffordFirstCommitFees(channelId, missing = missing, fees = fees))
         }
       }
 

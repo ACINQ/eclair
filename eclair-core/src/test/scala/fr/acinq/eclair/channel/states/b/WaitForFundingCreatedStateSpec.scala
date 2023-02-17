@@ -48,8 +48,8 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val bobNodeParams = Bob.nodeParams
       .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
-      (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
+    val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_commit_fees")) {
+      (1_000_100 sat, (1_000_000 sat).toMilliSatoshi) // toLocal = 100 satoshis
     } else if (test.tags.contains(ChannelStateTestsTags.Wumbo)) {
       (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
@@ -103,17 +103,14 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepthBlocks)
   }
 
-  test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
+  test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_commit_fees")) { f =>
     import f._
     val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
-    val bobParams = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].params.localParams
-    val reserve = bobParams.requestedChannelReserve_opt.get
-    val missing = 100.sat - fees - reserve
+    val missing = fees - 100.sat
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missing=${-missing} reserve=$reserve fees=$fees"))
-    listener.expectMsgType[ChannelAborted]
+    assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFirstCommitFees(fundingCreated.temporaryChannelId, missing, fees).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
