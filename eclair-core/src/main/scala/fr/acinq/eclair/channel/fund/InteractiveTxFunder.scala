@@ -44,12 +44,12 @@ object InteractiveTxFunder {
   sealed trait Command
   case class FundTransaction(replyTo: ActorRef[Response]) extends Command
   private case class FundTransactionResult(tx: Transaction, changePosition: Option[Int]) extends Command
-  private case class InputDetails(usableInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]) extends Command
+  private case class InputDetails(usableInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
   private case object UtxosUnlocked extends Command
 
   sealed trait Response
-  case class FundingContributions(inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]) extends Response
+  case class FundingContributions(inputs: Seq[Input.Outgoing], outputs: Seq[Output.Outgoing]) extends Response
   case object FundingFailed extends Response
   // @formatter:on
 
@@ -78,21 +78,21 @@ object InteractiveTxFunder {
     previousTxSizeOk && isNativeSegwit && confirmationsOk
   }
 
-  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
+  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[Input.Outgoing], outputs: Seq[Output.Outgoing]): FundingContributions = {
     // We always randomize the order of inputs and outputs.
     val sortedInputs = Random.shuffle(inputs).zipWithIndex.map { case (input, i) =>
       val serialId = UInt64(2 * i + fundingParams.serialIdParity)
       input match {
-        case input: LocalInput => input.copy(serialId = serialId)
-        case input: SharedInput => input.copy(serialId = serialId)
+        case input: Input.Local => input.copy(serialId = serialId)
+        case input: Input.Shared => input.copy(serialId = serialId)
       }
     }
     val sortedOutputs = Random.shuffle(outputs).zipWithIndex.map { case (output, i) =>
       val serialId = UInt64(2 * (i + inputs.length) + fundingParams.serialIdParity)
       output match {
-        case output: LocalChangeOutput => output.copy(serialId = serialId)
-        case output: LocalNonChangeOutput => output.copy(serialId = serialId)
-        case output: SharedOutput => output.copy(serialId = serialId)
+        case output: Output.Local.Change => output.copy(serialId = serialId)
+        case output: Output.Local.NonChange => output.copy(serialId = serialId)
+        case output: Output.Shared => output.copy(serialId = serialId)
       }
     }
     FundingContributions(sortedInputs, sortedOutputs)
@@ -130,14 +130,14 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // force us to add wallet inputs. The caller may manually decrease the output amounts if it wants to actually
       // contribute to the RBF attempt.
       if (fundingParams.isInitiator) {
-        val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => SharedInput(UInt64(0), sharedInput.info.outPoint, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance))
-        val sharedOutput = SharedOutput(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
-        val nonChangeOutputs = fundingParams.localOutputs.map(txOut => LocalNonChangeOutput(UInt64(0), txOut.amount, txOut.publicKeyScript))
+        val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => Input.Shared(UInt64(0), sharedInput.info.outPoint, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance))
+        val sharedOutput = Output.Shared(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
+        val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
         val fundingContributions = sortFundingContributions(fundingParams, sharedInput ++ previousWalletInputs, sharedOutput +: nonChangeOutputs)
         replyTo ! fundingContributions
         Behaviors.stopped
       } else {
-        val nonChangeOutputs = fundingParams.localOutputs.map(txOut => LocalNonChangeOutput(UInt64(0), txOut.amount, txOut.publicKeyScript))
+        val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
         val fundingContributions = sortFundingContributions(fundingParams, previousWalletInputs, nonChangeOutputs)
         replyTo ! fundingContributions
         Behaviors.stopped
@@ -160,7 +160,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * for dual funding though (e.g. they need to use segwit), so we filter them and iterate until we have a valid set of
    * inputs.
    */
-  private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def fund(txNotFunded: Transaction, currentInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight).toMap
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
       case Failure(t) => WalletFailure(t)
@@ -185,7 +185,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   /** Not all inputs are suitable for interactive tx construction. */
-  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
@@ -201,17 +201,17 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           log.error("funded transaction is missing one of our local outputs: {}", fundedTx)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else {
-          val nonChangeOutputs = fundingParams.localOutputs.map(o => LocalNonChangeOutput(UInt64(0), o.amount, o.publicKeyScript))
-          val changeOutput_opt = changePosition.map(i => LocalChangeOutput(UInt64(0), fundedTx.txOut(i).amount, fundedTx.txOut(i).publicKeyScript))
+          val nonChangeOutputs = fundingParams.localOutputs.map(o => Output.Local.NonChange(UInt64(0), o.amount, o.publicKeyScript))
+          val changeOutput_opt = changePosition.map(i => Output.Local.Change(UInt64(0), fundedTx.txOut(i).amount, fundedTx.txOut(i).publicKeyScript))
           val fundingContributions = if (fundingParams.isInitiator) {
             // The initiator is responsible for adding the shared output and the shared input.
             val inputs = inputDetails.usableInputs
-            val fundingOutput = SharedOutput(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
+            val fundingOutput = Output.Shared(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
             val outputs = Seq(fundingOutput) ++ nonChangeOutputs ++ changeOutput_opt.toSeq
             sortFundingContributions(fundingParams, inputs, outputs)
           } else {
             // The non-initiator must not include the shared input or the shared output.
-            val inputs = inputDetails.usableInputs.filterNot(_.isInstanceOf[SharedInput])
+            val inputs = inputDetails.usableInputs.filterNot(_.isInstanceOf[Input.Shared])
             // The protocol only requires the non-initiator to pay the fees for its inputs and outputs, discounting the
             // common fields (shared input, shared output, version, nLockTime, etc).
             // By using bitcoind's fundrawtransaction we are currently paying fees for those fields, but we can fix that
@@ -258,20 +258,20 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * @param currentInputs already known valid inputs, we don't need to fetch the details again for those.
    * @return the input is either unusable (left) or we'll send a [[TxAddInput]] command to add it to the transaction (right).
    */
-  private def getInputDetails(txIn: TxIn, currentInputs: Seq[OutgoingInput]): Future[Either[UnusableInput, OutgoingInput]] = {
+  private def getInputDetails(txIn: TxIn, currentInputs: Seq[Input.Outgoing]): Future[Either[UnusableInput, Input.Outgoing]] = {
     currentInputs.find(i => txIn.outPoint == i.outPoint) match {
       case Some(previousInput) => Future.successful(Right(previousInput))
       case None => fundingParams.sharedInput_opt match {
         case Some(sharedInput) if sharedInput.info.outPoint == txIn.outPoint =>
           // We don't need to validate the shared input, it comes from a valid lightning channel.
-          Future.successful(Right(SharedInput(UInt64(0), sharedInput.info.outPoint, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance)))
+          Future.successful(Right(Input.Shared(UInt64(0), sharedInput.info.outPoint, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance)))
         case _ =>
           for {
             previousTx <- wallet.getTransaction(txIn.outPoint.txid)
             confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
           } yield {
             if (canUseInput(fundingParams, txIn, previousTx, confirmations_opt.getOrElse(0))) {
-              Right(LocalInput(UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
+              Right(Input.Local(UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
             } else {
               Left(UnusableInput(txIn.outPoint))
             }

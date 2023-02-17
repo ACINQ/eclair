@@ -202,65 +202,84 @@ object InteractiveTxBuilder {
   // @formatter:on
 
   // @formatter:off
-  sealed trait InputData {
+  sealed trait Input {
     def serialId: UInt64
     def outPoint: OutPoint
     def sequence: Long
   }
-  /** Input added by our peer to the interactive transaction. */
-  sealed trait IncomingInput extends InputData
-  /** Input added by us to the interactive transaction. */
-  sealed trait OutgoingInput extends InputData { def message(channelId: ByteVector32): TxAddInput }
 
-  /** A local-only input that funds the interactive transaction. */
-  case class LocalInput(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long, tlvs: TlvStream[TxAddInputTlv] = TlvStream.empty) extends OutgoingInput {
-    override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput.toInt)
-    override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, Some(previousTx), previousTxOutput, sequence, tlvs)
-  }
-  /**
-   * A remote-only input that funds the interactive transaction.
-   * We only keep the data we need from our peer's TxAddInput to avoid storing potentially large messages in our DB.
-   */
-  case class RemoteInput(serialId: UInt64, outPoint: OutPoint, txOut: TxOut, sequence: Long) extends IncomingInput
-  /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
-  case class SharedInput(serialId: UInt64, outPoint: OutPoint, sequence: Long, localAmount: Satoshi, remoteAmount: Satoshi) extends IncomingInput with OutgoingInput {
-    override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, outPoint, sequence)
+  object Input {
+    /** Input added by our peer to the interactive transaction. */
+    sealed trait Incoming extends Input
+
+    /** Input added by us to the interactive transaction. */
+    sealed trait Outgoing extends Input {
+      def message(channelId: ByteVector32): TxAddInput
+    }
+
+    /** A local-only input that funds the interactive transaction. */
+    case class Local(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long, tlvs: TlvStream[TxAddInputTlv] = TlvStream.empty) extends Outgoing {
+      override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput.toInt)
+      override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, Some(previousTx), previousTxOutput, sequence, tlvs)
+    }
+
+    /**
+     * A remote-only input that funds the interactive transaction.
+     * We only keep the data we need from our peer's TxAddInput to avoid storing potentially large messages in our DB.
+     */
+    case class Remote(serialId: UInt64, outPoint: OutPoint, txOut: TxOut, sequence: Long) extends Incoming
+
+    /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
+    case class Shared(serialId: UInt64, outPoint: OutPoint, sequence: Long, localAmount: Satoshi, remoteAmount: Satoshi) extends Incoming with Outgoing {
+      override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, outPoint, sequence)
+    }
   }
 
-  sealed trait OutputData {
+  sealed trait Output {
     def serialId: UInt64
     def amount: Satoshi
     def pubkeyScript: ByteVector
   }
-  /** Output added by our peer to the interactive transaction. */
-  sealed trait IncomingOutput extends OutputData
-  /** Output added by us to the interactive transaction. */
-  sealed trait OutgoingOutput extends OutputData { def message(channelId: ByteVector32): TxAddOutput }
 
-  /** A local-only output of the interactive transaction. */
-  sealed trait LocalOutput extends OutgoingOutput {
-    def tlvStream: TlvStream[TxAddOutputTlv]
-    override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript, tlvStream)
-  }
-  case class LocalChangeOutput(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends LocalOutput
-  case class LocalNonChangeOutput(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends LocalOutput
-  /**
-   * A remote-only output of the interactive transaction.
-   * We only keep the data we need from our peer's TxAddOutput to avoid storing potentially large messages in our DB.
-   */
-  case class RemoteOutput(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector) extends IncomingOutput
-  /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
-  case class SharedOutput(serialId: UInt64, pubkeyScript: ByteVector, localAmount: Satoshi, remoteAmount: Satoshi) extends IncomingOutput with OutgoingOutput {
-    override val amount: Satoshi = localAmount + remoteAmount
-    override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript)
+  object Output {
+    /** Output added by our peer to the interactive transaction. */
+    sealed trait Incoming extends Output
+
+    /** Output added by us to the interactive transaction. */
+    sealed trait Outgoing extends Output {
+      def message(channelId: ByteVector32): TxAddOutput
+    }
+
+    /** A local-only output of the interactive transaction. */
+    sealed trait Local extends Outgoing {
+      def tlvStream: TlvStream[TxAddOutputTlv]
+      override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript, tlvStream)
+    }
+
+    object Local {
+      case class Change(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
+      case class NonChange(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
+    }
+
+    /**
+     * A remote-only output of the interactive transaction.
+     * We only keep the data we need from our peer's TxAddOutput to avoid storing potentially large messages in our DB.
+     */
+    case class Remote(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector) extends Incoming
+
+    /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
+    case class Shared(serialId: UInt64, pubkeyScript: ByteVector, localAmount: Satoshi, remoteAmount: Satoshi) extends Incoming with Outgoing {
+      override val amount: Satoshi = localAmount + remoteAmount
+      override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript)
+    }
   }
   // @formatter:on
 
-  private case class InteractiveTxSession(toSend: Seq[Either[OutgoingInput, OutgoingOutput]],
-                                          localInputs: Seq[OutgoingInput] = Nil,
-                                          remoteInputs: Seq[IncomingInput] = Nil,
-                                          localOutputs: Seq[OutgoingOutput] = Nil,
-                                          remoteOutputs: Seq[IncomingOutput] = Nil,
+  private case class InteractiveTxSession(toSend: Seq[Either[Input.Outgoing, Output.Outgoing]],
+                                          localInputs: Seq[Input.Outgoing] = Nil,
+                                          remoteInputs: Seq[Input.Incoming] = Nil,
+                                          localOutputs: Seq[Output.Outgoing] = Nil,
+                                          remoteOutputs: Seq[Output.Incoming] = Nil,
                                           txCompleteSent: Boolean = false,
                                           txCompleteReceived: Boolean = false,
                                           inputsReceivedCount: Int = 0,
@@ -269,9 +288,9 @@ object InteractiveTxBuilder {
   }
 
   /** Unsigned transaction created collaboratively. */
-  case class SharedTransaction(sharedInput_opt: Option[SharedInput], sharedOutput: SharedOutput,
-                               localInputs: List[LocalInput], remoteInputs: List[RemoteInput],
-                               localOutputs: List[LocalOutput], remoteOutputs: List[RemoteOutput],
+  case class SharedTransaction(sharedInput_opt: Option[Input.Shared], sharedOutput: Output.Shared,
+                               localInputs: List[Input.Local], remoteInputs: List[Input.Remote],
+                               localOutputs: List[Output.Local], remoteOutputs: List[Output.Remote],
                                lockTime: Long) {
     val localAmountIn: Satoshi = sharedInput_opt.map(_.localAmount).getOrElse(0 sat) + localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
     val remoteAmountIn: Satoshi = sharedInput_opt.map(_.remoteAmount).getOrElse(0 sat) + remoteInputs.map(_.txOut.amount).sum
@@ -472,7 +491,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def receiveInput(session: InteractiveTxSession, addInput: TxAddInput): Either[ChannelException, IncomingInput] = {
+  private def receiveInput(session: InteractiveTxSession, addInput: TxAddInput): Either[ChannelException, Input.Incoming] = {
     if (session.inputsReceivedCount + 1 >= MAX_INPUTS_OUTPUTS_RECEIVED) {
       return Left(TooManyInteractiveTxRounds(fundingParams.channelId))
     }
@@ -480,7 +499,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
     }
     // We check whether this is the shared input or a remote input.
-    val input: IncomingInput = addInput.previousTx_opt match {
+    val input: Input.Incoming = addInput.previousTx_opt match {
       case Some(previousTx) if previousTx.txOut.length <= addInput.previousTxOutput =>
         return Left(InputOutOfBounds(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
       case Some(previousTx) if fundingParams.sharedInput_opt.exists(_.info.outPoint == OutPoint(previousTx, addInput.previousTxOutput.toInt)) =>
@@ -488,11 +507,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Some(previousTx) if !Script.isNativeWitnessScript(previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript) =>
         return Left(NonSegwitInput(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
       case Some(previousTx) =>
-        RemoteInput(addInput.serialId, OutPoint(previousTx, addInput.previousTxOutput.toInt), previousTx.txOut(addInput.previousTxOutput.toInt), addInput.sequence)
+        Input.Remote(addInput.serialId, OutPoint(previousTx, addInput.previousTxOutput.toInt), previousTx.txOut(addInput.previousTxOutput.toInt), addInput.sequence)
       case None =>
         (addInput.sharedInput_opt, fundingParams.sharedInput_opt) match {
           case (Some(outPoint), Some(sharedInput)) if outPoint == sharedInput.info.outPoint =>
-            SharedInput(addInput.serialId, outPoint, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance)
+            Input.Shared(addInput.serialId, outPoint, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance)
           case _ =>
             return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
         }
@@ -506,7 +525,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Right(input)
   }
 
-  private def receiveOutput(session: InteractiveTxSession, addOutput: TxAddOutput): Either[ChannelException, IncomingOutput] = {
+  private def receiveOutput(session: InteractiveTxSession, addOutput: TxAddOutput): Either[ChannelException, Output.Incoming] = {
     if (session.outputsReceivedCount + 1 >= MAX_INPUTS_OUTPUTS_RECEIVED) {
       Left(TooManyInteractiveTxRounds(fundingParams.channelId))
     } else if (session.remoteOutputs.exists(_.serialId == addOutput.serialId)) {
@@ -516,9 +535,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     } else if (addOutput.pubkeyScript == fundingParams.fundingPubkeyScript && addOutput.amount != fundingParams.fundingAmount) {
       Left(InvalidSharedOutputAmount(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.fundingAmount))
     } else if (addOutput.pubkeyScript == fundingParams.fundingPubkeyScript) {
-      Right(SharedOutput(addOutput.serialId, addOutput.pubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount))
+      Right(Output.Shared(addOutput.serialId, addOutput.pubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount))
     } else {
-      Right(RemoteOutput(addOutput.serialId, addOutput.amount, addOutput.pubkeyScript))
+      Right(Output.Remote(addOutput.serialId, addOutput.amount, addOutput.pubkeyScript))
     }
   }
 
@@ -601,7 +620,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     require(session.isComplete, "interactive session was not completed")
     if (fundingParams.requireConfirmedInputs.forRemote) {
       // We ignore the shared input: we know it is a valid input since it comes from our commitment.
-      context.pipeToSelf(checkInputsConfirmed(session.remoteInputs.collect { case i: RemoteInput => i })) {
+      context.pipeToSelf(checkInputsConfirmed(session.remoteInputs.collect { case i: Input.Remote => i })) {
         case Failure(t) => WalletFailure(t)
         case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
         case Success(true) => ValidateSharedTx
@@ -634,7 +653,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def checkInputsConfirmed(inputs: Seq[RemoteInput]): Future[Boolean] = {
+  private def checkInputsConfirmed(inputs: Seq[Input.Remote]): Future[Boolean] = {
     // We check inputs sequentially and stop at the first unconfirmed one.
     inputs.map(_.outPoint.txid).toSet.foldLeft(Future.successful(true)) {
       case (current, txId) => current.transformWith {
@@ -654,12 +673,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
     }
 
-    val sharedInputs = session.localInputs.collect { case i: SharedInput => i } ++ session.remoteInputs.collect { case i: SharedInput => i }
-    val localInputs = session.localInputs.collect { case i: LocalInput => i }
-    val remoteInputs = session.remoteInputs.collect { case i: RemoteInput => i }
-    val sharedOutputs = session.localOutputs.collect { case o: SharedOutput => o } ++ session.remoteOutputs.collect { case o: SharedOutput => o }
-    val localOutputs = session.localOutputs.collect { case o: LocalOutput => o }
-    val remoteOutputs = session.remoteOutputs.collect { case o: RemoteOutput => o }
+    val sharedInputs = session.localInputs.collect { case i: Input.Shared => i } ++ session.remoteInputs.collect { case i: Input.Shared => i }
+    val localInputs = session.localInputs.collect { case i: Input.Local => i }
+    val remoteInputs = session.remoteInputs.collect { case i: Input.Remote => i }
+    val sharedOutputs = session.localOutputs.collect { case o: Output.Shared => o } ++ session.remoteOutputs.collect { case o: Output.Shared => o }
+    val localOutputs = session.localOutputs.collect { case o: Output.Local => o }
+    val remoteOutputs = session.remoteOutputs.collect { case o: Output.Remote => o }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
       val remoteReserve = (fundingParams.fundingAmount / 100).max(commitmentParams.localParams.dustLimit)

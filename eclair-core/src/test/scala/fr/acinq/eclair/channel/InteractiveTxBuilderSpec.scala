@@ -2618,22 +2618,22 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("reference test vector") {
     val channelId = ByteVector32.Zeroes
     val parentTx = Transaction.read("02000000000101f86fd1d0db3ac5a72df968622f31e6b5e6566a09e29206d7c7a55df90e181de800000000171600141fb9623ffd0d422eacc450fd1e967efc477b83ccffffffff0580b2e60e00000000220020fd89acf65485df89797d9ba7ba7a33624ac4452f00db08107f34257d33e5b94680b2e60e0000000017a9146a235d064786b49e7043e4a042d4cc429f7eb6948780b2e60e00000000160014fbb4db9d85fba5e301f4399e3038928e44e37d3280b2e60e0000000017a9147ecd1b519326bc13b0ec716e469b58ed02b112a087f0006bee0000000017a914f856a70093da3a5b5c4302ade033d4c2171705d387024730440220696f6cee2929f1feb3fd6adf024ca0f9aa2f4920ed6d35fb9ec5b78c8408475302201641afae11242160101c6f9932aeb4fcd1f13a9c6df5d1386def000ea259a35001210381d7d5b1bc0d7600565d827242576d9cb793bfe0754334af82289ee8b65d137600000000")
-    val sharedOutput = SharedOutput(UInt64(44), hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 200_000_000 sat, 200_000_000 sat)
+    val sharedOutput = Output.Shared(UInt64(44), hex"0020297b92c238163e820b82486084634b4846b86a3c658d87b9384192e6bea98ec5", 200_000_000 sat, 200_000_000 sat)
     val initiatorTx = {
-      val initiatorInput = LocalInput(UInt64(20), parentTx, 0, 4294967293L)
-      val initiatorOutput = LocalChangeOutput(UInt64(30), 49_999_845 sat, hex"00141ca1cca8855bad6bc1ea5436edd8cff10b7e448b")
-      val nonInitiatorInput = RemoteInput(UInt64(11), OutPoint(parentTx, 2), parentTx.txOut(2), 4294967293L)
-      val nonInitiatorOutput = RemoteOutput(UInt64(33), 49_999_900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
+      val initiatorInput = Input.Local(UInt64(20), parentTx, 0, 4294967293L)
+      val initiatorOutput = Output.Local.Change(UInt64(30), 49_999_845 sat, hex"00141ca1cca8855bad6bc1ea5436edd8cff10b7e448b")
+      val nonInitiatorInput = Input.Remote(UInt64(11), OutPoint(parentTx, 2), parentTx.txOut(2), 4294967293L)
+      val nonInitiatorOutput = Output.Remote(UInt64(33), 49_999_900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
       SharedTransaction(None, sharedOutput, List(initiatorInput), List(nonInitiatorInput), List(initiatorOutput), List(nonInitiatorOutput), lockTime = 120)
     }
     assert(initiatorTx.localFees == 155.sat)
     assert(initiatorTx.remoteFees == 100.sat)
 
     val nonInitiatorTx = {
-      val initiatorInput = RemoteInput(UInt64(20), OutPoint(parentTx, 0), parentTx.txOut(0), 4294967293L)
-      val initiatorOutput = RemoteOutput(UInt64(30), 49_999_845 sat, hex"00141ca1cca8855bad6bc1ea5436edd8cff10b7e448b")
-      val nonInitiatorInput = LocalInput(UInt64(11), parentTx, 2, 4294967293L)
-      val nonInitiatorOutput = LocalChangeOutput(UInt64(33), 49_999_900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
+      val initiatorInput = Input.Remote(UInt64(20), OutPoint(parentTx, 0), parentTx.txOut(0), 4294967293L)
+      val initiatorOutput = Output.Remote(UInt64(30), 49_999_845 sat, hex"00141ca1cca8855bad6bc1ea5436edd8cff10b7e448b")
+      val nonInitiatorInput = Input.Local(UInt64(11), parentTx, 2, 4294967293L)
+      val nonInitiatorOutput = Output.Local.Change(UInt64(33), 49_999_900 sat, hex"001444cb0c39f93ecc372b5851725bd29d865d333b10")
       SharedTransaction(None, sharedOutput, List(nonInitiatorInput), List(initiatorInput), List(nonInitiatorOutput), List(initiatorOutput), lockTime = 120)
     }
     assert(nonInitiatorTx.localFees == 100.sat)
