@@ -1,11 +1,10 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
-
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
@@ -16,7 +15,6 @@ import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelF
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-
 
 private[channel] object ChannelCodecs4 {
 
@@ -211,46 +209,96 @@ private[channel] object ChannelCodecs4 {
 
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
-    private val fundingParamsCodec: Codec[InteractiveTxParams] = (
+    private val multisig2of2InputCodec: Codec[InteractiveTxBuilder.Multisig2of2Input] = (
+      ("info" | inputInfoCodec) ::
+        ("localFundingPubkey" | publicKey) ::
+        ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
+
+    private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
+      .typecase(0x01, multisig2of2InputCodec)
+
+    private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]
+
+    private val fundingParamsCodec: Codec[InteractiveTxBuilder.InteractiveTxParams] = (
       ("channelId" | bytes32) ::
         ("isInitiator" | bool8) ::
         ("localAmount" | satoshi) ::
         ("remoteAmount" | satoshi) ::
+        ("sharedInput_opt" | optional(bool8, sharedFundingInputCodec)) ::
         ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("localOutputs" | listOfN(uint16, txOutCodec)) ::
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
         ("minDepth_opt" | optional(bool8, uint32)) ::
-        ("requireConfirmedInputs" | (("forLocal" | bool8) :: ("forRemote" | bool8)).as[RequireConfirmedInputs])).as[InteractiveTxParams]
+        ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
 
-    private val remoteTxAddInputCodec: Codec[RemoteTxAddInput] = (
+    private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi)).as[InteractiveTxBuilder.Input.Shared]
+
+    private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
+      ("serialId" | uint64) ::
+        ("scriptPubKey" | lengthDelimited(bytes)) ::
+        ("localAmount" | satoshi) ::
+        ("remoteAmount" | satoshi)).as[InteractiveTxBuilder.Output.Shared]
+
+    private val localInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Local] = (
+      ("serialId" | uint64) ::
+        ("previousTx" | txCodec) ::
+        ("previousTxOutput" | uint32) ::
+        ("sequence" | uint32)).as[InteractiveTxBuilder.Input.Local]
+
+    private val remoteInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Remote] = (
       ("serialId" | uint64) ::
         ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("sequence" | uint32)).as[RemoteTxAddInput]
+        ("sequence" | uint32)).as[InteractiveTxBuilder.Input.Remote]
 
-    private val remoteTxAddOutputCodec: Codec[RemoteTxAddOutput] = (
+    private val localInteractiveTxChangeOutputCodec: Codec[InteractiveTxBuilder.Output.Local.Change] = (
       ("serialId" | uint64) ::
         ("amount" | satoshi) ::
-        ("scriptPubKey" | lengthDelimited(bytes))).as[RemoteTxAddOutput]
+        ("scriptPubKey" | lengthDelimited(bytes))).as[InteractiveTxBuilder.Output.Local.Change]
 
-    private val sharedTransactionCodec: Codec[SharedTransaction] = (
-      ("localInputs" | listOfN(uint16, lengthDelimited(txAddInputCodec))) ::
-        ("remoteInputs" | listOfN(uint16, remoteTxAddInputCodec)) ::
-        ("localOutputs" | listOfN(uint16, lengthDelimited(txAddOutputCodec))) ::
-        ("remoteOutputs" | listOfN(uint16, remoteTxAddOutputCodec)) ::
-        ("lockTime" | uint32)).as[SharedTransaction]
+    private val localInteractiveTxNonChangeOutputCodec: Codec[InteractiveTxBuilder.Output.Local.NonChange] = (
+      ("serialId" | uint64) ::
+        ("amount" | satoshi) ::
+        ("scriptPubKey" | lengthDelimited(bytes))).as[InteractiveTxBuilder.Output.Local.NonChange]
 
-    private val partiallySignedSharedTransactionCodec: Codec[PartiallySignedSharedTransaction] = (
+    private val localInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Local] = discriminated[InteractiveTxBuilder.Output.Local].by(uint16)
+      .typecase(0x01, localInteractiveTxChangeOutputCodec)
+      .typecase(0x02, localInteractiveTxNonChangeOutputCodec)
+
+    private val remoteInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Remote] = (
+      ("serialId" | uint64) ::
+        ("amount" | satoshi) ::
+        ("scriptPubKey" | lengthDelimited(bytes))).as[InteractiveTxBuilder.Output.Remote]
+
+    private val sharedTransactionCodec: Codec[InteractiveTxBuilder.SharedTransaction] = (
+      ("sharedInput" | optional(bool8, sharedInteractiveTxInputCodec)) ::
+        ("sharedOutput" | sharedInteractiveTxOutputCodec) ::
+        ("localInputs" | listOfN(uint16, localInteractiveTxInputCodec)) ::
+        ("remoteInputs" | listOfN(uint16, remoteInteractiveTxInputCodec)) ::
+        ("localOutputs" | listOfN(uint16, localInteractiveTxOutputCodec)) ::
+        ("remoteOutputs" | listOfN(uint16, remoteInteractiveTxOutputCodec)) ::
+        ("lockTime" | uint32)).as[InteractiveTxBuilder.SharedTransaction]
+
+    private val partiallySignedSharedTransactionCodec: Codec[InteractiveTxBuilder.PartiallySignedSharedTransaction] = (
       ("sharedTx" | sharedTransactionCodec) ::
-        ("localSigs" | lengthDelimited(txSignaturesCodec))).as[PartiallySignedSharedTransaction]
+        ("localSigs" | lengthDelimited(txSignaturesCodec))).as[InteractiveTxBuilder.PartiallySignedSharedTransaction]
 
-    private val fullySignedSharedTransactionCodec: Codec[FullySignedSharedTransaction] = (
+    private val scriptWitnessCodec: Codec[ScriptWitness] = listOfN(uint16, lengthDelimited(bytes)).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
+
+    private val fullySignedSharedTransactionCodec: Codec[InteractiveTxBuilder.FullySignedSharedTransaction] = (
       ("sharedTx" | sharedTransactionCodec) ::
         ("localSigs" | lengthDelimited(txSignaturesCodec)) ::
-        ("remoteSigs" | lengthDelimited(txSignaturesCodec))).as[FullySignedSharedTransaction]
+        ("remoteSigs" | lengthDelimited(txSignaturesCodec)) ::
+        ("sharedSigs_opt" | optional(bool8, scriptWitnessCodec))).as[InteractiveTxBuilder.FullySignedSharedTransaction]
 
-    private val signedSharedTransactionCodec: Codec[SignedSharedTransaction] = discriminated[SignedSharedTransaction].by(uint16)
+    private val signedSharedTransactionCodec: Codec[InteractiveTxBuilder.SignedSharedTransaction] = discriminated[InteractiveTxBuilder.SignedSharedTransaction].by(uint16)
       .typecase(0x01, partiallySignedSharedTransactionCodec)
       .typecase(0x02, fullySignedSharedTransactionCodec)
 

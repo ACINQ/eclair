@@ -50,7 +50,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // to publish and we may be able to RBF.
         wallet.publishTransaction(fundingTx.signedTx).onComplete {
           case Success(_) =>
-            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees(dualFundedTx.fundingParams), "funding"))
+            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees, "funding"))
             channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(dualFundedTx.fundingParams.channelId)))
           case Failure(t) =>
             channelOpenReplyToUser(Left(LocalError(t)))
@@ -104,7 +104,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
-    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(toOutPoint(i), Nil, 0))
+    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
     if (inputs.nonEmpty) {
       wallet.rollback(Transaction(2, inputs, Nil, 0))
     }

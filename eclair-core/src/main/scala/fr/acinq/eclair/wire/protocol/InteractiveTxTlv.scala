@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tsatoshi}
 import scodec.Codec
 import scodec.codecs.discriminated
@@ -30,7 +30,12 @@ import scodec.codecs.discriminated
 sealed trait TxAddInputTlv extends Tlv
 
 object TxAddInputTlv {
-  val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint))
+  /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
+  case class SharedInputTxId(txid: ByteVector32) extends TxAddInputTlv
+
+  val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
+    .typecase(UInt64(1105), tlvField(bytes32.as[SharedInputTxId]))
+  )
 }
 
 sealed trait TxAddOutputTlv extends Tlv
@@ -60,7 +65,12 @@ object TxCompleteTlv {
 sealed trait TxSignaturesTlv extends Tlv
 
 object TxSignaturesTlv {
-  val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint))
+  /** When doing a splice, each peer must provide their signature for the previous 2-of-2 funding output. */
+  case class PreviousFundingTxSig(sig: ByteVector64) extends TxSignaturesTlv
+
+  val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
+    .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
+  )
 }
 
 sealed trait TxInitRbfTlv extends Tlv
