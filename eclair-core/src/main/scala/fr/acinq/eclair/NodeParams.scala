@@ -544,6 +544,7 @@ object NodeParams extends Logging {
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second"),
         sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
+        maxWithoutChannels = config.getInt("peer-connection.max-without-channels"),
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,

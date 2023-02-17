@@ -110,7 +110,8 @@ object EclairInternalsSerializer {
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
       ("killIdleDelay" | finiteDurationCodec) ::
       ("maxOnionMessagesPerSecond" | int32) ::
-      ("sendRemoteAddressInit" | bool(8))).as[PeerConnection.Conf]
+      ("sendRemoteAddressInit" | bool(8)) ::
+      ("maxWithoutChannels" | int32)).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 

@@ -542,7 +542,8 @@ object PeerConnection {
                   maxRebroadcastDelay: FiniteDuration,
                   killIdleDelay: FiniteDuration,
                   maxOnionMessagesPerSecond: Int,
-                  sendRemoteAddressInit: Boolean)
+                  sendRemoteAddressInit: Boolean,
+                  maxWithoutChannels: Int)
 
   // @formatter:off
 
@@ -604,6 +605,7 @@ object PeerConnection {
     case object NoRemainingChannel extends KillReason
     case object AllChannelsFail extends KillReason
     case object ConnectionReplaced extends KillReason
+    case object TooManyIncoming extends KillReason
   }
   // @formatter:on
 
