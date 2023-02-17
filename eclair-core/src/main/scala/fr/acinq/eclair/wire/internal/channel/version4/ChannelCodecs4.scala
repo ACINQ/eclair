@@ -1,6 +1,5 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -12,7 +11,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -83,8 +82,15 @@ private[channel] object ChannelCodecs4 {
       .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
       .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
 
-    val commitmentSpecCodec: Codec[CommitmentSpec] = (
-      ("htlcs" | setCodec(htlcCodec)) ::
+    def minimalHtlcCodec(htlcs: Set[UpdateAddHtlc]): Codec[UpdateAddHtlc] = uint64overflow.xmap[UpdateAddHtlc](id => htlcs.find(_.id == id).get, _.id)
+
+    def minimalDirectedHtlcCodec(htlcs: Set[DirectedHtlc]): Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
+      .typecase(true, minimalHtlcCodec(htlcs.collect(DirectedHtlc.incoming)).as[IncomingHtlc])
+      .typecase(false, minimalHtlcCodec(htlcs.collect(DirectedHtlc.outgoing)).as[OutgoingHtlc])
+
+    /** HTLCs are stored separately to avoid duplicating data. */
+    def commitmentSpecCodec(htlcs: Set[DirectedHtlc]): Codec[CommitmentSpec] = (
+      ("htlcs" | setCodec(minimalDirectedHtlcCodec(htlcs))) ::
         ("feeratePerKw" | feeratePerKw) ::
         ("toLocal" | millisatoshi) ::
         ("toRemote" | millisatoshi)).as[CommitmentSpec]
@@ -159,22 +165,6 @@ private[channel] object ChannelCodecs4 {
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
         ("remoteSig" | bytes64)).as[CommitTxAndRemoteSig]
-
-    val localCommitCodec: Codec[LocalCommit] = (
-      ("index" | uint64overflow) ::
-        ("spec" | commitmentSpecCodec) ::
-        ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
-        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
-
-    val remoteCommitCodec: Codec[RemoteCommit] = (
-      ("index" | uint64overflow) ::
-        ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
-        ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
-
-    val nextRemoteCommitCodec: Codec[NextRemoteCommit] = (
-      ("sig" | lengthDelimited(commitSigCodec)) ::
-        ("commit" | remoteCommitCodec)).as[NextRemoteCommit]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
@@ -340,13 +330,33 @@ private[channel] object ChannelCodecs4 {
         ("localNextHtlcId" | uint64overflow) ::
         ("remoteNextHtlcId" | uint64overflow)).as[CommitmentChanges]
 
-    val commitmentCodec: Codec[Commitment] = (
-      ("fundingTxStatus" | fundingTxStatusCodec) ::
-        ("remoteFundingStatus" | remoteFundingStatusCodec) ::
-        ("localCommit" | localCommitCodec) ::
-        ("remoteCommit" | remoteCommitCodec) ::
-        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec))
-      ).as[Commitment]
+    def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = {
+      val localCommitCodec: Codec[LocalCommit] = (
+        ("index" | uint64overflow) ::
+          ("spec" | commitmentSpecCodec(htlcs)) ::
+          ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
+          ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
+
+      val remoteCommitCodec: Codec[RemoteCommit] = (
+        ("index" | uint64overflow) ::
+          ("spec" | commitmentSpecCodec(htlcs.map(_.opposite))) ::
+          ("txid" | bytes32) ::
+          ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
+
+      val nextRemoteCommitCodec: Codec[NextRemoteCommit] = (
+        ("sig" | lengthDelimited(commitSigCodec)) ::
+          ("commit" | remoteCommitCodec)).as[NextRemoteCommit]
+
+      val commitmentCodec: Codec[Commitment] = (
+        ("fundingTxStatus" | fundingTxStatusCodec) ::
+          ("remoteFundingStatus" | remoteFundingStatusCodec) ::
+          ("localCommit" | localCommitCodec) ::
+          ("remoteCommit" | remoteCommitCodec) ::
+          ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec))
+        ).as[Commitment]
+
+      commitmentCodec
+    }
 
     /**
      * When multiple commitments are active, htlcs are shared between all of these commitments.
@@ -355,40 +365,19 @@ private[channel] object ChannelCodecs4 {
      * To avoid writing that htlc set multiple times to disk, we encode it separately.
      */
     case class EncodedCommitments(params: ChannelParams,
-                                      changes: CommitmentChanges,
-                                      // The direction we use is from our local point of view.
-                                      htlcs: Set[DirectedHtlc],
-                                      localHtlcs: Set[(Boolean, Long)],
-                                      remoteHtlcs: Set[(Boolean, Long)],
-                                      nextRemoteHtlcs: Set[(Boolean, Long)],
-                                      active: List[Commitment],
-                                      remoteNextCommitInfo: Either[WaitForRev, PublicKey],
-                                      remotePerCommitmentSecrets: ShaChain,
-                                      originChannels: Map[Long, Origin],
-                                      remoteChannelData_opt: Option[ByteVector]) {
+                                  changes: CommitmentChanges,
+                                  // The direction we use is from our local point of view.
+                                  htlcs: Set[DirectedHtlc],
+                                  active: List[Commitment],
+                                  remoteNextCommitInfo: Either[WaitForRev, PublicKey],
+                                  remotePerCommitmentSecrets: ShaChain,
+                                  originChannels: Map[Long, Origin],
+                                  remoteChannelData_opt: Option[ByteVector]) {
       def toCommitments: Commitments = {
-        // The direction that was used to store htlcs is from our local point of view, so we need to invert everything
-        // for remote commitments.
-        val localHtlcs1: Set[DirectedHtlc] = htlcs.collect {
-          case IncomingHtlc(add) if localHtlcs.contains((true, add.id)) => IncomingHtlc(add)
-          case OutgoingHtlc(add) if localHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
-        }
-        val remoteHtlcs1: Set[DirectedHtlc] = htlcs.collect {
-          case IncomingHtlc(add) if remoteHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
-          case OutgoingHtlc(add) if remoteHtlcs.contains((true, add.id)) => IncomingHtlc(add)
-        }
-        val nextRemoteHtlcs1: Set[DirectedHtlc] = htlcs.collect {
-          case IncomingHtlc(add) if nextRemoteHtlcs.contains((false, add.id)) => OutgoingHtlc(add)
-          case OutgoingHtlc(add) if nextRemoteHtlcs.contains((true, add.id)) => IncomingHtlc(add)
-        }
         Commitments(
           params = params,
           changes = changes,
-          active = active.map(c => c.copy(
-            localCommit = c.localCommit.modify(_.spec.htlcs).setTo(localHtlcs1),
-            remoteCommit = c.remoteCommit.modify(_.spec.htlcs).setTo(remoteHtlcs1),
-            nextRemoteCommit_opt = c.nextRemoteCommit_opt.map(_.modify(_.commit.spec.htlcs).setTo(nextRemoteHtlcs1)),
-          )),
+          active = active,
           remoteNextCommitInfo,
           remotePerCommitmentSecrets,
           originChannels,
@@ -408,42 +397,25 @@ private[channel] object ChannelCodecs4 {
           params = commitments.params,
           changes = commitments.changes,
           htlcs = htlcs,
-          localHtlcs = commitments.active.head.localCommit.spec.htlcs.map(htlcRef),
-          remoteHtlcs = commitments.active.head.remoteCommit.spec.htlcs.map(htlcRef),
-          nextRemoteHtlcs = commitments.active.head.nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(htlcRef)).getOrElse(Set.empty),
-          active = commitments.active.map(c => c.copy(
-            localCommit = c.localCommit.modify(_.spec.htlcs).setTo(Set.empty),
-            remoteCommit = c.remoteCommit.modify(_.spec.htlcs).setTo(Set.empty),
-            nextRemoteCommit_opt = c.nextRemoteCommit_opt.map(_.modify(_.commit.spec.htlcs).setTo(Set.empty)),
-          )).toList,
+          active = commitments.active.toList,
           remoteNextCommitInfo = commitments.remoteNextCommitInfo,
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
           originChannels = commitments.originChannels,
           remoteChannelData_opt = commitments.remoteChannelData_opt
         )
       }
-
-      private def htlcRef(htlc: DirectedHtlc): (Boolean, Long) = htlc match {
-        case IncomingHtlc(add) => (true, add.id)
-        case OutgoingHtlc(add) => (false, add.id)
-      }
     }
-
-    private val htlcRefCodec: Codec[(Boolean, Long)] = (("incoming" | bool8) :: ("id" | uint64overflow)).as[(Boolean, Long)]
 
     val commitmentsCodec: Codec[Commitments] = (
       ("params" | paramsCodec) ::
         ("changes" | changesCodec) ::
-        ("htlcs" | setCodec(htlcCodec)) ::
-        ("localHtlcs" | setCodec(htlcRefCodec)) ::
-        ("remoteHtlcs" | setCodec(htlcRefCodec)) ::
-        ("nextRemoteHtlcs" | setCodec(htlcRefCodec)) ::
-        ("active" | listOfN(uint16, commitmentCodec)) ::
-        ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
-        ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
-        ("originChannels" | originsMapCodec) ::
-        ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
-      ).as[EncodedCommitments].xmap(
+        (("htlcs" | setCodec(htlcCodec)) >>:~ { htlcs =>
+          ("active" | listOfN(uint16, commitmentCodec(htlcs))) ::
+            ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
+            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
+            ("originChannels" | originsMapCodec) ::
+            ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
+        })).as[EncodedCommitments].xmap(
       encoded => encoded.toCommitments,
       commitments => EncodedCommitments(commitments)
     )
