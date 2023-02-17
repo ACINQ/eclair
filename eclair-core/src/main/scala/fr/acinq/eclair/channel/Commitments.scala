@@ -317,14 +317,14 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
     val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
-      case Some(feerate) => return Some(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
       case None =>
     }
 
@@ -345,12 +345,12 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     val missingForSender = reduced.toRemote - localChannelReserve(params) - (if (params.localParams.isInitiator) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
     val missingForReceiver = reduced.toLocal - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
     if (missingForSender < 0.msat) {
-      return Some(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = localChannelReserve(params), fees = if (params.localParams.isInitiator) fees else 0.sat))
+      return Left(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = localChannelReserve(params), fees = if (params.localParams.isInitiator) fees else 0.sat))
     } else if (missingForReceiver < 0.msat) {
       if (params.localParams.isInitiator) {
         // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       } else {
-        return Some(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = fees))
+        return Left(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = fees))
       }
     }
 
@@ -359,10 +359,10 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
     val allowedHtlcValueInFlight = params.maxHtlcAmount
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
-      return Some(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
+      return Left(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
     if (Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
-      return Some(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
+      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
     }
 
     // If sending this htlc would overflow our dust exposure, we reject it.
@@ -370,25 +370,25 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
     val localDustExposureAfterAdd = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
     if (localDustExposureAfterAdd > maxDustExposure) {
-      return Some(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterAdd))
+      return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterAdd))
     }
     val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit1.spec, changes.remoteChanges.all, changes.localChanges.all)
     val remoteDustExposureAfterAdd = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
     if (remoteDustExposureAfterAdd > maxDustExposure) {
-      return Some(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
+      return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
     }
 
-    None
+    Right(())
   }
 
-  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
     val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
-      case Some(feerate) => return Some(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
       case None =>
     }
 
@@ -403,10 +403,10 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
     val missingForReceiver = reduced.toLocal - localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
     if (missingForSender < 0.sat) {
-      return Some(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
+      return Left(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
     } else if (missingForReceiver < 0.sat) {
       if (params.localParams.isInitiator) {
-        return Some(CannotAffordFees(params.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = localChannelReserve(params), fees = fees))
+        return Left(CannotAffordFees(params.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = localChannelReserve(params), fees = fees))
       } else {
         // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       }
@@ -415,17 +415,17 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
     val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
     if (params.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      return Some(HtlcValueTooHighInFlight(params.channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+      return Left(HtlcValueTooHighInFlight(params.channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
-      return Some(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
+      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
     }
 
-    None
+    Right(())
   }
 
-  def canSendFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+  def canSendFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -433,7 +433,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
     val fees = commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
     val missing = reduced.toRemote.truncateToSatoshi - localChannelReserve(params) - fees
     if (missing < 0.sat) {
-      return Some(CannotAffordFees(params.channelId, missing = -missing, reserve = localChannelReserve(params), fees = fees))
+      return Left(CannotAffordFees(params.channelId, missing = -missing, reserve = localChannelReserve(params), fees = fees))
     }
     // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
     if (feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
@@ -443,21 +443,21 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
       val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
       val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localParams.dustLimit, params.commitmentFormat)
       if (localDustExposureAfterFeeUpdate > maxDustExposure) {
-        return Some(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
+        return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
       }
       val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit.spec, changes.remoteChanges.all, changes.localChanges.all)
       val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteParams.dustLimit, params.commitmentFormat)
       if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
-        return Some(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
+        return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
       }
     }
-    None
+    Right(())
   }
 
-  def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Option[ChannelException] = {
+  def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
     if (feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
-      return Some(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = targetFeerate))
+      return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = targetFeerate))
     } else {
       // let's compute the current commitment *as seen by us* including this change
       // NB: we check that the initiator can afford this new fee even if spec allows to do it at next signature
@@ -469,7 +469,7 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
       val fees = commitTxTotalCost(params.localParams.dustLimit, reduced, params.commitmentFormat)
       val missing = reduced.toRemote.truncateToSatoshi - remoteChannelReserve(params) - fees
       if (missing < 0.sat) {
-        return Some(CannotAffordFees(params.channelId, missing = -missing, reserve = remoteChannelReserve(params), fees = fees))
+        return Left(CannotAffordFees(params.channelId, missing = -missing, reserve = remoteChannelReserve(params), fees = fees))
       }
       // if we would overflow our dust exposure with the new feerate, we reject this fee update
       if (feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
@@ -477,18 +477,18 @@ case class Commitment(localFundingStatus: LocalFundingStatus, remoteFundingStatu
         val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
         val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localParams.dustLimit, params.commitmentFormat)
         if (localDustExposureAfterFeeUpdate > maxDustExposure) {
-          return Some(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
+          return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
         }
         // this is the commitment as it would be if their update_fee was immediately signed by both parties (it is only an
         // estimate because there can be concurrent updates)
         val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit.spec, changes.remoteChanges.all, changes.localChanges.all)
         val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteParams.dustLimit, params.commitmentFormat)
         if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
-          return Some(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
+          return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
         }
       }
     }
-    None
+    Right(())
   }
 
   def sendCommit(keyManager: ChannelKeyManager, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey)(implicit log: LoggingAdapter): (Commitment, CommitSig) = {
@@ -729,11 +729,9 @@ case class Commitments(params: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    active.foreach(_.canSendAdd(add.amountMsat, params, changes1, feeConf) match {
-      case Some(f) => return Left(f)
-      case None => // ok
-    })
-    Right(copy(changes = changes1, originChannels = originChannels1), add)
+    active.map(_.canSendAdd(add.amountMsat, params, changes1, feeConf))
+      .collectFirst { case Left(f) => Left(f) }
+      .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
   }
 
   def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
@@ -749,11 +747,9 @@ case class Commitments(params: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    active.foreach(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf) match {
-      case Some(f) => return Left(f)
-      case None => // ok
-    })
-    Right(copy(changes = changes1))
+    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf))
+      .collectFirst { case Left(f) => Left(f) }
+      .getOrElse(Right(copy(changes = changes1)))
   }
 
   def sendFulfill(cmd: CMD_FULFILL_HTLC): Either[ChannelException, (Commitments, UpdateFulfillHtlc)] =
@@ -840,11 +836,9 @@ case class Commitments(params: ChannelParams,
       val fee = UpdateFee(channelId, cmd.feeratePerKw)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(localChanges = changes.localChanges.copy(proposed = changes.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      active.foreach(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf) match {
-        case Some(f) => return Left(f)
-        case None => // ok
-      })
-      Right(copy(changes = changes1), fee)
+      active.map(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf))
+        .collectFirst { case Left(f) => Left(f) }
+        .getOrElse(Right(copy(changes = changes1), fee))
     }
   }
 
@@ -859,11 +853,9 @@ case class Commitments(params: ChannelParams,
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      active.foreach(_.canReceiveFee(fee.feeratePerKw, params, changes1, feeConf) match {
-        case Some(f) => return Left(f)
-        case None => // ok
-      })
-      Right(copy(changes = changes1))
+      active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feeConf))
+        .collectFirst { case Left(f) => Left(f) }
+        .getOrElse(Right(copy(changes = changes1)))
     }
   }
 
