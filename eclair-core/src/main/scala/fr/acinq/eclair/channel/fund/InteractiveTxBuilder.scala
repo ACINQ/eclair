@@ -214,7 +214,7 @@ object InteractiveTxBuilder {
   }
   object Input {
     /** A local-only input that funds the interactive transaction. */
-    case class Local(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long, tlvs: TlvStream[TxAddInputTlv] = TlvStream.empty) extends Input with Outgoing {
+    case class Local(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long) extends Input with Outgoing {
       override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput.toInt)
     }
 
@@ -237,8 +237,8 @@ object InteractiveTxBuilder {
     /** A local-only output of the interactive transaction. */
     sealed trait Local extends Output with Outgoing
     object Local {
-      case class Change(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
-      case class NonChange(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
+      case class Change(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector) extends Local
+      case class NonChange(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector) extends Local
     }
 
     /**
@@ -458,7 +458,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     session.toSend match {
       case (addInput: Input) +: tail =>
         val message = addInput match {
-          case i: Input.Local => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence, i.tlvs)
+          case i: Input.Local => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence)
           case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
         }
         replyTo ! SendMessage(message)
@@ -880,7 +880,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   private def unlockAndStop(session: InteractiveTxSession): Behavior[Command] = {
-    val localInputs = session.localInputs ++ session.toSend.collect { case addInput: OutgoingInput => addInput }
+    val localInputs = session.localInputs ++ session.toSend.collect { case addInput: Input.Local => addInput }
     unlockAndStop(localInputs.map(_.outPoint).toSet)
   }
 

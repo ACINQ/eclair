@@ -10,7 +10,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.{TxAddInputTlv, TxAddOutputTlv, UpdateMessage}
+import fr.acinq.eclair.wire.protocol.UpdateMessage
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -250,8 +250,7 @@ private[channel] object ChannelCodecs4 {
       ("serialId" | uint64) ::
         ("previousTx" | txCodec) ::
         ("previousTxOutput" | uint32) ::
-        ("sequence" | uint32) ::
-        ("tlvStream" | lengthDelimited(TxAddInputTlv.txAddInputTlvCodec))).as[InteractiveTxBuilder.Input.Local]
+        ("sequence" | uint32)).as[InteractiveTxBuilder.Input.Local]
 
     private val remoteInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Remote] = (
       ("serialId" | uint64) ::
@@ -262,14 +261,12 @@ private[channel] object ChannelCodecs4 {
     private val localInteractiveTxChangeOutputCodec: Codec[InteractiveTxBuilder.Output.Local.Change] = (
       ("serialId" | uint64) ::
         ("amount" | satoshi) ::
-        ("scriptPubKey" | lengthDelimited(bytes)) ::
-        ("tlvStream" | lengthDelimited(TxAddOutputTlv.txAddOutputTlvCodec))).as[InteractiveTxBuilder.Output.Local.Change]
+        ("scriptPubKey" | lengthDelimited(bytes))).as[InteractiveTxBuilder.Output.Local.Change]
 
     private val localInteractiveTxNonChangeOutputCodec: Codec[InteractiveTxBuilder.Output.Local.NonChange] = (
       ("serialId" | uint64) ::
         ("amount" | satoshi) ::
-        ("scriptPubKey" | lengthDelimited(bytes)) ::
-        ("tlvStream" | lengthDelimited(TxAddOutputTlv.txAddOutputTlvCodec))).as[InteractiveTxBuilder.Output.Local.NonChange]
+        ("scriptPubKey" | lengthDelimited(bytes))).as[InteractiveTxBuilder.Output.Local.NonChange]
 
     private val localInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Local] = discriminated[InteractiveTxBuilder.Output.Local].by(uint16)
       .typecase(0x01, localInteractiveTxChangeOutputCodec)
