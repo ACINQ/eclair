@@ -1,6 +1,6 @@
 {
   "type" : "DATA_WAIT_FOR_DUAL_FUNDING_READY",
-  "metaCommitments" : {
+  "commitments" : {
     "params" : {
       "channelId" : "f5cafea10bc83c2fe9de16d04bb73c1ddaed2ce9d600dd91301a7d995f7b9134",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
@@ -67,7 +67,7 @@
         "announceChannel" : false
       }
     },
-    "common" : {
+    "changes" : {
       "localChanges" : {
         "proposed" : [ ],
         "signed" : [ ],
@@ -79,14 +79,9 @@
         "signed" : [ ]
       },
       "localNextHtlcId" : 0,
-      "remoteNextHtlcId" : 0,
-      "localCommitIndex" : 0,
-      "remoteCommitIndex" : 0,
-      "originChannels" : { },
-      "remoteNextCommitInfo" : "02a7d9d163632731c7211ced4ee21ae181bb0dfa73f5538607c081dd63d89f9820",
-      "remotePerCommitmentSecrets" : null
+      "remoteNextHtlcId" : 0
     },
-    "commitments" : [ {
+    "active" : [ {
       "fundingTx" : {
         "outPoint" : "7443277377ab5ca44330a332d79e6ff33d21a3b8889559f54894982af47e1cdb:0",
         "amountSatoshis" : 1500000
@@ -125,7 +120,10 @@
         "txid" : "990138002f6fc36ae3ea48b88e2302a80eb925c33668e59638a82840f1e633ad",
         "remotePerCommitmentPoint" : "037d0b91e7bf58eec2eddf033d457b17140a341533808a346c869ada9ecea0cec0"
       }
-    } ]
+    } ],
+    "remoteNextCommitInfo" : "02a7d9d163632731c7211ced4ee21ae181bb0dfa73f5538607c081dd63d89f9820",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
   },
   "shortIds" : {
     "real" : {

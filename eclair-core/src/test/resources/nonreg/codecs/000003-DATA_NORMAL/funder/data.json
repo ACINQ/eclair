@@ -1,6 +1,6 @@
 {
   "type" : "DATA_NORMAL",
-  "metaCommitments" : {
+  "commitments" : {
     "params" : {
       "channelId" : "6ecfe1e9e01abd3fbe482efde50e4687b3f1f5d8cba609174aebce1c01415611",
       "channelConfig" : [ ],
@@ -52,7 +52,7 @@
         "announceChannel" : true
       }
     },
-    "common" : {
+    "changes" : {
       "localChanges" : {
         "proposed" : [ ],
         "signed" : [ ],
@@ -64,14 +64,9 @@
         "signed" : [ ]
       },
       "localNextHtlcId" : 9288,
-      "remoteNextHtlcId" : 151,
-      "localCommitIndex" : 20024,
-      "remoteCommitIndex" : 20024,
-      "originChannels" : { },
-      "remoteNextCommitInfo" : "02a4471183c519e54b8ee66fb41cbe06fed1153fce258db72ce67f9a9e044f0a16",
-      "remotePerCommitmentSecrets" : null
+      "remoteNextHtlcId" : 151
     },
-    "commitments" : [ {
+    "active" : [ {
       "fundingTx" : {
         "outPoint" : "115641011cceeb4a1709a6cbd8f5f1b387460ee5fd2e48be3fbd1ae0e9e1cf6e:0",
         "amountSatoshis" : 15000000
@@ -110,7 +105,10 @@
         "txid" : "919c015d2e0a3dc214786c24c7f035302cb9c954f740ed267a84cdca66b0be49",
         "remotePerCommitmentPoint" : "02b82bbd59e0d22665671d9e47d8733058b92f18e906e9403753661aa03dc9e4dd"
       }
-    } ]
+    } ],
+    "remoteNextCommitInfo" : "02a4471183c519e54b8ee66fb41cbe06fed1153fce258db72ce67f9a9e044f0a16",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
   },
   "shortIds" : {
     "real" : {

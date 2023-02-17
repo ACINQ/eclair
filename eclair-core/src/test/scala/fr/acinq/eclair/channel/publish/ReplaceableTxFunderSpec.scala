@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
-import fr.acinq.eclair.channel.{CommitTxAndRemoteSig, Commitments, LocalCommit, LocalParams}
+import fr.acinq.eclair.channel.{CommitTxAndRemoteSig, FullCommitment, LocalCommit, LocalParams}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
@@ -140,33 +140,33 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       txOut = Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey)))
     ))
 
-    val commitments = mock[Commitments]
+    val commitment = mock[FullCommitment]
     val localParams = mock[LocalParams]
     localParams.dustLimit.returns(1000 sat)
-    commitments.localParams.returns(localParams)
+    commitment.localParams.returns(localParams)
     val localCommit = mock[LocalCommit]
     localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, PlaceHolderSig))
-    commitments.localCommit.returns(localCommit)
+    commitment.localCommit.returns(localCommit)
 
     // We can handle a small feerate update by lowering the change output.
-    val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
+    val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitment)
     assert(feerateUpdate1.txInfo.tx.txIn == previousAnchorTx.txInfo.tx.txIn)
     assert(feerateUpdate1.txInfo.tx.txOut.length == 1)
-    val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitments)
+    val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitment)
     assert(feerateUpdate2.txInfo.tx.txIn == previousAnchorTx.txInfo.tx.txIn)
     assert(feerateUpdate2.txInfo.tx.txOut.length == 1)
     assert(feerateUpdate2.txInfo.tx.txOut.head.amount < feerateUpdate1.txInfo.tx.txOut.head.amount)
 
     // But if the feerate increase is too large, we must add new wallet inputs.
-    val AddWalletInputs(previousTx) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(10000 sat), commitments)
+    val AddWalletInputs(previousTx) = adjustPreviousTxOutput(FundedTx(previousAnchorTx, 12000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(10000 sat), commitment)
     assert(previousTx == previousAnchorTx)
   }
 
   test("adjust previous htlc transaction outputs", Tag("fuzzy")) {
-    val commitments = mock[Commitments]
+    val commitment = mock[FullCommitment]
     val localParams = mock[LocalParams]
     localParams.dustLimit.returns(600 sat)
-    commitments.localParams.returns(localParams)
+    commitment.localParams.returns(localParams)
     val (initialHtlcSuccess, initialHtlcTimeout) = createHtlcTxs()
     for (initialHtlcTx <- Seq(initialHtlcSuccess, initialHtlcTimeout)) {
       val previousTx = initialHtlcTx.updateTx(initialHtlcTx.txInfo.tx.copy(
@@ -185,11 +185,11 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       ))
 
       // We can handle a small feerate update by lowering the change output.
-      val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
+      val TxOutputAdjusted(feerateUpdate1) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitment)
       assert(feerateUpdate1.txInfo.tx.txIn == previousTx.txInfo.tx.txIn)
       assert(feerateUpdate1.txInfo.tx.txOut.length == 2)
       assert(feerateUpdate1.txInfo.tx.txOut.head == previousTx.txInfo.tx.txOut.head)
-      val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitments)
+      val TxOutputAdjusted(feerateUpdate2) = adjustPreviousTxOutput(FundedTx(previousTx, 15000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(6000 sat), commitment)
       assert(feerateUpdate2.txInfo.tx.txIn == previousTx.txInfo.tx.txIn)
       assert(feerateUpdate2.txInfo.tx.txOut.length == 2)
       assert(feerateUpdate2.txInfo.tx.txOut.head == previousTx.txInfo.tx.txOut.head)
@@ -197,7 +197,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
       // If the previous funding attempt didn't add a change output, we must add new wallet inputs.
       val previousTxNoChange = previousTx.updateTx(previousTx.txInfo.tx.copy(txOut = Seq(previousTx.txInfo.tx.txOut.head)))
-      val AddWalletInputs(tx) = adjustPreviousTxOutput(FundedTx(previousTxNoChange, 25000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitments)
+      val AddWalletInputs(tx) = adjustPreviousTxOutput(FundedTx(previousTxNoChange, 25000 sat, FeeratePerKw(2500 sat)), FeeratePerKw(5000 sat), commitment)
       assert(tx == previousTxNoChange)
 
       for (_ <- 1 to 100) {
@@ -208,7 +208,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
           TxOut(changeAmount, Script.pay2wpkh(PlaceHolderPubKey))
         )))
         val targetFeerate = FeeratePerKw(2500 sat) + FeeratePerKw(Random.nextInt(20000).sat)
-        adjustPreviousTxOutput(FundedTx(fuzzyPreviousTx, amountIn, FeeratePerKw(2500 sat)), targetFeerate, commitments) match {
+        adjustPreviousTxOutput(FundedTx(fuzzyPreviousTx, amountIn, FeeratePerKw(2500 sat)), targetFeerate, commitment) match {
           case AdjustPreviousTxOutputResult.Skip(_) => // nothing do check
           case AddWalletInputs(tx) => assert(tx == fuzzyPreviousTx)
           case TxOutputAdjusted(updatedTx) =>
@@ -222,16 +222,16 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("adjust previous claim htlc transaction outputs") {
-    val commitments = mock[Commitments]
+    val commitment = mock[FullCommitment]
     val localParams = mock[LocalParams]
     localParams.dustLimit.returns(500 sat)
-    commitments.localParams.returns(localParams)
+    commitment.localParams.returns(localParams)
     val (claimHtlcSuccess, claimHtlcTimeout) = createClaimHtlcTx()
     for (claimHtlc <- Seq(claimHtlcSuccess, claimHtlcTimeout)) {
       var previousAmount = claimHtlc.txInfo.tx.txOut.head.amount
       for (i <- 1 to 100) {
         val targetFeerate = FeeratePerKw(250 * i sat)
-        adjustPreviousTxOutput(FundedTx(claimHtlc, claimHtlc.txInfo.amountIn, FeeratePerKw(2500 sat)), targetFeerate, commitments) match {
+        adjustPreviousTxOutput(FundedTx(claimHtlc, claimHtlc.txInfo.amountIn, FeeratePerKw(2500 sat)), targetFeerate, commitment) match {
           case AdjustPreviousTxOutputResult.Skip(_) => assert(targetFeerate >= FeeratePerKw(10000 sat))
           case AddWalletInputs(_) => fail("shouldn't add wallet inputs to claim-htlc-tx")
           case TxOutputAdjusted(updatedTx) =>

@@ -49,11 +49,12 @@ object PendingChannelsRateLimiter {
       case _: DATA_WAIT_FOR_CHANNEL_READY => true
       case _: DATA_WAIT_FOR_DUAL_FUNDING_READY => true
       case _ => false
-    }.groupBy(_.metaCommitments.remoteNodeId)
+    }.groupBy(_.commitments.remoteNodeId)
   }
 }
 
 private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRef[Router.GetNode], context: ActorContext[Command]) {
+
   import PendingChannelsRateLimiter._
 
   private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {

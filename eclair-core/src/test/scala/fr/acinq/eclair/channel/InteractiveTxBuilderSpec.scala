@@ -75,74 +75,74 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
   case class FixtureParams(fundingParamsA: InteractiveTxParams,
                            nodeParamsA: NodeParams,
-                           commitmentParamsA: Params,
+                           channelParamsA: ChannelParams,
                            fundingParamsB: InteractiveTxParams,
                            nodeParamsB: NodeParams,
-                           commitmentParamsB: Params,
+                           channelParamsB: ChannelParams,
                            channelFeatures: ChannelFeatures) {
     val channelId: ByteVector32 = fundingParamsA.channelId
     val commitFeerate: FeeratePerKw = TestConstants.anchorOutputsFeeratePerKw
 
-    private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(commitmentParamsA.localParams, ChannelConfig.standard), 0)
-    private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(commitmentParamsB.localParams, ChannelConfig.standard), 0)
+    private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, ChannelConfig.standard), 0)
+    private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
     val fundingPurposeA = FundingTx(commitFeerate, firstPerCommitmentPointB)
     val fundingPurposeB = FundingTx(commitFeerate, firstPerCommitmentPointA)
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
       val inputInfo = InputInfo(OutPoint(randomBytes32(), 3), TxOut(amount, fundingParamsB.fundingPubkeyScript), Nil)
-      Multisig2of2Input(inputInfo, commitmentParamsA.remoteParams.fundingPubKey, commitmentParamsB.remoteParams.fundingPubKey)
+      Multisig2of2Input(inputInfo, channelParamsA.remoteParams.fundingPubKey, channelParamsB.remoteParams.fundingPubKey)
     }
 
     def sharedInputs(commitmentA: Commitment, commitmentB: Commitment): (SharedFundingInput, SharedFundingInput) = {
-      val sharedInputA = Multisig2of2Input(nodeParamsA.channelKeyManager, commitmentParamsA, commitmentA)
-      val sharedInputB = Multisig2of2Input(nodeParamsB.channelKeyManager, commitmentParamsB, commitmentB)
+      val sharedInputA = Multisig2of2Input(nodeParamsA.channelKeyManager, channelParamsA, commitmentA)
+      val sharedInputB = Multisig2of2Input(nodeParamsB.channelKeyManager, channelParamsB, commitmentB)
       (sharedInputA, sharedInputB)
     }
 
     def spawnTxBuilderAlice(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsA): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA, fundingParams, commitmentParamsA,
+      nodeParamsA, fundingParams, channelParamsA,
       fundingPurposeA,
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA, fundingParams, commitmentParamsA,
+      nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(commitment, 0 sat, 0 sat, previousTransactions),
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA, fundingParams, commitmentParamsA,
+      nodeParamsA, fundingParams, channelParamsA,
       SpliceTx(commitment),
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsA, fundingParams, commitmentParamsA,
+      nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(commitment, commitment.localCommit.spec.toLocal.truncateToSatoshi, commitment.remoteCommit.spec.toLocal.truncateToSatoshi, previousTransactions),
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB, fundingParams, commitmentParamsB,
+      nodeParamsB, fundingParams, channelParamsB,
       fundingPurposeB,
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB, fundingParams, commitmentParamsB,
+      nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(commitment, 0 sat, 0 sat, previousTransactions),
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB, fundingParams, commitmentParamsB,
+      nodeParamsB, fundingParams, channelParamsB,
       SpliceTx(commitment),
       0 msat, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
-      nodeParamsB, fundingParams, commitmentParamsB,
+      nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(commitment, commitment.localCommit.spec.toLocal.truncateToSatoshi, commitment.remoteCommit.spec.toLocal.truncateToSatoshi, previousTransactions),
       0 msat, 0 msat,
       wallet))
@@ -174,10 +174,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(remoteParamsA.fundingPubKey, remoteParamsB.fundingPubKey)))
     val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingScript, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
     val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingScript, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
-    val commitmentParamsA = Params(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public)
-    val commitmentParamsB = Params(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public)
+    val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public)
+    val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public)
 
-    FixtureParams(fundingParamsA, nodeParamsA, commitmentParamsA, fundingParamsB, nodeParamsB, commitmentParamsB, channelFeatures)
+    FixtureParams(fundingParamsA, nodeParamsA, channelParamsA, fundingParamsB, nodeParamsB, channelParamsB, channelFeatures)
   }
 
   case class Fixture(alice: ActorRef[InteractiveTxBuilder.Command],
@@ -2359,7 +2359,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(1000 sat), 330 sat, 0)
-    val commitment = CommitmentsSpec.makeCommitments(250_000_000 msat, 150_000_000 msat).commitments.head
+    val commitment = CommitmentsSpec.makeCommitments(250_000_000 msat, 150_000_000 msat).active.head
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(params.dummySharedInputB(50_000 sat))), commitment, wallet)
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
@@ -2394,7 +2394,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
-    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).commitments.head
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingParams = params.fundingParamsB.copy(sharedInput_opt = Some(Multisig2of2Input(previousCommitment.commitInput, randomKey().publicKey, randomKey().publicKey)))
     val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
     bob ! Start(probe.ref)
@@ -2409,7 +2409,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
-    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).commitments.head
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
     val sharedInput = Multisig2of2Input(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Nil), randomKey().publicKey, randomKey().publicKey)
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)

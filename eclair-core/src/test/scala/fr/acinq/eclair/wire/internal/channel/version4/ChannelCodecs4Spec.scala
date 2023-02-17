@@ -20,7 +20,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val data = normal
     val bin = channelDataCodec.encode(data).require
     val check = channelDataCodec.decodeValue(bin).require
-    assert(data.metaCommitments.latest.localCommit.spec == check.metaCommitments.latest.localCommit.spec)
+    assert(data.commitments.latest.localCommit.spec == check.commitments.latest.localCommit.spec)
     assert(data == check)
   }
 
@@ -106,10 +106,10 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val remoteParams1 = remoteParams.copy(upfrontShutdownScript_opt = Some(ByteVector.fromValidHex("deadbeef")))
     assert(codec.decodeValue(codec.encode(remoteParams1).require).require == remoteParams1)
 
-    val dataWithoutRemoteShutdownScript = normal.modify(_.metaCommitments.params.remoteParams).setTo(remoteParams)
+    val dataWithoutRemoteShutdownScript = normal.modify(_.commitments.params.remoteParams).setTo(remoteParams)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithoutRemoteShutdownScript).require).require.value == dataWithoutRemoteShutdownScript)
 
-    val dataWithRemoteShutdownScript = normal.modify(_.metaCommitments.params.remoteParams).setTo(remoteParams1)
+    val dataWithRemoteShutdownScript = normal.modify(_.commitments.params.remoteParams).setTo(remoteParams1)
     assert(channelDataCodec.decode(channelDataCodec.encode(dataWithRemoteShutdownScript).require).require.value == dataWithRemoteShutdownScript)
   }
 

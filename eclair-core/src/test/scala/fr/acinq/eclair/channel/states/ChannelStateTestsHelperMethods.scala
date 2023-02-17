@@ -342,8 +342,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     eventually(assert(alice.stateName == NORMAL))
     eventually(assert(bob.stateName == NORMAL))
 
-    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
-    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].metaCommitments
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val expectedBalanceBob = (nonInitiatorFundingAmount.getOrElse(0 sat) + initiatorPushAmount.getOrElse(0 msat) - nonInitiatorPushAmount.getOrElse(0 msat) - aliceCommitments.latest.remoteChannelReserve).max(0 msat)
     assert(bobCommitments.availableBalanceForSend == expectedBalanceBob)
     // x2 because alice and bob share the same relayer
@@ -398,7 +398,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(htlc)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(htlc)))
     htlc
   }
 
@@ -406,21 +406,21 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(fulfill)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(fulfill)))
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure()))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteChanges.proposed.contains(fail)))
+    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(fail)))
   }
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
-    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
-    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex
-    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localHasChanges
+    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex
+    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex
+    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]
@@ -437,17 +437,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == sCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == rCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == sCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == rCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == rCommitIndex + 1)
       }
     } else {
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == sCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.localCommitIndex == rCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].metaCommitments.common.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == sCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == rCommitIndex + 1)
       }
     }
   }
@@ -464,7 +464,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
-    eventually(assert(s.stateData.asInstanceOf[PersistentChannelData].metaCommitments.latest.localCommit.spec.commitTxFeerate == feerate))
+    eventually(assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.latest.localCommit.spec.commitTxFeerate == feerate))
   }
 
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
@@ -496,7 +496,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
     // an error occurs and s publishes its commit tx
-    val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].metaCommitments.latest.localCommit
+    val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
     // check that we store the local txs without sigs
     localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
     localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
@@ -510,14 +510,14 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx
     assert(publishedLocalCommitTx.txid == commitTx.txid)
-    val commitInput = closingState.metaCommitments.latest.commitInput
+    val commitInput = closingState.commitments.latest.commitInput
     Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    if (closingState.metaCommitments.params.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
+    if (closingState.commitments.params.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
       assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
-    closingState.metaCommitments.params.commitmentFormat match {
+    closingState.commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
         s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)

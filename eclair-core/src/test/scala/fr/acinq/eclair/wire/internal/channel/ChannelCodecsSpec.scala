@@ -67,7 +67,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       hex"304502210093fd7dfa3ef6cdf5b94cfadf83022be98062d53cd7097a73947453b210a481eb0220622e63a21b787ea7bb55f01ab6fe503fcb8ef4cb65adce7a264ae014403646fe01"
     )
 
-    val sigs = c.metaCommitments.latest
+    val sigs = c.commitments.latest
       .localCommit
       .htlcTxsAndRemoteSigs
       .map(data => Scripts.der(data.remoteSig))
@@ -190,8 +190,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput.isEmpty))
 
     val normal = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
-    assert(normal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
-    normal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId == 0))
+    assert(normal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
+    normal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.foreach(tx => assert(tx.htlcTx.htlcId == 0))
 
     val closingLocal = channelDataCodec.decode(dataClosingLocal.bits).require.value.asInstanceOf[DATA_CLOSING]
     assert(closingLocal.localCommitPublished.nonEmpty)
@@ -239,10 +239,10 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val newnormal = channelDataCodec.decode(newbin.bits).require.value
       assert(newnormal == oldnormal)
       // make sure that we have stripped sigs from the transactions
-      assert(newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
-      assert(newnormal.metaCommitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
+      assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
+      assert(newnormal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
-      Transactions.checkSig(newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx, newnormal.metaCommitments.latest.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.metaCommitments.remoteNodeId, TxOwner.Remote, newnormal.metaCommitments.params.commitmentFormat)
+      Transactions.checkSig(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx, newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
     }
   }
 
@@ -305,7 +305,6 @@ object ChannelCodecsSpec {
     val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
     val fundingAmount = fundingTx.txOut.head.amount
     val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
-
     val remoteSig = ByteVector64(hex"2148d2d4aac8c793eb82d31bcf22d4db707b9fd7eee1b89b4b1444c9e19ab7172bab8c3d997d29163fa0cb255c75afb8ade13617ad1350c1515e9be4a222a04d")
     val commitTx = Transaction(
       version = 2,
@@ -321,16 +320,14 @@ object ChannelCodecsSpec {
     val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes)
     val channelFlags = ChannelFlags.Public
-    val commitments = Commitments(channelId, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, channelFlags, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
-      localNextHtlcId = 32L,
-      remoteNextHtlcId = 4L,
-      originChannels = origins,
+    val commitments = Commitments(
+      ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, channelFlags),
+      CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
+      Seq(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),
-      localFundingStatus = LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
-      remoteFundingStatus = RemoteFundingStatus.NotLocked,
-      remotePerCommitmentSecrets = ShaChain.init)
-
-    DATA_NORMAL(MetaCommitments(commitments), ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
+      remotePerCommitmentSecrets = ShaChain.init,
+      originChannels = origins)
+    DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None)
   }
 
 }

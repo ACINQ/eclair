@@ -1,5 +1,6 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel.LocalFundingStatus._
@@ -10,7 +11,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -81,8 +82,15 @@ private[channel] object ChannelCodecs4 {
       .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
       .typecase(false, lengthDelimited(updateAddHtlcCodec).as[OutgoingHtlc])
 
-    val commitmentSpecCodec: Codec[CommitmentSpec] = (
-      ("htlcs" | setCodec(htlcCodec)) ::
+    def minimalHtlcCodec(htlcs: Set[UpdateAddHtlc]): Codec[UpdateAddHtlc] = uint64overflow.xmap[UpdateAddHtlc](id => htlcs.find(_.id == id).get, _.id)
+
+    def minimalDirectedHtlcCodec(htlcs: Set[DirectedHtlc]): Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
+      .typecase(true, minimalHtlcCodec(htlcs.collect(DirectedHtlc.incoming)).as[IncomingHtlc])
+      .typecase(false, minimalHtlcCodec(htlcs.collect(DirectedHtlc.outgoing)).as[OutgoingHtlc])
+
+    /** HTLCs are stored separately to avoid duplicating data. */
+    def commitmentSpecCodec(htlcs: Set[DirectedHtlc]): Codec[CommitmentSpec] = (
+      ("htlcs" | setCodec(minimalDirectedHtlcCodec(htlcs))) ::
         ("feeratePerKw" | feeratePerKw) ::
         ("toLocal" | millisatoshi) ::
         ("toRemote" | millisatoshi)).as[CommitmentSpec]
@@ -157,18 +165,6 @@ private[channel] object ChannelCodecs4 {
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
         ("remoteSig" | bytes64)).as[CommitTxAndRemoteSig]
-
-    val localCommitCodec: Codec[LocalCommit] = (
-      ("index" | uint64overflow) ::
-        ("spec" | commitmentSpecCodec) ::
-        ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
-        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
-
-    val remoteCommitCodec: Codec[RemoteCommit] = (
-      ("index" | uint64overflow) ::
-        ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
-        ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
@@ -317,46 +313,112 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
       .typecase(0x02, provide(RemoteFundingStatus.Locked))
 
-    val paramsCodec: Codec[Params] = (
+    val paramsCodec: Codec[ChannelParams] = (
       ("channelId" | bytes32) ::
         ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
           ("localParams" | localParamsCodec(channelFeatures)) ::
             ("remoteParams" | remoteParamsCodec(channelFeatures)) ::
             ("channelFlags" | channelflags)
-        })).as[Params]
+        })).as[ChannelParams]
 
-    val waitForRevCodec: Codec[WaitForRev] = (
-      ("sent" | lengthDelimited(commitSigCodec)) ::
-        ("sentAfterLocalCommitIndex" | uint64overflow)
-      ).as[WaitForRev]
+    val waitForRevCodec: Codec[WaitForRev] = ("sentAfterLocalCommitIndex" | uint64overflow).as[WaitForRev]
 
-    val commonCodec: Codec[Common] = (
+    val changesCodec: Codec[CommitmentChanges] = (
       ("localChanges" | localChangesCodec) ::
         ("remoteChanges" | remoteChangesCodec) ::
         ("localNextHtlcId" | uint64overflow) ::
-        ("remoteNextHtlcId" | uint64overflow) ::
-        ("localCommitIndex" | uint64overflow) ::
-        ("remoteCommitIndex" | uint64overflow) ::
-        ("originChannels" | originsMapCodec) ::
-        ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
-        ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
-      ).as[Common]
+        ("remoteNextHtlcId" | uint64overflow)).as[CommitmentChanges]
 
-    val commitmentCodec: Codec[Commitment] = (
-      ("fundingTxStatus" | fundingTxStatusCodec) ::
-        ("remoteFundingStatus" | remoteFundingStatusCodec) ::
-        ("localCommit" | localCommitCodec) ::
-        ("remoteCommit" | remoteCommitCodec) ::
-        ("nextRemoteCommit_opt" | optional(bool8, remoteCommitCodec))
-      ).as[Commitment]
+    def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = {
+      val localCommitCodec: Codec[LocalCommit] = (
+        ("index" | uint64overflow) ::
+          ("spec" | commitmentSpecCodec(htlcs)) ::
+          ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
+          ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
 
-    val metaCommitmentsCodec: Codec[MetaCommitments] = (
+      val remoteCommitCodec: Codec[RemoteCommit] = (
+        ("index" | uint64overflow) ::
+          ("spec" | commitmentSpecCodec(htlcs.map(_.opposite))) ::
+          ("txid" | bytes32) ::
+          ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
+
+      val nextRemoteCommitCodec: Codec[NextRemoteCommit] = (
+        ("sig" | lengthDelimited(commitSigCodec)) ::
+          ("commit" | remoteCommitCodec)).as[NextRemoteCommit]
+
+      val commitmentCodec: Codec[Commitment] = (
+        ("fundingTxStatus" | fundingTxStatusCodec) ::
+          ("remoteFundingStatus" | remoteFundingStatusCodec) ::
+          ("localCommit" | localCommitCodec) ::
+          ("remoteCommit" | remoteCommitCodec) ::
+          ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec))
+        ).as[Commitment]
+
+      commitmentCodec
+    }
+
+    /**
+     * When multiple commitments are active, htlcs are shared between all of these commitments.
+     * There may be up to 2 * 483 = 966 htlcs, and every htlc uses at least 1452 bytes and at most 65536 bytes.
+     * The resulting htlc set size is thus between 1,4 MB and 64 MB, which can be pretty large.
+     * To avoid writing that htlc set multiple times to disk, we encode it separately.
+     */
+    case class EncodedCommitments(params: ChannelParams,
+                                  changes: CommitmentChanges,
+                                  // The direction we use is from our local point of view.
+                                  htlcs: Set[DirectedHtlc],
+                                  active: List[Commitment],
+                                  remoteNextCommitInfo: Either[WaitForRev, PublicKey],
+                                  remotePerCommitmentSecrets: ShaChain,
+                                  originChannels: Map[Long, Origin],
+                                  remoteChannelData_opt: Option[ByteVector]) {
+      def toCommitments: Commitments = {
+        Commitments(
+          params = params,
+          changes = changes,
+          active = active,
+          remoteNextCommitInfo,
+          remotePerCommitmentSecrets,
+          originChannels,
+          remoteChannelData_opt
+        )
+      }
+    }
+
+    object EncodedCommitments {
+      def apply(commitments: Commitments): EncodedCommitments = {
+        // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both
+        // local and remote commitments.
+        val htlcs = commitments.active.head.localCommit.spec.htlcs ++
+          commitments.active.head.remoteCommit.spec.htlcs.map(_.opposite) ++
+          commitments.active.head.nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(_.opposite)).getOrElse(Set.empty)
+        EncodedCommitments(
+          params = commitments.params,
+          changes = commitments.changes,
+          htlcs = htlcs,
+          active = commitments.active.toList,
+          remoteNextCommitInfo = commitments.remoteNextCommitInfo,
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
+          originChannels = commitments.originChannels,
+          remoteChannelData_opt = commitments.remoteChannelData_opt
+        )
+      }
+    }
+
+    val commitmentsCodec: Codec[Commitments] = (
       ("params" | paramsCodec) ::
-        ("common" | commonCodec) ::
-        ("commitments" | listOfN(uint16, commitmentCodec)) ::
-        ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
-      ).as[MetaCommitments]
+        ("changes" | changesCodec) ::
+        (("htlcs" | setCodec(htlcCodec)) >>:~ { htlcs =>
+          ("active" | listOfN(uint16, commitmentCodec(htlcs))) ::
+            ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
+            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
+            ("originChannels" | originsMapCodec) ::
+            ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
+        })).as[EncodedCommitments].xmap(
+      encoded => encoded.toCommitments,
+      commitments => EncodedCommitments(commitments)
+    )
 
     val closingFeeratesCodec: Codec[ClosingFeerates] = (
       ("preferred" | feeratePerKw) ::
@@ -391,17 +453,17 @@ private[channel] object ChannelCodecs4 {
         ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("localPushAmount" | millisatoshi) ::
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::
@@ -410,11 +472,11 @@ private[channel] object ChannelCodecs4 {
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_03_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("shortIds" | shortids)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
 
     val DATA_NORMAL_04_Codec: Codec[DATA_NORMAL] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("shortids" | shortids) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
@@ -423,20 +485,20 @@ private[channel] object ChannelCodecs4 {
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_05_Codec: Codec[DATA_SHUTDOWN] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_06_Codec: Codec[DATA_NEGOTIATING] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
 
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
         ("finalScriptPubKey" | lengthDelimited(bytes)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
@@ -448,7 +510,7 @@ private[channel] object ChannelCodecs4 {
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_08_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
-      ("metaCommitments" | metaCommitmentsCodec) ::
+      ("commitments" | commitmentsCodec) ::
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 

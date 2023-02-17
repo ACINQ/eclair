@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transactio
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.Commitments
+import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
@@ -88,7 +88,7 @@ object TxPublisher {
     def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
   }

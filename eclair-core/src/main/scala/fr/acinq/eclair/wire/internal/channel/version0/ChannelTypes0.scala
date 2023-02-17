@@ -23,6 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.CommitSig
 import fr.acinq.eclair.{BlockHeight, ChannelTypeFeature, Features, PermanentChannelFeature, channel}
 import scodec.bits.BitVector
 
@@ -179,6 +180,8 @@ private[channel] object ChannelTypes0 {
     val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
   }
 
+  case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
+
   case class Commitments(channelVersion: ChannelVersion,
                          localParams: LocalParams, remoteParams: RemoteParams,
                          channelFlags: ChannelFlags,
@@ -205,22 +208,21 @@ private[channel] object ChannelTypes0 {
         Set.empty
       }
       val channelFeatures = ChannelFeatures(baseChannelFeatures ++ commitmentFeatures)
-      channel.Commitments(
-        channelId,
-        channelConfig, channelFeatures,
-        localParams, remoteParams,
-        channelFlags,
-        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit,
-        localChanges, remoteChanges,
-        localNextHtlcId, remoteNextHtlcId,
-        originChannels,
-        remoteNextCommitInfo,
+      val commitment = Commitment(
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
-        LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
-        RemoteFundingStatus.Locked,
-        remotePerCommitmentSecrets)
+        LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked,
+        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
+      )
+      channel.Commitments(
+        ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
+        CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
+        Seq(commitment),
+        remoteNextCommitInfo.fold(w => Left(WaitForRev(w.sentAfterLocalCommitIndex)), remotePerCommitmentPoint => Right(remotePerCommitmentPoint)),
+        remotePerCommitmentSecrets,
+        originChannels
+      )
     }
   }
 

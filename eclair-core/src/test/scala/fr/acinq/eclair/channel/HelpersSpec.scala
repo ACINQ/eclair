@@ -160,9 +160,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     import f._
 
     val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
-    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.params.commitmentFormat
-    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.latest.localCommit
-    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].metaCommitments.latest.remoteCommit
+    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat
+    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.localCommit
+    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.remoteCommit
 
     val htlcTimeoutTxs = getHtlcTimeoutTxs(aliceCommitPublished)
     val htlcSuccessTxs = getHtlcSuccessTxs(aliceCommitPublished)
@@ -255,7 +255,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // only mutual close
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
@@ -270,7 +270,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // mutual + local close, but local commit tx isn't confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
@@ -292,7 +292,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // mutual + local close, local commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
@@ -314,7 +314,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // local close + remote close, none is confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
@@ -342,7 +342,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // mutual + local + remote close, remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
@@ -370,9 +370,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // mutual + local + remote + next remote close, next remote commit tx confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments
-          .modify(_.commitments.at(0).nextRemoteCommit_opt).setTo(Some(commitments.commitments.head.remoteCommit))
-          .modify(_.common.remoteNextCommitInfo).setTo(Left(WaitForRev(null, 7))),
+        commitments = commitments
+          .modify(_.active.at(0).nextRemoteCommit_opt).setTo(Some(NextRemoteCommit(null, commitments.active.head.remoteCommit)))
+          .modify(_.remoteNextCommitInfo).setTo(Left(WaitForRev(7))),
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = tx1 :: Nil,
@@ -406,7 +406,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // future remote close, not confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
@@ -427,7 +427,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // future remote close, confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
@@ -448,7 +448,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // local close + revoked close, none confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,
@@ -495,7 +495,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     // local close + revoked close, one revoked confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        metaCommitments = commitments,
+        commitments = commitments,
         waitingSince = BlockHeight(0),
         finalScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey)),
         mutualCloseProposed = Nil,

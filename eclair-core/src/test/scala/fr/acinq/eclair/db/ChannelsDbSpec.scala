@@ -60,7 +60,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       dbs.pendingCommands // needed by db.removeChannel
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2a = ChannelCodecsSpec.normal.modify(_.metaCommitments.params.channelId).setTo(randomBytes32())
+      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
       val channel2b = channel2a.modify(_.shortIds.real).setTo(RealScidStatus.Final(RealShortChannelId(189371)))
 
       val commitNumber = 42
@@ -107,7 +107,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val channelIds = (0 until 10).map(_ => randomBytes32()).toList
       val futures = for (i <- 0 until 10000) yield {
         val channelId = channelIds(i % channelIds.size)
-        Future(db.addOrUpdateChannel(channel.modify(_.metaCommitments.params.channelId).setTo(channelId)))
+        Future(db.addOrUpdateChannel(channel.modify(_.commitments.params.channelId).setTo(channelId)))
         Future(db.updateChannelMeta(channelId, ChannelEvent.EventType.PaymentSent))
       }
       val res = Future.sequence(futures)
@@ -120,7 +120,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2 = channel1.modify(_.metaCommitments.params.channelId).setTo(randomBytes32())
+      val channel2 = channel1.modify(_.commitments.params.channelId).setTo(randomBytes32())
 
       // first we add channels
       db.addOrUpdateChannel(channel1)
@@ -363,7 +363,7 @@ object ChannelsDbSpec {
 
   val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
     val channelId = randomBytes32()
-    val data = channelDataCodec.encode(ChannelCodecsSpec.normal.modify(_.metaCommitments.params.channelId).setTo(channelId)).require.bytes
+    val data = channelDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(channelId)).require.bytes
     TestCase(
       channelId = channelId,
       data = data,

@@ -29,19 +29,14 @@ import fr.acinq.eclair.wire.protocol._
 sealed trait CommitmentOutput
 
 object CommitmentOutput {
-
+  // @formatter:off
   case object ToLocal extends CommitmentOutput
-
   case object ToRemote extends CommitmentOutput
-
   case object ToLocalAnchor extends CommitmentOutput
-
   case object ToRemoteAnchor extends CommitmentOutput
-
   case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
-
   case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
-
+  // @formatter:on
 }
 
 sealed trait DirectedHtlc {
@@ -72,6 +67,10 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
+/**
+ * Current state of a channel's off-chain commitment, that maps to a specific on-chain commitment transaction.
+ * It contains all htlcs, even those that are below dust and won't have a corresponding on-chain output.
+ */
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
@@ -86,11 +85,6 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: Feera
 }
 
 object CommitmentSpec {
-
-  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot {
-    case u: UpdateAddHtlc => u.id == id
-    case _ => false
-  }
 
   def addHtlc(spec: CommitmentSpec, directedHtlc: DirectedHtlc): CommitmentSpec = {
     directedHtlc match {
@@ -127,6 +121,10 @@ object CommitmentSpec {
     }
   }
 
+  /**
+   * Changes to a commitment are applied in batches, when we receive new signatures or revoke a previous commitment.
+   * This function applies a batch of pending changes and returns the updated off-chain channel state.
+   */
   def reduce(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
     val spec1 = localChanges.foldLeft(localCommitSpec) {
       case (spec, u: UpdateAddHtlc) => addHtlc(spec, OutgoingHtlc(u))

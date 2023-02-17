@@ -176,7 +176,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   }
 
   def fundingTx(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): Transaction = {
-    val fundingTxid = getChannelData(node, channelId).asInstanceOf[PersistentChannelData].metaCommitments.latest.fundingTxId
+    val fundingTxid = getChannelData(node, channelId).asInstanceOf[PersistentChannelData].commitments.latest.fundingTxId
     node.wallet.funded(fundingTxid)
   }
 
@@ -207,7 +207,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealScidStatus.Final = {
     assert(getChannelState(node1, channelId) == NORMAL)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
-    val fundingTxid = data1Before.metaCommitments.latest.fundingTxId
+    val fundingTxid = data1Before.commitments.latest.fundingTxId
     val fundingTx = node1.wallet.funded(fundingTxid)
 
     val watch1 = node1.watcher.fishForMessage() { case w: WatchFundingDeeplyBuried if w.txId == fundingTx.txid => true; case _ => false }.asInstanceOf[WatchFundingDeeplyBuried]
