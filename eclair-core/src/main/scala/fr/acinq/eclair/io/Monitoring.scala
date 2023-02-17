@@ -31,6 +31,8 @@ object Monitoring {
     val OnionMessagesReceived = Kamon.counter("onionmessages.received")
     val OnionMessagesSent = Kamon.counter("onionmessages.sent")
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
+
+    val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
   }
 
   object Tags {
@@ -43,6 +45,8 @@ object Monitoring {
       val Initializing = "initializing"
       val Initialized = "initialized"
     }
+
+    val PublicPeers = "public"
 
   }
 

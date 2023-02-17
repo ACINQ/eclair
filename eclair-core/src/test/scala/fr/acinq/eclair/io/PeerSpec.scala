@@ -16,25 +16,24 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.Status.Failure
 import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
+import akka.testkit.TestActor.KeepRunning
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.localParams
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.{Tag, TestData}
@@ -43,7 +42,6 @@ import scodec.bits.ByteVector
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
-import scala.util.Success
 
 class PeerSpec extends FixtureSpec {
 
@@ -52,7 +50,7 @@ class PeerSpec extends FixtureSpec {
 
   override implicit val patienceConfig: PatienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe) {
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, mockLimiter: ActorRef) {
     implicit val implicitSystem: ActorSystem = system
 
     def cleanup(): Unit = TestKit.shutdownActorSystem(system)
@@ -74,7 +72,6 @@ class PeerSpec extends FixtureSpec {
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(testData.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
       .modify(_.autoReconnect).setToIf(testData.tags.contains("auto_reconnect"))(true)
@@ -91,9 +88,20 @@ class PeerSpec extends FixtureSpec {
       }
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref))
+    val mockLimiter = TestProbe()
+    mockLimiter.setAutoPilot((_: ActorRef, msg: Any) => msg match {
+      case msg: PendingChannelsRateLimiter.AddOrRejectChannel if testData.tags.contains("rate_limited") =>
+        msg.replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
+        KeepRunning
+      case msg: PendingChannelsRateLimiter.AddOrRejectChannel =>
+        msg.replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+        KeepRunning
+      case _ => KeepRunning
+    })
 
-    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard)
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, mockLimiter.ref))
+
+    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, mockLimiter.ref)
   }
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
@@ -337,89 +345,15 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.size == 1)
   }
 
-  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard)
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
-  }
-
-  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.Wumbo)) { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
-  }
-
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag("high-max-funding-satoshis"), Tag(ChannelStateTestsTags.Wumbo)) { f =>
-    import f._
-
-    val probe = TestProbe()
-    val fundingAmountBig = Btc(1).toSatoshi
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
-
-    assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None))
-
-    assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingAmount=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
-  }
-
-  test("don't spawn a channel if we don't support their channel type") { f =>
+  test("handle OpenChannelInterceptor spawning a user initiated open channel request ") { f =>
     import f._
 
     connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
-    // They only support anchor outputs and we don't.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
-    }
-    // They only support anchor outputs with zero fee htlc txs and we don't.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
-    }
-    // They want to use a channel type that doesn't exist in the spec.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"))
-    }
-    // They want to use a channel type we don't support yet.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
-      peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
-    }
-  }
-
-  test("don't spawn a channel is channel type is missing with the feature bit set", Tag(ChannelStateTestsTags.ChannelType)) { f =>
-    import f._
-
-    val remoteInit = protocol.Init(Features(ChannelType -> Optional))
-    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = remoteInit)
-    assert(peer.stateData.channels.isEmpty)
-    val open = createOpenChannelMessage()
+    val open = Peer.OpenChannel(remoteNodeId, 10000 sat, None, None, None, None, None)
     peerConnection.send(peer, open)
-    peerConnection.expectMsg(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
+    channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
   }
 
   test("don't spawn a dual funded channel if not supported") { f =>
@@ -491,6 +425,28 @@ class PeerSpec extends FixtureSpec {
     // We can create channels that use features that we haven't enabled.
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.AnchorOutputs()), None, None, None, None))
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs())
+  }
+
+  test("handle OpenChannelInterceptor accepting an open channel message") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+
+    val open = createOpenChannelMessage()
+    peerConnection.send(peer, open)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].temporaryChannelId == open.temporaryChannelId)
+    channel.expectMsg(open)
+  }
+
+  test("handle OpenChannelInterceptor rejecting an open channel message", Tag("rate_limited")) { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+
+    val open = createOpenChannelMessage()
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, "rate limit reached"))
+    assert(peer.stateData.channels.isEmpty)
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -596,7 +552,7 @@ class PeerSpec extends FixtureSpec {
         channel.ref
       }
     }
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref))
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref, mockLimiter.toTyped))
     connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
@@ -665,6 +621,18 @@ class PeerSpec extends FixtureSpec {
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     probe.send(peer, Peer.RelayUnknownMessage(unknownMessage))
     peerConnection.expectMsgType[UnknownMessage]
+  }
+
+  test("abort channel open request if peer reconnects before channel is accepted") { f =>
+    import f._
+    val probe = TestProbe()
+    val open = createOpenChannelMessage()
+    system.eventStream.subscribe(probe.ref, classOf[ChannelAborted])
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), localParams, ActorRef.noSender)
+    val channelAborted = probe.expectMsgType[ChannelAborted]
+    assert(channelAborted.remoteNodeId == remoteNodeId)
+    assert(channelAborted.channelId == open.temporaryChannelId)
   }
 }
 

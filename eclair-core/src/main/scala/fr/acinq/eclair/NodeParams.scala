@@ -93,6 +93,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
+  val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
+
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
   /** Returns the features that should be used in our init message with the given peer. */
@@ -343,6 +345,9 @@ object NodeParams extends Logging {
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
+    val interceptOpenChannelPlugins = pluginParams.collect { case p: InterceptOpenChannelPlugin => p }
+    require(interceptOpenChannelPlugins.size <= 1, s"At most one plugin is allowed to intercept channel open messages, but multiple such plugins were registered: ${interceptOpenChannelPlugins.map(_.getClass.getSimpleName).mkString(", ")}. Disable conflicting plugins and restart eclair.")
+
     val coreAndPluginFeatures: Features[Feature] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
@@ -440,6 +445,10 @@ object NodeParams extends Logging {
     val asyncPaymentHoldTimeoutBlocks = config.getInt("relay.async-payments.hold-timeout-blocks")
     require(asyncPaymentHoldTimeoutBlocks >= (asyncPaymentCancelSafetyBeforeTimeoutBlocks + expiryDelta).toInt, "relay.async-payments.hold-timeout-blocks must not be less than relay.async-payments.cancel-safety-before-timeout-blocks + channel.expiry-delta-blocks; otherwise it will have no effect")
 
+    val channelOpenerWhitelist: Set[PublicKey] = config.getStringList("channel.channel-open-limits.channel-opener-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+    val maxPendingChannelsPerPeer = config.getInt("channel.channel-open-limits.max-pending-channels-per-peer")
+    val maxTotalPendingChannelsPrivateNodes = config.getInt("channel.channel-open-limits.max-total-pending-channels-private-nodes")
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -476,7 +485,10 @@ object NodeParams extends Logging {
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
-        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding")
+        requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding"),
+        channelOpenerWhitelist = channelOpenerWhitelist,
+        maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
+        maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

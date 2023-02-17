@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BtcDouble, ByteVector32, Satoshi, SatoshiLong, Script}
-import fr.acinq.eclair.Features.Wumbo
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
@@ -34,15 +34,13 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.io.OpenChannelInterceptor.{OpenChannelInitiator, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
-import scodec.bits.ByteVector
-
-import scala.concurrent.ExecutionContext
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -54,7 +52,7 @@ import scala.concurrent.ExecutionContext
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, switchboard: ActorRef) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, switchboard: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -140,29 +138,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         stay()
 
       case Event(c: Peer.OpenChannel, d: ConnectedData) =>
-        if (c.fundingAmount >= Channel.MAX_FUNDING && !d.localFeatures.hasFeature(Wumbo)) {
-          sender() ! Status.Failure(new RuntimeException(s"fundingAmount=${c.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
-          stay()
-        } else if (c.fundingAmount >= Channel.MAX_FUNDING && !d.remoteFeatures.hasFeature(Wumbo)) {
-          sender() ! Status.Failure(new RuntimeException(s"fundingAmount=${c.fundingAmount} is too big, the remote peer doesn't support wumbo"))
-          stay()
-        } else if (c.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
-          sender() ! Status.Failure(new RuntimeException(s"fundingAmount=${c.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
-          stay()
-        } else {
-          // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
-          val channelFlags = c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags)
-          val channelType = c.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures, channelFlags.announceChannel))
-          // NB: we need to capture parameters in a val to use them in andThen
-          val selfRef = self
-          val origin = sender()
-          implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
-          val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-          val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
-          val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, c.fundingAmount, c.disableMaxHtlcValueInFlight)
-          selfRef ! SpawnChannelInitiator(c, ChannelConfig.standard, channelType, localParams, origin)
-          stay()
-        }
+        openChannelInterceptor ! OpenChannelInitiator(sender().toTyped, remoteNodeId, c, d.localFeatures, d.remoteFeatures)
+        stay()
 
       case Event(SpawnChannelInitiator(c, channelConfig, channelType, localParams, origin), d: ConnectedData) =>
         val channel = spawnChannel(Some(origin))
@@ -183,7 +160,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            handleOpenChannel(Left(open), open.temporaryChannelId, open.fundingSatoshis, open.channelFlags, open.channelType_opt, d)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -193,7 +170,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            handleOpenChannel(Right(open), open.temporaryChannelId, open.fundingAmount, open.channelFlags, open.channelType_opt, d)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
             stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
@@ -204,20 +181,26 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
             stay()
         }
 
-      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams), d: ConnectedData) =>
-        val channel = spawnChannel(None)
+      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
-        log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        open match {
-          case Left(open) =>
-            channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-            channel ! open
-          case Right(open) =>
-            // NB: we don't add a contribution to the funding amount.
-            channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-            channel ! open
+        if (peerConnection == d.peerConnection) {
+          val channel = spawnChannel(None)
+          log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
+          open match {
+            case Left(open) =>
+              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+              channel ! open
+            case Right(open) =>
+              // NB: we don't add a contribution to the funding amount.
+              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+              channel ! open
+          }
+          stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+        } else {
+          log.warning("ignoring open_channel request that reconnected during channel intercept, temporaryChannelId={}", temporaryChannelId)
+          context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
+          stay()
         }
-        stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
@@ -389,15 +372,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       s(e)
   }
 
-  def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
-    val pubkey_opt = if (upfrontShutdownScript || channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None
-    makeChannelParams(
-      nodeParams, initFeatures,
-      if (upfrontShutdownScript) Some(Script.write(Script.pay2wpkh(pubkey_opt.get))) else None,
-      if (channelType.paysDirectlyToWallet) Some(pubkey_opt.get) else None,
-      isInitiator = isInitiator, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight)
-  }
-
   def spawnChannel(origin_opt: Option[ActorRef]): ActorRef = {
     val channel = channelFactory.spawn(context, remoteNodeId, origin_opt)
     context watch channel
@@ -409,35 +383,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
-  def handleOpenChannel(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], temporaryChannelId: ByteVector32, fundingAmount: Satoshi, channelFlags: ChannelFlags, channelType_opt: Option[ChannelType], d: ConnectedData): Unit = {
-    validateRemoteChannelType(temporaryChannelId, channelFlags, channelType_opt, d.localFeatures, d.remoteFeatures) match {
-      case Right(channelType) =>
-        // NB: we need to capture parameters in a val to use them in andThen
-        val selfRef = self
-        val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
-        val upfrontShutdownScript = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.UpfrontShutdownScript)
-        val localParams = createLocalParams(nodeParams, d.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, fundingAmount, disableMaxHtlcValueInFlight = false)
-        selfRef ! SpawnChannelNonInitiator(open, ChannelConfig.standard, channelType, localParams)
-      case Left(ex) =>
-        log.warning("ignoring remote channel open: {}", ex.getMessage)
-        val err = Error(temporaryChannelId, ex.getMessage)
-        self ! Peer.OutgoingMessage(err, d.peerConnection)
-    }
-  }
-
-  def validateRemoteChannelType(temporaryChannelId: ByteVector32, channelFlags: ChannelFlags, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
-    remoteChannelType_opt match {
-      // remote explicitly specifies a channel type: we check whether we want to allow it
-      case Some(remoteChannelType) => ChannelTypes.areCompatible(localFeatures, remoteChannelType) match {
-        case Some(acceptedChannelType) => Right(acceptedChannelType)
-        case None => Left(InvalidChannelType(temporaryChannelId, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, channelFlags.announceChannel), remoteChannelType))
-      }
-      // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
-      case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) => Left(MissingChannelType(temporaryChannelId))
-      // remote doesn't specify a channel type: we use spec-defined defaults
-      case None => Right(ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, channelFlags.announceChannel))
-    }
-  }
+  // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
+  private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
   def stopPeer(): State = {
     log.info("removing peer from db")
@@ -488,7 +435,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, pendingChannelsRateLimiter))
 
   // @formatter:off
 
@@ -544,8 +491,8 @@ object Peer {
     fundingTxFeerate_opt.foreach(feerate => require(feerate >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feerate is below minimum ${FeeratePerKw.MinimumFeeratePerKw}"))
   }
 
-  private case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, origin: ActorRef)
-  private case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
+  case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, origin: ActorRef)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse {
@@ -577,29 +524,4 @@ object Peer {
 
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
   // @formatter:on
-
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
-    val maxHtlcValueInFlightMsat = if (unlimitedMaxHtlcValueInFlight) {
-      // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
-      21e6.btc.toMilliSatoshi
-    } else {
-      // NB: when we're the initiator, we don't know yet if the remote peer will contribute to the funding amount, so
-      // the percentage-based value may be underestimated. That's ok, this is a security parameter so it makes sense to
-      // base it on the amount that we're contributing instead of the total funding amount.
-      nodeParams.channelConf.maxHtlcValueInFlightMsat.min(fundingAmount * nodeParams.channelConf.maxHtlcValueInFlightPercent / 100)
-    }
-    LocalParams(
-      nodeParams.nodeId,
-      nodeParams.channelKeyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key paths end differently
-      dustLimit = nodeParams.channelConf.dustLimit,
-      maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
-      requestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
-      htlcMinimum = nodeParams.channelConf.htlcMinimum,
-      toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
-      maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
-      isInitiator = isInitiator,
-      upfrontShutdownScript_opt = upfrontShutdownScript_opt,
-      walletStaticPaymentBasepoint = walletStaticPaymentBasepoint_opt,
-      initFeatures = initFeatures)
-  }
 }

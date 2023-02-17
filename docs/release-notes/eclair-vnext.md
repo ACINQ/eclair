@@ -39,6 +39,28 @@ Eclair offers three strategies to handle that scenario, that node operators can 
 - `unlock`: eclair will automatically unlock the corresponding utxos
 - `ignore`: eclair will leave these utxos locked and start
 
+#### Add plugin support for channel open interception (#2552)
+
+Eclair now supports plugins that intercept channel open requests and decide whether to accept or reject them. This is useful for example to enforce custom policies on who can open channels with you.
+
+An example plugin that demonstrates this functionality can be found in the [eclair-plugins](https://github.com/ACINQ/eclair-plugins) repository.
+
+#### Configurable channel open rate limits (#2552)
+
+We have added parameters to `eclair.conf` to allow nodes to manage the number of channel open requests from peers that are pending on-chain confirmation. A limit exists for each public peer node individually and for all private peer nodes in aggregate.
+
+The new configuration options and defaults are as follows:
+```conf
+// a list of public keys; we will ignore limits on pending channels from these peers
+eclair.channel.channel-open-limits.channel-opener-whitelist = [] 
+
+// maximum number of pending channels we will accept from a given peer
+eclair.channel.channel-open-limits.max-pending-channels-per-peer = 3 
+
+// maximum number of pending channels we will accept from all private nodes
+eclair.channel.channel-open-limits.max-total-pending-channels-private-nodes = 99 
+```
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:

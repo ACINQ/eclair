@@ -81,7 +81,10 @@ object Channel {
                          maxTxPublishRetryDelay: FiniteDuration,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
-                         requireConfirmedInputsForDualFunding: Boolean) {
+                         requireConfirmedInputsForDualFunding: Boolean,
+                         channelOpenerWhitelist: Set[PublicKey],
+                         maxPendingChannelsPerPeer: Int,
+                         maxTotalPendingChannelsPrivateNodes: Int) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
 
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
