@@ -213,14 +213,11 @@ object InteractiveTxBuilder {
     sealed trait Incoming extends Input
 
     /** Input added by us to the interactive transaction. */
-    sealed trait Outgoing extends Input {
-      def message(channelId: ByteVector32): TxAddInput
-    }
+    sealed trait Outgoing extends Input
 
     /** A local-only input that funds the interactive transaction. */
     case class Local(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long, tlvs: TlvStream[TxAddInputTlv] = TlvStream.empty) extends Outgoing {
       override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput.toInt)
-      override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, Some(previousTx), previousTxOutput, sequence, tlvs)
     }
 
     /**
@@ -230,9 +227,7 @@ object InteractiveTxBuilder {
     case class Remote(serialId: UInt64, outPoint: OutPoint, txOut: TxOut, sequence: Long) extends Incoming
 
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
-    case class Shared(serialId: UInt64, outPoint: OutPoint, sequence: Long, localAmount: Satoshi, remoteAmount: Satoshi) extends Incoming with Outgoing {
-      override def message(channelId: ByteVector32): TxAddInput = TxAddInput(channelId, serialId, outPoint, sequence)
-    }
+    case class Shared(serialId: UInt64, outPoint: OutPoint, sequence: Long, localAmount: Satoshi, remoteAmount: Satoshi) extends Incoming with Outgoing
   }
 
   sealed trait Output {
@@ -246,16 +241,10 @@ object InteractiveTxBuilder {
     sealed trait Incoming extends Output
 
     /** Output added by us to the interactive transaction. */
-    sealed trait Outgoing extends Output {
-      def message(channelId: ByteVector32): TxAddOutput
-    }
+    sealed trait Outgoing extends Output
 
     /** A local-only output of the interactive transaction. */
-    sealed trait Local extends Outgoing {
-      def tlvStream: TlvStream[TxAddOutputTlv]
-      override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript, tlvStream)
-    }
-
+    sealed trait Local extends Outgoing
     object Local {
       case class Change(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
       case class NonChange(serialId: UInt64, amount: Satoshi, pubkeyScript: ByteVector, tlvStream: TlvStream[TxAddOutputTlv] = TlvStream.empty) extends Local
@@ -270,7 +259,6 @@ object InteractiveTxBuilder {
     /** The shared output can be added by us or by our peer, depending on who initiated the protocol. */
     case class Shared(serialId: UInt64, pubkeyScript: ByteVector, localAmount: Satoshi, remoteAmount: Satoshi) extends Incoming with Outgoing {
       override val amount: Satoshi = localAmount + remoteAmount
-      override def message(channelId: ByteVector32): TxAddOutput = TxAddOutput(channelId, serialId, amount, pubkeyScript)
     }
   }
   // @formatter:on
@@ -473,11 +461,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def send(session: InteractiveTxSession): Behavior[Command] = {
     session.toSend match {
       case Left(addInput) +: tail =>
-        replyTo ! SendMessage(addInput.message(fundingParams.channelId))
+        val message = addInput match {
+          case i: Input.Local => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence, i.tlvs)
+          case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
+        }
+        replyTo ! SendMessage(message)
         val next = session.copy(toSend = tail, localInputs = session.localInputs :+ addInput, txCompleteSent = false)
         receive(next)
       case Right(addOutput) +: tail =>
-        replyTo ! SendMessage(addOutput.message(fundingParams.channelId))
+        val message = TxAddOutput(fundingParams.channelId, addOutput.serialId, addOutput.amount, addOutput.pubkeyScript)
+        replyTo ! SendMessage(message)
         val next = session.copy(toSend = tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = false)
         receive(next)
       case Nil =>
