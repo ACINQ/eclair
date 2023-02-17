@@ -44,12 +44,12 @@ object InteractiveTxFunder {
   sealed trait Command
   case class FundTransaction(replyTo: ActorRef[Response]) extends Command
   private case class FundTransactionResult(tx: Transaction, changePosition: Option[Int]) extends Command
-  private case class InputDetails(usableInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]) extends Command
+  private case class InputDetails(usableInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
   private case object UtxosUnlocked extends Command
 
   sealed trait Response
-  case class FundingContributions(inputs: Seq[Input.Outgoing], outputs: Seq[Output.Outgoing]) extends Response
+  case class FundingContributions(inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]) extends Response
   case object FundingFailed extends Response
   // @formatter:on
 
@@ -78,7 +78,7 @@ object InteractiveTxFunder {
     previousTxSizeOk && isNativeSegwit && confirmationsOk
   }
 
-  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[Input.Outgoing], outputs: Seq[Output.Outgoing]): FundingContributions = {
+  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
     // We always randomize the order of inputs and outputs.
     val sortedInputs = Random.shuffle(inputs).zipWithIndex.map { case (input, i) =>
       val serialId = UInt64(2 * i + fundingParams.serialIdParity)
@@ -160,7 +160,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * for dual funding though (e.g. they need to use segwit), so we filter them and iterate until we have a valid set of
    * inputs.
    */
-  private def fund(txNotFunded: Transaction, currentInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight).toMap
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
       case Failure(t) => WalletFailure(t)
@@ -185,7 +185,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   /** Not all inputs are suitable for interactive tx construction. */
-  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[Input.Outgoing], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
@@ -258,7 +258,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * @param currentInputs already known valid inputs, we don't need to fetch the details again for those.
    * @return the input is either unusable (left) or we'll send a [[TxAddInput]] command to add it to the transaction (right).
    */
-  private def getInputDetails(txIn: TxIn, currentInputs: Seq[Input.Outgoing]): Future[Either[UnusableInput, Input.Outgoing]] = {
+  private def getInputDetails(txIn: TxIn, currentInputs: Seq[OutgoingInput]): Future[Either[UnusableInput, OutgoingInput]] = {
     currentInputs.find(i => txIn.outPoint == i.outPoint) match {
       case Some(previousInput) => Future.successful(Right(previousInput))
       case None => fundingParams.sharedInput_opt match {
