@@ -54,7 +54,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
   }
 
-  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Either[Commitments, Commitments] = {
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Either[Commitments, (Commitments, Commitment)] = {
     log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
     d.commitments.latest.localFundingStatus match {
       case _: SingleFundedUnconfirmedFundingTx =>
@@ -80,7 +80,7 @@ trait CommonFundingHandlers extends CommonHandlers {
           .filter(c => c.fundingTxId != commitment.fundingTxId)
           .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
         rollbackDualFundingTxs(otherFundingTxs)
-        commitments1
+        (commitments1, commitment)
     }
   }
 

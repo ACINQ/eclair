@@ -1073,7 +1073,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_CLOSING) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right(commitments1) =>
+        case Right((commitments1, _)) =>
           if (d.commitments.latest.fundingTxId == w.tx.txid) {
             // The best funding tx candidate has been confirmed, alternative commitments have been pruned
             stay() using d.copy(commitments = commitments1) storing()
@@ -1592,16 +1592,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right(commitments1) =>
+        case Right((commitments1, commitment)) =>
           log.info(s"funding txid=${w.tx.txid} has been confirmed")
           val d1 = d match {
             // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
             case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-              val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitments1.latest.commitInput.outPoint.index.toInt))
+              val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt))
               val shortIds = createShortIds(d.channelId, realScidStatus)
               DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds)
             case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
-              val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitments1.latest.commitInput.outPoint.index.toInt))
+              val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt))
               val shortIds = createShortIds(d.channelId, realScidStatus)
               DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds)
             case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)

@@ -594,8 +594,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right(commitments1) =>
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
+        case Right((commitments1, commitment)) =>
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt))
           val shortIds = createShortIds(d.channelId, realScidStatus)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           val toSend = d.rbfStatus match {

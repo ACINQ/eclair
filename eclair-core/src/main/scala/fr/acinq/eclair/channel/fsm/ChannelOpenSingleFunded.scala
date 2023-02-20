@@ -397,7 +397,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right(commitments1) =>
+        case Right((commitments1, _)) =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
           val shortIds = createShortIds(d.channelId, realScidStatus)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
