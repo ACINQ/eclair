@@ -381,24 +381,30 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
-      val commitments1 = d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
-      // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
-      watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
-      val realScidStatus = RealScidStatus.Unknown
-      val shortIds = createShortIds(d.channelId, realScidStatus)
-      val channelReady = createChannelReady(shortIds, d.commitments.params)
-      d.deferred.foreach(self ! _)
-      goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
+      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+        case Right((commitments1, _)) =>
+          log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
+          // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
+          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+          val realScidStatus = RealScidStatus.Unknown
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val channelReady = createChannelReady(shortIds, d.commitments.params)
+          d.deferred.foreach(self ! _)
+          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
+        case Left(_) => stay()
+      }
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      val commitments1 = acceptFundingTxConfirmed(w, d)
-      val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
-      val shortIds = createShortIds(d.channelId, realScidStatus)
-      val channelReady = createChannelReady(shortIds, d.commitments.params)
-      d.deferred.foreach(self ! _)
-      goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
+      acceptFundingTxConfirmed(w, d) match {
+        case Right((commitments1, _)) =>
+          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
+          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val channelReady = createChannelReady(shortIds, d.commitments.params)
+          d.deferred.foreach(self ! _)
+          goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
+        case Left(_) => stay()
+      }
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
       delayEarlyAnnouncementSigs(remoteAnnSigs)

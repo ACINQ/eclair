@@ -54,7 +54,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
   }
 
-  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Commitments = {
+  def acceptFundingTxConfirmed(w: WatchFundingConfirmedTriggered, d: PersistentChannelData): Either[Commitments, (Commitments, Commitment)] = {
     log.info("funding txid={} was confirmed at blockHeight={} txIndex={}", w.tx.txid, w.blockHeight, w.txIndex)
     d.commitments.latest.localFundingStatus match {
       case _: SingleFundedUnconfirmedFundingTx =>
@@ -70,18 +70,18 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
     val fundingStatus = ConfirmedFundingTx(w.tx)
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    val commitments1 = d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus)
-    require(commitments1.active.size == 1, "there must be exactly one commitment after an initial funding tx is confirmed")
-    // first of all, we watch the funding tx that is now confirmed
-    val commitment = commitments1.active.head
-    require(commitment.fundingTxId == w.tx.txid)
-    watchFundingSpent(commitment)
-    // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
-    val otherFundingTxs = d.commitments.active // note how we use the unpruned original commitments
-      .filter(c => c.fundingTxId != commitment.fundingTxId)
-      .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-    rollbackDualFundingTxs(otherFundingTxs)
-    commitments1
+    d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
+      case (commitments1, commitment) =>
+        require(commitments1.active.size == 1 && commitment.fundingTxId == w.tx.txid, "there must be exactly one commitment after an initial funding tx is confirmed")
+        // first of all, we watch the funding tx that is now confirmed
+        watchFundingSpent(commitment)
+        // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
+        val otherFundingTxs = d.commitments.active // note how we use the unpruned original commitments
+          .filter(c => c.fundingTxId != commitment.fundingTxId)
+          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+        rollbackDualFundingTxs(otherFundingTxs)
+        (commitments1, commitment)
+    }
   }
 
   def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {
