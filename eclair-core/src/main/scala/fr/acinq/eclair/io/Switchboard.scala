@@ -17,17 +17,16 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
-import fr.acinq.eclair.io.PeerConnection.Kill
-import fr.acinq.eclair.io.PeerConnection.KillReason.TooManyIncoming
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.OnionMessage
@@ -40,6 +39,8 @@ import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with Stash with ActorLogging {
 
   import Switchboard._
+
+  private val incomingConnectionsTracker = context.spawn(Behaviors.supervise(IncomingConnectionsTracker(nodeParams, context.self.toTyped)).onFailure(typed.SupervisorStrategy.resume), name = "incoming-connections-tracker")
 
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
@@ -94,25 +95,13 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       }
 
     case authenticated: PeerConnection.Authenticated =>
-      val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
-      val peer = getPeer(authenticated.remoteNodeId)
+      // if this is an incoming connection, we might not yet have created the peer
+      val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
+      val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
-      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
-      val peersWithoutChannels = context.children.size - (peersWithChannels.size + nodeParams.syncWhitelist.size)
-      if (peer.isEmpty && !hasChannels && !doSync && peersWithoutChannels >= nodeParams.peerConnectionConf.maxWithoutChannels) {
-        log.warning(s"too many incoming connections from peers without channels, killing incoming connection request from ${authenticated.remoteNodeId}")
-        authenticated.peerConnection ! Kill(TooManyIncoming)
-      } else {
-        // if this is an incoming connection, we might not yet have created the peer
-        val peer1 = peer.getOrElse({
-          log.debug(s"creating new peer (current={})", context.children.size)
-          val newPeer = createPeer(authenticated.remoteNodeId)
-          newPeer ! Peer.Init(Set())
-          newPeer
-        })
-        val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
-        authenticated.peerConnection ! PeerConnection.InitializeConnection(peer1, nodeParams.chainHash, features, doSync)
-      }
+      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
+      incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
 
     case ChannelIdAssigned(_, remoteNodeId, _, _) => context.become(normal(peersWithChannels + remoteNodeId))
 

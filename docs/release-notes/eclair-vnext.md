@@ -65,11 +65,11 @@ eclair.channel.channel-open-limits.max-total-pending-channels-private-nodes = 99
 
 We have added a parameter to `eclair.conf` to allow nodes to manage the number of inbound connections they accept from peers they do not have any existing channels with.
 
-Outgoing connections are except from this limit, as are incoming connections from peers on the `sync-whitelist`. 
+Outgoing connections are except from this limit. 
 
 The new configuration option and default is as follows:
 ```conf
-// number of peers without established channels with us that may initiate a connection 
+// maximum number of inbound connections from peers that do not have any channel with us
 eclair.peer-connection.max-without-channels = 250 
 ```
 

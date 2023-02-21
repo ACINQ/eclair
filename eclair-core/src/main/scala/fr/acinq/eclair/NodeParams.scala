@@ -449,6 +449,9 @@ object NodeParams extends Logging {
     val maxPendingChannelsPerPeer = config.getInt("channel.channel-open-limits.max-pending-channels-per-peer")
     val maxTotalPendingChannelsPrivateNodes = config.getInt("channel.channel-open-limits.max-total-pending-channels-private-nodes")
 
+    val maxWithoutChannels = config.getInt("peer-connection.max-without-channels")
+    require(maxWithoutChannels > 0, "peer-connection.max-without-channels must be > 0")
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -544,7 +547,7 @@ object NodeParams extends Logging {
         killIdleDelay = FiniteDuration(config.getDuration("onion-messages.kill-transient-connection-after").getSeconds, TimeUnit.SECONDS),
         maxOnionMessagesPerSecond = config.getInt("onion-messages.max-per-peer-per-second"),
         sendRemoteAddressInit = config.getBoolean("peer-connection.send-remote-address-init"),
-        maxWithoutChannels = config.getInt("peer-connection.max-without-channels"),
+        maxWithoutChannels = maxWithoutChannels,
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,
