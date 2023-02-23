@@ -6,7 +6,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.ChannelOpened
+import fr.acinq.eclair.channel.ChannelCreated
 import fr.acinq.eclair.io.Peer.Disconnect
 
 /**
@@ -36,7 +36,7 @@ object IncomingConnectionsTracker {
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelCreated](c => ForgetIncomingConnection(c.remoteNodeId)))
       new IncomingConnectionsTracker(nodeParams, switchboard).tracking(Map())
     }
   }
