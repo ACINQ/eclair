@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
 import fr.acinq.eclair.message.Postman._
-import fr.acinq.eclair.offer.OfferManager.RequestInvoice
+import fr.acinq.eclair.payment.offer.OfferManager.RequestInvoice
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.InvoiceRequest
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
 import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OnionMessagePayloadTlv, TlvStream}

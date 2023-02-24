@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.offer
+package fr.acinq.eclair.payment.offer
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
@@ -24,10 +24,10 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.message.OnionMessages.Recipient
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.offer.OfferManager._
 import fr.acinq.eclair.payment.Bolt12Invoice
+import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
-import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{PaymentFound, NoPayment}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{NoPayment, PaymentFound}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivingRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData

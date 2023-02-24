@@ -18,7 +18,6 @@ package fr.acinq.eclair.integration
 
 import akka.actor.testkit.typed.scaladsl.{TestProbe => TypedProbe}
 import akka.actor.typed.scaladsl.adapter._
-import akka.pattern.pipe
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
@@ -26,18 +25,15 @@ import fr.acinq.bitcoin.scalacompat.{Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.OutgoingPayment
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
-import fr.acinq.eclair.offer.OfferManager._
+import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceivingRoute}
-import fr.acinq.eclair.payment.send.PaymentIdentifier
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentReceived, PaymentSent}
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentSent}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, Features, Kit, MilliSatoshiLong, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 

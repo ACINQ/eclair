@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.Destination
-import fr.acinq.eclair.offer.OfferManager
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}

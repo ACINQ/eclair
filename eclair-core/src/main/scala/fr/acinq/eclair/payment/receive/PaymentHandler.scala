@@ -23,7 +23,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
-import fr.acinq.eclair.offer.OfferManager
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.{Logs, NodeParams}
 
 trait ReceiveHandler {
