@@ -101,10 +101,15 @@ object OfferManager {
   case class SignedMetadata(signature: ByteVector64,
                             offerId: ByteVector32,
                             metadata: ByteVector) {
-    def verify(publicKey: PublicKey): Try[PaymentMetadata] = Try {
-      require(Crypto.verifySignature(Crypto.sha256(offerId ++ metadata), signature, publicKey))
-      metadataCodec.decode(metadata.bits).require.value
-    }
+    def verify(publicKey: PublicKey): Option[PaymentMetadata] =
+      if (Crypto.verifySignature(Crypto.sha256(offerId ++ metadata), signature, publicKey)) {
+        metadataCodec.decode(metadata.bits) match {
+          case Attempt.Successful(result) => Some(result.value)
+          case Attempt.Failure(_) => None
+        }
+      } else {
+        None
+      }
   }
 
   object SignedMetadata {
@@ -130,14 +135,22 @@ object OfferManager {
         case DisableOffer(offer) =>
           normal(nodeParams, router, registeredOffers - offer.offerId)
         case RequestInvoice(messagePayload, postman) =>
-          Try {
-            val Right(invoiceRequest) = InvoiceRequest.validate(messagePayload.records.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
-            val registered = registeredOffers(invoiceRequest.offer.offerId)
-            if (registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && invoiceRequest.isValid) {
-              val replyPath = OnionMessages.BlindedPath(messagePayload.replyPath_opt.get)
-              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, invoiceRequest, registered.handler, registered.nodeKey, router, replyPath, postman))
-              child ! InvoiceRequestActor.RequestInvoice
+          messagePayload.records.get[OnionMessagePayloadTlv.InvoiceRequest] match {
+            case Some(request) => InvoiceRequest.validate(request.tlvs) match {
+              case Left(_) => ()
+              case Right(invoiceRequest) =>
+                registeredOffers.get(invoiceRequest.offer.offerId) match {
+                  case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && invoiceRequest.isValid =>
+                    messagePayload.replyPath_opt match {
+                      case Some(replyPath) =>
+                        val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, invoiceRequest, registered.handler, registered.nodeKey, router, OnionMessages.BlindedPath(replyPath), postman))
+                        child ! InvoiceRequestActor.RequestInvoice
+                      case None => ()
+                    }
+                  case _ => ()
+                }
             }
+            case None => ()
           }
           Behaviors.same
         case ReceivePayment(replyTo, paymentHash, payload) =>
@@ -146,7 +159,7 @@ object OfferManager {
               registeredOffers.get(signed.offerId) match {
                 case Some(RegisteredOffer(offer, nodeKey, _, handler)) =>
                   signed.verify(nodeKey.publicKey) match {
-                    case Success(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
+                    case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata))
                       handler ! HandlePayment(child, signed.offerId, metadata.extraData)
                     case _ => replyTo ! MultiPartHandler.GetIncomingPaymentActor.NoPayment
