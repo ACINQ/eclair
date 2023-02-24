@@ -119,7 +119,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
         OnionPaymentPayloadTlv.TotalAmount(12_000_000 msat),
         OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight) + invoice3.blindedPaths.head.paymentInfo.cltvExpiryDelta),
       )
-      offerManager ! Payment(paymentHandler.ref, invoice1.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
+      offerManager ! ReceivePayment(paymentHandler.ref, invoice1.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
       handler1.expectNoMessage()
       handler2.expectNoMessage()
       paymentHandler.expectMessage(NoPayment)
@@ -132,7 +132,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
         OnionPaymentPayloadTlv.TotalAmount(12_000_000 msat),
         OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight) + invoice1.blindedPaths.head.paymentInfo.cltvExpiryDelta),
       )
-      offerManager ! Payment(paymentHandler.ref, invoice1.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
+      offerManager ! ReceivePayment(paymentHandler.ref, invoice1.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
       val handlePayment = handler1.expectMessageType[HandlePayment]
       assert(handlePayment.offerId == offer1.offerId)
       assert(handlePayment.data == hex"01")
@@ -148,7 +148,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
         OnionPaymentPayloadTlv.TotalAmount(13_000_000 msat),
         OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight) + invoice3.blindedPaths.head.paymentInfo.cltvExpiryDelta),
       )
-      offerManager ! Payment(paymentHandler.ref, invoice3.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
+      offerManager ! ReceivePayment(paymentHandler.ref, invoice3.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
       val handlePayment = handler2.expectMessageType[HandlePayment]
       assert(handlePayment.offerId == offer3.offerId)
       assert(handlePayment.data == hex"03")

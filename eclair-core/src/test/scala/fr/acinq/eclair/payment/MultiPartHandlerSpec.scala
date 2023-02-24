@@ -201,7 +201,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
       val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), hex"cafe", Some(randomKey().publicKey))
       sender.send(handlerWithRouteBlinding, finalPacket)
-      val payment = offerManager.expectMsgType[OfferManager.Payment]
+      val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
       assert(payment.payload.pathId == hex"cafe")
       payment.replyTo ! GetIncomingPaymentActor.PaymentFound(IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, None, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
       assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
@@ -927,7 +927,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(1), encodedMetadata, Some(randomKey().publicKey))
     sender.send(handlerWithRouteBlinding, packet)
-    val payment = offerManager.expectMsgType[OfferManager.Payment]
+    val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(payment.payload.pathId == encodedMetadata)
     payment.replyTo ! GetIncomingPaymentActor.NoPayment
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message

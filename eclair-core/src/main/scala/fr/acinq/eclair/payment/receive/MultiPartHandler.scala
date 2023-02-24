@@ -51,7 +51,7 @@ import scala.util.{Failure, Try}
  *
  * Created by PM on 17/06/2016.
  */
-class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingPaymentsDb, offerManager: typed.ActorRef[OfferManager.Payment]) extends ReceiveHandler {
+class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingPaymentsDb, offerManager: typed.ActorRef[OfferManager.ReceivePayment]) extends ReceiveHandler {
 
   import MultiPartHandler._
 
@@ -194,7 +194,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
         })
-        val recordedinDb = payment match {
+        val recordedInDb = payment match {
           // Incoming blinded payments corresponding to invoice requests are not stored in the database until they have been paid.
           case IncomingBlindedPayment(invoice, preimage, paymentType, None, _, _) =>
             db.receiveAddIncomingBlindedPayment(invoice, preimage, received.amount, received.timestamp, paymentType)
@@ -203,7 +203,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           case _ =>
             db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         }
-        if (recordedinDb) {
+        if (recordedInDb) {
           parts.collect {
             case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, payment.paymentPreimage, commit = true))
           }
@@ -285,7 +285,7 @@ object MultiPartHandler {
    * @param router              router actor.
    * @param paymentPreimage_opt payment preimage.
    * @param pathId_opt          path id for the payment paths. If None, a different one will be randomly generated for
-   *                            each path and the mapping blinding point -> path id will be store in the database.
+   *                            each path and the mapping blinding point -> path id will be stored in the database.
    * @param storeInDb           whether to store the incoming payment in the database. Bolt12 invoices generated as a
    *                            response to an invoice request should not be stored as it would be a DoS vector.
    */
@@ -412,7 +412,7 @@ object MultiPartHandler {
     object NoPayment extends Command
     // @formatter:on
 
-    def apply(nodeParams: NodeParams, packet: IncomingPaymentPacket.FinalPacket, offerManager: typed.ActorRef[OfferManager.Payment]): Behavior[Command] = {
+    def apply(nodeParams: NodeParams, packet: IncomingPaymentPacket.FinalPacket, offerManager: typed.ActorRef[OfferManager.ReceivePayment]): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.PAYMENT), paymentHash_opt = Some(packet.add.paymentHash))) {
           Behaviors.receiveMessagePartial {
@@ -439,7 +439,7 @@ object MultiPartHandler {
                   }
                   Behaviors.stopped
                 case payload: FinalPayload.Blinded =>
-                  offerManager ! OfferManager.Payment(context.self, packet.add.paymentHash, payload)
+                  offerManager ! OfferManager.ReceivePayment(context.self, packet.add.paymentHash, payload)
                   waitForPayment(nodeParams, replyTo, packet.add, payload)
               }
           }

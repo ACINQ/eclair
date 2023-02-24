@@ -38,17 +38,46 @@ import scala.concurrent.duration.DurationInt
 import scala.util.{Success, Try}
 
 object OfferManager {
-  // @formatter:off
   sealed trait Command
-  case class RegisterOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command
-  case class DisableOffer(offer: Offer) extends Command
-  case class RequestInvoice(messagePayload: MessageOnion.FinalPayload, postman: ActorRef[Postman.SendMessage]) extends Command
-  case class Payment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
 
+  /**
+   * Register an offer and its handler.
+   * @param offer      The offer.
+   * @param nodeKey    The private key corresponding to the node id used in the offer.
+   * @param pathId_opt If the offer uses a blinded path, the path id of this blinded path.
+   * @param handler    An actor that will be in charge of accepting or rejecting invoice requests and payments for this offer.
+   */
+  case class RegisterOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command
+
+  /**
+   * Forget about an offer. Invoice requests and payment attempts for this offer will be ignored.
+   * @param offer The offer to forget.
+   */
+  case class DisableOffer(offer: Offer) extends Command
+
+  case class RequestInvoice(messagePayload: MessageOnion.FinalPayload, postman: ActorRef[Postman.SendMessage]) extends Command
+  case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
+
+  /**
+   * Offer handlers must be implemented in separate plugins and respond to these two `HandlerCommand`.
+   */
   sealed trait HandlerCommand
+
+  /**
+   * When an invoice request is received, a `HandleInvoiceRequest` is sent to the handler registered for this offer.
+   * @param replyTo        The handler must reply with either `InvoiceRequestActor.ApproveRequest` or `InvoiceRequestActor.RejectRequest`.
+   * @param invoiceRequest The invoice request to accept or reject. It is guaranteed to be valid for the offer.
+   */
   case class HandleInvoiceRequest(replyTo: ActorRef[InvoiceRequestActor.Command], invoiceRequest: InvoiceRequest) extends HandlerCommand
+
+  /**
+   * When a payment is received for an offer invoice, a `HandlePayment` is sent to the handler registered for this offer.
+   * The handler may receive several `HandlePayment` for the same payment, usually because of multi-part payments.
+   * @param replyTo The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
+   * @param offerId The id of the offer in case a single handler handles multiple offers.
+   * @param data    Data provided by the handler when generating the invoice, for its own use.
+   */
   case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, data: ByteVector) extends HandlerCommand
-  // @formatter:on
 
   case class RegisteredOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
@@ -111,7 +140,7 @@ object OfferManager {
             }
           }
           Behaviors.same
-        case Payment(replyTo, paymentHash, payload) =>
+        case ReceivePayment(replyTo, paymentHash, payload) =>
           signedMetadataCodec.decode(payload.pathId.bits) match {
             case Attempt.Successful(DecodeResult(signed, _)) =>
               registeredOffers.get(signed.offerId) match {
@@ -139,6 +168,15 @@ object OfferManager {
 
     object RequestInvoice extends Command
 
+    /**
+     * Sent by the offer handler. Causes an invoice to be created and sent to the requester.
+     * @param amount         Amount for the invoice (must be the same as the invoice request if it contained an amount).
+     * @param routes         Routes to use for the payment.
+     * @param features       Features supported for the payment.
+     * @param data           Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
+     * @param additionalTlvs additional TLVs to add to the invoice.
+     * @param customTlvs     custom TLVs to add to the invoice.
+     */
     case class ApproveRequest(amount: MilliSatoshi,
                               routes: Seq[ReceivingRoute],
                               features: Features[Feature],
@@ -146,6 +184,9 @@ object OfferManager {
                               additionalTlvs: Set[InvoiceTlv] = Set.empty,
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
 
+    /**
+     * Sent by the offer handler to reject the request. For instance because stock has been exhausted.
+     */
     object RejectRequest extends Command
 
     private case class WrappedInvoice(invoice: Try[Invoice]) extends Command
@@ -215,8 +256,16 @@ object OfferManager {
   object PaymentActor {
     sealed trait Command
 
+    /**
+     * Sent by the offer handler. Causes the creation of a dummy invoice that matches as best as possible the actual invoice for this payment (since the actual invoice is not stored) and will be used in the payment handler.
+     * @param additionalTlvs additional TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
+     * @param customTlvs     custom TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
+     */
     case class AcceptPayment(additionalTlvs: Seq[InvoiceTlv] = Nil, customTlvs: Seq[GenericTlv] = Nil) extends Command
 
+    /**
+     * Sent by the offer handler to reject the payment. For instance because stock has been exhausted.
+     */
     object RejectPayment extends Command
 
     def apply(nodeParams: NodeParams, replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], offer: Offer, metadata: PaymentMetadata): Behavior[Command] = {
