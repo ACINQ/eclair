@@ -13,10 +13,11 @@
       <scope>runtime</scope>
     </dependencySet>
   </dependencySets>
-  <fileSets> <!-- Include readme and license -->
+  <fileSets> <!-- Include docs, readme and license -->
     <fileSet>
       <directory>../</directory>
       <includes>
+        <include>docs/**</include>
         <include>README.md</include>
         <include>LICENSE*</include>
       </includes>
