@@ -21,7 +21,7 @@ import fr.acinq.eclair.io.Peer.Disconnect
  * When a tracked peer disconnects or adds a channel, we will stop tracking that peer.
  *
  * We do not need to track peers that disconnect because they will terminate if they have no channels.
- * Likewise, peers with channels will terminate when their last channel closes.
+ * Likewise, peers with channels will disconnect and terminate when their last channel closes.
  *
  * Note: Peers on the sync whitelist are not tracked.
 */
@@ -52,9 +52,13 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
           Behaviors.same
         } else {
           if (inboundConnections.size >= nodeParams.peerConnectionConf.maxWithoutChannels) {
-            switchboard ! Disconnect(inboundConnections.minBy(_._2)._1)
+            val oldest = inboundConnections.minBy(_._2)._1
+            switchboard ! Disconnect(oldest)
+            tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
           }
-          tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()))
+          else {
+            tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()))
+          }
         }
       case ForgetIncomingConnection(remoteNodeId) => tracking(inboundConnections - remoteNodeId)
     }
