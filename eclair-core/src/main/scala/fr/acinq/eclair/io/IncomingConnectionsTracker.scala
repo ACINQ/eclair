@@ -30,7 +30,7 @@ object IncomingConnectionsTracker {
   sealed trait Command
 
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
-  private case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
+  private[io] case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {

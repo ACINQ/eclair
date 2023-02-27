@@ -14,6 +14,8 @@ import fr.acinq.eclair.{Features, InitFeature, NodeParams, TestKitBaseClass, Tim
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
+import scala.concurrent.duration.DurationInt
+
 class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   import SwitchboardSpec._
@@ -139,6 +141,44 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     probe.send(switchboard, GetPeerInfo(probe.ref.toTyped, knownPeerNodeId))
     peer.expectMsg(Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+  }
+
+  test("track incoming nodes that do not have a channel") {
+    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxWithoutChannels = 2))
+    val (probe, peer, peerConnection, channel) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
+    val hasChannelsNodeId1 = randomKey().publicKey
+    val hasChannelsNodeId2 = randomKey().publicKey
+    val unknownNodeId1 = randomKey().publicKey
+    val unknownNodeId2 = randomKey().publicKey
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(Nil)
+
+    // Do not track an incoming connection from a peer we have a channel with.
+    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId1, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId1)
+    peer.expectMsgType[Peer.Init]
+
+    // We do not yet have channels with these peers, so we track their incoming connections.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, unknownNodeId1)
+    peer.expectMsgType[Peer.Init]
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, unknownNodeId2)
+    peer.expectMsgType[Peer.Init]
+
+    // Disconnect the oldest tracked peer when an incoming connection from a peer without channels connects.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey)
+    peer.expectMsgType[Peer.Init]
+    peer.expectMsg(Peer.Disconnect(unknownNodeId1))
+
+    // Do not disconnect an old peer when a peer with channels connects.
+    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId2)
+    peer.expectMsgType[Peer.Init]
+    peer.expectNoMessage(100 millis)
+
+    // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey)
+    peer.expectMsgType[Peer.Init]
+    peer.expectMsg(Peer.Disconnect(unknownNodeId2))
   }
 
 }
