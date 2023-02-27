@@ -30,7 +30,8 @@ object IncomingConnectionsTracker {
   sealed trait Command
 
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
-  private[io] case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
+  private case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
+  private[io] case class InboundConnectionsCount(replyTo: ActorRef[Int]) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
@@ -61,5 +62,8 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
           }
         }
       case ForgetIncomingConnection(remoteNodeId) => tracking(inboundConnections - remoteNodeId)
+      case InboundConnectionsCount(replyTo) =>
+        replyTo ! inboundConnections.size
+        Behaviors.same
     }
 }
