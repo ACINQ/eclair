@@ -7,6 +7,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.ChannelCreated
+import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.Disconnect
 
 /**
@@ -46,13 +47,15 @@ object IncomingConnectionsTracker {
 private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]) {
   import IncomingConnectionsTracker._
 
-  private def tracking(inboundConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] =
+  private def tracking(inboundConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
+    Metrics.IncomingConnectionsWithoutChannels.withoutTags().update(inboundConnections.size)
     Behaviors.receiveMessage {
       case TrackIncomingConnection(remoteNodeId) =>
         if (nodeParams.syncWhitelist.contains(remoteNodeId)) {
           Behaviors.same
         } else {
           if (inboundConnections.size >= nodeParams.peerConnectionConf.maxWithoutChannels) {
+            Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
             val oldest = inboundConnections.minBy(_._2)._1
             switchboard ! Disconnect(oldest)
             tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
@@ -66,4 +69,6 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
         replyTo ! inboundConnections.size
         Behaviors.same
     }
+  }
+
 }
