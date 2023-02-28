@@ -61,15 +61,15 @@ eclair.channel.channel-open-limits.max-pending-channels-per-peer = 3
 eclair.channel.channel-open-limits.max-total-pending-channels-private-nodes = 99 
 ```
 
-#### Configurable inbound connections rate limits (#2601)
+#### Configurable incoming connections rate limits (#2601)
 
-We have added a parameter to `eclair.conf` to allow nodes to track the number of inbound connections they maintain from peers they do not have existing channels with. Once the limit is reached, Eclair will disconnect from the oldest tracked peers first.
+We have added a parameter to `eclair.conf` to allow nodes to track the number of incoming connections they maintain from peers they do not have existing channels with. Once the limit is reached, Eclair will disconnect from the oldest tracked peers first.
 
 Outgoing connections are except from and do not count towards the limit. 
 
 The new configuration option and default is as follows:
 ```conf
-// maximum number of inbound connections from peers that do not have any channel with us
+// maximum number of incoming connections from peers that do not have any channel with us
 eclair.peer-connection.max-without-channels = 250 
 ```
 

@@ -11,7 +11,7 @@ import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.Disconnect
 
 /**
- * A singleton actor that limits the total number of inbound connections from peers that do not have channels with us.
+ * A singleton actor that limits the total number of incoming connections from peers that do not have channels with us.
  *
  * When a new incoming connection request is received, the Switchboard should send an
  * [[IncomingConnectionsTracker.TrackIncomingConnection]] message.
@@ -32,7 +32,7 @@ object IncomingConnectionsTracker {
 
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
   private case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
-  private[io] case class InboundConnectionsCount(replyTo: ActorRef[Int]) extends Command
+  private[io] case class IncomingConnectionsCount(replyTo: ActorRef[Int]) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
@@ -47,26 +47,26 @@ object IncomingConnectionsTracker {
 private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]) {
   import IncomingConnectionsTracker._
 
-  private def tracking(inboundConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
-    Metrics.IncomingConnectionsWithoutChannels.withoutTags().update(inboundConnections.size)
+  private def tracking(incomingConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
+    Metrics.IncomingConnectionsWithoutChannels.withoutTags().update(incomingConnections.size)
     Behaviors.receiveMessage {
       case TrackIncomingConnection(remoteNodeId) =>
         if (nodeParams.syncWhitelist.contains(remoteNodeId)) {
           Behaviors.same
         } else {
-          if (inboundConnections.size >= nodeParams.peerConnectionConf.maxWithoutChannels) {
+          if (incomingConnections.size >= nodeParams.peerConnectionConf.maxWithoutChannels) {
             Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
-            val oldest = inboundConnections.minBy(_._2)._1
+            val oldest = incomingConnections.minBy(_._2)._1
             switchboard ! Disconnect(oldest)
-            tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
+            tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
           }
           else {
-            tracking(inboundConnections + (remoteNodeId -> System.currentTimeMillis()))
+            tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()))
           }
         }
-      case ForgetIncomingConnection(remoteNodeId) => tracking(inboundConnections - remoteNodeId)
-      case InboundConnectionsCount(replyTo) =>
-        replyTo ! inboundConnections.size
+      case ForgetIncomingConnection(remoteNodeId) => tracking(incomingConnections - remoteNodeId)
+      case IncomingConnectionsCount(replyTo) =>
+        replyTo ! incomingConnections.size
         Behaviors.same
     }
   }
