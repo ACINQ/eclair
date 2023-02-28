@@ -68,7 +68,7 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     val probe = TestProbe[Int]()
     system.eventStream ! EventStream.Publish(PeerDisconnected(system.deadLetters.toClassic, connection1))
     eventually {
-      tracker ! IncomingConnectionsTracker.IncomingConnectionsCount(probe.ref)
+      tracker ! IncomingConnectionsTracker.CountIncomingConnections(probe.ref)
       probe.expectMessage(1)
     }
 
@@ -92,7 +92,7 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     val probe = TestProbe[Int]()
     system.eventStream ! EventStream.Publish(ChannelCreated(system.deadLetters.toClassic, system.deadLetters.toClassic, connection1, isInitiator = true, randomBytes32(), FeeratePerKw(0 sat), None))
     eventually {
-      tracker ! IncomingConnectionsTracker.IncomingConnectionsCount(probe.ref)
+      tracker ! IncomingConnectionsTracker.CountIncomingConnections(probe.ref)
       probe.expectMessage(1)
     }
 

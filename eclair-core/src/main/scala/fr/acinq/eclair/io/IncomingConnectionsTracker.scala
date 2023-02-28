@@ -32,7 +32,7 @@ object IncomingConnectionsTracker {
 
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
   private case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
-  private[io] case class IncomingConnectionsCount(replyTo: ActorRef[Int]) extends Command
+  private[io] case class CountIncomingConnections(replyTo: ActorRef[Int]) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
@@ -65,7 +65,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
           }
         }
       case ForgetIncomingConnection(remoteNodeId) => tracking(incomingConnections - remoteNodeId)
-      case IncomingConnectionsCount(replyTo) =>
+      case CountIncomingConnections(replyTo) =>
         replyTo ! incomingConnections.size
         Behaviors.same
     }
