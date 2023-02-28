@@ -30,6 +30,7 @@ object PendingChannelsRateLimiter {
   private case class WrappedGetNodeResponse(temporaryChannelId: ByteVector32, response: Router.GetNodeResponse, replyTo: Option[ActorRef[Response]]) extends Command
   private case class ReplaceChannelId(remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends Command
   private case class RemoveChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
+  private[io] case class OpenChannelRequests(replyTo: ActorRef[Int], publicPeers: Boolean) extends Command
 
   sealed trait Response
   case object AcceptOpenChannel extends Response
@@ -70,6 +71,10 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             restoring(channels.tail, pendingPublicNodeChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels)
           case WrappedGetNodeResponse(_, UnknownNode(nodeId), _) =>
             restoring(channels.tail, pendingPublicNodeChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)))
+          case OpenChannelRequests(replyTo, publicPeers) =>
+            val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
+            replyTo ! pendingChannels.map(_._2.length).sum
+            Behaviors.same
         }
       case None =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
@@ -150,6 +155,10 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
               case None => Behaviors.same
             }
         }
+      case OpenChannelRequests(replyTo, publicPeers) =>
+        val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
+        replyTo ! pendingChannels.map(_._2.length).sum
+        Behaviors.same
     }
   }
 }
