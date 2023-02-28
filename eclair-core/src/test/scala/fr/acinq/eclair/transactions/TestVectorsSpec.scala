@@ -416,8 +416,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
     assert(htlcTxs(0).tx == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
-    assert(htlcTxs(1).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
-    assert(htlcTxs(2).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
+    assert(htlcTxs(1).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
+    assert(htlcTxs(2).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
   }
 
 }
