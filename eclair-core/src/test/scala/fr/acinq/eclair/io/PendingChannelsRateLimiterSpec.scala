@@ -176,13 +176,13 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     }
 
     // stop tracking channels that are confirmed/closed/aborted for a public peer
-    limiter ! PendingChannelsRateLimiter.OpenChannelRequests(requests.ref, publicPeers = true)
+    limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
     requests.expectMessage(10)
     system.eventStream ! Publish(ChannelOpened(null, peersAtLimit.head, channelIdAtLimit1))
     system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, commitments(peersBelowLimit.head, newChannelId1)))
     system.eventStream ! Publish(ChannelAborted(null, peersBelowLimit.last, newChannelId2))
     eventually {
-      limiter ! PendingChannelsRateLimiter.OpenChannelRequests(requests.ref, publicPeers = true)
+      limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
       requests.expectMessage(7)
     }
 
@@ -243,12 +243,12 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
 
     // stop tracking channels that are confirmed/closed/aborted for a private peer
-    limiter ! PendingChannelsRateLimiter.OpenChannelRequests(requests.ref, publicPeers = false)
+    limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
     requests.expectMessage(2)
     system.eventStream ! Publish(ChannelOpened(null, privatePeers.head, newChannelIdPrivate1))
     system.eventStream ! Publish(ChannelClosed(null, channelIdPrivate2, null, commitments(privatePeers.last, channelIdPrivate2)))
     eventually {
-      limiter ! PendingChannelsRateLimiter.OpenChannelRequests(requests.ref, publicPeers = false)
+      limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
       requests.expectMessage(0)
     }
 
@@ -265,7 +265,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     // abort the reused channel id for one private node; private channels now under the limit by one
     system.eventStream ! Publish(ChannelAborted(null, privatePeers.head, channelIdPrivate1))
     eventually {
-      limiter ! PendingChannelsRateLimiter.OpenChannelRequests(requests.ref, publicPeers = false)
+      limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
       requests.expectMessage(1)
     }
 
