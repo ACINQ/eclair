@@ -144,7 +144,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("track incoming nodes that do not have a channel") {
-    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxWithoutChannels = 2))
+    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
     val (probe, peer, peerConnection, channel) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val hasChannelsNodeId1 = randomKey().publicKey
     val hasChannelsNodeId2 = randomKey().publicKey

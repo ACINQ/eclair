@@ -543,7 +543,7 @@ object PeerConnection {
                   killIdleDelay: FiniteDuration,
                   maxOnionMessagesPerSecond: Int,
                   sendRemoteAddressInit: Boolean,
-                  maxWithoutChannels: Int)
+                  maxNoChannels: Int)
 
   // @formatter:off
 

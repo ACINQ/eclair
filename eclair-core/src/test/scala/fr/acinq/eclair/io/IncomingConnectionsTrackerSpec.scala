@@ -38,7 +38,7 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
   val connection2: Crypto.PublicKey = randomKey().publicKey
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val nodeParams1 = nodeParams.copy(peerConnectionConf = nodeParams.peerConnectionConf.copy(maxWithoutChannels = 2))
+    val nodeParams1 = nodeParams.copy(peerConnectionConf = nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
     val switchboard = TestProbe[Disconnect]()
     val tracker = testKit.spawn(IncomingConnectionsTracker(nodeParams1, switchboard.ref))
     withFixture(test.toNoArgTest(FixtureParam(tracker, switchboard)))

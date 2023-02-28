@@ -16,7 +16,7 @@ import fr.acinq.eclair.io.Peer.Disconnect
  * When a new incoming connection request is received, the Switchboard should send an
  * [[IncomingConnectionsTracker.TrackIncomingConnection]] message.
  *
- * When the number of tracked peers exceeds `eclair.peer-connection.max-without-channels`, send [[Peer.Disconnect]] to
+ * When the number of tracked peers exceeds `eclair.peer-connection.max-no-channels`, send [[Peer.Disconnect]] to
  * the tracked peer with the oldest incoming connection.
  *
  * When a tracked peer disconnects or adds a channel, we will stop tracking that peer.
@@ -54,7 +54,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
         if (nodeParams.syncWhitelist.contains(remoteNodeId)) {
           Behaviors.same
         } else {
-          if (incomingConnections.size >= nodeParams.peerConnectionConf.maxWithoutChannels) {
+          if (incomingConnections.size >= nodeParams.peerConnectionConf.maxNoChannels) {
             Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
             val oldest = incomingConnections.minBy(_._2)._1
             switchboard ! Disconnect(oldest)

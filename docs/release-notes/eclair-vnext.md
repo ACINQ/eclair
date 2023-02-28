@@ -70,7 +70,7 @@ Outgoing connections are except from and do not count towards the limit.
 The new configuration option and default is as follows:
 ```conf
 // maximum number of incoming connections from peers that do not have any channel with us
-eclair.peer-connection.max-without-channels = 250 
+eclair.peer-connection.max-no-channels = 250 
 ```
 
 ## Verifying signatures
