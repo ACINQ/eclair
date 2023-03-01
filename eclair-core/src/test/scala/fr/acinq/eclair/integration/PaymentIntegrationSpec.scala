@@ -696,7 +696,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
       ReceivingRoute(Seq(nodes("E").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
     )
-    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("D").router))
+    sender.send(nodes("D").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("D").router, randomBytes32(), randomBytes32()))
     val Success(invoice) = sender.expectMsgType[Try[Bolt12Invoice]]
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.nodeId == recipientKey.publicKey)
@@ -710,7 +710,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid > 0.msat, paymentSent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount >= amount)
   }
 
@@ -725,7 +725,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
       ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
     )
-    sender.send(nodes("C").paymentHandler, ReceiveOfferPayment(nodes("C").nodeParams.privateKey, invoiceRequest, receivingRoutes, nodes("C").router))
+    sender.send(nodes("C").paymentHandler, ReceiveOfferPayment(nodes("C").nodeParams.privateKey, invoiceRequest, receivingRoutes, nodes("C").router, randomBytes32(), randomBytes32()))
     val Success(invoice) = sender.expectMsgType[Try[Bolt12Invoice]]
     assert(invoice.blindedPaths.length == 2)
     assert(invoice.blindedPaths.forall(_.route.length == 0))
@@ -739,7 +739,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid == 0.msat, paymentSent)
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
   }
 
@@ -753,7 +753,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val receivingRoutes = Seq(
       ReceivingRoute(Seq(nodes("A").nodeParams.nodeId), CltvExpiryDelta(1000), Seq(DummyBlindedHop(100 msat, 100, CltvExpiryDelta(48)), DummyBlindedHop(150 msat, 50, CltvExpiryDelta(36))))
     )
-    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("A").router))
+    sender.send(nodes("A").paymentHandler, ReceiveOfferPayment(recipientKey, invoiceRequest, receivingRoutes, nodes("A").router, randomBytes32(), randomBytes32()))
     val Success(invoice) = sender.expectMsgType[Try[Bolt12Invoice]]
     assert(invoice.blindedPaths.length == 1)
     assert(invoice.nodeId == recipientKey.publicKey)
@@ -766,7 +766,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount >= amount)
   }
 

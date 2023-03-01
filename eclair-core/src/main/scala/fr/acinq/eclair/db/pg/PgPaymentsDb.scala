@@ -268,21 +268,6 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def addIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String): Unit = withMetrics("payments/add-incoming-blinded", DbBackends.Postgres) {
-    withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, path_ids, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, invoice.paymentHash.toHex)
-        statement.setString(2, preimage.toHex)
-        statement.setBytes(3, encodePathIds(pathIds))
-        statement.setString(4, paymentType)
-        statement.setString(5, invoice.toString)
-        statement.setTimestamp(6, invoice.createdAt.toSqlTimestamp)
-        statement.setTimestamp(7, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
-        statement.executeUpdate()
-      }
-    }
-  }
-
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
@@ -297,7 +282,8 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
 
   override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)" +
+        "ON CONFLICT (payment_hash) DO UPDATE SET (received_msat, received_at) = (payments.received.received_msat + EXCLUDED.received_msat, EXCLUDED.received_at)")) { statement =>
         statement.setString(1, invoice.paymentHash.toHex)
         statement.setString(2, preimage.toHex)
         statement.setString(3, paymentType)
@@ -322,8 +308,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
       case Success(invoice: Bolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
-        val pathIds = Option(rs.getBytes("path_ids")).map(bytes => decodePathIds(BitVector(bytes)))
-        Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
+        Some(IncomingBlindedPayment(invoice, preimage, paymentType, createdAt, status))
       case _ =>
         logger.error(s"could not parse DB invoice=$invoice, this should not happen")
         None

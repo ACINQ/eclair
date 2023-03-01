@@ -33,16 +33,16 @@ trait IncomingPaymentsDb {
   /** Add a new expected standard incoming payment (not yet received). */
   def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
-  /** Add a new expected blinded incoming payment (not yet received). */
-  def addIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String = PaymentType.Blinded): Unit
-
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
    * If there was no matching invoice in the DB, this will return false.
    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
-  /** Add a new blinded incoming payment as it is received. */
+  /**
+   *  Add a new incoming offer payment as received.
+   *  If the invoice is already paid, adds `amount` to the amount paid.
+   */
   def receiveAddIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
@@ -131,15 +131,10 @@ case class IncomingStandardPayment(invoice: Bolt11Invoice,
                                    createdAt: TimestampMilli,
                                    status: IncomingPaymentStatus) extends IncomingPayment
 
-/**
- * A blinded incoming payment received by this node.
- *
- * @param pathIds map the last blinding point of a blinded path to the corresponding pathId.
- */
+/** A blinded incoming payment received by this node. */
 case class IncomingBlindedPayment(invoice: Bolt12Invoice,
                                   paymentPreimage: ByteVector32,
                                   paymentType: String,
-                                  pathIds: Option[Map[PublicKey, ByteVector]],
                                   createdAt: TimestampMilli,
                                   status: IncomingPaymentStatus) extends IncomingPayment
 

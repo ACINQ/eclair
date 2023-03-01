@@ -115,7 +115,7 @@ class OfferIntegrationSpec extends IntegrationSpec {
     alice.payOffer(offer, 10_000_000 msat, 1)
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
-    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(10_000_000 msat, Seq(ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000))), Features.empty, ByteVector.empty)
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(10_000_000 msat, Seq(ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000))), ByteVector.empty)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
@@ -148,7 +148,7 @@ class OfferIntegrationSpec extends IntegrationSpec {
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val paymentPath = ReceivingRoute(Seq(nodes("A").nodeParams.nodeId, nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000), Seq(DummyBlindedHop(1000 msat, 300, CltvExpiryDelta(33)), DummyBlindedHop(500 msat, 800, CltvExpiryDelta(44))))
-    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(1_230_000_000 msat, Seq(paymentPath), Features.empty, ByteVector.empty)
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(1_230_000_000 msat, Seq(paymentPath), ByteVector.empty)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)

@@ -279,19 +279,6 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String): Unit = withMetrics("payments/add-incoming-blinded", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, path_ids, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, invoice.paymentHash.toArray)
-      statement.setBytes(2, preimage.toArray)
-      statement.setBytes(3, encodePathIds(pathIds))
-      statement.setString(4, paymentType)
-      statement.setString(5, invoice.toString)
-      statement.setLong(6, invoice.createdAt.toTimestampMilli.toLong)
-      statement.setLong(7, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
-      statement.executeUpdate()
-    }
-  }
-
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
       update.setLong(1, amount.toLong)
@@ -303,15 +290,20 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, invoice.toString)
       statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong)
       statement.setLong(6, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
-      statement.setLong(7, amount.toLong)
-      statement.setLong(8, receivedAt.toLong)
+      statement.setLong(7, receivedAt.toLong)
+      statement.executeUpdate()
+    }
+    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (received_msat + ?, ?) WHERE payment_hash = ?")) { statement =>
+      statement.setLong(1, amount.toLong)
+      statement.setLong(2, receivedAt.toLong)
+      statement.setBytes(3, invoice.paymentHash.toArray)
       statement.executeUpdate()
     }
   }
@@ -327,8 +319,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
       case Success(invoice: Bolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
-        val pathIds = Option(rs.getBytes("path_ids")).map(bytes => decodePathIds(BitVector(bytes)))
-        Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
+        Some(IncomingBlindedPayment(invoice, preimage, paymentType, createdAt, status))
       case _ =>
         logger.error(s"could not parse DB invoice=$invoice, this should not happen")
         None

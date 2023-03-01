@@ -90,7 +90,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val handleInvoiceRequest1 = handler1.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest1.invoiceRequest.payerId == payerKey1.publicKey)
-    handleInvoiceRequest1.replyTo ! InvoiceRequestActor.ApproveRequest(12_000_000 msat, Seq(ReceivingRoute(Seq(nodeParams.nodeId), CltvExpiryDelta(1000), Nil)), Features.empty, hex"01")
+    handleInvoiceRequest1.replyTo ! InvoiceRequestActor.ApproveRequest(12_000_000 msat, Seq(ReceivingRoute(Seq(nodeParams.nodeId), CltvExpiryDelta(1000), Nil)), hex"01")
     val invoiceMessage1 = postman.expectMessageType[Postman.SendMessage]
     val Right(invoice1) = Bolt12Invoice.validate(invoiceMessage1.message.get[OnionMessagePayloadTlv.Invoice].get.tlvs)
     assert(invoice1.invoiceRequest.payerId == payerKey1.publicKey)
@@ -102,7 +102,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val handleInvoiceRequest3 = handler2.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest3.invoiceRequest.payerId == payerKey3.publicKey)
-    handleInvoiceRequest3.replyTo ! InvoiceRequestActor.ApproveRequest(13_000_000 msat, Seq(ReceivingRoute(Seq(nodeParams.nodeId), CltvExpiryDelta(1000), Nil)), Features.empty, hex"03")
+    handleInvoiceRequest3.replyTo ! InvoiceRequestActor.ApproveRequest(13_000_000 msat, Seq(ReceivingRoute(Seq(nodeParams.nodeId), CltvExpiryDelta(1000), Nil)), hex"03")
     val invoiceMessage3 = postman.expectMessageType[Postman.SendMessage]
     val Right(invoice3) = Bolt12Invoice.validate(invoiceMessage3.message.get[OnionMessagePayloadTlv.Invoice].get.tlvs)
     assert(invoice3.invoiceRequest.payerId == payerKey3.publicKey)

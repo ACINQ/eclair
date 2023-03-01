@@ -86,7 +86,6 @@ object OfferManager {
                              createdAt: TimestampSecond,
                              quantity: Long,
                              amount: MilliSatoshi,
-                             features: Features[Feature],
                              extraData: ByteVector)
 
   private val metadataCodec: Codec[PaymentMetadata] =
@@ -95,7 +94,6 @@ object OfferManager {
       ("createdAt" | timestampSecond) ::
       ("quantity" | uint64overflow) ::
       ("amount" | millisatoshi) ::
-      ("features" | lengthPrefixedFeaturesCodec) ::
       ("extraData" | bytes)).as[PaymentMetadata]
 
   case class SignedMetadata(signature: ByteVector64,
@@ -185,14 +183,12 @@ object OfferManager {
      * Sent by the offer handler. Causes an invoice to be created and sent to the requester.
      * @param amount         Amount for the invoice (must be the same as the invoice request if it contained an amount).
      * @param routes         Routes to use for the payment.
-     * @param features       Features supported for the payment.
      * @param data           Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
      * @param additionalTlvs additional TLVs to add to the invoice.
      * @param customTlvs     custom TLVs to add to the invoice.
      */
     case class ApproveRequest(amount: MilliSatoshi,
                               routes: Seq[ReceivingRoute],
-                              features: Features[Feature],
                               data: ByteVector,
                               additionalTlvs: Set[InvoiceTlv] = Set.empty,
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
@@ -232,14 +228,14 @@ object OfferManager {
         Behaviors.receiveMessagePartial {
           case RejectRequest =>
             Behaviors.stopped
-          case ApproveRequest(amount, routes, features, data, additionalTlvs, customTlvs) =>
+          case ApproveRequest(amount, routes, data, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
-            val metadata = PaymentMetadata(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, features, data)
+            val metadata = PaymentMetadata(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, data)
             val signedMetadata = SignedMetadata(nodeKey, invoiceRequest.offer.offerId, metadata)
             val pathId = signedMetadataCodec.encode(signedMetadata).require.bytes
-            val receivePayment = MultiPartHandler.ReceiveOfferPayment(nodeKey, invoiceRequest, routes, router, Some(preimage), Some(pathId), additionalTlvs, customTlvs, storeInDb = false)
+            val receivePayment = MultiPartHandler.ReceiveOfferPayment(nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
-            child ! CreateInvoiceActor.CreateInvoice(context.messageAdapter[Try[Invoice]](WrappedInvoice), receivePayment)
+            child ! CreateInvoiceActor.CreateBolt12Invoice(context.messageAdapter[Try[Invoice]](WrappedInvoice), receivePayment)
             waitForInvoice(replyPath, postman)
         }
       })
@@ -296,11 +292,11 @@ object OfferManager {
             OfferTypes.InvoiceRelativeExpiry(nodeParams.invoiceExpiry.toSeconds),
             OfferTypes.InvoicePaymentHash(Crypto.sha256(metadata.preimage)),
             OfferTypes.InvoiceAmount(metadata.amount),
-            OfferTypes.InvoiceFeatures(metadata.features),
+            OfferTypes.InvoiceFeatures(nodeParams.features.bolt12Features().unscoped()),
             OfferTypes.InvoiceNodeId(offer.nodeId),
             OfferTypes.Signature(ByteVector64.Zeroes)
           ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
-          val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, None, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+          val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
           replyTo ! MultiPartHandler.GetIncomingPaymentActor.PaymentFound(incomingPayment)
           Behaviors.stopped
         case RejectPayment =>

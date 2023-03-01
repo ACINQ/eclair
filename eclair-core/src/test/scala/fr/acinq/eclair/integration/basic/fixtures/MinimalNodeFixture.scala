@@ -20,6 +20,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Switchboard}
+import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
@@ -51,6 +52,8 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       switchboard: ActorRef,
                                       paymentInitiator: ActorRef,
                                       paymentHandler: ActorRef,
+                                      offerManager: typed.ActorRef[OfferManager.Command],
+                                      postman: typed.ActorRef[Postman.Command],
                                       watcher: TestProbe,
                                       wallet: DummyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
@@ -99,6 +102,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
+    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
@@ -115,6 +119,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       switchboard = switchboard,
       paymentInitiator = paymentInitiator,
       paymentHandler = paymentHandler,
+      offerManager = offerManager,
+      postman = postman,
       watcher = watcher,
       wallet = wallet,
       bitcoinClient = bitcoinClient
