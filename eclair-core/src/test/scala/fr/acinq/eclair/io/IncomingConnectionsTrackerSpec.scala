@@ -28,7 +28,6 @@ import fr.acinq.eclair.channel.ChannelCreated
 import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.{randomBytes32, randomKey}
 import org.scalatest.Outcome
-import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration.DurationInt
