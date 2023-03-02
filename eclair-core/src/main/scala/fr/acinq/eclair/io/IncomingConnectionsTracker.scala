@@ -48,7 +48,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
   import IncomingConnectionsTracker._
 
   private def tracking(incomingConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
-    Metrics.IncomingConnectionsWithoutChannels.withoutTags().update(incomingConnections.size)
+    Metrics.IncomingConnectionsNoChannels.withoutTags().update(incomingConnections.size)
     Behaviors.receiveMessage {
       case TrackIncomingConnection(remoteNodeId) =>
         if (nodeParams.syncWhitelist.contains(remoteNodeId)) {

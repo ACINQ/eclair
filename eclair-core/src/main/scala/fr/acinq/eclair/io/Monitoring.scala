@@ -34,7 +34,7 @@ object Monitoring {
 
     val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
 
-    val IncomingConnectionsWithoutChannels = Kamon.gauge("incomingconnections.withoutchannels")
+    val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")
     val IncomingConnectionsDisconnected = Kamon.counter("incomingconnections.disconnected")
   }
 
