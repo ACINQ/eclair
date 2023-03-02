@@ -100,7 +100,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
-      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
+      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
       if (!hasChannels) {
         incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
@@ -110,7 +110,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
 
-    case GetPeers => sender() ! context.children
+    case GetPeers => sender() ! context.children.filterNot(_.path.name.startsWith("incoming-connections-tracker"))
 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {
@@ -141,7 +141,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        log.debug(s"creating new peer (current={})", context.children.size)
+        log.debug(s"creating new peer (current={})", context.children.size - 1)
         val peer = createPeer(remoteNodeId)
         peer ! Peer.Init(offlineChannels)
         peer
