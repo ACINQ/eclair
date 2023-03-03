@@ -144,7 +144,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
       val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
-      peer ! Peer.SpawnChannelInitiator(request.open, ChannelConfig.standard, channelType, localParams, request.replyTo.toClassic)
+      peer ! Peer.SpawnChannelInitiator(request.replyTo.toClassic, request.open, ChannelConfig.standard, channelType, localParams)
       waitForRequest()
     }
   }

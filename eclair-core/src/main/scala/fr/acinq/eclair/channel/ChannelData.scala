@@ -102,7 +102,8 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelFlags: ChannelFlags,
                                         channelConfig: ChannelConfig,
                                         channelType: SupportedChannelType,
-                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default) {
+                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default,
+                                        replyTo: ActorRef) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
@@ -467,7 +468,8 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
-                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
+                                                remoteFirstPerCommitmentPoint: PublicKey,
+                                                replyTo: ActorRef) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
@@ -483,7 +485,8 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               localSpec: CommitmentSpec,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
-                                              lastSent: FundingCreated) extends TransientChannelData {
+                                              lastSent: FundingCreated,
+                                              replyTo: ActorRef) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
@@ -507,7 +510,8 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
-                                                    deferred: Option[ChannelReady]) extends TransientChannelData
+                                                    deferred: Option[ChannelReady],
+                                                    replyTo_opt: Option[ActorRef]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,

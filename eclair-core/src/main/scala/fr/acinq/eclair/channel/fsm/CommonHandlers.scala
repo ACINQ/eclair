@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.{FSM, Status}
+import akka.actor.{ActorRef, FSM, Status}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -40,13 +40,21 @@ trait CommonHandlers {
   /**
    * This function is used to return feedback to user at channel opening
    */
-  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelOpenResponse]): Unit = {
+  def channelOpenReplyToUser(message: Either[ChannelOpenError, ChannelOpenResponse], replyTo_opt: Option[ActorRef] = None): Unit = {
+    val replyTo_opt1 = stateData match {
+      case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => Some(d.initFunder.replyTo)
+      case d: DATA_WAIT_FOR_FUNDING_INTERNAL => Some(d.replyTo)
+      case d: DATA_WAIT_FOR_FUNDING_SIGNED => Some(d.replyTo)
+      case d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL => Some(d.init.replyTo)
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED => d.replyTo_opt
+      case _ => replyTo_opt
+    }
     val m = message match {
       case Left(LocalError(t)) => Status.Failure(t)
       case Left(RemoteError(e)) => Status.Failure(new RuntimeException(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}"))
       case Right(s) => s
     }
-    origin_opt.foreach(_ ! m)
+    replyTo_opt1.foreach(_ ! m)
   }
 
   def send(msg: LightningMessage): Unit = {

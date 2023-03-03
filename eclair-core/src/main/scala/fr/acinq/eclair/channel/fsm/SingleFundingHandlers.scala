@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
@@ -39,16 +40,16 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
-  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi): Unit = {
+  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi, replyTo: ActorRef): Unit = {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
         context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)))
+        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)), Some(replyTo))
       case Success(false) =>
         channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
         self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
       case Failure(t) =>
-        channelOpenReplyToUser(Left(LocalError(t)))
+        channelOpenReplyToUser(Left(LocalError(t)), Some(replyTo))
         log.error(t, "error while committing funding tx: ") // tx may still have been published, can't fail-fast
     }
   }

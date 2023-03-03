@@ -82,7 +82,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
-      override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
+      override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = {
         assert(remoteNodeId == Bob.nodeParams.nodeId)
         channel.ref
       }
@@ -546,18 +546,10 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     val probe = TestProbe()
-    val channelFactory = new ChannelFactory {
-      override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
-        assert(origin_opt.contains(probe.ref))
-        channel.ref
-      }
-    }
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref, mockLimiter.toTyped))
     connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-    assert(init.fundingAmount == 15000.sat)
-    assert(init.pushAmount_opt.contains(100.msat))
+    assert(init.replyTo == probe.ref)
   }
 
   test("handle final channelId assigned in state DISCONNECTED") { f =>
