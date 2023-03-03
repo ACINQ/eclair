@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.BlockHeight
@@ -24,6 +23,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMeta, GetTxWithM
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT, FUNDING_TIMEOUT_FUNDEE}
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol.Error
 
 import scala.concurrent.duration.DurationInt
@@ -40,16 +40,16 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
 
   this: Channel =>
 
-  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi, replyTo: ActorRef): Unit = {
+  def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi, replyTo: akka.actor.typed.ActorRef[OpenChannelResponse]): Unit = {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
         context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(channelId)), Some(replyTo))
+        replyTo ! OpenChannelResponse.Opened(channelId)
       case Success(false) =>
-        channelOpenReplyToUser(Left(LocalError(new RuntimeException("couldn't publish funding tx"))))
+        replyTo ! OpenChannelResponse.Exception(new RuntimeException("couldn't publish funding tx"))
         self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
       case Failure(t) =>
-        channelOpenReplyToUser(Left(LocalError(t)), Some(replyTo))
+        replyTo ! OpenChannelResponse.Exception(t)
         log.error(t, "error while committing funding tx: ") // tx may still have been published, can't fail-fast
     }
   }

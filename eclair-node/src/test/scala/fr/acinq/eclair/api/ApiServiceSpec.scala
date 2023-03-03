@@ -37,7 +37,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.Peer.PeerInfo
+import fr.acinq.eclair.io.Peer.{OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
@@ -276,7 +276,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Opened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
@@ -312,7 +312,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Opened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "standard").toEntity) ~>
@@ -332,7 +332,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Opened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "static_remotekey").toEntity) ~>
@@ -352,7 +352,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpenResponse.ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Opened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs").toEntity) ~>

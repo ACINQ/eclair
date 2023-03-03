@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{RealShortChannelId, ToMilliSatoshiConversion, UInt64}
@@ -235,7 +236,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       import d.init.{localParams, remoteInit}
       Helpers.validateParamsDualFundedInitiator(nodeParams, d.init.channelType, localParams.initFeatures, remoteInit.features, d.lastSent, accept) match {
         case Left(t) =>
-          channelOpenReplyToUser(Left(LocalError(t)))
+          d.init.replyTo ! OpenChannelResponse.Exception(t)
           handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
@@ -291,19 +292,19 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      d.init.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
-      channelOpenReplyToUser(Left(RemoteError(e)))
+      d.init.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
+      d.init.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
+      d.init.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
 
@@ -319,7 +320,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case msg: TxAbort =>
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           d.txBuilder ! InteractiveTxBuilder.Abort
-          channelOpenReplyToUser(Left(LocalError(DualFundingAborted(d.channelId))))
+          d.replyTo_opt.foreach(_ ! OpenChannelResponse.RemoteError(msg.toAscii))
           goto(CLOSED) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case _: TxInitRbf =>
           log.info("ignoring unexpected tx_init_rbf message")
@@ -342,7 +343,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
         d.deferred.foreach(self ! _)
         watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
-        channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(d.channelId)))
+        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Opened(d.channelId))
         val commitments = Commitments(
           params = d.channelParams,
           changes = CommitmentChanges.init(),
@@ -357,28 +358,28 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           case sharedTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending sharedTx.localSigs calling publishFundingTx(fundingTx)
         }
       case f: InteractiveTxBuilder.Failed =>
-        channelOpenReplyToUser(Left(LocalError(f.cause)))
+        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Exception(f.cause))
         goto(CLOSED) sending TxAbort(d.channelId, f.cause.getMessage)
     }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      d.replyTo_opt.foreach(_ ! OpenChannelResponse.Cancelled)
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
-      channelOpenReplyToUser(Left(RemoteError(e)))
+      d.replyTo_opt.foreach(_ ! OpenChannelResponse.RemoteError(e.toAscii))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      d.replyTo_opt.foreach(_ ! OpenChannelResponse.Disconnected)
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      d.replyTo_opt.foreach(_ ! OpenChannelResponse.TimedOut)
       goto(CLOSED)
   })
 

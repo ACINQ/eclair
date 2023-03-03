@@ -549,7 +549,7 @@ class PeerSpec extends FixtureSpec {
     connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, Some(100 msat), None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-    assert(init.replyTo == probe.ref)
+    assert(init.replyTo == probe.ref.toTyped[OpenChannelResponse])
   }
 
   test("handle final channelId assigned in state DISCONNECTED") { f =>

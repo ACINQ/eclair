@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -103,7 +104,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelConfig: ChannelConfig,
                                         channelType: SupportedChannelType,
                                         channelOrigin: ChannelOrigin = ChannelOrigin.Default,
-                                        replyTo: ActorRef) {
+                                        replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
@@ -252,18 +253,6 @@ final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc
 final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
 final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
 final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
-
-/**
- * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
- *
- * If actor A sends a [[fr.acinq.eclair.io.Peer.OpenChannel]] and actor B sends a [[CMD_CLOSE]], then A will receive a
- * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[RES_SUCCESS]]
- */
-sealed trait ChannelOpenResponse
-object ChannelOpenResponse {
-  case class ChannelOpened(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"created channel $channelId" }
-  case class ChannelClosed(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"closed channel $channelId" }
-}
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -469,7 +458,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
-                                                replyTo: ActorRef) extends TransientChannelData {
+                                                replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
@@ -486,7 +475,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
                                               lastSent: FundingCreated,
-                                              replyTo: ActorRef) extends TransientChannelData {
+                                              replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
@@ -511,7 +500,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[ChannelReady],
-                                                    replyTo_opt: Option[ActorRef]) extends TransientChannelData
+                                                    replyTo_opt: Option[akka.actor.typed.ActorRef[Peer.OpenChannelResponse]]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,

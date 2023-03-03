@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.states.b
 
-import akka.actor.Status
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -66,7 +67,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -95,7 +96,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid == fundingTxId)
     assert(txPublished.miningFee > 0.sat)
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelOpened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
   }
 
   test("recv FundingSigned with valid signature (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
@@ -106,7 +107,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // alice doesn't watch for the funding tx to confirm, she only waits for the transaction to be published
     alice2blockchain.expectMsgType[WatchPublished]
     alice2blockchain.expectNoMessage(100 millis)
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelOpened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
   }
 
   test("recv FundingSigned with valid signature (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -116,7 +117,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelOpened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
   }
 
   test("recv FundingSigned with invalid signature") { f =>
@@ -125,7 +126,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
     listener.expectMsgType[ChannelAborted]
   }
 
@@ -136,7 +137,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelId))
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelClosed]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.Cancelled)
     listener.expectMsgType[ChannelAborted]
   }
 
@@ -145,7 +146,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val sender = TestProbe()
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelClosed]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.Cancelled)
     listener.expectMsgType[ChannelAborted]
   }
 
@@ -156,7 +157,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)
     assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.contains(fundingTx))
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.Disconnected)
     listener.expectMsgType[ChannelAborted]
   }
 
@@ -164,7 +165,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     alice ! TickChannelOpenTimeout
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)
     listener.expectMsgType[ChannelAborted]
   }
 

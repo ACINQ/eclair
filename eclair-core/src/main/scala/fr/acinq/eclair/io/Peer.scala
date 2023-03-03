@@ -108,7 +108,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
     case Event(e: SpawnChannelInitiator, _) =>
-      e.replyTo ! Status.Failure(new RuntimeException("channel creation failed: disconnected"))
+      e.replyTo ! OpenChannelResponse.Disconnected
       stay()
 
     case Event(_: SpawnChannelNonInitiator, _) => stay() // we got disconnected before creating the channel actor
@@ -509,13 +509,28 @@ object Peer {
     fundingTxFeerate_opt.foreach(feerate => require(feerate >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feerate is below minimum ${FeeratePerKw.MinimumFeeratePerKw}"))
   }
 
-  case class SpawnChannelInitiator(replyTo: ActorRef, cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
+  sealed trait OpenChannelResponse
+  object OpenChannelResponse {
+    case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
+    case class Opened(channelId: ByteVector32) extends OpenChannelResponse { override def toString  = s"created channel $channelId" }
+    case object Cancelled extends OpenChannelResponse { override def toString  = s"channel creation cancelled" }
+    case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }
+    case object TimedOut extends OpenChannelResponse { override def toString = "open channel cancelled, took too long" }
+    case class RemoteError(ascii: String) extends OpenChannelResponse { override def toString = s"peer aborted the dual funding flow: '$ascii'" }
+    case class Exception(t: Throwable) extends OpenChannelResponse { override def toString = t.getMessage }
+    // @formatter:on
+  }
+
+  case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
+
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
+
   sealed trait PeerInfoResponse {
     def nodeId: PublicKey
   }
+
   case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
 

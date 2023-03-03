@@ -28,6 +28,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
@@ -165,7 +166,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open)) =>
       Helpers.validateParamsSingleFundedFunder(nodeParams, init.channelType, init.localParams.initFeatures, init.remoteInit.features, open, accept) match {
         case Left(t) =>
-          channelOpenReplyToUser(Left(LocalError(t)))
+          d.initFunder.replyTo ! OpenChannelResponse.Exception(t)
           handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
           val remoteParams = RemoteParams(
@@ -193,19 +194,19 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.lastSent.temporaryChannelId)))
+      d.initFunder.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.lastSent.temporaryChannelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      channelOpenReplyToUser(Left(RemoteError(e)))
+      d.initFunder.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      d.initFunder.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      d.initFunder.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
 
@@ -236,23 +237,23 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       log.error(t, s"wallet returned error: ")
-      channelOpenReplyToUser(Left(LocalError(t)))
+      d.replyTo ! OpenChannelResponse.Exception(t)
       handleLocalError(ChannelFundingError(d.channelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      d.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      channelOpenReplyToUser(Left(RemoteError(e)))
+      d.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, _) =>
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
 
@@ -300,9 +301,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           }
       }
 
-    case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_CREATED) =>
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
-      handleFastClose(c, d.channelId)
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
@@ -319,7 +318,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
-          channelOpenReplyToUser(Left(LocalError(cause)))
+          d.replyTo ! OpenChannelResponse.Exception(cause)
           handleLocalError(InvalidCommitmentSignature(d.channelId, signedLocalCommitTx.tx.txid), d, Some(msg))
         case Success(_) =>
           val commitment = Commitment(
@@ -348,25 +347,25 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      d.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      channelOpenReplyToUser(Left(RemoteError(e)))
+      d.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("disconnected"))))
+      d.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
+      d.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
 

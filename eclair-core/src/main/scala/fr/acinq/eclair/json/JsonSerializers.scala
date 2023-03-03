@@ -28,6 +28,7 @@ import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
@@ -198,8 +199,8 @@ object ChannelFeaturesSerializer extends MinimalSerializer({
   case channelFeatures: ChannelFeatures => JArray(channelFeatures.features.map(f => JString(f.rfcName)).toList)
 })
 
-object ChannelOpenResponseSerializer extends MinimalSerializer({
-  case x: ChannelOpenResponse => JString(x.toString)
+object OpenChannelResponseSerializer extends MinimalSerializer({
+  case x: OpenChannelResponse => JString(x.toString)
 })
 
 object CommandResponseSerializer extends MinimalSerializer({
@@ -636,7 +637,7 @@ object JsonSerializers {
     UnknownFeatureSerializer +
     ChannelConfigSerializer +
     ChannelFeaturesSerializer +
-    ChannelOpenResponseSerializer +
+    OpenChannelResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
     ColorSerializer +

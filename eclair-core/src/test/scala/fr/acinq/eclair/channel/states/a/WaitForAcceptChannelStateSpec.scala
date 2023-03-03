@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.Status
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -66,7 +67,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
       val fundingAmount = if (test.tags.contains(ChannelStateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -136,7 +137,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
@@ -160,7 +161,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { () =>
@@ -171,7 +172,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // Bob advertises support for anchor outputs, but Alice doesn't.
     val aliceParams = Alice.channelParams
     val bobParams = Bob.channelParams.copy(initFeatures = Features(Features.StaticRemoteKey -> FeatureSupport.Optional, Features.AnchorOutputs -> FeatureSupport.Optional))
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, Init(bobParams.initFeatures), ChannelFlags.Private, channelConfig, ChannelTypes.AnchorOutputs(), replyTo = aliceOpenReplyTo.ref)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, Init(bobParams.initFeatures), ChannelFlags.Private, channelConfig, ChannelTypes.AnchorOutputs(), replyTo = aliceOpenReplyTo.ref.toTyped)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, Init(bobParams.initFeatures), channelConfig, ChannelTypes.AnchorOutputs())
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
@@ -193,7 +194,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (invalid max accepted htlcs)") { f =>
@@ -206,7 +207,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (dust limit too low)", Tag("mainnet")) { f =>
@@ -219,7 +220,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUST_LIMIT).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (dust limit too high)") { f =>
@@ -231,7 +232,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, Alice.nodeParams.channelConf.maxRemoteDustLimit).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (to_self_delay too high)") { f =>
@@ -243,7 +244,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, ToSelfDelayTooHigh(accept.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (reserve too high)") { f =>
@@ -256,7 +257,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (reserve below dust limit)") { f =>
@@ -268,7 +269,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, accept.dustLimitSatoshis, reserveTooSmall).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (reserve below our dust limit)") { f =>
@@ -281,7 +282,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, ChannelReserveBelowOurDustLimit(accept.temporaryChannelId, reserveTooSmall, open.dustLimitSatoshis).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (dust limit above our reserve)", Tag("high-remote-dust-limit")) { f =>
@@ -294,7 +295,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(error == Error(accept.temporaryChannelId, DustLimitAboveOurChannelReserve(accept.temporaryChannelId, dustTooBig, open.channelReserveSatoshis).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv AcceptChannel (wumbo size channel)", Tag(ChannelStateTestsTags.Wumbo), Tag("high-max-funding-size")) { f =>
@@ -334,7 +335,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.forward(alice, accept1)
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
   }
 
   test("recv Error") { f =>
@@ -342,7 +343,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! Error(ByteVector32.Zeroes, "oops")
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.RemoteError]
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -353,7 +354,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[ChannelOpenResponse.ChannelClosed]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.Cancelled)
   }
 
   test("recv INPUT_DISCONNECTED") { f =>
@@ -361,7 +362,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! INPUT_DISCONNECTED
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.Disconnected)
   }
 
   test("recv TickChannelOpenTimeout") { f =>
@@ -369,7 +370,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! TickChannelOpenTimeout
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[Status.Failure]
+    aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)
   }
 
 }
