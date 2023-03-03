@@ -20,7 +20,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.Bolt12Invoice
@@ -61,6 +61,7 @@ object OfferPayment {
 
   case class SendPaymentConfig(externalId_opt: Option[String],
                                maxAttempts: Int,
+                               intermediateNodes: Seq[PublicKey],
                                routeParams: RouteParams,
                                blocking: Boolean)
 
@@ -109,10 +110,10 @@ object OfferPayment {
       case Right(nodeId) =>
         OnionMessages.Recipient(nodeId, None, None)
     }
-    // TODO: random choice of intermediate nodes
-    val intermediateNodes = Nil
+    // TODO: We may want to find of channels as some nodes may refuse to relay messages to nodes with which they don't have a channel.
+    val pathToRecipient = sendPaymentConfig.intermediateNodes
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
-    postman ! SendMessage(intermediateNodes, destination, Some((nodeParams.nodeId +: intermediateNodes).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
+    postman ! SendMessage(pathToRecipient, destination, Some((nodeParams.nodeId +: sendPaymentConfig.intermediateNodes).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
     waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 

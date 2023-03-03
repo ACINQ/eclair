@@ -20,17 +20,18 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceivingRoute}
 import fr.acinq.eclair.payment.{Bolt12Invoice, Invoice}
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, lengthPrefixedFeaturesCodec, millisatoshi, publicKey, timestampSecond, uint64overflow}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, millisatoshi, publicKey, timestampSecond, uint64overflow}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OfferTypes, OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{Feature, Features, MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, randomBytes32}
-import scodec.bits.ByteVector
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, TimestampSecond, randomBytes32}
+import scodec.bits.{ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -280,14 +281,15 @@ object OfferManager {
     def apply(nodeParams: NodeParams, replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], offer: Offer, metadata: PaymentMetadata): Behavior[Command] = {
       Behaviors.receiveMessage {
         case AcceptPayment(additionalTlvs, customTlvs) =>
+          val dummyKey = PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000001")
           // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bit with the real one.
           val dummyInvoice = Bolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
             OfferTypes.InvoiceRequestMetadata(ByteVector.empty),
             OfferTypes.InvoiceRequestChain(nodeParams.chainHash),
             OfferTypes.InvoiceRequestQuantity(metadata.quantity),
             OfferTypes.InvoiceRequestPayerId(metadata.payerKey),
-            OfferTypes.InvoicePaths(Nil),
-            OfferTypes.InvoiceBlindedPay(Nil),
+            OfferTypes.InvoicePaths(Seq(RouteBlinding.BlindedRoute(dummyKey, dummyKey, Seq(RouteBlinding.BlindedNode(dummyKey, ByteVector.empty))))),
+            OfferTypes.InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty))),
             OfferTypes.InvoiceCreatedAt(metadata.createdAt),
             OfferTypes.InvoiceRelativeExpiry(nodeParams.invoiceExpiry.toSeconds),
             OfferTypes.InvoicePaymentHash(Crypto.sha256(metadata.preimage)),

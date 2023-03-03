@@ -166,9 +166,9 @@ trait Eclair {
 
   def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
-  def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
+  def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, path: Seq[PublicKey] = Nil, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
-  def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
+  def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, path: Seq[PublicKey] = Nil, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
 
   def stop(): Future[Unit]
 }
@@ -592,6 +592,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   def payOfferInternal(offer: Offer,
                        amount: MilliSatoshi,
                        quantity: Long,
+                       path: Seq[PublicKey],
                        externalId_opt: Option[String],
                        maxAttempts_opt: Option[Int],
                        maxFeeFlat_opt: Option[Satoshi],
@@ -608,7 +609,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
       case Left(t) => return Future.failed(t)
     }
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), path, routeParams, blocking)
     val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
@@ -619,23 +620,25 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def payOffer(offer: Offer,
                         amount: MilliSatoshi,
                         quantity: Long,
+                        path: Seq[PublicKey],
                         externalId_opt: Option[String],
                         maxAttempts_opt: Option[Int],
                         maxFeeFlat_opt: Option[Satoshi],
                         maxFeePct_opt: Option[Double],
                         pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = false).mapTo[UUID]
+    payOfferInternal(offer, amount, quantity, path, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = false).mapTo[UUID]
   }
 
   override def payOfferBlocking(offer: Offer,
                                 amount: MilliSatoshi,
                                 quantity: Long,
+                                path: Seq[PublicKey],
                                 externalId_opt: Option[String],
                                 maxAttempts_opt: Option[Int],
                                 maxFeeFlat_opt: Option[Satoshi],
                                 maxFeePct_opt: Option[Double],
                                 pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[PaymentEvent] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
+    payOfferInternal(offer, amount, quantity, path, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
   override def stop(): Future[Unit] = {
