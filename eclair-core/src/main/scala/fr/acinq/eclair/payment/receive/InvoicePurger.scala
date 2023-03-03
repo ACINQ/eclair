@@ -58,7 +58,7 @@ class InvoicePurger private(paymentsDb: IncomingPaymentsDb, context: ActorContex
       case TickPurge =>
         val now = TimestampMilli.now()
         val start = if (fullScan) 0 unixms else now - 15.days
-        val expiredPayments = paymentsDb.listExpiredIncomingPayments(start, now)
+        val expiredPayments = paymentsDb.listExpiredIncomingPayments(start, now, None)
         // purge expired payments
         expiredPayments.foreach(p => paymentsDb.removeIncomingPayment(p.invoice.paymentHash))
 

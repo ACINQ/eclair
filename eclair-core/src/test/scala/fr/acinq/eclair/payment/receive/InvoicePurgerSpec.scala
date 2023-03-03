@@ -63,8 +63,8 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     assert(db.listIncomingPayments(0 unixms, now, None) == expiredPayments ++ pendingPayments ++ paidPayments)
     assert(db.listIncomingPayments(now - 100.days, now, None) == pendingPayments ++ paidPayments)
     assert(db.listPendingIncomingPayments(0 unixms, now, None) == pendingPayments)
-    assert(db.listReceivedIncomingPayments(0 unixms, now) == paidPayments)
-    assert(db.listExpiredIncomingPayments(0 unixms, now) == expiredPayments)
+    assert(db.listReceivedIncomingPayments(0 unixms, now, None) == paidPayments)
+    assert(db.listExpiredIncomingPayments(0 unixms, now, None) == expiredPayments)
 
     val probe = testKit.createTestProbe[PurgeEvent]()
     system.eventStream ! EventStream.Subscribe(probe.ref)
@@ -74,7 +74,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     // check that purge runs before the default first interval of 24 hours
     probe.expectMessage(5 seconds, PurgeCompleted)
     probe.expectNoMessage()
-    assert(db.listExpiredIncomingPayments(0 unixms, now).isEmpty)
+    assert(db.listExpiredIncomingPayments(0 unixms, now, None).isEmpty)
     assert(db.listIncomingPayments(0 unixms, now, None) == pendingPayments ++ paidPayments)
 
     testKit.stop(purger)
@@ -105,7 +105,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     // check that the initial purge scanned the entire database
     probe.expectMessage(10 seconds, PurgeCompleted)
     probe.expectNoMessage()
-    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()).isEmpty)
+    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now(), None).isEmpty)
 
     // add an expired invoice from before the 15 days look back period
     val expiredInvoice3 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice3"), CltvExpiryDelta(18),
@@ -122,7 +122,7 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     // check that subsequent purge runs do not go back > 15 days
     probe.expectMessage(10 seconds, PurgeCompleted)
     probe.expectNoMessage()
-    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now()) == Seq(expiredPayment3))
+    assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now(), None) == Seq(expiredPayment3))
 
     testKit.stop(purger)
   }

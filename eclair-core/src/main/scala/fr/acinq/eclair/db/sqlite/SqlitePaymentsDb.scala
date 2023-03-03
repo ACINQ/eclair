@@ -360,8 +360,8 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
+  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement(limited("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at", paginated_opt))) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.executeQuery().flatMap(parseIncomingPayment).toSeq
@@ -377,8 +377,8 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
+  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement(limited("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at", paginated_opt))) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       statement.setLong(3, TimestampMilli.now().toLong)

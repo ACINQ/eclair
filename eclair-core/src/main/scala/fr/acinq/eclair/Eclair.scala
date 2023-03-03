@@ -139,6 +139,10 @@ trait Eclair {
 
   def pendingInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
 
+  def paidInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
+
+  def expiredInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
+
   def allInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
 
   def deleteInvoice(paymentHash: ByteVector32): Future[String]
@@ -459,6 +463,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def pendingInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
     appKit.nodeParams.db.payments.listPendingIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt).map(_.invoice)
+  }
+
+  override def paidInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
+    appKit.nodeParams.db.payments.listReceivedIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt).map(_.invoice)
+  }
+
+  override def expiredInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
+    appKit.nodeParams.db.payments.listExpiredIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt).map(_.invoice)
   }
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]] = Future {
