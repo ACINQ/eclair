@@ -1533,6 +1533,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       replyTo ! RES_SUCCESS(c, d.channelId)
       stay()
 
+    case Event(c: CMD_BUMP_FUNDING_FEE, d) =>
+      c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf", stateName))
+      stay()
+
     // at restore, if the configuration has changed, the channel will send a command to itself to update the relay fees
     case Event(RES_SUCCESS(_: CMD_UPDATE_RELAY_FEE, channelId), d: DATA_NORMAL) if channelId == d.channelId => stay()
 
@@ -1834,10 +1838,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
+      case _ => None
     }
-    replyTo_opt.foreach { replyTo =>
-      replyTo ! RES_SUCCESS(c, newData.channelId)
-    }
+    replyTo_opt.foreach(_ ! RES_SUCCESS(c, newData.channelId))
     stay() using newData
   }
 
@@ -1854,6 +1857,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
+      case _ => None
     }
     replyTo_opt.foreach(replyTo => replyTo ! RES_FAILURE(c, cause))
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))

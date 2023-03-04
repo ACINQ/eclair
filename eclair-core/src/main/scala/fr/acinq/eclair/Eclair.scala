@@ -207,8 +207,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
-    val cmd = CMD_BUMP_FUNDING_FEE(ActorRef.noSender, targetFeerate, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong))
-    sendToChannel(Left(channelId), cmd)
+    sendToChannelTyped(Left(channelId), CMD_BUMP_FUNDING_FEE(_, targetFeerate, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong)))
   }
 
   override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] = {
@@ -482,6 +481,19 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
     case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
   }
+
+  private def sendToChannelTyped[C <: Command, R <: CommandResponse[C]](channel: ApiTypes.ChannelIdentifier, cmdBuilder: akka.actor.typed.ActorRef[Any] => C)(implicit timeout: Timeout): Future[R] =
+    appKit.register.toTyped.ask[Any] { replyTo =>
+      val cmd = cmdBuilder(replyTo)
+      channel match {
+        case Left(channelId) => Register.Forward(replyTo, channelId, cmd)
+        case Right(shortChannelId) => Register.ForwardShortId(replyTo, shortChannelId, cmd)
+      }
+    }.map {
+      case t: R@unchecked => t
+      case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+      case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+    }
 
   /**
    * Send a request to multiple channels and expect responses.

@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.c
 
-import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
@@ -251,7 +250,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     alice2bob.expectMsgType[TxAbort]
     alice2bob.expectMsgType[ChannelReady]
-    probe.expectMsg(Status.Failure(InvalidRbfTxConfirmed(channelId(alice))))
+    assert(probe.expectMsgType[CommandFailure[_, _]].t == InvalidRbfTxConfirmed(channelId(alice)))
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
@@ -316,7 +315,6 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.forward(bob)
     assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
     bob2alice.forward(alice)
-    probe.expectMsgType[RES_SUCCESS[CMD_BUMP_FUNDING_FEE]]
 
     // Alice and Bob build a new version of the funding transaction, with one new input every time.
     val inputCount = previousFundingTxs.length + 2
@@ -344,6 +342,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxSignatures]
     alice2bob.forward(bob)
+
+    probe.expectMsgType[RES_BUMP_FUNDING_FEE]
 
     val nextFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == nextFundingTx.signedTx.txid)

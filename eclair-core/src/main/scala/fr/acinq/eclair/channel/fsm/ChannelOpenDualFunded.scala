@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
-import akka.actor.{ActorRef, Status}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -401,7 +400,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         }
         case _: FullySignedSharedTransaction =>
           d.rbfStatus match {
-            case RbfStatus.RbfInProgress(txBuilder) =>
+            case RbfStatus.RbfInProgress(_, txBuilder) =>
               txBuilder ! InteractiveTxBuilder.ReceiveTxSigs(txSigs)
               stay()
             case _ =>
@@ -412,27 +411,26 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val replyTo = if (cmd.replyTo == ActorRef.noSender) sender() else cmd.replyTo
       val zeroConf = d.latestFundingTx.fundingParams.minDepth_opt.isEmpty
       if (!d.latestFundingTx.fundingParams.isInitiator) {
-        replyTo ! Status.Failure(InvalidRbfNonInitiator(d.channelId))
+        cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfNonInitiator(d.channelId))
         stay()
       } else if (zeroConf) {
-        replyTo ! Status.Failure(InvalidRbfZeroConf(d.channelId))
+        cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfZeroConf(d.channelId))
         stay()
       } else {
         d.rbfStatus match {
           case RbfStatus.NoRbf =>
             val minNextFeerate = d.latestFundingTx.fundingParams.minNextFeerate
             if (cmd.targetFeerate < minNextFeerate) {
-              replyTo ! Status.Failure(InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
+              cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd.copy(replyTo = replyTo))) sending TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localAmount)
+              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localAmount)
             }
           case _ =>
             log.warning("cannot initiate rbf, another one is already in progress")
-            replyTo ! Status.Failure(InvalidRbfAlreadyInProgress(d.channelId))
+            cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfAlreadyInProgress(d.channelId))
             stay()
         }
       }
@@ -482,7 +480,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 Some(TxAckRbf(d.channelId, fundingParams.localAmount)),
                 if (remainingRbfAttempts <= 3) Some(Warning(d.channelId, s"will accept at most ${remainingRbfAttempts - 1} future rbf attempts")) else None,
               ).flatten
-              stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder)) sending toSend
+              stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = None, txBuilder)) sending toSend
             }
           case RbfStatus.RbfAborted =>
             log.info("rejecting rbf attempt: our previous tx_abort was not acked")
@@ -502,7 +500,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, error.getMessage)
         case RbfStatus.RbfRequested(cmd) =>
           log.info("our peer accepted our rbf attempt and will contribute {} to the funding transaction", msg.fundingContribution)
-          cmd.replyTo ! RES_SUCCESS(cmd, d.channelId)
           val fundingParams = d.latestFundingTx.fundingParams.copy(
             // we don't change our funding contribution
             remoteAmount = msg.fundingContribution,
@@ -518,7 +515,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(txBuilder))
+          stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = Some(cmd), txBuilder))
         case _ =>
           log.info("ignoring unexpected tx_ack_rbf")
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
@@ -526,7 +523,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(msg: InteractiveTxConstructionMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfStatus match {
-        case RbfStatus.RbfInProgress(txBuilder) =>
+        case RbfStatus.RbfInProgress(_, txBuilder) =>
           txBuilder ! InteractiveTxBuilder.ReceiveTxMessage(msg)
           stay()
         case _ =>
@@ -536,7 +533,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(commitSig: CommitSig, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfStatus match {
-        case RbfStatus.RbfInProgress(txBuilder) =>
+        case RbfStatus.RbfInProgress(_, txBuilder) =>
           txBuilder ! InteractiveTxBuilder.ReceiveCommitSig(commitSig)
           stay()
         case _ =>
@@ -546,13 +543,14 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(msg: TxAbort, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfStatus match {
-        case RbfStatus.RbfInProgress(txBuilder) =>
+        case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
           log.info("our peer aborted the rbf attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
+          cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, RbfAttemptAborted(d.channelId)))
           txBuilder ! InteractiveTxBuilder.Abort
           stay() using d.copy(rbfStatus = RbfStatus.NoRbf) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
         case RbfStatus.RbfRequested(cmd) =>
           log.info("our peer rejected our rbf attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
-          cmd.replyTo ! Status.Failure(new RuntimeException(s"rbf attempt rejected by our peer: ${msg.toAscii}"))
+          cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"rbf attempt rejected by our peer: ${msg.toAscii}"))
           stay() using d.copy(rbfStatus = RbfStatus.NoRbf) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
         case RbfStatus.RbfAborted =>
           log.debug("our peer acked our previous tx_abort")
@@ -563,21 +561,30 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           stay() sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
       }
 
-    case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => msg match {
-      case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
-      case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
-        watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
-        // we add the latest commitments to the list
-        val commitments1 = d.commitments.add(commitment)
-        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
-        fundingTx.sharedTx match {
-          case sharedTx: PartiallySignedSharedTransaction => stay() using d1 storing() sending sharedTx.localSigs
-          case sharedTx: FullySignedSharedTransaction => stay() using d1 storing() sending sharedTx.localSigs calling publishFundingTx(fundingTx)
-        }
-      case f: InteractiveTxBuilder.Failed =>
-        log.info("rbf attempt failed: {}", f.cause.getMessage)
-        stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, f.cause.getMessage)
-    }
+    case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      d.rbfStatus match {
+        case RbfStatus.RbfInProgress(cmd_opt, _) =>
+          msg match {
+            case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
+            case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
+              cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, commitment.fundingTxId, fundingTx.sharedTx.tx.fees))
+              watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
+              // we add the latest commitments to the list
+              val commitments1 = d.commitments.add(commitment)
+              val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
+              fundingTx.sharedTx match {
+                case sharedTx: PartiallySignedSharedTransaction => stay() using d1 storing() sending sharedTx.localSigs
+                case sharedTx: FullySignedSharedTransaction => stay() using d1 storing() sending sharedTx.localSigs calling publishFundingTx(fundingTx)
+              }
+            case f: InteractiveTxBuilder.Failed =>
+              log.info("rbf attempt failed: {}", f.cause.getMessage)
+              cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f.cause))
+              stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, f.cause.getMessage)
+          }
+        case msg =>
+          log.warning("ignoring unexpected local interactive-tx message: {}", msg)
+          stay()
+      }
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
@@ -601,11 +608,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val shortIds = createShortIds(d.channelId, realScidStatus)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           val toSend = d.rbfStatus match {
-            case RbfStatus.RbfInProgress(txBuilder) =>
+            case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
               txBuilder ! InteractiveTxBuilder.Abort
+              cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfTxConfirmed(d.channelId)))
               Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
             case RbfStatus.RbfRequested(cmd) =>
-              cmd.replyTo ! Status.Failure(InvalidRbfTxConfirmed(d.channelId))
+              cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfTxConfirmed(d.channelId))
               Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
             case RbfStatus.NoRbf | RbfStatus.RbfAborted =>
               Seq(channelReady)
@@ -633,8 +641,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfStatus match {
-        case RbfStatus.RbfInProgress(txBuilder) => txBuilder ! InteractiveTxBuilder.Abort
-        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! Status.Failure(new RuntimeException("rbf attempt failed: disconnected"))
+        case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
+          cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException("rbf attempt failed: disconnected")))
+          txBuilder ! InteractiveTxBuilder.Abort
+        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException("rbf attempt failed: disconnected"))
         case RbfStatus.RbfAborted => // nothing to do
         case RbfStatus.NoRbf => // nothing to do
       }
