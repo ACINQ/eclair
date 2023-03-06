@@ -97,6 +97,27 @@ object OfferManager {
       ("amount" | millisatoshi) ::
       ("extraData" | bytes)).as[PaymentMetadata]
 
+  /**
+   * Metadata that will be included in the blinded route so that we can recover it when the payment happens without
+   * needing to store it in a database (which would be a DoS vector).
+   * The data is signed so that it can't be forged by the payer, it is also encrypted as part of the blinding route so
+   * the payer can't read it.
+   *
+   * It contains
+   * - the offer id
+   * - the preimage of the payment hash
+   * - the payer key
+   * - the creation time of the invoice
+   * - the quantity of items bought
+   * - the amount to pay
+   * - optional data from the handler
+   *
+   * This data is what we need to recreate an invoice similar to the one that was actually sent to the payer. It will
+   * not be exactly the same (notably the blinding route will be different) but it will contain what we need to fulfill
+   * the payment HTLC.
+   *
+   * It takes 181 bytes plus what the handler adds.
+   */
   case class SignedMetadata(signature: ByteVector64,
                             offerId: ByteVector32,
                             metadata: ByteVector) {
@@ -199,7 +220,7 @@ object OfferManager {
      */
     object RejectRequest extends Command
 
-    private case class WrappedInvoice(invoice: Try[Invoice]) extends Command
+    private case class WrappedInvoice(invoice: Try[Bolt12Invoice]) extends Command
 
     private case class WrappedOnionMessageResponse(response: Postman.OnionMessageResponse) extends Command
 
@@ -236,7 +257,7 @@ object OfferManager {
             val pathId = signedMetadataCodec.encode(signedMetadata).require.bytes
             val receivePayment = MultiPartHandler.ReceiveOfferPayment(nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
-            child ! CreateInvoiceActor.CreateBolt12Invoice(context.messageAdapter[Try[Invoice]](WrappedInvoice), receivePayment)
+            child ! CreateInvoiceActor.CreateBolt12Invoice(context.messageAdapter[Try[Bolt12Invoice]](WrappedInvoice), receivePayment)
             waitForInvoice(replyPath, postman)
         }
       })
@@ -246,7 +267,7 @@ object OfferManager {
                                postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
-          case WrappedInvoice(Success(invoice: Bolt12Invoice)) =>
+          case WrappedInvoice(Success(invoice)) =>
             postman ! Postman.SendMessage(Nil, replyPath, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
             waitForSent()
           case WrappedInvoice(_) =>
@@ -282,7 +303,7 @@ object OfferManager {
       Behaviors.receiveMessage {
         case AcceptPayment(additionalTlvs, customTlvs) =>
           val dummyKey = PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000001")
-          // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bit with the real one.
+          // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bits with the real one.
           val dummyInvoice = Bolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
             OfferTypes.InvoiceRequestMetadata(ByteVector.empty),
             OfferTypes.InvoiceRequestChain(nodeParams.chainHash),

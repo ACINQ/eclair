@@ -285,11 +285,9 @@ object MultiPartHandler {
    * @param invoiceRequest      the request this invoice responds to.
    * @param routes              routes that must be blinded and provided in the invoice.
    * @param router              router actor.
-   * @param paymentPreimage_opt payment preimage.
-   * @param pathId_opt          path id for the payment paths. If None, a different one will be randomly generated for
+   * @param paymentPreimage     payment preimage.
+   * @param pathId              path id for the payment paths. If None, a different one will be randomly generated for
    *                            each path and the mapping blinding point -> path id will be stored in the database.
-   * @param storeInDb           whether to store the incoming payment in the database. Bolt12 invoices generated as a
-   *                            response to an invoice request should not be stored as it would be a DoS vector.
    */
   case class ReceiveOfferPayment(nodeKey: PrivateKey,
                                  invoiceRequest: InvoiceRequest,
@@ -298,8 +296,7 @@ object MultiPartHandler {
                                  paymentPreimage: ByteVector32,
                                  pathId: ByteVector,
                                  additionalTlvs: Set[InvoiceTlv] = Set.empty,
-                                 customTlvs: Set[GenericTlv] = Set.empty,
-                                 paymentType: String = PaymentType.Blinded) extends ReceivePayment {
+                                 customTlvs: Set[GenericTlv] = Set.empty) extends ReceivePayment {
     require(nodeKey.publicKey == invoiceRequest.offer.nodeId, "the node id of the invoice must be the same as the one from the offer")
     require(routes.forall(_.nodes.nonEmpty), "each route must have at least one node")
     require(invoiceRequest.offer.amount.nonEmpty || invoiceRequest.amount.nonEmpty, "an amount must be specified in the offer or in the invoice request")
@@ -421,26 +418,22 @@ object MultiPartHandler {
                   Behaviors.stopped
                 case payload: FinalPayload.Blinded =>
                   offerManager ! OfferManager.ReceivePayment(context.self, packet.add.paymentHash, payload)
-                  waitForPayment(nodeParams, replyTo, packet.add, payload)
+                  waitForPayment(context, nodeParams, replyTo, packet.add, payload)
               }
           }
         }
       }
     }
 
-    def waitForPayment(nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
-      Behaviors.setup { context =>
-        Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.PAYMENT), paymentHash_opt = Some(add.paymentHash))) {
-          Behaviors.receiveMessagePartial {
-            case PaymentFound(payment) =>
-              replyTo ! ProcessBlindedPacket(add, payload, payment)
-              Behaviors.stopped
-            case NoPayment =>
-              context.log.info("rejecting blinded htlc #{} from channel {}: invoice not found", add.id, add.channelId)
-              replyTo ! RejectPacket(add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
-              Behaviors.stopped
-          }
-        }
+    def waitForPayment(context: typed.scaladsl.ActorContext[Command], nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
+      Behaviors.receiveMessagePartial {
+        case PaymentFound(payment) =>
+          replyTo ! ProcessBlindedPacket(add, payload, payment)
+          Behaviors.stopped
+        case NoPayment =>
+          context.log.info("rejecting blinded htlc #{} from channel {}: invoice not found", add.id, add.channelId)
+          replyTo ! RejectPacket(add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
+          Behaviors.stopped
       }
     }
   }
