@@ -232,7 +232,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
     fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq))
   }
 
-  private def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+  def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
     // we use an explicit map here because this RPC calls takes a String for the "sighashtype" parameter with an explicitly limited list of valid values
     val sighashStrings = Map(
       SigHash.SIGHASH_DEFAULT -> "DEFAULT",
@@ -254,7 +254,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
     })
   }
 
-  private def utxoUpdatePsbt(psbt: Psbt)(implicit ec: ExecutionContext): Future[Psbt] = {
+  def utxoUpdatePsbt(psbt: Psbt)(implicit ec: ExecutionContext): Future[Psbt] = {
     val encoded = Base64.getEncoder.encodeToString(Psbt.write(psbt).toByteArray)
 
     rpcClient.invoke("utxoupdatepsbt", encoded).map(json => {

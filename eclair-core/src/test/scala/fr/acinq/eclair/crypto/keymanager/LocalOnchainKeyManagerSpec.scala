@@ -48,53 +48,36 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
       new KeyPathWithMaster(onchainKeyManager.getOnchainMasterMasterFingerprint, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/2")),
     )
 
+    val tx = Transaction(version = 2,
+      txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
+      txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
+    val psbt: Psbt =  {
+      val p0 = new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
+      val p1 = EitherKt.flatMap(p0, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
+      val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2))))
+      val p3 = EitherKt.flatMap(p2, (psbt: Psbt) => psbt.updateNonWitnessInput(utxos(0), 0, null, null, java.util.Map.of()))
+      val p4 = EitherKt.flatMap(p3, (psbt: Psbt) => psbt.updateNonWitnessInput(utxos(1), 0, null, null, java.util.Map.of()))
+      val p5 = EitherKt.flatMap(p4, (psbt: Psbt) => psbt.updateNonWitnessInput(utxos(2), 0, null, null, java.util.Map.of()))
+      val p6 = EitherKt.flatMap(p5, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0))))
+      p6.getRight
+    }
+
     {
       // sign all inputs and outputs
-      val tx = Transaction(version = 2,
-        txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
-        txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
-      val psbt = new Psbt(tx)
-      val updated = {
-        val p = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
-        val p1 = EitherKt.flatMap(p, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
-        val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2))))
-        val p3 = EitherKt.flatMap(p2, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0))))
-        p3.getRight
-      }
-      val psbt1 = onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
+      val psbt1 = onchainKeyManager.signPsbt(psbt, Seq(0, 1, 2), Seq(0))
       val signedTx = psbt1.extract().getRight
       Transaction.correctlySpends(signedTx, utxos, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
       // sign the first 2 inputs only
-      val tx = Transaction(version = 2,
-        txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
-        txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
-      val psbt = new Psbt(tx)
-      val updated = {
-        val p = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
-        val p1 = EitherKt.flatMap(p, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
-        val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0))))
-        p2.getRight
-      }
-      val psbt1 = onchainKeyManager.signPsbt(updated, Seq(0, 1), Seq(0))
+      val psbt1 = onchainKeyManager.signPsbt(psbt, Seq(0, 1), Seq(0))
       // extracting the final tx fails because no all inputs as signed
       assert(psbt1.extract().isLeft)
       assert(psbt1.getInput(2).getScriptWitness == null)
     }
     {
       // provide a wrong derivation path for the first input
-      val tx = Transaction(version = 2,
-        txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
-        txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
-      val psbt = new Psbt(tx)
-      val updated = {
-        val p = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(2))) // wrong bip32 path
-        val p1 = EitherKt.flatMap(p, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
-        val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2))))
-        val p3 = EitherKt.flatMap(p2, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0))))
-        p3.getRight
-      }
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(2))).getRight // wrong bip32 path
       val error = intercept[IllegalArgumentException] {
         onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
       }
@@ -102,21 +85,19 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
     }
     {
       // provide a wrong derivation path for the first output
-      val tx = Transaction(version = 2,
-        txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
-        txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
-      val psbt = new Psbt(tx)
-      val updated = {
-        val p = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
-        val p1 = EitherKt.flatMap(p, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
-        val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2))))
-        val p3 = EitherKt.flatMap(p2, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(1)))) // wrong path
-        p3.getRight
-      }
+      val updated = psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(1))).getRight // wrong path
       val error = intercept[IllegalArgumentException] {
         onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
       }
       assert(error.getMessage.contains("cannot compute public key"))
+    }
+    {
+      // lie about the amount being spent
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0).copy(amount = Satoshi(10)), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0))).getRight
+      val error = intercept[IllegalArgumentException] {
+        onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
+      }
+      assert(error.getMessage.contains("utxo mismatch"))
     }
   }
 
