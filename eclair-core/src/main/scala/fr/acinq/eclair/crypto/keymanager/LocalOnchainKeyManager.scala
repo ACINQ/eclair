@@ -3,8 +3,9 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.psbt.{Psbt, SignPsbtResult}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, DeterministicWallet, MnemonicCode}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, DeterministicWallet, MnemonicCode, Satoshi, Script}
 import fr.acinq.bitcoin.utils.EitherKt
+import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import scala.jdk.CollectionConverters.MapHasAsScala
@@ -13,7 +14,7 @@ object LocalOnchainKeyManager {
   def descriptorChecksum(span: String): String = fr.acinq.bitcoin.Descriptor.checksum(span)
 }
 
-class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passphrase: String = "") extends OnchainKeyManager {
+class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passphrase: String = "") extends OnchainKeyManager with Logging {
 
   import LocalOnchainKeyManager._
 
@@ -68,13 +69,18 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
   }
 
   override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Psbt = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val spent = ourInputs.map(i => kmp2scala(psbt.getInput(i).getWitnessUtxo.amount)).sum
+    val backtous = ourOutputs.map(i => kmp2scala(psbt.getGlobal.getTx.txOut.get(i).amount)).sum
+
+    logger.info(s"signing ${psbt.getGlobal.getTx.txid} fees ${psbt.computeFees()} spent $spent to_us $backtous")
     ourOutputs.foreach(i => isOurOutput(psbt, i))
     ourInputs.foldLeft(psbt) { (p, i) => sigbnPsbtInput(p, i) }
   }
 
   // check that an output belongs to us i.e. we can recompute its public from its bip32 path
   private def isOurOutput(psbt: Psbt, outputIndex: Int) = {
-
     val output = psbt.getOutputs.get(outputIndex)
     val txout = psbt.getGlobal.getTx.txOut.get(outputIndex)
     output.getDerivationPaths.size() match {
@@ -83,6 +89,7 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
           val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.getKeyPath).getPrivateKey
           val check = priv.publicKey()
           require(pub == check, s"cannot compute public key for $txout")
+          require(txout.publicKeyScript.contentEquals(fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wpkh(pub))), s"output pubkeyscript does not match ours for $txout")
         }
       case _ => throw new IllegalArgumentException(s"cannot verify that $txout sends to us")
     }
@@ -92,6 +99,14 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     import fr.acinq.bitcoin.{Script, SigHash}
 
     val input = psbt.getInput(pos)
+
+    // For each wallet input, Bitcoin Core will provide
+    // - the output that was spent, in the PSBT's witness utxo field
+    // - the actual transaction that was spent, in the PSBT's non-witness utxo field
+    // we check that this fields are consistent and match the outpoint that is spent in the PSBT
+    // this prevents attacks where bitcoin core would lie about the amount being spent and make us pay very high fees
+    require(input.getNonWitnessUtxo.txid == psbt.getGlobal.getTx.txIn.get(pos).outPoint.txid, "utxo txid mismatch")
+    require(input.getNonWitnessUtxo.txOut.get(psbt.getGlobal.getTx.txIn.get(pos).outPoint.index.toInt) == input.getWitnessUtxo, "utxo mismatch")
 
     // check that we're signing a p2wpkh input and that the keypath is provided and correct
     require(Script.isPay2wpkh(input.getWitnessUtxo.publicKeyScript.toByteArray), "spent input is not p2wpkh")

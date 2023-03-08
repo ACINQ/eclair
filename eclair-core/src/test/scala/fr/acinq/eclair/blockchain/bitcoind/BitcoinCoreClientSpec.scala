@@ -1423,7 +1423,7 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
     }
   }
 
-  test("use eclair manage onchain keys") {
+  test("use eclair to manage onchain keys") {
     val sender = TestProbe()
 
     (1 to 10).foreach { _ =>
@@ -1451,9 +1451,7 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
       val error = sender.expectMsgType[Failure]
       assert(error.cause.getMessage.contains("Private keys are disabled for this wallet"))
 
-      wallet1.rpcClient.invoke("estimatesmartfee", 1).map(BitcoinCoreFeeProvider.parseFeeEstimate).pipeTo(sender.ref)
-      val feeratePerKb = sender.expectMsgType[FeeratePerKB]
-      wallet1.sendToPubkeyScript(Script.write(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)), 50_000.sat, FeeratePerKw(feeratePerKb)).pipeTo(sender.ref)
+      wallet1.sendToPubkeyScript(Script.write(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)), 50_000.sat, FeeratePerKw(FeeratePerByte(5.sat))).pipeTo(sender.ref)
       sender.expectMsgType[ByteVector32]
     }
   }
