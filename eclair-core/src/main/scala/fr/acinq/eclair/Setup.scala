@@ -110,8 +110,6 @@ class Setup(val datadir: File,
 
   logger.info(s"instanceid=$instanceId")
 
-  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
-
   /**
    * This counter holds the current blockchain height.
    * It is mainly used to calculate htlc expiries.
@@ -139,7 +137,6 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
@@ -147,8 +144,6 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   val bitcoin = {
     val wallet = {
@@ -195,19 +190,29 @@ class Setup(val datadir: File,
       }
     } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
-    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
     if (chainHash != Block.RegtestGenesisBlock.hash) {
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
     }
+    logger.info(s"Bitcoin version=$bitcoinVersion")
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
     bitcoinClient
   }
+  logger.info("starting DB connections")
+  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+
+  val chainHash = await(bitcoin.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
+            , 30 seconds, "bicoind did not respond after 30 seconds")
+  assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
+  logger.info(s"chainHash=$chainHash")
 
   def bootstrap: Future[Kit] = {
     for {
