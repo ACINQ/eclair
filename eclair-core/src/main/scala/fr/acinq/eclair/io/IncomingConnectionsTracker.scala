@@ -25,6 +25,10 @@ import fr.acinq.eclair.io.Peer.Disconnect
  * Likewise, peers with channels will disconnect and terminate when their last channel closes.
  *
  * Note: Peers on the sync whitelist are not tracked.
+
+ * This actor enables a DoS attack that can block new incoming liquidity from non-whitelisted nodes.
+ * An attacker can trivially disconnect other incoming connections before they can open channels by repeatedly opening
+ * new connections using random node IDs.
 */
 object IncomingConnectionsTracker {
   // @formatter:off

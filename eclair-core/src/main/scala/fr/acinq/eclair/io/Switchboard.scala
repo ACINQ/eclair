@@ -141,6 +141,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
+        // do not count the incoming-connections-tracker child actor that is not a peer
         log.debug(s"creating new peer (current={})", context.children.size - 1)
         val peer = createPeer(remoteNodeId)
         peer ! Peer.Init(offlineChannels)
