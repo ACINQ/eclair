@@ -73,7 +73,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = isPersistent))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features.initFeatures(), doSync))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
@@ -101,7 +101,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     assert(!incomingConnection.outgoing)
     probe.send(peerConnection, incomingConnection)
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = false))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]

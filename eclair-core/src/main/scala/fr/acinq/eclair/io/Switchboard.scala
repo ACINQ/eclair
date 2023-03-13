@@ -102,7 +102,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
       val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
-      if (!hasChannels) {
+      if (!hasChannels && !authenticated.outgoing) {
         incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
       }
 

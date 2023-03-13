@@ -177,7 +177,7 @@ object EclairInternalsSerializer {
     .typecase(1, (routerConfCodec :: peerConnectionConfCodec).as[RouterPeerConf])
     .typecase(5, readAckCodec)
     .typecase(7, connectionRequestCodec(system))
-    .typecase(10, (actorRefCodec(system) :: publicKey).as[PeerConnection.Authenticated])
+    .typecase(10, (actorRefCodec(system) :: publicKey :: bool).as[PeerConnection.Authenticated])
     .typecase(11, initializeConnectionCodec(system))
     .typecase(12, connectionReadyCodec(system))
     .typecase(13, provide(PeerConnection.ConnectionResult.NoAddressFound))
