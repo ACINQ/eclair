@@ -101,7 +101,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     assert(!incomingConnection.outgoing)
     probe.send(peerConnection, incomingConnection)
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = false))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = false))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
