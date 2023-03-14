@@ -6,7 +6,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.ChannelCreated
+import fr.acinq.eclair.channel.ChannelOpened
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.Disconnect
 
@@ -19,7 +19,7 @@ import fr.acinq.eclair.io.Peer.Disconnect
  * When the number of tracked peers exceeds `eclair.peer-connection.max-no-channels`, send [[Peer.Disconnect]] to
  * the tracked peer with the oldest incoming connection.
  *
- * When a tracked peer disconnects or adds a channel, we will stop tracking that peer.
+ * When a tracked peer disconnects or confirms a channel, we will stop tracking that peer.
  *
  * We do not need to track peers that disconnect because they will terminate if they have no channels.
  * Likewise, peers with channels will disconnect and terminate when their last channel closes.
@@ -42,7 +42,7 @@ object IncomingConnectionsTracker {
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelCreated](c => ForgetIncomingConnection(c.remoteNodeId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
       new IncomingConnectionsTracker(nodeParams, switchboard).tracking(Map())
     }
   }
