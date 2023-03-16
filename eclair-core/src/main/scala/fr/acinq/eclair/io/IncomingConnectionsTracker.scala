@@ -2,11 +2,12 @@ package fr.acinq.eclair.io
 
 import akka.actor.typed.delivery.DurableProducerQueue.TimestampMillis
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.ChannelOpened
+import fr.acinq.eclair.io.IncomingConnectionsTracker.Command
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.Disconnect
 
@@ -43,12 +44,12 @@ object IncomingConnectionsTracker {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
-      new IncomingConnectionsTracker(nodeParams, switchboard).tracking(Map())
+      new IncomingConnectionsTracker(nodeParams, switchboard, context).tracking(Map())
     }
   }
 }
 
-private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]) {
+private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: ActorRef[Disconnect], context: ActorContext[Command]) {
   import IncomingConnectionsTracker._
 
   private def tracking(incomingConnections: Map[PublicKey, TimestampMillis]): Behavior[Command] = {
@@ -61,6 +62,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
           if (incomingConnections.size >= nodeParams.peerConnectionConf.maxNoChannels) {
             Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
             val oldest = incomingConnections.minBy(_._2)._1
+            context.log.warn(s"disconnecting peer=$oldest, too many incoming connections from peers without channels.")
             switchboard ! Disconnect(oldest)
             tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
           }
