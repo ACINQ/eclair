@@ -44,7 +44,7 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContextExecutor, Future}
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Simple payment handler that generates invoices and fulfills incoming htlcs.
@@ -280,14 +280,13 @@ object MultiPartHandler {
   /**
    * Use this message to create a Bolt 12 invoice to receive a payment for a given offer.
    *
-   * @param nodeKey             the private key corresponding to the offer node id. It will be used to sign the invoice
-   *                            and may be different from our public nodeId.
-   * @param invoiceRequest      the request this invoice responds to.
-   * @param routes              routes that must be blinded and provided in the invoice.
-   * @param router              router actor.
-   * @param paymentPreimage     payment preimage.
-   * @param pathId              path id for the payment paths. If None, a different one will be randomly generated for
-   *                            each path and the mapping blinding point -> path id will be stored in the database.
+   * @param nodeKey         the private key corresponding to the offer node id. It will be used to sign the invoice
+   *                        and may be different from our public nodeId.
+   * @param invoiceRequest  the request this invoice responds to.
+   * @param routes          routes that must be blinded and provided in the invoice.
+   * @param router          router actor.
+   * @param paymentPreimage payment preimage.
+   * @param pathId          path id that will be used for all payment paths.
    */
   case class ReceiveOfferPayment(nodeKey: PrivateKey,
                                  invoiceRequest: InvoiceRequest,
@@ -308,45 +307,49 @@ object MultiPartHandler {
 
     // @formatter:off
     sealed trait Command
-    case class CreateBolt11Invoice(replyTo: typed.ActorRef[Try[Bolt11Invoice]], receivePayment: ReceiveStandardPayment) extends Command
-    case class CreateBolt12Invoice(replyTo: typed.ActorRef[Try[Bolt12Invoice]], receivePayment: ReceiveOfferPayment) extends Command
-    case class WrappedInvoice(invoice: Try[Bolt12Invoice]) extends Command
+    case class CreateBolt11Invoice(replyTo: typed.ActorRef[Response], receivePayment: ReceiveStandardPayment) extends Command
+    case class CreateBolt12Invoice(replyTo: typed.ActorRef[Response], receivePayment: ReceiveOfferPayment) extends Command
+    private case class WrappedInvoiceResult(invoice: Try[Bolt12Invoice]) extends Command
+
+    sealed trait Response
+    case class InvoiceCreated(invoice: Invoice) extends Response
+    sealed trait InvoiceCreationFailed extends Response { def message: String }
+    case object InvalidBlindedRouteRecipient extends InvoiceCreationFailed { override def message: String = "receiving routes must end at our node" }
+    case class BlindedRouteCreationFailed(message: String) extends InvoiceCreationFailed
     // @formatter:on
 
     def apply(nodeParams: NodeParams): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.receiveMessagePartial {
           case CreateBolt11Invoice(replyTo, r) =>
-            replyTo ! Try {
-              val paymentPreimage = r.paymentPreimage_opt.getOrElse(randomBytes32())
-              val paymentHash = Crypto.sha256(paymentPreimage)
-              val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
-              val paymentMetadata = hex"2a"
-              val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
-                nodeParams.features.bolt11Features().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
-              } else {
-                nodeParams.features.bolt11Features()
-              }
-              val invoice = Bolt11Invoice(
-                nodeParams.chainHash,
-                r.amount_opt,
-                paymentHash,
-                nodeParams.privateKey,
-                r.description,
-                nodeParams.channelConf.minFinalExpiryDelta,
-                r.fallbackAddress_opt,
-                expirySeconds = Some(expirySeconds),
-                extraHops = r.extraHops,
-                paymentMetadata = Some(paymentMetadata),
-                features = featuresTrampolineOpt.remove(Features.RouteBlinding)
-              )
-              context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
-              nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
-              invoice
+            val paymentPreimage = r.paymentPreimage_opt.getOrElse(randomBytes32())
+            val paymentHash = Crypto.sha256(paymentPreimage)
+            val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
+            val paymentMetadata = hex"2a"
+            val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
+              nodeParams.features.bolt11Features().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
+            } else {
+              nodeParams.features.bolt11Features()
             }
+            val invoice = Bolt11Invoice(
+              nodeParams.chainHash,
+              r.amount_opt,
+              paymentHash,
+              nodeParams.privateKey,
+              r.description,
+              nodeParams.channelConf.minFinalExpiryDelta,
+              r.fallbackAddress_opt,
+              expirySeconds = Some(expirySeconds),
+              extraHops = r.extraHops,
+              paymentMetadata = Some(paymentMetadata),
+              features = featuresTrampolineOpt.remove(Features.RouteBlinding)
+            )
+            context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
+            nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
+            replyTo ! InvoiceCreated(invoice)
             Behaviors.stopped
           case CreateBolt12Invoice(replyTo, r) if r.routes.exists(!_.nodes.lastOption.contains(nodeParams.nodeId)) =>
-            replyTo ! Failure(new IllegalArgumentException("receiving routes must end at our node"))
+            replyTo ! InvalidBlindedRouteRecipient
             Behaviors.stopped
           case CreateBolt12Invoice(replyTo, r) =>
             implicit val ec: ExecutionContextExecutor = context.executionContext
@@ -379,18 +382,16 @@ object MultiPartHandler {
               val invoice = Bolt12Invoice(r.invoiceRequest, r.paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) }, r.additionalTlvs, r.customTlvs)
               log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
               invoice
-            }))(WrappedInvoice)
-            forwardInvoice(replyTo)
-
+            }))(WrappedInvoiceResult)
+            Behaviors.receiveMessagePartial {
+              case WrappedInvoiceResult(result) =>
+                result match {
+                  case Failure(f) => replyTo ! BlindedRouteCreationFailed(f.getMessage)
+                  case Success(invoice) => replyTo ! InvoiceCreated(invoice)
+                }
+                Behaviors.stopped
+            }
         }
-      }
-    }
-
-    def forwardInvoice(replyTo: typed.ActorRef[Try[Bolt12Invoice]]): Behavior[Command] = {
-      Behaviors.receiveMessagePartial {
-        case WrappedInvoice(invoice) =>
-          replyTo ! invoice
-          Behaviors.stopped
       }
     }
   }
@@ -400,8 +401,8 @@ object MultiPartHandler {
     // @formatter:off
     sealed trait Command
     case class GetIncomingPayment(replyTo: ActorRef) extends Command
-    case class PaymentFound(payment: IncomingBlindedPayment) extends Command
-    object NoPayment extends Command
+    case class ProcessPayment(payment: IncomingBlindedPayment) extends Command
+    case class RejectPayment(reason: String) extends Command
     // @formatter:on
 
     def apply(nodeParams: NodeParams, packet: IncomingPaymentPacket.FinalPacket, offerManager: typed.ActorRef[OfferManager.ReceivePayment]): Behavior[Command] = {
@@ -412,8 +413,11 @@ object MultiPartHandler {
               packet.payload match {
                 case payload: FinalPayload.Standard =>
                   nodeParams.db.payments.getIncomingPayment(packet.add.paymentHash) match {
+                    case Some(_: IncomingBlindedPayment) =>
+                      context.log.info("rejecting non-blinded htlc #{} from channel {}: expected a blinded payment", packet.add.id, packet.add.channelId)
+                      replyTo ! RejectPacket(packet.add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
                     case Some(payment: IncomingStandardPayment) => replyTo ! ProcessPacket(packet.add, payload, Some(payment))
-                    case _ => replyTo ! ProcessPacket(packet.add, payload, None)
+                    case None => replyTo ! ProcessPacket(packet.add, payload, None)
                   }
                   Behaviors.stopped
                 case payload: FinalPayload.Blinded =>
@@ -425,13 +429,13 @@ object MultiPartHandler {
       }
     }
 
-    def waitForPayment(context: typed.scaladsl.ActorContext[Command], nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
+    private def waitForPayment(context: typed.scaladsl.ActorContext[Command], nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
       Behaviors.receiveMessagePartial {
-        case PaymentFound(payment) =>
+        case ProcessPayment(payment) =>
           replyTo ! ProcessBlindedPacket(add, payload, payment)
           Behaviors.stopped
-        case NoPayment =>
-          context.log.info("rejecting blinded htlc #{} from channel {}: invoice not found", add.id, add.channelId)
+        case RejectPayment(reason) =>
+          context.log.info("rejecting blinded htlc #{} from channel {}: {}", add.id, add.channelId, reason)
           replyTo ! RejectPacket(add, IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight))
           Behaviors.stopped
       }
