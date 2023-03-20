@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
-import fr.acinq.eclair.blockchain.fee.{BitcoinCoreFeeProvider, FeeratePerByte, FeeratePerKB, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressFromPublicKeyScript, addressToPublicKeyScript, randomBytes32, randomKey}

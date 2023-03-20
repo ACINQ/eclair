@@ -539,7 +539,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
    * If the current wallet uses Eclair to sign transaction, then we'll use our onchain key manager to sign the transaction,
    * with the following assumptions:
    * - all inputs belong to us
-   * - all outputs except for the one that sends to `pubkeyScript` belong to us`
+   * - all outputs except for the one that sends to `pubkeyScript` belong to us
    *
    *
    * @param pubkeyScript public key script to sent funds to

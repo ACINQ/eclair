@@ -180,7 +180,7 @@ trait Eclair {
 
   def getOnchainMasterPubKey(account: Long): String
 
-  def getOnchainMasterMasterFingerprintHex: String
+  def getOnchainMasterFingerprintHex: String
 
   def getDescriptors(fingerprint: Int, chain_opt: Option[String], account: Long): (List[String], List[String])
 
@@ -715,5 +715,5 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     Future.successful(())
   }
 
-  override def getOnchainMasterMasterFingerprintHex: String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterMasterFingerprintHex
+  override def getOnchainMasterFingerprintHex: String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterMasterFingerprintHex
 }

@@ -3,7 +3,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.psbt.{Psbt, SignPsbtResult}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, DeterministicWallet, MnemonicCode, Satoshi, Script}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, DeterministicWallet, MnemonicCode}
 import fr.acinq.bitcoin.utils.EitherKt
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -18,7 +18,11 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
 
   import LocalOnchainKeyManager._
 
-  // master key used for HWI wallets
+  // master key. we will use it to generate a BIP84 wallet that can be used:
+  // - to generate a watch-only wallet with any BIP84-compatible bitcoin wallet
+  // - to generate descriptors that can be used by Bitcoin Core through HWI to create a wallet with the `external signer`
+  // option set, the external signer being this onchain key manager accessed through Eclair's API
+
   // m / purpose' / coin_type' / account' / change / address_index
   private val mnemonics = MnemonicCode.toMnemonics(entropy)
   private val seed = MnemonicCode.toSeed(mnemonics, passphrase)
@@ -105,8 +109,13 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     // - the actual transaction that was spent, in the PSBT's non-witness utxo field
     // we check that this fields are consistent and match the outpoint that is spent in the PSBT
     // this prevents attacks where bitcoin core would lie about the amount being spent and make us pay very high fees
+    require(input.getNonWitnessUtxo != null, "non-witness utxo is missing")
     require(input.getNonWitnessUtxo.txid == psbt.getGlobal.getTx.txIn.get(pos).outPoint.txid, "utxo txid mismatch")
     require(input.getNonWitnessUtxo.txOut.get(psbt.getGlobal.getTx.txIn.get(pos).outPoint.index.toInt) == input.getWitnessUtxo, "utxo mismatch")
+
+    // not using SIGHASH_ALL would make us vulnerable to "signature reuse" attacks
+    // here null means unspecified means SIGHASH_ALL
+    require(Option(input.getSighashType).forall(_ == SigHash.SIGHASH_ALL), "input sighashtype must be SIGHASH_ALL")
 
     // check that we're signing a p2wpkh input and that the keypath is provided and correct
     require(Script.isPay2wpkh(input.getWitnessUtxo.publicKeyScript.toByteArray), "spent input is not p2wpkh")
@@ -117,11 +126,15 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.getKeyPath).getPrivateKey
     require(priv.publicKey() == pub, "cannot compute private key")
 
-    // update the input which the right script for a p2wpkh input, which is a * p2pkh * script
-    // then sign and finalized the psbt input
+    // update the input with the right script for a p2wpkh input, which is a * p2pkh * script
+    // then sign and finalize the psbt input
     val updated = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths)
     val signed = EitherKt.flatMap(updated, (p: Psbt) => p.sign(priv, pos))
-    val finalized = EitherKt.flatMap(signed, (s: SignPsbtResult) => s.getPsbt.finalizeWitnessInput(pos, new ScriptWitness().push(s.getSig).push(pub.value)))
+    val finalized = EitherKt.flatMap(signed, (s: SignPsbtResult) => {
+      val sig = s.getSig
+      require(sig.get(sig.size() - 1).toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
+      s.getPsbt.finalizeWitnessInput(pos, new ScriptWitness().push(sig).push(pub.value))
+    })
     require(finalized.isRight, s"cannot sign psbt input, error = ${finalized.getLeft}")
     finalized.getRight
   }

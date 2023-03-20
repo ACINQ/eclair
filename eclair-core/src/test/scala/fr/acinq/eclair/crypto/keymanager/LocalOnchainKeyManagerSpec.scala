@@ -1,8 +1,8 @@
 package fr.acinq.eclair.crypto.keymanager
 
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt}
 import fr.acinq.bitcoin.scalacompat.{Block, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ScriptFlags, SigHash}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -98,6 +98,30 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
         onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
       }
       assert(error.getMessage.contains("utxo mismatch"))
+    }
+    {
+      // do not provide non-witness utxo for utxo #2
+      val psbt: Psbt = {
+        val p0 = new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
+        val p1 = EitherKt.flatMap(p0, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1))))
+        val p2 = EitherKt.flatMap(p1, (psbt: Psbt) => psbt.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2))))
+        val p3 = EitherKt.flatMap(p2, (psbt: Psbt) => psbt.updateNonWitnessInput(utxos(0), 0, null, null, java.util.Map.of()))
+        val p4 = EitherKt.flatMap(p3, (psbt: Psbt) => psbt.updateNonWitnessInput(utxos(1), 0, null, null, java.util.Map.of()))
+        val p5 = EitherKt.flatMap(p4, (psbt: Psbt) => psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0))))
+        p5.getRight
+      }
+      val error = intercept[IllegalArgumentException] {
+        onchainKeyManager.signPsbt(psbt, Seq(0, 1, 2), Seq(0))
+      }
+      assert(error.getMessage.contains("non-witness utxo is missing"))
+    }
+    {
+      // use sighash type != SIGHASH_ALL
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, SigHash.SIGHASH_SINGLE, java.util.Map.of(getPublicKey(0), bip32paths(0))).getRight
+      val error = intercept[IllegalArgumentException] {
+        onchainKeyManager.signPsbt(updated, Seq(0, 1, 2), Seq(0))
+      }
+      assert(error.getMessage.contains("input sighashtype must be SIGHASH_ALL"))
     }
   }
 

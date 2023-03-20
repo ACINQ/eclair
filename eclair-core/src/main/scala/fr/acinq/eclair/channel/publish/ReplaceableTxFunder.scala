@@ -317,9 +317,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
-      case claimTx: ClaimLocalAnchorWithWitnessData =>
-        val localSig = keyManager.sign(claimTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat)
-        val signedTx = claimTx.copy(txInfo = addSigs(claimTx.txInfo, localSig))
+      case claimAnchorTx: ClaimLocalAnchorWithWitnessData =>
+        val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat)
+        val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn)
       case htlcTx: HtlcWithWitnessData =>
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
@@ -355,6 +355,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
+    // we finalize (sign) the input that we control, and will then ask our bitcoin client to sign wallet inputs
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
     val updated = psbt.updateWitnessInput(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.input.txOut, null, fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.redeemScript), null, java.util.Map.of())
     val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
@@ -433,7 +434,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
             val packageWeight = commitTx.weight() + dummySignedTx.tx.weight()
 
             // above, we asked bitcoin core to use the package weight to estimate fees when it built and funded this transaction, so we
-            // use the same package weight here to compute thet actual fee rate that we get
+            // use the same package weight here to compute the actual fee rate that we get
             val actualFeerate = FeeratePerKw((fundTxResponse.fee * 1000) / packageWeight)
             require(actualFeerate < targetFeerate * 2, s"actual fee rate $actualFeerate is more than twice the requested fee rate $targetFeerate")
 

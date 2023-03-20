@@ -71,7 +71,7 @@ trait OnChain {
       "model" -> JString("eclair"),
       "label" -> JString(""),
       "path" -> JString(""),
-      "fingerprint" -> JString(this.eclairApi.getOnchainMasterMasterFingerprintHex),
+      "fingerprint" -> JString(this.eclairApi.getOnchainMasterFingerprintHex),
       "needs_pin_sent" -> JBool(false),
       "needs_passphrase_sent" -> JBool(false)
     ))
