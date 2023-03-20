@@ -22,6 +22,7 @@ import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, TxOut, computeP2WpkhAddress}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.PreviousTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
@@ -37,6 +38,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 
@@ -268,10 +270,19 @@ trait BitcoindService extends Logging {
     Transaction.read(rawTx)
   }
 
+  def signTransaction(client: BitcoinCoreClient, tx: Transaction): Future[SignTransactionResponse] = signTransaction(client, tx, Nil)
+
+  def signTransaction(client: BitcoinCoreClient, tx: Transaction, allowIncomplete: Boolean): Future[SignTransactionResponse] = signTransaction(client, tx, Nil, allowIncomplete)
+
+  def signTransaction(client: BitcoinCoreClient, tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false): Future[SignTransactionResponse] = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    client.signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.extractFinalTx.getOrElse(p.extractPartiallySignedTx), p.extractFinalTx.isRight))
+  }
 }
 
 object BitcoindService {
 
   case class BitcoinReq(method: String, params: Any*)
 
+  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 }

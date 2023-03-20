@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{Bech32, Block, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnchainKeyManager
@@ -430,15 +430,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
     } yield signed
   }
 
-  def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil)
-
-  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil, allowIncomplete)
-
-  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
-    import KotlinUtils._
-    signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.extractFinalTx.getOrElse(p.extractPartiallySignedTx), p.extractFinalTx.isRight))
-  }
-
   //------------------------- PUBLISHING  -------------------------//
 
   /**
@@ -698,7 +689,7 @@ object BitcoinCoreClient {
     import KotlinUtils._
 
     // Extract a fully signed transaction from `psbt`
-    // If the transaction is just partially signed, this method wil fail and you must call extractPartiallySignedTx instead
+    // If the transaction is just partially signed, this method will fail and you must call extractPartiallySignedTx instead
     def extractFinalTx: Either[UpdateFailure, Transaction] = {
       val extracted = psbt.extract()
       if (extracted.isLeft) Left(extracted.getLeft) else Right(extracted.getRight)

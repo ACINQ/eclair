@@ -22,8 +22,9 @@ import akka.actor.{ActorRef, Props, typed}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec._
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
@@ -305,7 +306,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val tx1 = {
         bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), FundTransactionOptions(FeeratePerKw(250 sat))).pipeTo(probe.ref)
         val funded = probe.expectMsgType[FundTransactionResponse].tx
-        bitcoinClient.signTransaction(funded).pipeTo(probe.ref)
+        signTransaction(bitcoinClient, funded).pipeTo(probe.ref)
         probe.expectMsgType[SignTransactionResponse].tx
       }
       val outputIndex = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))

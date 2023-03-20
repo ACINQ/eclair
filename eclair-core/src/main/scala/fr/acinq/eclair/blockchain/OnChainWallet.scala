@@ -125,7 +125,4 @@ object OnChainWallet {
   final case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
-
-  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
-
 }
