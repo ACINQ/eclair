@@ -618,12 +618,18 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We can skip waiting for confirmations if:
-      //  - there is a single version of the funding tx (otherwise we don't know which one to use)
-      //  - they didn't contribute to the funding output or we trust them to not double-spend
-      val canUseZeroConf = remoteChannelReady.alias_opt.isDefined &&
+      // We are here if:
+      // - The channel is zero-conf, but our peer was very fast and we received their channel_ready before our watcher
+      // notification that the funding tx has been successfully published. In that case we just do nothing.
+      // - The channel isn't technically zero-conf, but our peer decided to trust us anyway. We can skip waiting for
+      // confirmations if:
+      //    - the peer provided a channel alias
+      //    - there is a single version of the funding tx (otherwise we don't know which one to use)
+      //    - they didn't contribute to the funding output or we trust them to not double-spend
+      val canUseZeroConf = d.latestFundingTx.fundingParams.minDepth_opt.nonEmpty &&
+        remoteChannelReady.alias_opt.isDefined &&
         d.commitments.active.size == 1 &&
-        (d.latestFundingTx.fundingParams.remoteAmount == 0.sat || d.commitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf))
+        d.latestFundingTx.fundingParams.remoteAmount == 0.sat
       if (canUseZeroConf) {
         log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
         // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored.
