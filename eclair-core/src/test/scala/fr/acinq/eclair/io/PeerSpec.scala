@@ -245,7 +245,7 @@ class PeerSpec extends FixtureSpec {
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
-    probe.expectMsg("disconnecting")
+    probe.expectMsgType[Peer.Disconnecting]
   }
 
   test("handle disconnect in state DISCONNECTED") { f =>
@@ -260,7 +260,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
-    assert(probe.expectMsgType[Status.Failure].cause.getMessage == "not connected")
+    probe.expectMsgType[Peer.NotConnected]
   }
 
   test("handle new connection in state CONNECTED") { f =>

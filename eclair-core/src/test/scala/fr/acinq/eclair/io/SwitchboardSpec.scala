@@ -1,12 +1,13 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
-import akka.actor.{Actor, ActorContext, ActorRef, Props, Status}
+import akka.actor.{Actor, ActorContext, ActorRef, Props}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector64
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.{ChannelIdAssigned, PersistentChannelData}
+import fr.acinq.eclair.io.Peer.PeerNotFound
 import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
@@ -62,7 +63,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val unknownNodeId = randomKey().publicKey
     probe.send(switchboard, Peer.Disconnect(unknownNodeId))
-    assert(probe.expectMsgType[Status.Failure].cause.getMessage == s"peer $unknownNodeId not found")
+    probe.expectMsgType[PeerNotFound]
     probe.send(switchboard, Peer.Disconnect(remoteNodeId))
     peer.expectMsg(Peer.Disconnect(remoteNodeId))
   }
@@ -171,7 +172,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     // Disconnect the oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
     peer.expectMsgType[Peer.Init]
-    peer.expectMsg(Peer.Disconnect(unknownNodeId1))
+    assert(peer.expectMsgType[Peer.Disconnect].nodeId == unknownNodeId1)
 
     // Do not disconnect an old peer when a peer with channels connects.
     switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
@@ -182,7 +183,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
     peer.expectMsgType[Peer.Init]
-    peer.expectMsg(Peer.Disconnect(unknownNodeId2))
+    assert(peer.expectMsgType[Peer.Disconnect].nodeId == unknownNodeId2)
   }
 
 }

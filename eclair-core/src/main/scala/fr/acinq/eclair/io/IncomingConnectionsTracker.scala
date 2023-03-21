@@ -9,7 +9,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.ChannelOpened
 import fr.acinq.eclair.io.IncomingConnectionsTracker.Command
 import fr.acinq.eclair.io.Monitoring.Metrics
-import fr.acinq.eclair.io.Peer.Disconnect
+import fr.acinq.eclair.io.Peer.{Disconnect, DisconnectResponse}
 
 /**
  * A singleton actor that limits the total number of incoming connections from peers that do not have channels with us.
@@ -63,7 +63,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
             Metrics.IncomingConnectionsDisconnected.withoutTags().increment()
             val oldest = incomingConnections.minBy(_._2)._1
             context.log.warn(s"disconnecting peer=$oldest, too many incoming connections from peers without channels.")
-            switchboard ! Disconnect(oldest)
+            switchboard ! Disconnect(oldest, Some(context.system.ignoreRef[DisconnectResponse]))
             tracking(incomingConnections + (remoteNodeId -> System.currentTimeMillis()) - oldest)
           }
           else {

@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
-import fr.acinq.eclair.io.Peer.PeerInfoResponse
+import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.OnionMessage
@@ -83,9 +83,10 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       peer forward c
 
     case d: Peer.Disconnect =>
+      val replyTo = d.replyTo_opt.getOrElse(sender().toTyped)
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${d.nodeId} not found"))
+        case None => replyTo ! PeerNotFound(d.nodeId)
       }
 
     case o: Peer.OpenChannel =>

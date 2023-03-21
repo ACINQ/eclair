@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.Status
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
@@ -111,14 +110,6 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     // Track a new node connection and disconnect the oldest node connection.
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(randomKey().publicKey)
     assert(switchboard.expectMessageType[Disconnect].nodeId === connection2)
-  }
-
-  test("terminate if an unhandled message received from classic actor") { f =>
-    import f._
-    // confirm behavior after receiving an untyped reply from switchboard when Disconnect message cannot be sent to a
-    // non-existent peer.
-    tracker.toClassic ! Status.Failure(new RuntimeException(s"peer $connection2 not found"))
-    monitorProbe.expectTerminated(tracker, 100 millis)
   }
 
 }
