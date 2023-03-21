@@ -81,11 +81,11 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case receivePayment: ReceiveStandardPayment =>
       val child = ctx.spawnAnonymous(CreateInvoiceActor(nodeParams))
-      child ! CreateInvoiceActor.CreateBolt11Invoice(ctx.sender(), receivePayment)
+      child ! CreateInvoiceActor.CreateBolt11Invoice(receivePayment)
 
     case receivePayment: ReceiveOfferPayment =>
       val child = ctx.spawnAnonymous(CreateInvoiceActor(nodeParams))
-      child ! CreateInvoiceActor.CreateBolt12Invoice(ctx.sender(), receivePayment)
+      child ! CreateInvoiceActor.CreateBolt12Invoice(receivePayment)
 
     case p: IncomingPaymentPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       val child = ctx.spawnAnonymous(GetIncomingPaymentActor(nodeParams, p, offerManager))
@@ -254,7 +254,8 @@ object MultiPartHandler {
    * @param fallbackAddress_opt fallback Bitcoin address.
    * @param paymentPreimage_opt payment preimage.
    */
-  case class ReceiveStandardPayment(amount_opt: Option[MilliSatoshi],
+  case class ReceiveStandardPayment(replyTo: typed.ActorRef[Bolt11Invoice],
+                                    amount_opt: Option[MilliSatoshi],
                                     description: Either[String, ByteVector32],
                                     expirySeconds_opt: Option[Long] = None,
                                     extraHops: List[List[ExtraHop]] = Nil,
@@ -288,7 +289,8 @@ object MultiPartHandler {
    * @param paymentPreimage payment preimage.
    * @param pathId          path id that will be used for all payment paths.
    */
-  case class ReceiveOfferPayment(nodeKey: PrivateKey,
+  case class ReceiveOfferPayment(replyTo: typed.ActorRef[CreateInvoiceActor.Bolt12InvoiceResponse],
+                                 nodeKey: PrivateKey,
                                  invoiceRequest: InvoiceRequest,
                                  routes: Seq[ReceivingRoute],
                                  router: ActorRef,
@@ -307,13 +309,13 @@ object MultiPartHandler {
 
     // @formatter:off
     sealed trait Command
-    case class CreateBolt11Invoice(replyTo: typed.ActorRef[Response], receivePayment: ReceiveStandardPayment) extends Command
-    case class CreateBolt12Invoice(replyTo: typed.ActorRef[Response], receivePayment: ReceiveOfferPayment) extends Command
+    case class CreateBolt11Invoice(receivePayment: ReceiveStandardPayment) extends Command
+    case class CreateBolt12Invoice(receivePayment: ReceiveOfferPayment) extends Command
     private case class WrappedInvoiceResult(invoice: Try[Bolt12Invoice]) extends Command
 
-    sealed trait Response
-    case class InvoiceCreated(invoice: Invoice) extends Response
-    sealed trait InvoiceCreationFailed extends Response { def message: String }
+    sealed trait Bolt12InvoiceResponse
+    case class InvoiceCreated(invoice: Bolt12Invoice) extends Bolt12InvoiceResponse
+    sealed trait InvoiceCreationFailed extends Bolt12InvoiceResponse { def message: String }
     case object InvalidBlindedRouteRecipient extends InvoiceCreationFailed { override def message: String = "receiving routes must end at our node" }
     case class BlindedRouteCreationFailed(message: String) extends InvoiceCreationFailed
     // @formatter:on
@@ -321,7 +323,7 @@ object MultiPartHandler {
     def apply(nodeParams: NodeParams): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.receiveMessagePartial {
-          case CreateBolt11Invoice(replyTo, r) =>
+          case CreateBolt11Invoice(r) =>
             val paymentPreimage = r.paymentPreimage_opt.getOrElse(randomBytes32())
             val paymentHash = Crypto.sha256(paymentPreimage)
             val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
@@ -346,12 +348,12 @@ object MultiPartHandler {
             )
             context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
             nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
-            replyTo ! InvoiceCreated(invoice)
+            r.replyTo ! invoice
             Behaviors.stopped
-          case CreateBolt12Invoice(replyTo, r) if r.routes.exists(!_.nodes.lastOption.contains(nodeParams.nodeId)) =>
-            replyTo ! InvalidBlindedRouteRecipient
+          case CreateBolt12Invoice(r) if r.routes.exists(!_.nodes.lastOption.contains(nodeParams.nodeId)) =>
+            r.replyTo ! InvalidBlindedRouteRecipient
             Behaviors.stopped
-          case CreateBolt12Invoice(replyTo, r) =>
+          case CreateBolt12Invoice(r) =>
             implicit val ec: ExecutionContextExecutor = context.executionContext
             val log = context.log
             context.pipeToSelf(Future.sequence(r.routes.map(route => {
@@ -386,8 +388,8 @@ object MultiPartHandler {
             Behaviors.receiveMessagePartial {
               case WrappedInvoiceResult(result) =>
                 result match {
-                  case Failure(f) => replyTo ! BlindedRouteCreationFailed(f.getMessage)
-                  case Success(invoice) => replyTo ! InvoiceCreated(invoice)
+                  case Failure(f) => r.replyTo ! BlindedRouteCreationFailed(f.getMessage)
+                  case Success(invoice) => r.replyTo ! InvoiceCreated(invoice)
                 }
                 Behaviors.stopped
             }

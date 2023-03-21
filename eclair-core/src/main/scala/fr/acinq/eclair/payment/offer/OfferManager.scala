@@ -179,16 +179,17 @@ object OfferManager {
               registeredOffers.get(signed.offerId) match {
                 case Some(RegisteredOffer(offer, nodeKey, _, handler)) =>
                   signed.verify(nodeKey.publicKey) match {
+                    case None => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"Invalid signature for metadata for offer ${signed.offerId.toHex}")
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata))
                       handler ! HandlePayment(child, signed.offerId, metadata.extraData)
-                    case _ => replyTo ! MultiPartHandler.GetIncomingPaymentActor.NoPayment
+                    case _ => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"Preimage does not match payment hash for offer ${signed.offerId.toHex}")
                   }
                 case _ =>
-                  replyTo ! MultiPartHandler.GetIncomingPaymentActor.NoPayment
+                  replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"Unknown offer ${signed.offerId.toHex}")
               }
             case Attempt.Failure(_) =>
-              replyTo ! MultiPartHandler.GetIncomingPaymentActor.NoPayment
+              replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment("Invalid metadata")
           }
           Behaviors.same
       }
@@ -220,7 +221,7 @@ object OfferManager {
      */
     object RejectRequest extends Command
 
-    private case class WrappedInvoice(invoice: Try[Bolt12Invoice]) extends Command
+    private case class WrappedInvoiceResponse(response: CreateInvoiceActor.Bolt12InvoiceResponse) extends Command
 
     private case class WrappedOnionMessageResponse(response: Postman.OnionMessageResponse) extends Command
 
@@ -255,9 +256,9 @@ object OfferManager {
             val metadata = PaymentMetadata(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, data)
             val signedMetadata = SignedMetadata(nodeKey, invoiceRequest.offer.offerId, metadata)
             val pathId = signedMetadataCodec.encode(signedMetadata).require.bytes
-            val receivePayment = MultiPartHandler.ReceiveOfferPayment(nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
+            val receivePayment = MultiPartHandler.ReceiveOfferPayment(context.messageAdapter[CreateInvoiceActor.Bolt12InvoiceResponse](WrappedInvoiceResponse), nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
-            child ! CreateInvoiceActor.CreateBolt12Invoice(context.messageAdapter[Try[Bolt12Invoice]](WrappedInvoice), receivePayment)
+            child ! CreateInvoiceActor.CreateBolt12Invoice(receivePayment)
             waitForInvoice(replyPath, postman)
         }
       })
@@ -267,10 +268,10 @@ object OfferManager {
                                postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
-          case WrappedInvoice(Success(invoice)) =>
+          case WrappedInvoiceResponse(CreateInvoiceActor.InvoiceCreated(invoice)) =>
             postman ! Postman.SendMessage(Nil, replyPath, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
             waitForSent()
-          case WrappedInvoice(_) =>
+          case WrappedInvoiceResponse(_) =>
             Behaviors.stopped
         }
       })
@@ -297,7 +298,7 @@ object OfferManager {
     /**
      * Sent by the offer handler to reject the payment. For instance because stock has been exhausted.
      */
-    object RejectPayment extends Command
+    case class RejectPayment(reason: String) extends Command
 
     def apply(nodeParams: NodeParams, replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], offer: Offer, metadata: PaymentMetadata): Behavior[Command] = {
       Behaviors.receiveMessage {
@@ -320,10 +321,10 @@ object OfferManager {
             OfferTypes.Signature(ByteVector64.Zeroes)
           ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
           val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-          replyTo ! MultiPartHandler.GetIncomingPaymentActor.PaymentFound(incomingPayment)
+          replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
           Behaviors.stopped
-        case RejectPayment =>
-          replyTo ! MultiPartHandler.GetIncomingPaymentActor.NoPayment
+        case RejectPayment(reason) =>
+          replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(reason)
           Behaviors.stopped
       }
     }

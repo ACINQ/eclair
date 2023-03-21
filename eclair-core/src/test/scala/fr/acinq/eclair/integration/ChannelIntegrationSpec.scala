@@ -368,8 +368,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     // we now send a few htlcs C->F and F->C in order to obtain a commitments with multiple htlcs
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
-      sender.send(paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-      val Success(invoice) = sender.expectMsgType[Try[Invoice]]
+      sender.send(paymentHandler, ReceiveStandardPayment(sender.ref.toTyped, Some(amountMsat), Left("1 coffee")))
+      val invoice = sender.expectMsgType[Bolt11Invoice]
       val sendReq = SendPaymentToNode(sender.ref, amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
@@ -683,8 +683,8 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
-    sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val Success(invoice) = sender.expectMsgType[Try[Invoice]]
+    sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(sender.ref.toTyped, Some(amountMsat), Left("1 coffee")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
 
     // then we make the actual payment
     sender.send(nodes("C").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, maxAttempts = 1, routeParams = integrationTestRouteParams))

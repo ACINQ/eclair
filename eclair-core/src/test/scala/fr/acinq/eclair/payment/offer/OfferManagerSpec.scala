@@ -27,7 +27,7 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
-import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{NoPayment, PaymentFound}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{RejectPayment, ProcessPayment}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivingRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
@@ -122,7 +122,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       offerManager ! ReceivePayment(paymentHandler.ref, invoice1.paymentHash, PaymentOnion.FinalPayload.Blinded(paymentTlvs, encryptedDataTlvs))
       handler1.expectNoMessage()
       handler2.expectNoMessage()
-      paymentHandler.expectMessage(NoPayment)
+      paymentHandler.expectMessageType[RejectPayment]
     }
 
     { // Paying invoice1
@@ -137,7 +137,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       assert(handlePayment.offerId == offer1.offerId)
       assert(handlePayment.data == hex"01")
       handlePayment.replyTo ! PaymentActor.AcceptPayment(Nil, Nil)
-      val PaymentFound(incomingPayment) = paymentHandler.expectMessageType[PaymentFound]
+      val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
       assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice1.paymentHash)
     }
 
@@ -153,7 +153,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       assert(handlePayment.offerId == offer3.offerId)
       assert(handlePayment.data == hex"03")
       handlePayment.replyTo ! PaymentActor.AcceptPayment(Nil, Nil)
-      val PaymentFound(incomingPayment) = paymentHandler.expectMessageType[PaymentFound]
+      val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
       assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice3.paymentHash)
     }
   }

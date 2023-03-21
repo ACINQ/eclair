@@ -343,8 +343,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
-    sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(Some(amount), Left("test payment"), extraHops = hints))
-    val Success(invoice) = sender.expectMsgType[Try[Bolt11Invoice]]
+    sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(sender.ref.toTyped, Some(amount), Left("test payment"), extraHops = hints))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
 
     sendPayment(node1, amount, invoice)
   }
