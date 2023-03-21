@@ -36,7 +36,7 @@ object IncomingConnectionsTracker {
   sealed trait Command
 
   case class TrackIncomingConnection(remoteNodeId: PublicKey) extends Command
-  private case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
+  private[io] case class ForgetIncomingConnection(remoteNodeId: PublicKey) extends Command
   private[io] case class CountIncomingConnections(replyTo: ActorRef[Int]) extends Command
   // @formatter:on
 

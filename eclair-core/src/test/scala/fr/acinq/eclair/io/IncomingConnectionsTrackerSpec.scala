@@ -16,14 +16,17 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.Status
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.channel.ChannelOpened
+import fr.acinq.eclair.io.IncomingConnectionsTracker.{ForgetIncomingConnection, TrackIncomingConnection}
 import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.{randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -38,11 +41,12 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams1 = nodeParams.copy(peerConnectionConf = nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
     val switchboard = TestProbe[Disconnect]()
-    val tracker = testKit.spawn(IncomingConnectionsTracker(nodeParams1, switchboard.ref))
-    withFixture(test.toNoArgTest(FixtureParam(tracker, switchboard)))
+    val monitorProbe = testKit.createTestProbe[IncomingConnectionsTracker.Command]()
+    val tracker = testKit.spawn(Behaviors.monitor(monitorProbe.ref, IncomingConnectionsTracker(nodeParams1, switchboard.ref)))
+    withFixture(test.toNoArgTest(FixtureParam(tracker, switchboard, monitorProbe)))
   }
 
-  case class FixtureParam(tracker: ActorRef[IncomingConnectionsTracker.Command], switchboard: TestProbe[Disconnect])
+  case class FixtureParam(tracker: ActorRef[IncomingConnectionsTracker.Command], switchboard: TestProbe[Disconnect], monitorProbe: TestProbe[IncomingConnectionsTracker.Command])
 
   test("accept new node connections, after limit is reached kill oldest node connection first") { f =>
     import f._
@@ -50,9 +54,9 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection1)
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection2)
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(randomKey().publicKey)
-    switchboard.expectMessage(Disconnect(connection1))
+    assert(switchboard.expectMessageType[Disconnect].nodeId === connection1)
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(randomKey().publicKey)
-    switchboard.expectMessage(Disconnect(connection2))
+    assert(switchboard.expectMessageType[Disconnect].nodeId === connection2)
   }
 
   test("stop tracking a node that disconnects and free space for a new node connection") { f =>
@@ -61,10 +65,13 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     // Track nodes without channels.
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection1)
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection2)
+    monitorProbe.expectMessageType[TrackIncomingConnection]
+    monitorProbe.expectMessageType[TrackIncomingConnection]
 
     // Untrack a node when it disconnects.
     val probe = TestProbe[Int]()
     system.eventStream ! EventStream.Publish(PeerDisconnected(system.deadLetters.toClassic, connection1))
+    monitorProbe.expectMessageType[ForgetIncomingConnection]
     eventually {
       tracker ! IncomingConnectionsTracker.CountIncomingConnections(probe.ref)
       probe.expectMessage(1)
@@ -76,7 +83,7 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
 
     // Track a new node connection and disconnect the oldest node connection.
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(randomKey().publicKey)
-    switchboard.expectMessage(Disconnect(connection2))
+    assert(switchboard.expectMessageType[Disconnect].nodeId === connection2)
   }
 
   test("stop tracking a node that creates a channel and free space for a new node connection") { f =>
@@ -85,10 +92,13 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     // Track nodes without channels.
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection1)
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(connection2)
+    monitorProbe.expectMessageType[TrackIncomingConnection]
+    monitorProbe.expectMessageType[TrackIncomingConnection]
 
     // Untrack a node when a channel with it is confirmed on-chain.
     val probe = TestProbe[Int]()
     system.eventStream ! EventStream.Publish(ChannelOpened(system.deadLetters.toClassic, connection1, randomBytes32()))
+    monitorProbe.expectMessageType[ForgetIncomingConnection]
     eventually {
       tracker ! IncomingConnectionsTracker.CountIncomingConnections(probe.ref)
       probe.expectMessage(1)
@@ -100,7 +110,15 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
 
     // Track a new node connection and disconnect the oldest node connection.
     tracker ! IncomingConnectionsTracker.TrackIncomingConnection(randomKey().publicKey)
-    switchboard.expectMessage(Disconnect(connection2))
+    assert(switchboard.expectMessageType[Disconnect].nodeId === connection2)
+  }
+
+  test("terminate if an unhandled message received from classic actor") { f =>
+    import f._
+    // confirm behavior after receiving an untyped reply from switchboard when Disconnect message cannot be sent to a
+    // non-existent peer.
+    tracker.toClassic ! Status.Failure(new RuntimeException(s"peer $connection2 not found"))
+    monitorProbe.expectTerminated(tracker, 100 millis)
   }
 
 }
