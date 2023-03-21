@@ -42,6 +42,7 @@ object OfferManager {
 
   /**
    * Register an offer and its handler.
+   *
    * @param offer      The offer.
    * @param nodeKey    The private key corresponding to the node id used in the offer.
    * @param pathId_opt If the offer uses a blinded path, the path id of this blinded path.
@@ -51,11 +52,13 @@ object OfferManager {
 
   /**
    * Forget about an offer. Invoice requests and payment attempts for this offer will be ignored.
+   *
    * @param offer The offer to forget.
    */
   case class DisableOffer(offer: Offer) extends Command
 
   case class RequestInvoice(messagePayload: MessageOnion.FinalPayload, postman: ActorRef[Postman.SendMessage]) extends Command
+
   case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
 
   /**
@@ -65,6 +68,7 @@ object OfferManager {
 
   /**
    * When an invoice request is received, a `HandleInvoiceRequest` is sent to the handler registered for this offer.
+   *
    * @param replyTo        The handler must reply with either `InvoiceRequestActor.ApproveRequest` or `InvoiceRequestActor.RejectRequest`.
    * @param invoiceRequest The invoice request to accept or reject. It is guaranteed to be valid for the offer.
    */
@@ -73,6 +77,7 @@ object OfferManager {
   /**
    * When a payment is received for an offer invoice, a `HandlePayment` is sent to the handler registered for this offer.
    * The handler may receive several `HandlePayment` for the same payment, usually because of multi-part payments.
+   *
    * @param replyTo    The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
    * @param offerId    The id of the offer in case a single handler handles multiple offers.
    * @param pluginData Data provided by the handler when generating the invoice, for its own use.
@@ -203,6 +208,7 @@ object OfferManager {
 
     /**
      * Sent by the offer handler. Causes an invoice to be created and sent to the requester.
+     *
      * @param amount         Amount for the invoice (must be the same as the invoice request if it contained an amount).
      * @param routes         Routes to use for the payment.
      * @param pluginData     Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
@@ -289,6 +295,7 @@ object OfferManager {
 
     /**
      * Sent by the offer handler. Causes the creation of a dummy invoice that matches as best as possible the actual invoice for this payment (since the actual invoice is not stored) and will be used in the payment handler.
+     *
      * @param additionalTlvs additional TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
      * @param customTlvs     custom TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
      */

@@ -27,7 +27,7 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
-import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{RejectPayment, ProcessPayment}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{ProcessPayment, RejectPayment}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivingRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData

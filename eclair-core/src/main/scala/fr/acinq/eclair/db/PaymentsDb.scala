@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampMilli}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.util.Try
@@ -40,8 +39,8 @@ trait IncomingPaymentsDb {
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
   /**
-   *  Add a new incoming offer payment as received.
-   *  If the invoice is already paid, adds `amount` to the amount paid.
+   * Add a new incoming offer payment as received.
+   * If the invoice is already paid, adds `amount` to the amount paid.
    */
   def receiveIncomingOfferPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
 

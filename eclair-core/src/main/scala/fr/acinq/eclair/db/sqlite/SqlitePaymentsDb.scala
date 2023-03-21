@@ -301,12 +301,12 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(8, receivedAt.toLong)
       statement.executeUpdate()
     } == 0) {
-    using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (received_msat + ?, ?) WHERE payment_hash = ?")) { statement =>
-      statement.setLong(1, amount.toLong)
-      statement.setLong(2, receivedAt.toLong)
-      statement.setBytes(3, invoice.paymentHash.toArray)
-      statement.executeUpdate()
-    }
+      using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (received_msat + ?, ?) WHERE payment_hash = ?")) { statement =>
+        statement.setLong(1, amount.toLong)
+        statement.setLong(2, receivedAt.toLong)
+        statement.setBytes(3, invoice.paymentHash.toArray)
+        statement.executeUpdate()
+      }
     }
   }
 

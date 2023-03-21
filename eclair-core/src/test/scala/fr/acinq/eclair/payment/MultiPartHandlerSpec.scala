@@ -17,9 +17,8 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.Status
-import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{KeySend, _}
@@ -46,7 +45,6 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.collection.immutable.Queue
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 24/03/2017.

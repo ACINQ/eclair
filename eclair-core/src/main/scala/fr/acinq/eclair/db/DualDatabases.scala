@@ -1,7 +1,6 @@
 package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
@@ -13,7 +12,6 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
-import scodec.bits.ByteVector
 
 import java.io.File
 import java.util.UUID

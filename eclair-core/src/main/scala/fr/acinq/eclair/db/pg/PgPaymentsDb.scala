@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 
 import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
