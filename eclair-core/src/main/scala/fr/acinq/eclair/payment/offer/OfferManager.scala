@@ -23,9 +23,9 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
+import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceivingRoute}
-import fr.acinq.eclair.payment.{Bolt12Invoice, Invoice}
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, millisatoshi, publicKey, timestampSecond, uint64overflow}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
@@ -36,7 +36,6 @@ import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.concurrent.duration.DurationInt
-import scala.util.{Success, Try}
 
 object OfferManager {
   sealed trait Command
@@ -301,32 +300,35 @@ object OfferManager {
     case class RejectPayment(reason: String) extends Command
 
     def apply(nodeParams: NodeParams, replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], offer: Offer, metadata: PaymentMetadata): Behavior[Command] = {
-      Behaviors.receiveMessage {
-        case AcceptPayment(additionalTlvs, customTlvs) =>
-          val dummyKey = PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000001")
-          // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bits with the real one.
-          val dummyInvoice = Bolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
-            OfferTypes.InvoiceRequestMetadata(ByteVector.empty),
-            OfferTypes.InvoiceRequestChain(nodeParams.chainHash),
-            OfferTypes.InvoiceRequestQuantity(metadata.quantity),
-            OfferTypes.InvoiceRequestPayerId(metadata.payerKey),
-            OfferTypes.InvoicePaths(Seq(RouteBlinding.BlindedRoute(dummyKey, dummyKey, Seq(RouteBlinding.BlindedNode(dummyKey, ByteVector.empty))))),
-            OfferTypes.InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty))),
-            OfferTypes.InvoiceCreatedAt(metadata.createdAt),
-            OfferTypes.InvoiceRelativeExpiry(nodeParams.invoiceExpiry.toSeconds),
-            OfferTypes.InvoicePaymentHash(Crypto.sha256(metadata.preimage)),
-            OfferTypes.InvoiceAmount(metadata.amount),
-            OfferTypes.InvoiceFeatures(nodeParams.features.bolt12Features().unscoped()),
-            OfferTypes.InvoiceNodeId(offer.nodeId),
-            OfferTypes.Signature(ByteVector64.Zeroes)
-          ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
-          val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-          replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
-          Behaviors.stopped
-        case RejectPayment(reason) =>
-          replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(reason)
-          Behaviors.stopped
-      }
+      Behaviors.setup(context => {
+        context.scheduleOnce(1 minute, context.self, RejectPayment("Timeout"))
+        Behaviors.receiveMessage {
+          case AcceptPayment(additionalTlvs, customTlvs) =>
+            val dummyKey = PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000001")
+            // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bits with the real one.
+            val dummyInvoice = Bolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
+              OfferTypes.InvoiceRequestMetadata(ByteVector.empty),
+              OfferTypes.InvoiceRequestChain(nodeParams.chainHash),
+              OfferTypes.InvoiceRequestQuantity(metadata.quantity),
+              OfferTypes.InvoiceRequestPayerId(metadata.payerKey),
+              OfferTypes.InvoicePaths(Seq(RouteBlinding.BlindedRoute(dummyKey, dummyKey, Seq(RouteBlinding.BlindedNode(dummyKey, ByteVector.empty))))),
+              OfferTypes.InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty))),
+              OfferTypes.InvoiceCreatedAt(metadata.createdAt),
+              OfferTypes.InvoiceRelativeExpiry(nodeParams.invoiceExpiry.toSeconds),
+              OfferTypes.InvoicePaymentHash(Crypto.sha256(metadata.preimage)),
+              OfferTypes.InvoiceAmount(metadata.amount),
+              OfferTypes.InvoiceFeatures(nodeParams.features.bolt12Features().unscoped()),
+              OfferTypes.InvoiceNodeId(offer.nodeId),
+              OfferTypes.Signature(ByteVector64.Zeroes)
+            ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
+            val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+            replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
+            Behaviors.stopped
+          case RejectPayment(reason) =>
+            replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(reason)
+            Behaviors.stopped
+        }
+      })
     }
   }
 }
