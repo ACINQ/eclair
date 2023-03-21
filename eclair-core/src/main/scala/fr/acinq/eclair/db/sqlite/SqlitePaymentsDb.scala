@@ -290,21 +290,23 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   override def receiveIncomingOfferPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")) { statement =>
+    if (using(sqlite.prepareStatement("INSERT OR IGNORE INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, invoice.toString)
       statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong)
       statement.setLong(6, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
-      statement.setLong(7, receivedAt.toLong)
+      statement.setLong(7, amount.toLong)
+      statement.setLong(8, receivedAt.toLong)
       statement.executeUpdate()
-    }
+    } == 0) {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (received_msat + ?, ?) WHERE payment_hash = ?")) { statement =>
       statement.setLong(1, amount.toLong)
       statement.setLong(2, receivedAt.toLong)
       statement.setBytes(3, invoice.paymentHash.toArray)
       statement.executeUpdate()
+    }
     }
   }
 

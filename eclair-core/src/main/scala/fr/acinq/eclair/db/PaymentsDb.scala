@@ -300,19 +300,4 @@ object PaymentsDb {
       case Attempt.Failure(_) => Nil
     }
   }
-
-  private val pathIdCodec = (("blinding_key" | CommonCodecs.publicKey) :: ("path_id" | variableSizeBytes(uint16, bytes))).as[(PublicKey, ByteVector)]
-  private val pathIdsCodec = "path_ids" | listOfN(uint16, pathIdCodec)
-
-  def encodePathIds(pathIds: Map[PublicKey, ByteVector]): Array[Byte] = {
-    pathIdsCodec.encode(pathIds.toList).require.toByteArray
-  }
-
-  def decodePathIds(b: BitVector): Map[PublicKey, ByteVector] = {
-    pathIdsCodec.decode(b) match {
-      case Attempt.Successful(pathIds) => pathIds.value.toMap
-      case Attempt.Failure(_) => Map.empty
-    }
-  }
-
 }
