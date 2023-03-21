@@ -289,7 +289,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Sqlite) {
+  override def receiveIncomingOfferPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)

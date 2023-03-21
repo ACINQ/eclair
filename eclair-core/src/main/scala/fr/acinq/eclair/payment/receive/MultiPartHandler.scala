@@ -201,7 +201,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val recordedInDb = payment match {
           // Incoming offer payments are not stored in the database until they have been paid.
           case IncomingBlindedPayment(invoice, preimage, paymentType, _, _) =>
-            db.receiveAddIncomingBlindedPayment(invoice, preimage, received.amount, received.timestamp, paymentType)
+            db.receiveIncomingOfferPayment(invoice, preimage, received.amount, received.timestamp, paymentType)
             true
           // Incoming standard payments are already stored and need to be marked as received.
           case _: IncomingStandardPayment =>

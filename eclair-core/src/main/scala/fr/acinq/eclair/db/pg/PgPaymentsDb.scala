@@ -280,7 +280,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def receiveAddIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-blinded", DbBackends.Postgres) {
+  override def receiveIncomingOfferPayment(invoice: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)" +
         "ON CONFLICT (payment_hash) DO UPDATE SET (received_msat, received_at) = (payments.received.received_msat + EXCLUDED.received_msat, EXCLUDED.received_at)")) { statement =>

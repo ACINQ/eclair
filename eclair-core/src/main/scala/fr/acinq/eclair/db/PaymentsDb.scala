@@ -43,7 +43,7 @@ trait IncomingPaymentsDb {
    *  Add a new incoming offer payment as received.
    *  If the invoice is already paid, adds `amount` to the amount paid.
    */
-  def receiveAddIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
+  def receiveIncomingOfferPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]

@@ -685,7 +685,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.addIncomingPayment(expiredInvoice2, expiredPayment2.paymentPreimage)
       db.addIncomingPayment(paidInvoice1, payment1.paymentPreimage)
       db.addIncomingPayment(paidInvoice2, payment2.paymentPreimage)
-      db.receiveAddIncomingBlindedPayment(paidInvoice3, payment3.paymentPreimage, 1730 msat, receivedAt3)
+      db.receiveIncomingOfferPayment(paidInvoice3, payment3.paymentPreimage, 1730 msat, receivedAt3)
 
       assert(db.getIncomingPayment(pendingInvoice1.paymentHash).contains(pendingPayment1))
       assert(db.getIncomingPayment(expiredInvoice2.paymentHash).contains(expiredPayment2))
@@ -701,7 +701,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 100 msat, receivedAt2) // adding another payment to this invoice should sum
       db.receiveIncomingPayment(paidInvoice2.paymentHash, 1111 msat, receivedAt2)
-      db.receiveAddIncomingBlindedPayment(paidInvoice3, payment3.paymentPreimage, 3400 msat, receivedAt4)
+      db.receiveIncomingOfferPayment(paidInvoice3, payment3.paymentPreimage, 3400 msat, receivedAt4)
 
       val payment4 = payment3.copy(status = IncomingPaymentStatus.Received(5130 msat, receivedAt4))
 
