@@ -715,7 +715,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.data == hex"abcd")
+    assert(handlePayment.pluginData == hex"abcd")
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = Await.result(payOffer, 5 seconds).asInstanceOf[PaymentSent]
@@ -747,7 +747,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.data == hex"0123")
+    assert(handlePayment.pluginData == hex"0123")
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = Await.result(payOffer, 5 seconds).asInstanceOf[PaymentSent]
@@ -780,7 +780,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.data == hex"4567")
+    assert(handlePayment.pluginData == hex"4567")
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = Await.result(payOffer, 5 seconds).asInstanceOf[PaymentSent]
@@ -813,7 +813,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.data == hex"eff0")
+    assert(handlePayment.pluginData == hex"eff0")
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = Await.result(payOffer, 5 seconds).asInstanceOf[PaymentSent]

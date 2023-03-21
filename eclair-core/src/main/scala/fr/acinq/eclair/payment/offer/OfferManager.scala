@@ -74,11 +74,11 @@ object OfferManager {
   /**
    * When a payment is received for an offer invoice, a `HandlePayment` is sent to the handler registered for this offer.
    * The handler may receive several `HandlePayment` for the same payment, usually because of multi-part payments.
-   * @param replyTo The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
-   * @param offerId The id of the offer in case a single handler handles multiple offers.
-   * @param data    Data provided by the handler when generating the invoice, for its own use.
+   * @param replyTo    The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
+   * @param offerId    The id of the offer in case a single handler handles multiple offers.
+   * @param pluginData Data provided by the handler when generating the invoice, for its own use.
    */
-  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, data: ByteVector) extends HandlerCommand
+  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, pluginData: ByteVector) extends HandlerCommand
 
   case class RegisteredOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
@@ -87,7 +87,7 @@ object OfferManager {
                              createdAt: TimestampSecond,
                              quantity: Long,
                              amount: MilliSatoshi,
-                             extraData: ByteVector)
+                             pluginData: ByteVector)
 
   private val metadataCodec: Codec[PaymentMetadata] =
     (("preimage" | bytes32) ::
@@ -95,7 +95,7 @@ object OfferManager {
       ("createdAt" | timestampSecond) ::
       ("quantity" | uint64overflow) ::
       ("amount" | millisatoshi) ::
-      ("extraData" | bytes)).as[PaymentMetadata]
+      ("pluginData" | bytes)).as[PaymentMetadata]
 
   /**
    * Metadata that will be included in the blinded route so that we can recover it when the payment happens without
@@ -182,7 +182,7 @@ object OfferManager {
                     case None => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"Invalid signature for metadata for offer ${signed.offerId.toHex}")
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata))
-                      handler ! HandlePayment(child, signed.offerId, metadata.extraData)
+                      handler ! HandlePayment(child, signed.offerId, metadata.pluginData)
                     case _ => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"Preimage does not match payment hash for offer ${signed.offerId.toHex}")
                   }
                 case _ =>
@@ -206,13 +206,13 @@ object OfferManager {
      * Sent by the offer handler. Causes an invoice to be created and sent to the requester.
      * @param amount         Amount for the invoice (must be the same as the invoice request if it contained an amount).
      * @param routes         Routes to use for the payment.
-     * @param data           Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
+     * @param pluginData     Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
      * @param additionalTlvs additional TLVs to add to the invoice.
      * @param customTlvs     custom TLVs to add to the invoice.
      */
     case class ApproveRequest(amount: MilliSatoshi,
                               routes: Seq[ReceivingRoute],
-                              data: ByteVector,
+                              pluginData: ByteVector,
                               additionalTlvs: Set[InvoiceTlv] = Set.empty,
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
 
