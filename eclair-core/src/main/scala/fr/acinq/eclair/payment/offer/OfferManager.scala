@@ -234,13 +234,13 @@ object OfferManager {
               offerHandler: ActorRef[HandleInvoiceRequest],
               nodeKey: PrivateKey,
               router: akka.actor.ActorRef,
-              replyPath: OnionMessages.Destination,
+              pathToSender: OnionMessages.Destination,
               postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
           case RequestInvoice =>
             offerHandler ! HandleInvoiceRequest(context.self, invoiceRequest)
-            waitForHandler(nodeParams, invoiceRequest, nodeKey, router, replyPath, postman)
+            waitForHandler(nodeParams, invoiceRequest, nodeKey, router, pathToSender, postman)
         }
       })
     }
@@ -249,7 +249,7 @@ object OfferManager {
                                invoiceRequest: InvoiceRequest,
                                nodeKey: PrivateKey,
                                router: akka.actor.ActorRef,
-                               replyPath: OnionMessages.Destination,
+                               pathToSender: OnionMessages.Destination,
                                postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
@@ -263,17 +263,17 @@ object OfferManager {
             val receivePayment = MultiPartHandler.ReceiveOfferPayment(context.messageAdapter[CreateInvoiceActor.Bolt12InvoiceResponse](WrappedInvoiceResponse), nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
             child ! CreateInvoiceActor.CreateBolt12Invoice(receivePayment)
-            waitForInvoice(replyPath, postman)
+            waitForInvoice(pathToSender, postman)
         }
       })
     }
 
-    private def waitForInvoice(replyPath: OnionMessages.Destination,
+    private def waitForInvoice(pathToSender: OnionMessages.Destination,
                                postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
           case WrappedInvoiceResponse(CreateInvoiceActor.InvoiceCreated(invoice)) =>
-            postman ! Postman.SendMessage(Nil, replyPath, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
+            postman ! Postman.SendMessage(Nil, pathToSender, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
             waitForSent()
           case WrappedInvoiceResponse(_) =>
             Behaviors.stopped
