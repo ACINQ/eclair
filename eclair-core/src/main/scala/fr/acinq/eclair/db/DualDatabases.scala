@@ -289,7 +289,7 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.receiveIncomingPayment(paymentHash, amount, receivedAt)
   }
 
-  override def receiveIncomingOfferPayment(pr: Bolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = {
+  override def receiveIncomingOfferPayment(pr: DummyBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = {
     runAsync(secondary.receiveIncomingOfferPayment(pr, preimage, amount, receivedAt, paymentType))
     primary.receiveIncomingOfferPayment(pr, preimage, amount, receivedAt, paymentType)
   }

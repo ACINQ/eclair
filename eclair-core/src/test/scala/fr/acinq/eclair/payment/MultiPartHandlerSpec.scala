@@ -178,7 +178,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
       assert(receivePayment.paymentHash == invoice.paymentHash)
       assert(receivePayment.payload.pathId == pathId.bytes)
-      val payment = IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+      val payment = IncomingBlindedPayment(DummyBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
       receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
       assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
 
@@ -205,7 +205,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       sender.send(handlerWithRouteBlinding, finalPacket)
       val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
       assert(payment.payload.pathId == hex"cafe")
-      payment.replyTo ! GetIncomingPaymentActor.ProcessPayment(IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
+      payment.replyTo ! GetIncomingPaymentActor.ProcessPayment(IncomingBlindedPayment(DummyBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
       assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
@@ -538,7 +538,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(receivePayment.paymentHash == invoice.paymentHash)
     assert(receivePayment.payload.pathId == pathId.bytes)
-    val payment = IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+    val payment = IncomingBlindedPayment(DummyBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
     receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
@@ -563,7 +563,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(receivePayment.paymentHash == invoice.paymentHash)
     assert(receivePayment.payload.pathId == pathId.bytes)
-    val payment = IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+    val payment = IncomingBlindedPayment(DummyBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
     receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
@@ -586,7 +586,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(receivePayment.paymentHash == invoice.paymentHash)
     assert(receivePayment.payload.pathId == pathId.bytes)
-    val payment = IncomingBlindedPayment(invoice, preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
+    val payment = IncomingBlindedPayment(DummyBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
     receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))

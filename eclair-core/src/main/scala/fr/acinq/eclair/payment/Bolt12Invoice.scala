@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Bolt12Invoice.validate
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferCodecs, OfferTypes, TlvStream}
@@ -153,5 +154,41 @@ object Bolt12Invoice {
       case Left(f) => return Failure(new IllegalArgumentException(f.toString))
       case Right(invoice) => invoice
     }
+  }
+}
+
+case class DummyBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
+  import DummyBolt12Invoice._
+
+  override val amount_opt: Option[MilliSatoshi] = records.get[InvoiceAmount].map(_.amount)
+  override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
+  override val paymentHash: ByteVector32 = records.get[InvoicePaymentHash].get.hash
+  override val description: Either[String, ByteVector32] = Left(records.get[OfferDescription].get.description)
+  override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
+  override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
+  override val features: Features[InvoiceFeature] = {
+    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
+    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
+  }
+
+  override def toString: String = {
+    val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes
+    Bech32.encodeBytes(hrp, data.toArray, Bech32.Encoding.Beck32WithoutChecksum)
+  }
+}
+
+object DummyBolt12Invoice {
+  val hrp = "lndi"
+
+  def fromString(input: String): Try[DummyBolt12Invoice] = Try {
+    val triple = Bech32.decodeBytes(input.toLowerCase, true)
+    val prefix = triple.getFirst
+    val encoded = triple.getSecond
+    val encoding = triple.getThird
+    require(prefix == hrp)
+    require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
+    val tlvs = OfferCodecs.invoiceTlvCodec.decode(ByteVector(encoded).bits).require.value
+    DummyBolt12Invoice(tlvs)
   }
 }
