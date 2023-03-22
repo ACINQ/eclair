@@ -254,7 +254,8 @@ object OfferManager {
       Behaviors.setup(context => {
         Behaviors.receiveMessagePartial {
           case RejectRequest =>
-            Behaviors.stopped
+            postman ! Postman.SendMessage(Nil, pathToSender, None, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error("Invoice request rejected")))), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
+            waitForSent()
           case ApproveRequest(amount, routes, data, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
             val metadata = PaymentMetadata(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, data)
