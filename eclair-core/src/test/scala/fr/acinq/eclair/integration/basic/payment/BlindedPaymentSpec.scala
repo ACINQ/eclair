@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.send.{OfferPayment, PaymentLifecycle}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -121,7 +121,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
     val paymentInitiator = TestProbe()(system)
     val offerPayment = system.spawnAnonymous(OfferPayment(requester.nodeParams, requester.postman, paymentInitiator.ref))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, intermediateNodes = Nil, requester.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, requester.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(ActorRef.noSender, offer, amount, 1, sendPaymentConfig)
     paymentInitiator.expectMsgType[SendPaymentToNode].invoice.asInstanceOf[Bolt12Invoice]
   }

@@ -56,11 +56,10 @@ object OnionMessages {
   def buildRoute(blindingSecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
                  recipient: Recipient): Sphinx.RouteBlinding.BlindedRoute = {
-    val nodes = if (intermediateNodes.lastOption.exists(_.nodeId == recipient.nodeId)) intermediateNodes.dropRight(1) else intermediateNodes
-    val intermediatePayloads = buildIntermediatePayloads(nodes, Set(OutgoingNodeId(recipient.nodeId)))
+    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, Set(OutgoingNodeId(recipient.nodeId)))
     val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
     val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs)).require.bytes
-    Sphinx.RouteBlinding.create(blindingSecret, nodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
+    Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
   }
 
   private def buildRouteFrom(originKey: PrivateKey,
@@ -81,9 +80,8 @@ object OnionMessages {
         }
       case BlindedPath(route) if intermediateNodes.isEmpty => Some(route)
       case BlindedPath(route) =>
-        val nodes = if (intermediateNodes.lastOption.exists(_.nodeId == route.introductionNodeId)) intermediateNodes.dropRight(1) else intermediateNodes
-        val intermediatePayloads = buildIntermediatePayloads(nodes, Set(OutgoingNodeId(route.introductionNodeId), NextBlinding(route.blindingKey)))
-        val routePrefix = Sphinx.RouteBlinding.create(blindingSecret, nodes.map(_.nodeId), intermediatePayloads).route
+        val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, Set(OutgoingNodeId(route.introductionNodeId), NextBlinding(route.blindingKey)))
+        val routePrefix = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads).route
         Some(Sphinx.RouteBlinding.BlindedRoute(routePrefix.introductionNodeId, routePrefix.blindingKey, routePrefix.blindedNodes ++ route.blindedNodes))
     }
   }

@@ -97,11 +97,11 @@ trait Payment {
   }
 
   val payOffer: Route = postRequest("payoffer") { implicit t =>
-    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "blocking".as[Boolean].?) {
-      case (offer, amountMsat, quantity_opt, path_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, blocking_opt) =>
+    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "blocking".as[Boolean].?) {
+      case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, blocking_opt) =>
         blocking_opt match {
-          case Some(true) => complete(eclairApi.payOfferBlocking(offer, amountMsat, quantity_opt.getOrElse(1), path_opt.getOrElse(Nil), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-          case _ => complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), path_opt.getOrElse(Nil), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          case Some(true) => complete(eclairApi.payOfferBlocking(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          case _ => complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
         }
     }
   }

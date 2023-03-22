@@ -54,7 +54,6 @@ import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
-import scala.util.{Success, Try}
 
 /**
  * Created by PM on 15/03/2017.
@@ -688,7 +687,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(status.route.lastOption.contains(HopSummary(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)), status)
   }
 
-  test("send a blinded payment A->D with many blinded routes") {
+  test("send a blinded payment B->D with many blinded routes") {
     val recipientKey = randomKey()
     val amount = 50_000_000 msat
     val chain = nodes("D").nodeParams.chainHash
@@ -702,8 +701,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("D").system.toTyped)
     nodes("D").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
 
-    val alice = new EclairImpl(nodes("A"))
-    val payOffer = alice.payOfferBlocking(offer, amount, 1, path = Seq(nodes("B").nodeParams.nodeId), maxAttempts_opt = Some(3))(5 seconds)
+    val bob = new EclairImpl(nodes("B"))
+    val payOffer = bob.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(5 seconds)
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val receivingRoutes = Seq(

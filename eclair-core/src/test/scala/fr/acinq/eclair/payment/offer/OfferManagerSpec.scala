@@ -99,6 +99,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handleInvoiceRequest2 = handler2.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest2.invoiceRequest.payerId == payerKey2.publicKey)
     handleInvoiceRequest2.replyTo ! InvoiceRequestActor.RejectRequest
+    val invoiceMessage2 = postman.expectMessageType[Postman.SendMessage]
+    assert(invoiceMessage2.message.get[OnionMessagePayloadTlv.InvoiceError].nonEmpty)
 
     val handleInvoiceRequest3 = handler2.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest3.invoiceRequest.payerId == payerKey3.publicKey)
