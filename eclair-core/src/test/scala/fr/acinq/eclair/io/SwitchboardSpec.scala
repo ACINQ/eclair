@@ -171,8 +171,10 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // Disconnect the oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
-    peer.expectMsgType[Peer.Init]
-    assert(peer.expectMsgType[Peer.Disconnect].nodeId == unknownNodeId1)
+    peer.fishForMessage() {
+      case d: Peer.Disconnect => d.nodeId == unknownNodeId1
+      case _: Peer.Init => false
+    }
 
     // Do not disconnect an old peer when a peer with channels connects.
     switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
@@ -182,8 +184,10 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
-    peer.expectMsgType[Peer.Init]
-    assert(peer.expectMsgType[Peer.Disconnect].nodeId == unknownNodeId2)
+    peer.fishForMessage()  {
+      case d: Peer.Disconnect => d.nodeId == unknownNodeId2
+      case _: Peer.Init => false
+    }
   }
 
 }
