@@ -24,6 +24,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.Peer.ConnectionDown
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
@@ -137,6 +138,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true))
     probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("initialization timed out"))
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("disconnect if incompatible local features") { f =>
@@ -153,6 +155,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("disconnect if incompatible global features") { f =>
@@ -169,6 +172,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("disconnect if features dependencies not met") { f =>
@@ -186,6 +190,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("basic_mpp is set but is missing a dependency (payment_secret)"))
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("disconnect if incompatible networks") { f =>
@@ -202,6 +207,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible networks"))
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("sync when requested") { f =>
@@ -261,6 +267,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[Ping]
     deathWatcher.watch(transport.ref)
     deathWatcher.expectTerminated(transport.ref, max = 11 seconds)
+    peer.expectMsg(ConnectionDown(peerConnection))
   }
 
   test("filter gossip message (no filtering)") { f =>

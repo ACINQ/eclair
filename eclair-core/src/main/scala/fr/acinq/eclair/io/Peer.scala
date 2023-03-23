@@ -90,6 +90,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         stay() using d.copy(channels = channels1)
       }
 
+    case Event(ConnectionDown(_), d: DisconnectedData) =>
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.debug("connection lost while negotiating connection")
+      }
+      if (d.channels.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay()
+      }
+
     // This event is usually handled while we're connected, but if our peer disconnects right when we're emitting this,
     // we still want to record the channelId mapping.
     case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: DisconnectedData) =>

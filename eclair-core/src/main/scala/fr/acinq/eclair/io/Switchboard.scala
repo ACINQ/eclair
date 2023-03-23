@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -111,7 +111,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
 
-    case GetPeers => sender() ! context.children.filterNot(_.path.name.startsWith("incoming-connections-tracker"))
+    case GetPeers => sender() ! context.children.filterNot(_ == incomingConnectionsTracker.toClassic)
 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {

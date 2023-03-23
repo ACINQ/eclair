@@ -190,6 +190,20 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     }
   }
 
+  test("GetPeers should only return child nodes of type `Peer`") {
+    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
+    val (peer, probe) = (TestProbe(), TestProbe())
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(TestProbe(), peer)))
+    switchboard ! Switchboard.Init(Nil)
+    switchboard ! Peer.Connect(remoteNodeId, None, TestProbe().ref, isPersistent = true)
+    peer.expectMsgType[Peer.Init]
+    probe.send(switchboard, GetPeers)
+    val peers = probe.expectMsgType[Iterable[ActorRef]]
+    assert(peers.size == 1)
+    assert(peers.head.path.name == peerActorName(remoteNodeId))
+  }
+
 }
 
 object SwitchboardSpec {

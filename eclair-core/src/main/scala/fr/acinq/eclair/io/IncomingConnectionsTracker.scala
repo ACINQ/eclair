@@ -5,7 +5,8 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.{Logs, NodeParams}
 import fr.acinq.eclair.channel.ChannelOpened
 import fr.acinq.eclair.io.IncomingConnectionsTracker.Command
 import fr.acinq.eclair.io.Monitoring.Metrics
@@ -26,10 +27,11 @@ import fr.acinq.eclair.io.Peer.{Disconnect, DisconnectResponse}
  * Likewise, peers with channels will disconnect and terminate when their last channel closes.
  *
  * Note: Peers on the sync whitelist are not tracked.
-
- * This actor enables a DoS attack that can block new incoming liquidity from non-whitelisted nodes.
- * An attacker can trivially disconnect other incoming connections before they can open channels by repeatedly opening
- * new connections using random node IDs.
+ *
+ * This rate-limiting can be abused by attackers to prevent us from accepting channels from unknown peers: attackers can
+ * create a continuous stream of incoming connections with random nodeIds, which forces us to constantly disconnect old
+ * connections before they have the opportunity to open a channel. This can be fixed by adding a TCP rate-limiter that
+ * rejects connections based on IP addresses, which forces the attacker to own a lot of IP addresses.
 */
 object IncomingConnectionsTracker {
   // @formatter:off
@@ -42,9 +44,11 @@ object IncomingConnectionsTracker {
 
   def apply(nodeParams: NodeParams, switchboard: ActorRef[Disconnect]): Behavior[Command] = {
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
-      new IncomingConnectionsTracker(nodeParams, switchboard, context).tracking(Map())
+      Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.CONNECTION))) {
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
+        new IncomingConnectionsTracker(nodeParams, switchboard, context).tracking(Map.empty)
+      }
     }
   }
 }
