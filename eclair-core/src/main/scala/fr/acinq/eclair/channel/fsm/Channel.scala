@@ -1563,31 +1563,42 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(TickChannelOpenTimeout, _) => stay()
 
     case Event(w: WatchPublishedTriggered, d: PersistentChannelData) =>
-      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
-        case Right((commitments1, _)) =>
-          log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
-          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
-          val d1 = d match {
-            // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
-            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
-              val realScidStatus = RealScidStatus.Unknown
-              val shortIds = createShortIds(d.channelId, realScidStatus)
-              DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
-              val realScidStatus = RealScidStatus.Unknown
-              val shortIds = createShortIds(d.channelId, realScidStatus)
-              DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds)
-            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments1)
-            case d: DATA_NORMAL => d.copy(commitments = commitments1)
-            case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
-            case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
-            case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
-            case d: DATA_CLOSING => d.copy(commitments = commitments1)
-          }
-          stay() using d1 storing()
-        case Left(_) => stay()
+      // When our peer sends us channel_ready while we're still waiting for confirmations, we may opportunistically
+      // switch to zero-conf, in which case we have both a WatchPublished and a WatchConfirmed pending. But it may not
+      // actually be a real switch to zero-conf: maybe the transaction is confirmed, and they simply received the block
+      // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
+      // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
+      // trigger and rewrite the funding status again.
+      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx) => tx }.exists(_.txid == w.tx.txid)
+      if (alreadyConfirmed) {
+        stay()
+      } else {
+        val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+          case Right((commitments1, _)) =>
+            log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
+            watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+            val d1 = d match {
+              // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
+              case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+                val realScidStatus = RealScidStatus.Unknown
+                val shortIds = createShortIds(d.channelId, realScidStatus)
+                DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds)
+              case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED =>
+                val realScidStatus = RealScidStatus.Unknown
+                val shortIds = createShortIds(d.channelId, realScidStatus)
+                DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds)
+              case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
+              case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments1)
+              case d: DATA_NORMAL => d.copy(commitments = commitments1)
+              case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
+              case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
+              case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
+              case d: DATA_CLOSING => d.copy(commitments = commitments1)
+            }
+            stay() using d1 storing()
+          case Left(_) => stay()
+        }
       }
 
     case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
