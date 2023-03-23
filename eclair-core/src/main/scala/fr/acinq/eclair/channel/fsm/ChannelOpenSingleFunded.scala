@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -372,9 +372,16 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      if (remoteChannelReady.alias_opt.isDefined && d.commitments.params.localParams.isInitiator) {
+      // We are here if:
+      //  - we're using zero-conf, but our peer was very fast and we received their channel_ready before our watcher
+      //    notification that the funding tx has been successfully published: in that case we don't put a duplicate watch
+      //  - we're not using zero-conf, but our peer decided to trust us anyway, in which case we can skip waiting for
+      //    confirmations if we're the initiator (no risk of double-spend) and they provided a channel alias
+      val switchToZeroConf = d.commitments.params.localParams.isInitiator &&
+        remoteChannelReady.alias_opt.isDefined &&
+        !d.commitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf)
+      if (switchToZeroConf) {
         log.info("this channel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
-        // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored
         blockchain ! WatchPublished(self, d.commitments.latest.fundingTxId)
       }
       log.debug("received their channel_ready, deferring message")

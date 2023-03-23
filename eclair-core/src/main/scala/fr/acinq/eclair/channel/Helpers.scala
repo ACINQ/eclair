@@ -379,7 +379,7 @@ object Helpers {
 
     /**
      * When using dual funding, we wait for multiple confirmations even if we're the initiator because:
-     *  - our peer may also contribute to the funding transaction
+     *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
      *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
      */
     def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], isInitiator: Boolean, localAmount: Satoshi, remoteAmount: Satoshi): Option[Long] = {
