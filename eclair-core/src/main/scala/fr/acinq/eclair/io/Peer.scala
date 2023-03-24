@@ -541,4 +541,5 @@ object Peer {
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
 
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
+  // @formatter:on
 }

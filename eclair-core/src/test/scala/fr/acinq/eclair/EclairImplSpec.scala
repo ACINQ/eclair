@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.io.Peer.{Disconnect, Disconnecting, OpenChannel}
+import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
@@ -695,17 +695,5 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     relayer.expectMsg(GetOutgoingChannels(enabledOnly = false))
     eclair.usableBalances().pipeTo(sender.ref)
     relayer.expectMsg(GetOutgoingChannels())
-  }
-
-  test("disconnect") { f =>
-    import f._
-
-    val eclair = new EclairImpl(kit)
-
-    eclair.disconnect(randomKey().publicKey).pipeTo(sender.ref)
-    val disconnect = switchboard.expectMsgType[Disconnect]
-    val replyTo = disconnect.replyTo_opt.getOrElse(sender.ref.toTyped)
-    replyTo ! Disconnecting(disconnect.nodeId)
-    sender.expectMsg(Disconnecting(disconnect.nodeId))
   }
 }

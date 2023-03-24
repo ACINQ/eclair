@@ -465,7 +465,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       Metrics.PeerConnectionsConnected.withoutTags().decrement()
       d.peer ! Peer.ConnectionDown(self)
     case StopEvent(_, INITIALIZING, d: InitializingData) =>
-      log.debug(s"terminated while initializing.")
+      log.debug("terminated while initializing.")
       d.peer ! Peer.ConnectionDown(self)
   }
 

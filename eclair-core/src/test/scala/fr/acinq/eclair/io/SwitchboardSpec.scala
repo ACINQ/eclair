@@ -184,7 +184,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
-    peer.fishForMessage()  {
+    peer.fishForMessage() {
       case d: Peer.Disconnect => d.nodeId == unknownNodeId2
       case _: Peer.Init => false
     }
