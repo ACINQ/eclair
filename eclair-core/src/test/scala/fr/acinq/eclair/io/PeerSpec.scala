@@ -245,7 +245,7 @@ class PeerSpec extends FixtureSpec {
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
-    probe.expectMsg("disconnecting")
+    probe.expectMsgType[Peer.Disconnecting]
   }
 
   test("handle disconnect in state DISCONNECTED") { f =>
@@ -260,7 +260,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
-    assert(probe.expectMsgType[Status.Failure].cause.getMessage == "not connected")
+    probe.expectMsgType[Peer.NotConnected]
   }
 
   test("handle new connection in state CONNECTED") { f =>
@@ -634,6 +634,21 @@ class PeerSpec extends FixtureSpec {
     assert(channelAborted.remoteNodeId == remoteNodeId)
     assert(channelAborted.channelId == open.temporaryChannelId)
   }
+
+  test("kill peer with no channels if connection dies before receiving `ConnectionReady`") { f =>
+    import f._
+    val probe = TestProbe()
+    probe.watch(peer)
+    switchboard.send(peer, Peer.Init(Set.empty))
+    eventually {
+      probe.send(peer, Peer.GetPeerInfo(None))
+      assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    }
+    // this will be sent if PeerConnection dies for any reason during the handshake
+    peer ! ConnectionDown(peerConnection.ref)
+    probe.expectTerminated(peer)
+  }
+
 }
 
 object PeerSpec {

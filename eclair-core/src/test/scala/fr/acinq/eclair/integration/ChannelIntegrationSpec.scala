@@ -513,7 +513,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // simulate a disconnection
     sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
-    assert(sender.expectMsgType[String] == "disconnecting")
+    sender.expectMsgType[Peer.Disconnecting]
 
     awaitCond({
       fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))

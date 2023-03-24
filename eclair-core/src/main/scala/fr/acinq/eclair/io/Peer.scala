@@ -90,6 +90,17 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         stay() using d.copy(channels = channels1)
       }
 
+    case Event(ConnectionDown(_), d: DisconnectedData) =>
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.debug("connection lost while negotiating connection")
+      }
+      if (d.channels.isEmpty) {
+        // we have no existing channels, we can forget about this peer
+        stopPeer()
+      } else {
+        stay()
+      }
+
     // This event is usually handled while we're connected, but if our peer disconnects right when we're emitting this,
     // we still want to record the channelId mapping.
     case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: DisconnectedData) =>
@@ -226,9 +237,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         // we won't clean it up, but we won't remember the temporary id on channel termination
         stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-      case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
+      case Event(Disconnect(nodeId, replyTo_opt), d: ConnectedData) if nodeId == remoteNodeId =>
         log.debug("disconnecting")
-        sender() ! "disconnecting"
+        val replyTo = replyTo_opt.getOrElse(sender().toTyped)
+        replyTo ! Disconnecting(nodeId)
         d.peerConnection ! PeerConnection.Kill(KillReason.UserRequest)
         stay()
 
@@ -301,8 +313,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       sender() ! Status.Failure(new RuntimeException("not connected"))
       stay()
 
-    case Event(_: Peer.Disconnect, _) =>
-      sender() ! Status.Failure(new RuntimeException("not connected"))
+    case Event(Disconnect(nodeId, replyTo_opt), _) =>
+      val replyTo = replyTo_opt.getOrElse(sender().toTyped)
+      replyTo ! NotConnected(nodeId)
       stay()
 
     case Event(r: GetPeerInfo, d) =>
@@ -470,7 +483,12 @@ object Peer {
     def apply(uri: NodeURI, replyTo: ActorRef, isPersistent: Boolean): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo, isPersistent)
   }
 
-  case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
+  case class Disconnect(nodeId: PublicKey, replyTo_opt: Option[typed.ActorRef[DisconnectResponse]] = None) extends PossiblyHarmful
+  sealed trait DisconnectResponse {
+    def nodeId: PublicKey
+  }
+  case class Disconnecting(nodeId: PublicKey) extends DisconnectResponse { override def toString: String = s"peer $nodeId disconnecting" }
+  case class NotConnected(nodeId: PublicKey) extends DisconnectResponse { override def toString: String = s"peer $nodeId not connected" }
 
   case class OpenChannel(remoteNodeId: PublicKey,
                          fundingAmount: Satoshi,
@@ -499,7 +517,7 @@ object Peer {
     def nodeId: PublicKey
   }
   case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
-  case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse { override def toString: String = s"peer $nodeId not found" }
+  case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 

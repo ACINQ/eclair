@@ -2605,7 +2605,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
       case _ => false
     }
   }
@@ -2616,7 +2616,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
       case _ => false
     }
   }
@@ -2636,7 +2636,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! Shutdown(ByteVector32.Zeroes, hex"00112233445566778899")
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
       case _ => false
     }
   }
@@ -2647,7 +2647,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
       case _ => false
     }
   }

@@ -17,15 +17,16 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
-import fr.acinq.eclair.io.Peer.PeerInfoResponse
+import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.OnionMessage
@@ -38,6 +39,8 @@ import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with Stash with ActorLogging {
 
   import Switchboard._
+
+  private val incomingConnectionsTracker = context.spawn(Behaviors.supervise(IncomingConnectionsTracker(nodeParams, context.self.toTyped)).onFailure(typed.SupervisorStrategy.resume), name = "incoming-connections-tracker")
 
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
@@ -80,9 +83,10 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       peer forward c
 
     case d: Peer.Disconnect =>
+      val replyTo = d.replyTo_opt.getOrElse(sender().toTyped)
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${d.nodeId} not found"))
+        case None => replyTo ! PeerNotFound(d.nodeId)
       }
 
     case o: Peer.OpenChannel =>
@@ -95,15 +99,19 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
       val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
+      val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
-      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
+      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
+      if (!hasChannels && !authenticated.outgoing) {
+        incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
+      }
 
     case ChannelIdAssigned(_, remoteNodeId, _, _) => context.become(normal(peersWithChannels + remoteNodeId))
 
     case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
 
-    case GetPeers => sender() ! context.children
+    case GetPeers => sender() ! context.children.filterNot(_ == incomingConnectionsTracker.toClassic)
 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {
@@ -134,7 +142,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        log.debug(s"creating new peer (current={})", context.children.size)
+        // do not count the incoming-connections-tracker child actor that is not a peer
+        log.debug(s"creating new peer (current={})", context.children.size - 1)
         val peer = createPeer(remoteNodeId)
         peer ! Peer.Init(offlineChannels)
         peer
