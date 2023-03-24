@@ -289,7 +289,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def receiveIncomingOfferPayment(invoice: DummyBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Sqlite) {
+  override def receiveIncomingOfferPayment(invoice: MinimalBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Sqlite) {
     if (using(sqlite.prepareStatement("INSERT OR IGNORE INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
@@ -319,7 +319,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
       case Success(invoice: Bolt11Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
-      case Success(invoice: DummyBolt12Invoice) =>
+      case Success(invoice: MinimalBolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getLongNullable("received_at").map(TimestampMilli(_)))
         Some(IncomingBlindedPayment(invoice, preimage, paymentType, createdAt, status))
       case _ =>

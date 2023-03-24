@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivingRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
-import fr.acinq.eclair.wire.protocol.{MessageOnion, OnionMessagePayloadTlv, OnionPaymentPayloadTlv, PaymentOnion, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -138,7 +138,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       val handlePayment = handler1.expectMessageType[HandlePayment]
       assert(handlePayment.offerId == offer1.offerId)
       assert(handlePayment.pluginData == hex"01")
-      handlePayment.replyTo ! PaymentActor.AcceptPayment(Nil, Nil)
+      handlePayment.replyTo ! PaymentActor.AcceptPayment()
       val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
       assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice1.paymentHash)
     }
@@ -154,9 +154,10 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       val handlePayment = handler2.expectMessageType[HandlePayment]
       assert(handlePayment.offerId == offer3.offerId)
       assert(handlePayment.pluginData == hex"03")
-      handlePayment.replyTo ! PaymentActor.AcceptPayment(Nil, Nil)
+      handlePayment.replyTo ! PaymentActor.AcceptPayment()
       val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
       assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice3.paymentHash)
     }
   }
+
 }

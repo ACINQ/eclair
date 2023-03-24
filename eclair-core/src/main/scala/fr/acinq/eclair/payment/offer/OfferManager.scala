@@ -22,13 +22,13 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.payment.DummyBolt12Invoice
+import fr.acinq.eclair.payment.MinimalBolt12Invoice
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceivingRoute}
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, millisatoshi, publicKey, timestampSecond, uint64overflow}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OfferTypes, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, randomBytes32}
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -299,7 +299,7 @@ object OfferManager {
      * @param additionalTlvs additional TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
      * @param customTlvs     custom TLVs to add to the dummy invoice. Should be the same as what was used for the actual invoice.
      */
-    case class AcceptPayment(additionalTlvs: Seq[InvoiceTlv] = Nil, customTlvs: Seq[GenericTlv] = Nil) extends Command
+    case class AcceptPayment(additionalTlvs: Set[InvoiceTlv] = Set.empty, customTlvs: Set[GenericTlv] = Set.empty) extends Command
 
     /**
      * Sent by the offer handler to reject the payment. For instance because stock has been exhausted.
@@ -312,17 +312,7 @@ object OfferManager {
         Behaviors.receiveMessage {
           case AcceptPayment(additionalTlvs, customTlvs) =>
             // This invoice is not the one we've sent (we don't store the real one as it would be a DoS vector) but it shares all the important bits with the real one.
-            val dummyInvoice = DummyBolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
-              OfferTypes.InvoiceRequestChain(nodeParams.chainHash),
-              OfferTypes.InvoiceRequestQuantity(metadata.quantity),
-              OfferTypes.InvoiceRequestPayerId(metadata.payerKey),
-              OfferTypes.InvoiceCreatedAt(metadata.createdAt),
-              OfferTypes.InvoiceRelativeExpiry(nodeParams.invoiceExpiry.toSeconds),
-              OfferTypes.InvoicePaymentHash(Crypto.sha256(metadata.preimage)),
-              OfferTypes.InvoiceAmount(metadata.amount),
-              OfferTypes.InvoiceFeatures(nodeParams.features.bolt12Features().unscoped()),
-              OfferTypes.InvoiceNodeId(offer.nodeId),
-            ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
+            val dummyInvoice = MinimalBolt12Invoice(offer, nodeParams.chainHash, metadata.amount, metadata.quantity, Crypto.sha256(metadata.preimage), metadata.payerKey, metadata.createdAt, additionalTlvs, customTlvs)
             val incomingPayment = IncomingBlindedPayment(dummyInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
             replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
             Behaviors.stopped

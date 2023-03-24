@@ -17,11 +17,10 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs, migrationCheck}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.db.PaymentsDb._
 import fr.acinq.eclair.db.jdbc.JdbcUtils.{setVersion, using}
 import fr.acinq.eclair.db.pg.PgPaymentsDb
@@ -29,10 +28,9 @@ import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, NodeHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, TlvStream, UnknownNextPeer}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, Paginated, ShortChannelId, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
 
 import java.time.Instant
 import java.util.UUID
@@ -655,9 +653,6 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(!db.receiveIncomingPayment(unknownPaymentHash, 12345678 msat))
       assert(db.getIncomingPayment(unknownPaymentHash).isEmpty)
 
-      val dummyBlindedPath = BlindedRoute(randomKey().publicKey, randomKey().publicKey, Seq(BlindedNode(randomKey().publicKey, hex"2a2b2c"), BlindedNode(randomKey().publicKey, hex"deadbeef")))
-      val dummyPathInfo = Seq(PaymentInfo(1 msat, 15, CltvExpiryDelta(48), 1 msat, 15000 msat, Features.empty))
-
       val expiredInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #1"), CltvExpiryDelta(18), timestamp = 1 unixsec)
       val expiredInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #2"), CltvExpiryDelta(18), timestamp = 2 unixsec, expirySeconds = Some(30))
       val expiredPayment1 = IncomingStandardPayment(expiredInvoice1, randomBytes32(), PaymentType.Standard, expiredInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
@@ -670,7 +665,8 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val paidInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #7"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 5.seconds)
       val paidInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #8"), CltvExpiryDelta(18), expirySeconds = Some(60), timestamp = TimestampSecond.now() - 4.seconds)
-      val paidInvoice3 = DummyBolt12Invoice(TlvStream(InvoiceRequestMetadata(randomBytes(5)), OfferDescription("invoice #9"), OfferNodeId(randomKey().publicKey), InvoiceRequestAmount(1729 msat), InvoiceRequestPayerId(randomKey().publicKey), InvoicePaths(Seq(dummyBlindedPath)), InvoiceBlindedPay(dummyPathInfo), InvoiceCreatedAt(TimestampSecond.now() - 3.seconds), InvoicePaymentHash(randomBytes32()), InvoiceAmount(1729 msat), InvoiceNodeId(randomKey().publicKey), Signature(ByteVector64.Zeroes)))
+      val offer = Offer(None, "offer", randomKey().publicKey, Features.empty, Block.TestnetGenesisBlock.hash)
+      val paidInvoice3 = MinimalBolt12Invoice(offer, Block.TestnetGenesisBlock.hash, 1729 msat, 1, randomBytes32(), randomKey().publicKey, TimestampSecond.now() - 3.seconds)
       val receivedAt1 = TimestampMilli.now() + 1.milli
       val receivedAt2 = TimestampMilli.now() + 2.milli
       val receivedAt3 = TimestampMilli.now() + 3.milli

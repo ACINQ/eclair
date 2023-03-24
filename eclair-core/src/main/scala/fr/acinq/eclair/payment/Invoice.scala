@@ -63,8 +63,8 @@ object Invoice {
   def fromString(input: String): Try[Invoice] = {
     if (input.toLowerCase.startsWith(Bolt12Invoice.hrp)) {
       Bolt12Invoice.fromString(input)
-    } else if (input.toLowerCase.startsWith(DummyBolt12Invoice.hrp)) {
-      DummyBolt12Invoice.fromString(input)
+    } else if (input.toLowerCase.startsWith(MinimalBolt12Invoice.hrp)) {
+      MinimalBolt12Invoice.fromString(input)
     } else {
       Bolt11Invoice.fromString(input)
     }

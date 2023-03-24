@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.OfferTypes._
@@ -156,8 +156,15 @@ object Bolt12Invoice {
   }
 }
 
-case class DummyBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
-  import DummyBolt12Invoice._
+/**
+ * When we generate an invoice for a Bolt 12 offer, we don't store it in our DB (otherwise, it would be a DoS vector).
+ * When we receive a payment for that offer, we don't have enough data to recreate the exact invoice we generated for
+ * the payer, and there are fields we don't need to store anyway (e.g. the blinded paths), so we create a minimal
+ * invoice that contains only the payment data we need to store.
+ */
+case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
+
+  import MinimalBolt12Invoice._
 
   override val amount_opt: Option[MilliSatoshi] = records.get[InvoiceAmount].map(_.amount)
   override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
@@ -166,7 +173,7 @@ case class DummyBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val features: Features[InvoiceFeature] = {
-    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
     // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
     f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
   }
@@ -177,10 +184,30 @@ case class DummyBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   }
 }
 
-object DummyBolt12Invoice {
+object MinimalBolt12Invoice {
   val hrp = "lndi"
 
-  def fromString(input: String): Try[DummyBolt12Invoice] = Try {
+  def apply(offer: Offer,
+            chain: ByteVector32,
+            amount: MilliSatoshi,
+            quantity: Long,
+            paymentHash: ByteVector32,
+            payerKey: PublicKey,
+            createdAt: TimestampSecond,
+            additionalTlvs: Set[InvoiceTlv] = Set.empty,
+            customTlvs: Set[GenericTlv] = Set.empty): MinimalBolt12Invoice = {
+    MinimalBolt12Invoice(TlvStream(offer.records.records ++ Seq[InvoiceTlv](
+      OfferTypes.InvoiceRequestChain(chain),
+      OfferTypes.InvoiceRequestQuantity(quantity),
+      OfferTypes.InvoiceRequestPayerId(payerKey),
+      OfferTypes.InvoiceCreatedAt(createdAt),
+      OfferTypes.InvoicePaymentHash(paymentHash),
+      OfferTypes.InvoiceAmount(amount),
+      OfferTypes.InvoiceNodeId(offer.nodeId),
+    ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
+  }
+
+  def fromString(input: String): Try[MinimalBolt12Invoice] = Try {
     val triple = Bech32.decodeBytes(input.toLowerCase, true)
     val prefix = triple.getFirst
     val encoded = triple.getSecond
@@ -188,6 +215,6 @@ object DummyBolt12Invoice {
     require(prefix == hrp)
     require(encoding == Bech32.Encoding.Beck32WithoutChecksum)
     val tlvs = OfferCodecs.invoiceTlvCodec.decode(ByteVector(encoded).bits).require.value
-    DummyBolt12Invoice(tlvs)
+    MinimalBolt12Invoice(tlvs)
   }
 }
