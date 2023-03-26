@@ -1216,6 +1216,26 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("'disconnect' should accept a nodeId") {
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+
+    val eclair = mock[Eclair]
+
+    eclair.disconnect(any[PublicKey])(any[Timeout]) returns Future.successful(Peer.Disconnecting(remoteNodeId).toString)
+    val mockService = new MockService(eclair)
+
+    Post("/disconnect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.disconnect) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val response = entityAs[String]
+        assert(response == s"\"peer $remoteNodeId disconnecting\"")
+        eclair.disconnect(remoteNodeId)(any[Timeout]).wasCalled(once)
+      }
+  }
+
   private def matchTestJson(apiName: String, response: String) = {
     val resource = getClass.getResourceAsStream(s"/api/$apiName")
     val expectedResponse = Try(Source.fromInputStream(resource).mkString).getOrElse {

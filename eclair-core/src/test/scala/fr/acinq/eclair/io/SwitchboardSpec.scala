@@ -1,18 +1,21 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
-import akka.actor.{Actor, ActorContext, ActorRef, Props, Status}
+import akka.actor.{Actor, ActorContext, ActorRef, Props}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector64
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.{ChannelIdAssigned, PersistentChannelData}
+import fr.acinq.eclair.io.Peer.PeerNotFound
 import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, InitFeature, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
+
+import scala.concurrent.duration.DurationInt
 
 class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
@@ -60,7 +63,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val unknownNodeId = randomKey().publicKey
     probe.send(switchboard, Peer.Disconnect(unknownNodeId))
-    assert(probe.expectMsgType[Status.Failure].cause.getMessage == s"peer $unknownNodeId not found")
+    probe.expectMsgType[PeerNotFound]
     probe.send(switchboard, Peer.Disconnect(remoteNodeId))
     peer.expectMsg(Peer.Disconnect(remoteNodeId))
   }
@@ -69,7 +72,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! Switchboard.Init(channels)
-    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
     val initConnection = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
     assert(initConnection.chainHash == nodeParams.chainHash)
     assert(initConnection.features == expectedFeatures)
@@ -91,7 +94,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // We have a channel with our peer, so we trigger a sync when connecting.
     switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32(), randomBytes32())
-    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
     val initConnection1 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
     assert(initConnection1.chainHash == nodeParams.chainHash)
     assert(initConnection1.features == nodeParams.features.initFeatures())
@@ -99,7 +102,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // We don't have channels with our peer, so we won't trigger a sync when connecting.
     switchboard ! LastChannelClosed(peer.ref, remoteNodeId)
-    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
     val initConnection2 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
     assert(initConnection2.chainHash == nodeParams.chainHash)
     assert(initConnection2.features == nodeParams.features.initFeatures())
@@ -139,6 +142,66 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     probe.send(switchboard, GetPeerInfo(probe.ref.toTyped, knownPeerNodeId))
     peer.expectMsg(Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+  }
+
+  test("track nodes with incoming connections that do not have a channel") {
+    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
+    val (probe, peer, peerConnection, channel) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
+    val hasChannelsNodeId1 = randomKey().publicKey
+    val hasChannelsNodeId2 = randomKey().publicKey
+    val unknownNodeId1 = randomKey().publicKey
+    val unknownNodeId2 = randomKey().publicKey
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(Nil)
+
+    // Do not track nodes we connect to.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = true)
+    peer.expectMsgType[Peer.Init]
+
+    // Do not track an incoming connection from a peer we have a channel with.
+    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId1, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId1, outgoing = false)
+    peer.expectMsgType[Peer.Init]
+
+    // We do not yet have channels with these peers, so we track their incoming connections.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, unknownNodeId1, outgoing = false)
+    peer.expectMsgType[Peer.Init]
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, unknownNodeId2, outgoing = false)
+    peer.expectMsgType[Peer.Init]
+
+    // Disconnect the oldest tracked peer when an incoming connection from a peer without channels connects.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
+    peer.fishForMessage() {
+      case d: Peer.Disconnect => d.nodeId == unknownNodeId1
+      case _: Peer.Init => false
+    }
+
+    // Do not disconnect an old peer when a peer with channels connects.
+    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId2, outgoing = false)
+    peer.expectMsgType[Peer.Init]
+    peer.expectNoMessage(100 millis)
+
+    // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
+    peer.fishForMessage() {
+      case d: Peer.Disconnect => d.nodeId == unknownNodeId2
+      case _: Peer.Init => false
+    }
+  }
+
+  test("GetPeers should only return child nodes of type `Peer`") {
+    val nodeParams = Alice.nodeParams.copy(peerConnectionConf = Alice.nodeParams.peerConnectionConf.copy(maxNoChannels = 2))
+    val (peer, probe) = (TestProbe(), TestProbe())
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(TestProbe(), peer)))
+    switchboard ! Switchboard.Init(Nil)
+    switchboard ! Peer.Connect(remoteNodeId, None, TestProbe().ref, isPersistent = true)
+    peer.expectMsgType[Peer.Init]
+    probe.send(switchboard, GetPeers)
+    val peers = probe.expectMsgType[Iterable[ActorRef]]
+    assert(peers.size == 1)
+    assert(peers.head.path.name == peerActorName(remoteNodeId))
   }
 
 }

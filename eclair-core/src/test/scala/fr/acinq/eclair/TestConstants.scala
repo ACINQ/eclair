@@ -169,6 +169,7 @@ object TestConstants {
         killIdleDelay = 1 seconds,
         maxOnionMessagesPerSecond = 10,
         sendRemoteAddressInit = true,
+        maxNoChannels = 250,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
@@ -323,6 +324,7 @@ object TestConstants {
         killIdleDelay = 10 seconds,
         maxOnionMessagesPerSecond = 10,
         sendRemoteAddressInit = true,
+        maxNoChannels = 250,
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,

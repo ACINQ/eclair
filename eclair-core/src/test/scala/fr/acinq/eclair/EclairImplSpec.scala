@@ -696,5 +696,4 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.usableBalances().pipeTo(sender.ref)
     relayer.expectMsg(GetOutgoingChannels())
   }
-
 }

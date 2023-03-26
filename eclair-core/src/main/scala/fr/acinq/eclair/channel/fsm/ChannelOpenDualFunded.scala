@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
+import fr.acinq.eclair.{RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -618,15 +618,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
 
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      // We can skip waiting for confirmations if:
-      //  - there is a single version of the funding tx (otherwise we don't know which one to use)
-      //  - they didn't contribute to the funding output or we trust them to not double-spend
-      val canUseZeroConf = remoteChannelReady.alias_opt.isDefined &&
-        d.commitments.active.size == 1 &&
-        (d.latestFundingTx.fundingParams.remoteAmount == 0.sat || d.commitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf))
-      if (canUseZeroConf) {
+      if (switchToZeroConf(remoteChannelReady, d)) {
         log.info("this channel isn't zero-conf, but they sent an early channel_ready with an alias: no need to wait for confirmations")
-        // NB: we will receive a WatchFundingConfirmedTriggered later that will simply be ignored.
         blockchain ! WatchPublished(self, d.commitments.latest.fundingTxId)
       }
       log.debug("received their channel_ready, deferring message")

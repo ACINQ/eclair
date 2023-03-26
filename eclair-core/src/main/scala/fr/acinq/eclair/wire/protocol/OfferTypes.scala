@@ -17,14 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
-import fr.acinq.secp256k1.Secp256k1JvmKt
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
@@ -443,13 +442,12 @@ object OfferTypes {
   def signSchnorr(tag: ByteVector, msg: ByteVector32, key: PrivateKey): ByteVector64 = {
     val h = hash(tag, msg)
     // NB: we don't add auxiliary random data to keep signatures deterministic.
-    ByteVector64(ByteVector(Secp256k1JvmKt.getSecpk256k1.signSchnorr(h.toArray, key.value.toArray, null)))
+    Crypto.signSchnorr(h, key, fr.acinq.bitcoin.Crypto.SchnorrTweak.NoTweak.INSTANCE)
   }
 
   def verifySchnorr(tag: ByteVector, msg: ByteVector32, signature: ByteVector64, publicKey: PublicKey): Boolean = {
     val h = hash(tag, msg)
-    val xonlyPublicKey = publicKey.value.drop(1) // Schnorr signature only use 32 bytes keys.
-    Secp256k1JvmKt.getSecpk256k1.verifySchnorr(signature.toArray, h.toArray, xonlyPublicKey.toArray)
+    Crypto.verifySignatureSchnorr(h, signature, XonlyPublicKey(publicKey))
   }
 
   /** We often need to remove the signature field to compute the merkle root. */
