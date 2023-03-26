@@ -113,6 +113,8 @@ trait Eclair {
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
+  def receivedPayments(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[IncomingPayment]]
+
   def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[UUID]
 
   def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: Bolt11Invoice, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None)(implicit timeout: Timeout): Future[PaymentEvent]
@@ -138,8 +140,6 @@ trait Eclair {
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]]
 
   def pendingInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
-
-  def paidInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
 
   def expiredInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]]
 
@@ -465,8 +465,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     appKit.nodeParams.db.payments.listPendingIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt).map(_.invoice)
   }
 
-  override def paidInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
-    appKit.nodeParams.db.payments.listReceivedIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt).map(_.invoice)
+  override def receivedPayments(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[IncomingPayment]] = Future {
+    appKit.nodeParams.db.payments.listReceivedIncomingPayments(from.toTimestampMilli, to.toTimestampMilli, paginated_opt)
   }
 
   override def expiredInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {

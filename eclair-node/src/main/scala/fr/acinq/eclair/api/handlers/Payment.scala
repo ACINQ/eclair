@@ -95,6 +95,14 @@ trait Payment {
     }
   }
 
+  val listReceivedPayments: Route = postRequest("listreceivedpayments") { implicit t =>
+    withPaginated { paginated_opt =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
+        complete(eclairApi.receivedPayments(from, to, paginated_opt))
+      }
+    }
+  }
+
   val payOffer: Route = postRequest("payoffer") { implicit t =>
     formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "blocking".as[Boolean].?) {
       case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, blocking_opt) =>
@@ -105,6 +113,6 @@ trait Payment {
     }
   }
 
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ payOffer
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ listReceivedPayments ~ payOffer
 
 }
