@@ -172,6 +172,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       router.expectNoMessage(50 millis)
       val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
       assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+      // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
+      assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
 
       val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathId)
       sender.send(handlerWithRouteBlinding, finalPacket)
@@ -180,32 +182,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(receivePayment.payload.pathId == pathId.bytes)
       val payment = IncomingBlindedPayment(MinimalBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
       receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
-      assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
-
-      val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) == PaymentReceived(finalPacket.add.paymentHash, PartialPayment(amountMsat, finalPacket.add.channelId, timestamp = 0 unixms) :: Nil))
-      val received = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
-      assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) == IncomingPaymentStatus.Received(amountMsat, 0 unixms))
-
-      sender.expectNoMessage(50 millis)
-    }
-    {
-      val privKey = randomKey()
-      val offer = Offer(Some(amountMsat), "a blinded coffee please", privKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
-      val invoiceReq = InvoiceRequest(offer, amountMsat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
-      val preimage = randomBytes32()
-      val router = TestProbe()
-      sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, privKey, invoiceReq, createEmptyReceivingRoute(), router.ref, preimage, hex"cafe"))
-      router.expectNoMessage(50 millis)
-      val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-      assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
-
-      val finalPacket = createBlindedPacket(amountMsat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), hex"cafe")
-      sender.send(handlerWithRouteBlinding, finalPacket)
-      val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
-      assert(payment.payload.pathId == hex"cafe")
-      payment.replyTo ! GetIncomingPaymentActor.ProcessPayment(IncomingBlindedPayment(MinimalBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
       assert(register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message.id == finalPacket.add.id)
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
@@ -327,6 +303,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPaths(2).route.blindedNodeIds.length == 1)
     assert(invoice.blindedPaths(2).route.introductionNodeId == d)
     assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, Features.empty))
+    // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
   }
 
   test("Invoice generation with route blinding should fail when router returns an error") { f =>
@@ -498,7 +476,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithRouteBlinding, packet)
     val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(receivePayment.paymentHash == invoice.paymentHash)
-    receivePayment.replyTo ! GetIncomingPaymentActor.RejectPayment("")
+    receivePayment.replyTo ! GetIncomingPaymentActor.RejectPayment("non blinded payment")
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
@@ -532,6 +510,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, pathId))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
 
     val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathId)
     sender.send(handlerWithRouteBlinding, packet)
@@ -544,29 +523,25 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
   }
 
-  test("PaymentHandler should accept incoming blinded payment (zero hop)") { f =>
+  test("PaymentHandler should reject incoming blinded payment if the offer manager doesn't recognize it") { f =>
     import f._
 
     val nodeKey = randomKey()
+    val preimage = randomBytes32()
+    val pathId = randomBytes(128)
     val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
-    val preimage = randomBytes32()
-    val pathId = randomBytes32()
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, pathId))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
-    val add = UpdateAddHtlc(ByteVector32.One, 0, 5000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
-    val payload = FinalPayload.Blinded(TlvStream(BlindingPoint(randomKey().publicKey), AmountToForward(5000 msat), TotalAmount(5000 msat), OutgoingCltv(CltvExpiry(nodeParams.currentBlockHeight)), EncryptedRecipientData(hex"deadbeef")), TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(500_000), 1 msat)))
-    val packet = IncomingPaymentPacket.FinalPacket(add, payload)
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathId)
     sender.send(handlerWithRouteBlinding, packet)
-    val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
-    assert(receivePayment.paymentHash == invoice.paymentHash)
-    assert(receivePayment.payload.pathId == pathId.bytes)
-    val payment = IncomingBlindedPayment(MinimalBolt12Invoice(invoice.records), preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-    receivePayment.replyTo ! GetIncomingPaymentActor.ProcessPayment(payment)
-    register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]].message
-    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status.isInstanceOf[IncomingPaymentStatus.Received])
+    val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
+    assert(payment.payload.pathId == pathId)
+    payment.replyTo ! GetIncomingPaymentActor.RejectPayment("internal error")
+    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
   }
 
   test("PaymentHandler should reject incoming blinded payment with unexpected expiry") { f =>
@@ -848,24 +823,4 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
   }
 
-  test("PaymentHandler should reject incoming blinded payment if the offer manager doesn't recognize it") { f =>
-    import f._
-
-    val nodeKey = randomKey()
-    val preimage = randomBytes32()
-    val encodedMetadata = randomBytes(128)
-    val offer = Offer(None, "a blinded coffee please", nodeKey.publicKey, Features.empty, Block.RegtestGenesisBlock.hash)
-    val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
-    sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, encodedMetadata))
-    val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
-
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(1), encodedMetadata)
-    sender.send(handlerWithRouteBlinding, packet)
-    val payment = offerManager.expectMsgType[OfferManager.ReceivePayment]
-    assert(payment.payload.pathId == encodedMetadata)
-    payment.replyTo ! GetIncomingPaymentActor.RejectPayment("")
-    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(5000 msat, nodeParams.currentBlockHeight)))
-  }
 }
