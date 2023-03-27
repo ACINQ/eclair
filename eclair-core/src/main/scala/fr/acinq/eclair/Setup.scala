@@ -40,6 +40,7 @@ import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PendingChannelsRateLimiter, Server, Switchboard}
 import fr.acinq.eclair.message.Postman
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
@@ -349,7 +350,8 @@ class Setup(val datadir: File,
       }
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
+      offerManager = system.spawn(Behaviors.supervise(OfferManager(nodeParams, router, paymentTimeout = 1 minute)).onFailure(typed.SupervisorStrategy.resume), name = "offer-manager")
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler", SupervisorStrategy.Resume))
       triggerer = system.spawn(Behaviors.supervise(AsyncPaymentTriggerer()).onFailure(typed.SupervisorStrategy.resume), name = "async-payment-triggerer")
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, triggerer, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       _ = relayer ! PostRestartHtlcCleaner.Init(channels)
@@ -372,7 +374,7 @@ class Setup(val datadir: File,
       _ = triggerer ! AsyncPaymentTriggerer.Start(switchboard.toTyped)
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
-      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -388,6 +390,7 @@ class Setup(val datadir: File,
         channelsListener = channelsListener,
         balanceActor = balanceActor,
         postman = postman,
+        offerManager = offerManager,
         wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -456,6 +459,7 @@ case class Kit(nodeParams: NodeParams,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
+               offerManager: typed.ActorRef[OfferManager.Command],
                wallet: OnChainWallet with OnchainPubkeyCache)
 
 object Kit {

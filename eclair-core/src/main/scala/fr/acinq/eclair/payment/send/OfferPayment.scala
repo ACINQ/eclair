@@ -109,48 +109,46 @@ object OfferPayment {
       case Right(nodeId) =>
         OnionMessages.Recipient(nodeId, None, None)
     }
-    // TODO: random choice of intermediate nodes
-    val intermediateNodes = Nil
+    // TODO: Find a path made of channels as some nodes may refuse to relay messages to nodes with which they don't have a channel.
+    val intermediateNodesToRecipient = Nil
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
-    postman ! SendMessage(intermediateNodes, destination, Some((nodeParams.nodeId +: intermediateNodes).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
-    waitForInvoice(nodeParams, postman, paymentInitiator, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
+    postman ! SendMessage(intermediateNodesToRecipient, destination, Some((nodeParams.nodeId +: intermediateNodesToRecipient).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
+    waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 
   def waitForInvoice(nodeParams: NodeParams,
                      postman: typed.ActorRef[Postman.Command],
                      paymentInitiator: ActorRef,
+                     context: ActorContext[Command],
                      request: InvoiceRequest,
                      payerKey: PrivateKey,
                      replyTo: ActorRef,
                      attemptNumber: Int,
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
-    Behaviors.setup(context =>
-      Behaviors.receiveMessagePartial {
-        case WrappedMessageResponse(Postman.Response(payload)) if payload.records.get[OnionMessagePayloadTlv.Invoice].nonEmpty =>
-          val tlvs = payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs
-          Bolt12Invoice.validate(tlvs) match {
-            case Right(invoice) =>
-              invoice.validateFor(request) match {
-                case Left(reason) =>
-                  replyTo ! InvalidInvoice(tlvs, request, reason)
-                  Behaviors.stopped
-                case Right(()) =>
-                  val recipientAmount = invoice.amount
-                  paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
-                  Behaviors.stopped
-              }
-            case Left(invalidTlvs) =>
-              replyTo ! InvalidInvoice(tlvs, request, invalidTlvs.toString)
-              Behaviors.stopped
-          }
-        case WrappedMessageResponse(_) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
-          // We didn't get an invoice, let's retry.
-          sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber, sendPaymentConfig)
-        case WrappedMessageResponse(_) =>
-          replyTo ! NoInvoice
-          Behaviors.stopped
-      })
+    Behaviors.receiveMessagePartial {
+      case WrappedMessageResponse(Postman.Response(payload)) if payload.records.get[OnionMessagePayloadTlv.Invoice].nonEmpty =>
+        val tlvs = payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs
+        Bolt12Invoice.validate(tlvs) match {
+          case Right(invoice) =>
+            invoice.validateFor(request) match {
+              case Left(reason) =>
+                replyTo ! InvalidInvoice(tlvs, request, reason)
+                Behaviors.stopped
+              case Right(()) =>
+                val recipientAmount = invoice.amount
+                paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+                Behaviors.stopped
+            }
+          case Left(invalidTlvs) =>
+            replyTo ! InvalidInvoice(tlvs, request, invalidTlvs.toString)
+            Behaviors.stopped
+        }
+      case WrappedMessageResponse(_) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
+        // We didn't get an invoice, let's retry.
+        sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber, sendPaymentConfig)
+      case WrappedMessageResponse(_) =>
+        replyTo ! NoInvoice
+        Behaviors.stopped
+    }
   }
 }
-
-

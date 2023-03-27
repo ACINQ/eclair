@@ -89,12 +89,13 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams, blocking = false))
-    for (i <- 1 to nodeParams.onionMessageConfig.maxAttempts) {
+    for (_ <- 1 to nodeParams.onionMessageConfig.maxAttempts) {
       val Postman.SendMessage(_, Recipient(recipientId, _, _), _, message, replyTo, _) = postman.expectMessageType[Postman.SendMessage]
       assert(recipientId == merchantKey.publicKey)
       assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
       val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
-      assert(invoiceRequest.isValidFor(offer))
+      assert(invoiceRequest.isValid)
+      assert(invoiceRequest.offer == offer)
       replyTo ! Postman.NoReply
     }
     probe.expectMsg(NoInvoice)

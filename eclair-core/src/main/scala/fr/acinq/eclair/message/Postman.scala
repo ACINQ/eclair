@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.message
 
+import akka.actor.typed
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
@@ -23,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.Destination
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
@@ -50,7 +52,7 @@ object Postman {
                          replyTo: ActorRef[OnionMessageResponse],
                          timeout: FiniteDuration) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
-  private case class WrappedMessage(finalPayload: FinalPayload) extends Command
+  case class WrappedMessage(finalPayload: FinalPayload) extends Command
   case class SendingStatus(status: MessageRelay.Status) extends Command
 
   sealed trait OnionMessageResponse
@@ -61,7 +63,7 @@ object Postman {
   case class MessageFailed(reason: String) extends MessageStatus
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, switchboard: ActorRef[Switchboard.RelayMessage], offerManager: typed.ActorRef[OfferManager.RequestInvoice]): Behavior[Command] = {
     Behaviors.setup(context => {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
 
@@ -75,14 +77,18 @@ object Postman {
 
       Behaviors.receiveMessagePartial {
         case WrappedMessage(finalPayload) =>
-          finalPayload.pathId_opt match {
-            case Some(pathId) if pathId.length == 32 =>
-              val id = ByteVector32(pathId)
-              subscribed.get(id).foreach(ref => {
-                subscribed -= id
-                ref ! Response(finalPayload)
-              })
-            case _ => // ignoring message with invalid or missing pathId
+          if (finalPayload.records.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty) {
+            offerManager ! OfferManager.RequestInvoice(finalPayload, context.self)
+          } else {
+            finalPayload.pathId_opt match {
+              case Some(pathId) if pathId.length == 32 =>
+                val id = ByteVector32(pathId)
+                subscribed.get(id).foreach(ref => {
+                  subscribed -= id
+                  ref ! Response(finalPayload)
+                })
+              case _ => // ignoring message with invalid or missing pathId
+            }
           }
           Behaviors.same
         case SendMessage(intermediateNodes, destination, replyPath, messageContent, replyTo, timeout) =>

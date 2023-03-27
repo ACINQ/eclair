@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.integration
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
@@ -34,6 +35,7 @@ import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 12/07/2021.
@@ -83,8 +85,8 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amountMsat = 100_000.msat
     // first we retrieve a payment hash from B
-    sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
-    val pr = sender.expectMsgType[Invoice]
+    sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(sender.ref.toTyped, Some(amountMsat), Left("1 coffee")))
+    val pr = sender.expectMsgType[Bolt11Invoice]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amountMsat, pr, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
