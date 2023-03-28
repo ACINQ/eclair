@@ -49,7 +49,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
   test("nonreg for der/bin64 signatures") {
     val bin = ByteVector.fromValidHex(Source.fromInputStream(getClass.getResourceAsStream("/normal_data_htlcs.bin")).mkString)
-    val c = ChannelCodecs.channelDataCodec.decode(bin.toBitVector).require.value
+    val c = ChannelCodecs.channelDataCodec.decode(bin.toBitVector).require.value.asInstanceOf[ChannelDataWithCommitments]
 
     val ref = Seq(
       hex"304502210097fcda40b22916b5d61badedf6126658c2b5927d5002cc2c3e5f88a78ba5f45b02204a74bcf8827d894cab153fc051f39d8e2aeb660162a6a05797f7140587a6133301",
@@ -232,11 +232,11 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     oldbins.foreach { oldbin =>
       // we decode with compat codec
-      val oldnormal = channelDataCodec.decode(oldbin.bits).require.value
+      val oldnormal = channelDataCodec.decode(oldbin.bits).require.value.asInstanceOf[ChannelDataWithCommitments]
       // and we encode with new codec
       val newbin = channelDataCodec.encode(oldnormal).require.bytes
       // make sure that round-trip yields the same data
-      val newnormal = channelDataCodec.decode(newbin.bits).require.value
+      val newnormal = channelDataCodec.decode(newbin.bits).require.value.asInstanceOf[ChannelDataWithCommitments]
       assert(newnormal == oldnormal)
       // make sure that we have stripped sigs from the transactions
       assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))

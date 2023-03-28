@@ -379,6 +379,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             // No need to store their commit_sig, they will re-send it if we disconnect.
             stay() using d.copy(signingSession = signingSession1)
           case signingSession1: InteractiveTxSigningSession.SendingSigs =>
+            // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
+            // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
+            // receive their tx_sigs.
             watchFundingConfirmed(d.signingSession.fundingTx.txId, d.signingSession.fundingParams.minDepth_opt)
             val commitments = Commitments(
               params = d.channelParams,
@@ -720,7 +723,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       reportRbfFailure(d.rbfStatus, new RuntimeException("rbf attempt failed: disconnected"))
-      goto(OFFLINE) using d.copy(rbfStatus = RbfStatus.NoRbf)
+      val d1 = d.rbfStatus match {
+        // We keep track of the RBF status: we should be able to complete the signature steps on reconnection.
+        case _: RbfStatus.RbfWaitingForSigs => d
+        case _ => d.copy(rbfStatus = RbfStatus.NoRbf)
+      }
+      goto(OFFLINE) using d1
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       reportRbfFailure(d.rbfStatus, new RuntimeException(s"remote error: ${e.toAscii}"))
