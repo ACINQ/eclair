@@ -18,19 +18,17 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, CommitSig, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, TxSignatures, Warning}
-import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, Warning}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, UInt64, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
@@ -50,15 +48,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    val bobContribution = if (channelType.features.contains(Features.ZeroConf)) None else Some(TestConstants.nonInitiatorFundingSatoshis)
-    val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
     val aliceListener = TestProbe()
     val bobListener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
       bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, initiatorPushAmount, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, bobContribution, dualFunded = true, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, Some(TestConstants.nonInitiatorFundingSatoshis), dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]
@@ -76,9 +72,6 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
   test("complete interactive-tx protocol", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
-    val listener = TestProbe()
-    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-
     // The initiator sends the first interactive-tx message.
     bob2alice.expectNoMessage(100 millis)
     alice2bob.expectMsgType[TxAddInput]
@@ -96,126 +89,9 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
 
-    // Bob sends its signatures first as he contributed less than Alice.
-    bob2alice.expectMsgType[TxSignatures]
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
-    val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
-    assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
-
-    // Alice receives Bob's signatures and sends her own signatures.
-    bob2alice.forward(alice)
-    assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
-    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
-    alice2bob.expectMsgType[TxSignatures]
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
-  }
-
-  test("complete interactive-tx protocol (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    import f._
-
-    val listener = TestProbe()
-    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
-
-    // Bob sends its signatures first as he contributed less than Alice.
-    bob2alice.expectMsgType[TxSignatures]
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
-    val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
-    assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
-    bob2blockchain.expectNoMessage(100 millis)
-
-    // Alice receives Bob's signatures and sends her own signatures.
-    bob2alice.forward(alice)
-    assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
-    assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
-    alice2bob.expectMsgType[TxSignatures]
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
-    assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
-  }
-
-  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
-    import f._
-
-    val listener = TestProbe()
-    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-
-    // The initiator sends the first interactive-tx message.
-    bob2alice.expectNoMessage(100 millis)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.expectNoMessage(100 millis)
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
-
-    val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount - TestConstants.initiatorPushAmount
-    assert(expectedBalanceAlice == 900_000_000.msat)
-    val expectedBalanceBob = TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi + TestConstants.initiatorPushAmount - TestConstants.nonInitiatorPushAmount
-    assert(expectedBalanceBob == 600_000_000.msat)
-
-    // Bob sends its signatures first as he contributed less than Alice.
-    bob2alice.expectMsgType[TxSignatures]
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.commitments.latest.localCommit.spec.toLocal == expectedBalanceBob)
-    assert(bobData.commitments.latest.localCommit.spec.toRemote == expectedBalanceAlice)
-
-    // Alice receives Bob's signatures and sends her own signatures.
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxSignatures]
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.commitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
-    assert(aliceData.commitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
   }
 
   test("recv invalid interactive-tx message", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -237,78 +113,6 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
-  }
-
-  test("recv invalid CommitSig", Tag(ChannelStateTestsTags.DualFunding)) { f =>
-    import f._
-
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
-    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
-
-    bob2alice.forward(alice, bobCommitSig.copy(signature = ByteVector64.Zeroes))
-    alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 1)
-    aliceListener.expectMsgType[ChannelAborted]
-    awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
-
-    alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
-    bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 2)
-    bobListener.expectMsgType[ChannelAborted]
-    awaitCond(bob.stateName == CLOSED)
-  }
-
-  test("recv invalid TxSignatures", Tag(ChannelStateTestsTags.DualFunding)) { f =>
-    import f._
-
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
-
-    val bobSigs = bob2alice.expectMsgType[TxSignatures]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2alice.forward(alice, bobSigs.copy(txHash = randomBytes32(), witnesses = Nil))
-    alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.size == 1)
-    aliceListener.expectMsgType[ChannelAborted]
-    awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
-
-    // Bob has sent his signatures already, so he cannot close the channel yet.
-    alice2bob.forward(bob, TxSignatures(channelId(alice), randomBytes32(), Nil))
-    bob2alice.expectMsgType[Error]
-    bob2blockchain.expectNoMessage(100 millis)
-    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
   test("recv TxAbort", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -412,6 +216,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
   test("recv TickChannelOpenTimeout", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
+
     alice ! TickChannelOpenTimeout
     awaitCond(wallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]

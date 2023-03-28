@@ -404,7 +404,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! cmdAdd
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(htlc)))
+    eventually(assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.remoteChanges.proposed.contains(htlc)))
     htlc
   }
 
@@ -412,21 +412,21 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(fulfill)))
+    eventually(assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.remoteChanges.proposed.contains(fulfill)))
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure()))
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
-    eventually(assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.remoteChanges.proposed.contains(fail)))
+    eventually(assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.remoteChanges.proposed.contains(fail)))
   }
 
   def crossSign(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
     val sender = TestProbe()
-    val sCommitIndex = s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex
-    val rCommitIndex = r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex
-    val rHasChanges = r.stateData.asInstanceOf[PersistentChannelData].commitments.changes.localHasChanges
+    val sCommitIndex = s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex
+    val rCommitIndex = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex
+    val rHasChanges = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
     s2r.expectMsgType[CommitSig]
@@ -443,17 +443,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == sCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == rCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == rCommitIndex + 2)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 1)
       }
     } else {
       eventually {
-        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == sCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.localCommitIndex == rCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[PersistentChannelData].commitments.remoteCommitIndex == rCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 1)
       }
     }
   }
@@ -470,7 +470,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
-    eventually(assert(s.stateData.asInstanceOf[PersistentChannelData].commitments.latest.localCommit.spec.commitTxFeerate == feerate))
+    eventually(assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.localCommit.spec.commitTxFeerate == feerate))
   }
 
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {

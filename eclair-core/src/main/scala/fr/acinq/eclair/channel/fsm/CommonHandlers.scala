@@ -101,7 +101,7 @@ trait CommonHandlers {
   }
 
   /** We don't regenerate the final address if we already have one. */
-  def getOrGenerateFinalScriptPubKey(data: PersistentChannelData): ByteVector = data match {
+  def getOrGenerateFinalScriptPubKey(data: ChannelDataWithCommitments): ByteVector = data match {
     case d: DATA_NORMAL if d.localShutdown.isDefined => d.localShutdown.get.scriptPubKey
     case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
     case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey

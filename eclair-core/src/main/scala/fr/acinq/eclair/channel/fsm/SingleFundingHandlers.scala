@@ -114,7 +114,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     goto(CLOSED) sending error
   }
 
-  def singleFundingMinDepth(d: PersistentChannelData) = {
+  def singleFundingMinDepth(d: ChannelDataWithCommitments): Long = {
     val minDepth_opt = if (d.commitments.params.localParams.isInitiator) {
       Helpers.Funding.minDepthFunder(d.commitments.params.localParams.initFeatures)
     } else {

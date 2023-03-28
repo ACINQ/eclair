@@ -57,7 +57,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                                          |-------------------------------->|
                                          |           tx_complete           |
                                          |<--------------------------------|
-                                         |                                 |
+            WAIT_FOR_DUAL_FUNDING_SIGNED |                                 | WAIT_FOR_DUAL_FUNDING_SIGNED
                                          |        commitment_signed        |
                                          |-------------------------------->|
                                          |        commitment_signed        |
@@ -366,6 +366,79 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       d.txBuilder ! InteractiveTxBuilder.Abort
       d.replyTo_opt.foreach(_ ! OpenChannelResponse.TimedOut)
       goto(CLOSED)
+  })
+
+  when(WAIT_FOR_DUAL_FUNDING_SIGNED)(handleExceptions {
+    case Event(commitSig: CommitSig, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      d.signingSession.receiveCommitSig(nodeParams, d.channelParams, commitSig) match {
+        case Left(f) =>
+          rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+          goto(CLOSED) sending Error(d.channelId, f.getMessage)
+        case Right(signingSession1) => signingSession1 match {
+          case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
+            // No need to store their commit_sig, they will re-send it if we disconnect.
+            stay() using d.copy(signingSession = signingSession1)
+          case signingSession1: InteractiveTxSigningSession.SendingSigs =>
+            watchFundingConfirmed(d.signingSession.fundingTx.txId, d.signingSession.fundingParams.minDepth_opt)
+            val commitments = Commitments(
+              params = d.channelParams,
+              changes = CommitmentChanges.init(),
+              active = List(signingSession1.commitment),
+              remoteNextCommitInfo = Right(d.secondRemotePerCommitmentPoint),
+              remotePerCommitmentSecrets = ShaChain.init,
+              originChannels = Map.empty
+            )
+            val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
+            goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession1.localSigs
+        }
+      }
+
+    case Event(msg: InteractiveTxMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      msg match {
+        case txSigs: TxSignatures =>
+          d.signingSession.receiveTxSigs(nodeParams, txSigs) match {
+            case Left(f) =>
+              rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+              goto(CLOSED) sending Error(d.channelId, f.getMessage)
+            case Right(signingSession) =>
+              watchFundingConfirmed(d.signingSession.fundingTx.txId, d.signingSession.fundingParams.minDepth_opt)
+              val commitments = Commitments(
+                params = d.channelParams,
+                changes = CommitmentChanges.init(),
+                active = List(signingSession.commitment),
+                remoteNextCommitInfo = Right(d.secondRemotePerCommitmentPoint),
+                remotePerCommitmentSecrets = ShaChain.init,
+                originChannels = Map.empty
+              )
+              val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, RbfStatus.NoRbf, None)
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession.localSigs calling publishFundingTx(signingSession.fundingTx)
+          }
+        case msg: TxAbort =>
+          log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
+          rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+          goto(CLOSED) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
+        case msg: InteractiveTxConstructionMessage =>
+          log.info("received unexpected interactive-tx message: {}", msg.getClass.getSimpleName)
+          stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
+        case _: TxInitRbf =>
+          log.info("ignoring unexpected tx_init_rbf message")
+          stay() sending Warning(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+        case _: TxAckRbf =>
+          log.info("ignoring unexpected tx_ack_rbf message")
+          stay() sending Warning(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
+      }
+
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+      handleFastClose(c, d.channelId) sending Error(d.channelId, DualFundingAborted(d.channelId).getMessage)
+
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+      handleRemoteError(e, d)
+
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      // We should be able to complete the channel open when reconnecting.
+      goto(OFFLINE) using d
   })
 
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {

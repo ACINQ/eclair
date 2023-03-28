@@ -24,8 +24,8 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
 
 import scala.concurrent.Future
@@ -120,6 +120,20 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     if (inputs.nonEmpty) {
       wallet.rollback(Transaction(2, inputs, Nil, 0))
     }
+  }
+
+  def rollbackFundingAttempt(tx: SharedTransaction, previousTxs: Seq[SignedSharedTransaction]): Unit = {
+    // We don't unlock previous inputs as the corresponding funding transaction may confirm.
+    val previousInputs = previousTxs.flatMap(_.tx.localInputs.map(_.outPoint)).toSet
+    val toUnlock = tx.localInputs.map(_.outPoint).toSet -- previousInputs
+    if (toUnlock.nonEmpty) {
+      val dummyTx = Transaction(2, toUnlock.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
+      wallet.rollback(dummyTx)
+    }
+  }
+
+  def rollbackRbfAttempt(signingSession: InteractiveTxSigningSession.WaitingForSigs, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Unit = {
+    rollbackFundingAttempt(signingSession.fundingTx.tx, d.allFundingTxs.map(_.sharedTx))
   }
 
   def reportRbfFailure(rbfStatus: RbfStatus, f: Throwable): Unit = {

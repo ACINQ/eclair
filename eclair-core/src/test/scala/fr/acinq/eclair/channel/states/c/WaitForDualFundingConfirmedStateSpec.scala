@@ -126,38 +126,15 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     import f._
 
     val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
-    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
     alice2bob.forward(bob, aliceSigs)
+    bob2alice.expectMsgType[TxAbort]
+
+    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
     bob2alice.forward(alice, bobSigs)
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectMsgType[TxAbort]
+
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-  }
-
-  test("re-transmit TxSignatures on reconnection", Tag(ChannelStateTestsTags.DualFunding)) { f =>
-    import f._
-
-    val aliceInit = Init(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.params.localParams.initFeatures)
-    val bobInit = Init(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.params.localParams.initFeatures)
-    val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
-    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
-
-    alice ! INPUT_DISCONNECTED
-    awaitCond(alice.stateName == OFFLINE)
-    bob ! INPUT_DISCONNECTED
-    awaitCond(bob.stateName == OFFLINE)
-    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
-    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
-    alice2bob.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[ChannelReestablish]
-    bob2alice.forward(alice)
-    alice2bob.expectMsg(aliceSigs)
-    bob2alice.expectMsg(bobSigs)
-
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
   test("recv WatchPublishedTriggered (initiator)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
