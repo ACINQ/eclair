@@ -61,7 +61,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("encrypt wallet") {
-    assume(!useExternalSigner)
+    assume(!useEclairSigner)
 
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient
@@ -927,7 +927,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(fundingFeerate, changePosition = Some(1))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       assert(fundTxResponse.changePosition.contains(1))
-      bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+      signTransaction(bitcoinClient, fundTxResponse.tx, Nil).pipeTo(sender.ref)
       val signTxResponse = sender.expectMsgType[SignTransactionResponse]
       assert(signTxResponse.complete)
       bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
@@ -996,7 +996,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txNotFunded = Transaction(2, txIn, txOut, 0)
       bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(currentFeerate, changePosition = Some(txOut.length))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
-      bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+      signTransaction(bitcoinClient, fundTxResponse.tx, Nil).pipeTo(sender.ref)
       val signTxResponse = sender.expectMsgType[SignTransactionResponse]
       assert(signTxResponse.complete)
       bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
@@ -1105,7 +1105,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val txNotFunded = Transaction(2, Nil, TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
     bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1000 sat), changePosition = Some(1))).pipeTo(sender.ref)
     val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
-    bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+    signTransaction(bitcoinClient, fundTxResponse.tx, Nil).pipeTo(sender.ref)
     val signTxResponse = sender.expectMsgType[SignTransactionResponse]
     bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
     sender.expectMsg(signTxResponse.tx.txid)
@@ -1375,8 +1375,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
 }
 
-class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
-  override val useExternalSigner = true
+class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
+  override val useEclairSigner = true
 
   test("wallets managed by eclair implement BIP84") {
     val sender = TestProbe()
@@ -1387,9 +1387,10 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
     val master = DeterministicWallet.generate(seed)
 
     val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
-    setExternalSignerScript(onchainKeyManager)
-    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, true).pipeTo(sender.ref)
+    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
+    val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
+    importEclairDescriptors(jsonRpcClient, onchainKeyManager)
 
     // this account xpub can be used to create a watch-only wallet
     val accountXPub = DeterministicWallet.encode(
@@ -1397,10 +1398,7 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
       DeterministicWallet.vpub)
     assert(onchainKeyManager.getOnchainMasterPubKey(0) == accountXPub)
 
-    val wallet1 = new BitcoinCoreClient(
-      new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex")),
-      Some(onchainKeyManager)
-    )
+    val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
 
     def getBip32Path(address: String): DeterministicWallet.KeyPath = {
       wallet1.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
@@ -1430,14 +1428,12 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
       val entropy = randomBytes32()
       val hex = entropy.toString()
       val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
-      setExternalSignerScript(onchainKeyManager)
-      bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, true).pipeTo(sender.ref)
+      bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
       sender.expectMsgType[JValue]
 
-      val wallet1 = new BitcoinCoreClient(
-        new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex")),
-        Some(onchainKeyManager)
-      )
+      val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
+      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+      val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
       wallet1.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 

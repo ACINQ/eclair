@@ -20,8 +20,8 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
 
   // master key. we will use it to generate a BIP84 wallet that can be used:
   // - to generate a watch-only wallet with any BIP84-compatible bitcoin wallet
-  // - to generate descriptors that can be used by Bitcoin Core through HWI to create a wallet with the `external signer`
-  // option set, the external signer being this onchain key manager accessed through Eclair's API
+  // - to generate descriptors that can be import into Bitcoin Core to create a watch-only wallet which can be used
+  // by Eclair to fund transactions (only Eclair will be able to sign wallet inputs).
 
   // m / purpose' / coin_type' / account' / change / address_index
   private val mnemonics = MnemonicCode.toMnemonics(entropy)
@@ -51,14 +51,11 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     DeterministicWallet.encode(accountPub, prefix)
   }
 
-  override def getDescriptors(fingerprint: Long, chain_opt: Option[String], account: Long): (List[String], List[String]) = {
-    val chain = chain_opt.getOrElse("mainnet")
+  override def getDescriptors(account: Long): (List[String], List[String]) = {
     val keyPath = s"$rootPath/$account'"
     val prefix: Int = chainHash match {
-      case Block.RegtestGenesisBlock.hash if chain == "regtest" => tpub
-      case Block.TestnetGenesisBlock.hash if chain == "testnet" | chain == "test" => tpub
-      case Block.LivenetGenesisBlock.hash if chain == "mainnet" | chain == "main" => xpub
-      case _ => throw new IllegalArgumentException(s"chain $chain and chain hash ${chainHash} mismatch")
+      case Block.LivenetGenesisBlock.hash => xpub
+      case _ => tpub
     }
     val accountPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(rootKey, hardened(account)))
     // descriptors for account 0 are:
@@ -138,6 +135,4 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     require(finalized.isRight, s"cannot sign psbt input, error = ${finalized.getLeft}")
     finalized.getRight
   }
-
-  override def getOnchainMasterMasterFingerprint: Long = fingerprint
 }

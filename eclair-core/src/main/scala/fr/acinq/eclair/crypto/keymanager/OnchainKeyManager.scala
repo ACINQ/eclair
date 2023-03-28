@@ -10,18 +10,12 @@ trait OnchainKeyManager {
    */
   def getOnchainMasterPubKey(account: Long): String
 
-  def getOnchainMasterMasterFingerprint: Long
-
-  def getOnchainMasterMasterFingerprintHex = String.format("%8s", getOnchainMasterMasterFingerprint.toHexString).replace(' ', '0')
-
   /**
    *
-   * @param fingerprint onchain wallet fingerprint
-   * @param chain_opt   chain hash
-   * @param account     account number
+   * @param account account number
    * @return a pair of (main, change) wallet descriptors that can be imported into an onchain wallet
    */
-  def getDescriptors(fingerprint: Long, chain_opt: Option[String], account: Long): (List[String], List[String])
+  def getDescriptors(account: Long): (List[String], List[String])
 
   /**
    *

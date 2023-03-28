@@ -1643,16 +1643,16 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
 }
 
-class ReplaceableTxPublisherWithExternalSignerSpec extends ReplaceableTxPublisherSpec {
+class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherSpec {
   override def createTestWallet(walletName: String) = {
     val probe = TestProbe()
     // we use the wallet name as a passphrase to make sure we get a new empty wallet
     val keyManager = new LocalOnchainKeyManager(ByteVector.fromValidHex("01" * 32), Block.RegtestGenesisBlock.hash, walletName)
-    setExternalSignerScript(keyManager)
-    bitcoinrpcclient.invoke("createwallet", walletName, true, false, "", false, true, true, true).pipeTo(probe.ref)
+    bitcoinrpcclient.invoke("createwallet", walletName, true, false, "", false, true, true, false).pipeTo(probe.ref)
     probe.expectMsgType[JValue]
 
     val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    importEclairDescriptors(walletRpcClient, keyManager)
     val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
       val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)

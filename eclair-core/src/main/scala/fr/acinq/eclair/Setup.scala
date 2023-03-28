@@ -103,7 +103,7 @@ class Setup(val datadir: File,
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
   val onchainKeyManager = {
-    val passphrase = if (config.hasPath("bitcoind.external-signer-passphrase")) config.getString("bitcoind.external-signer-passphrase") else ""
+    val passphrase = if (config.hasPath("bitcoind.eclair-signer-passphrase")) config.getString("bitcoind.eclair-signer-passphrase") else ""
     new LocalOnchainKeyManager(onchainSeed, NodeParams.hashFromChain(chain), passphrase)
   }
 
@@ -265,8 +265,8 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      useExternalSigner = if (config.hasPath("bitcoind.use-external-signer")) config.getBoolean("bitcoind.use-external-signer") else false
-      bitcoinClient = new BitcoinCoreClient(bitcoin, if (useExternalSigner) Some(onchainKeyManager) else None) with OnchainPubkeyCache {
+      useEclairSigner = if (config.hasPath("bitcoind.use-eclair-signer")) config.getBoolean("bitcoind.use-eclair-signer") else false
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (useEclairSigner) Some(onchainKeyManager) else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {

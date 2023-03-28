@@ -36,8 +36,7 @@ import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, UInt64, addressToPublicKeyScript, randomBytes32, randomKey}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, addressToPublicKeyScript, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -2563,6 +2562,6 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
 }
 
-class InteractiveTxBuilderWithExternalSignerSpec extends InteractiveTxBuilderSpec {
-  override val useExternalSigner = true
+class InteractiveTxBuilderWithEclairSignerSpec extends InteractiveTxBuilderSpec {
+  override val useEclairSigner = true
 }

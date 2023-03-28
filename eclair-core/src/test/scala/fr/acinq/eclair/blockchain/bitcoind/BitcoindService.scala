@@ -22,7 +22,7 @@ import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, TxOut, computeP2WpkhAddress}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.PreviousTx
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, PreviousTx}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
@@ -35,7 +35,6 @@ import scodec.bits.ByteVector
 import sttp.client3.okhttp.OkHttpFutureBackend
 
 import java.io.File
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -45,7 +44,7 @@ import scala.io.Source
 trait BitcoindService extends Logging {
   self: TestKitBase =>
 
-  def useExternalSigner: Boolean = false
+  def useEclairSigner: Boolean = false
 
   import BitcoindService._
 
@@ -54,7 +53,7 @@ trait BitcoindService extends Logging {
   implicit val system: ActorSystem
   implicit val sttpBackend = OkHttpFutureBackend()
 
-  val defaultWallet: String = if (useExternalSigner) "eclair" else "miner"
+  val defaultWallet: String = if (useEclairSigner) "eclair" else "miner"
   val bitcoindPort: Int = TestUtils.availablePort
   val bitcoindRpcPort: Int = TestUtils.availablePort
   val bitcoindZmqBlockPort: Int = TestUtils.availablePort
@@ -75,28 +74,6 @@ trait BitcoindService extends Logging {
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
   val onchainKeyManager = new LocalOnchainKeyManager(ByteVector.fromValidHex("01" * 32), Block.RegtestGenesisBlock.hash)
-
-  def setExternalSignerScript(keyManager: OnchainKeyManager): Unit = {
-    val (main, change) = keyManager.getDescriptors(0, Some("regtest"), 0)
-    val script =
-      s"""|#!/bin/bash
-          |
-          | while [ -n "$$1" ]; do # while loop starts
-          |  case "$$1" in
-          |    enumerate) echo '[{"type":"eclair","model":"eclair","label":"","path":"","fingerprint":"${keyManager.getOnchainMasterMasterFingerprint}","needs_pin_sent":false,"needs_passphrase_sent":false}]'; exit ;;
-          |    getdescriptors) echo "{\\"receive\\":[\\"${main.head}\\"],\\"internal\\":[\\"${change.head}\\"]}"; exit ;;
-          |    --stdin)
-          |				read -r cmdline
-          |				;;
-          |    *) shift ;;
-          |  esac
-          |  shift
-          |done
-          |""".stripMargin
-    Files.write(PATH_BITCOIND_DATADIR.toPath.resolve("eclair-hwi.sh"), script.getBytes(StandardCharsets.UTF_8))
-    PATH_BITCOIND_DATADIR.toPath.resolve("eclair-hwi.sh").toFile.setExecutable(true)
-  }
-
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
                     mempoolSize_opt: Option[Int] = None, // mempool size in MB
@@ -115,7 +92,6 @@ trait BitcoindService extends Logging {
           .appendedAll(defaultAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
           .appendedAll(mempoolSize_opt.map(mempoolSize => s"maxmempool=$mempoolSize\n").getOrElse(""))
           .appendedAll(mempoolMinFeerate_opt.map(mempoolMinFeerate => s"minrelaytxfee=${FeeratePerKB(mempoolMinFeerate).feerate.toBtc.toBigDecimal}\n").getOrElse(""))
-          .appendedAll(s"signer=${PATH_BITCOIND_DATADIR.toPath.resolve("eclair-hwi.sh").toAbsolutePath}")
         if (useCookie) {
           defaultConf
             .replace("rpcuser=foo", "")
@@ -124,7 +100,6 @@ trait BitcoindService extends Logging {
           defaultConf
         }
       }
-      setExternalSignerScript(onchainKeyManager)
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
@@ -144,7 +119,7 @@ trait BitcoindService extends Logging {
     }))
   }
 
-  def makeBitcoinCoreClient: BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useExternalSigner) Some(onchainKeyManager) else None)
+  def makeBitcoinCoreClient: BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onchainKeyManager) else None)
 
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
@@ -181,17 +156,29 @@ trait BitcoindService extends Logging {
   def waitForBitcoindReady(): Unit = {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
-    if (useExternalSigner) {
-      bitcoinrpcclient.invoke("createwallet", defaultWallet, true, false, "", false, true, true, true).pipeTo(sender.ref)
+    if (useEclairSigner) {
+      // wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer
+      bitcoinrpcclient.invoke("createwallet", defaultWallet, true, false, "", false, true, true, false).pipeTo(sender.ref)
+      sender.expectMsgType[JValue]
+
+      val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
     } else {
       sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
+      sender.expectMsgType[JValue]
     }
-    sender.expectMsgType[JValue]
     logger.info(s"generating initial blocks to wallet=$defaultWallet...")
     generateBlocks(150)
     awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
   }
 
+
+  def importEclairDescriptors(jsonRpcClient: BitcoinJsonRPCClient, keyManager: OnchainKeyManager, probe: TestProbe = TestProbe()): Unit = {
+    val (main, change) = keyManager.getDescriptors(0)
+    val descriptors = main.map(d => Descriptor(d)) ++ change.map(d => Descriptor(d, internal = true))
+    jsonRpcClient.invoke("importdescriptors", descriptors).pipeTo(probe.ref)
+    probe.expectMsgType[JValue]
+  }
 
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
     val sender = TestProbe()
@@ -247,7 +234,7 @@ trait BitcoindService extends Logging {
     val tx = Transaction(version = 2, Nil, TxOut(amountSat, addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0)
     val client = makeBitcoinCoreClient
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerKw(Satoshi(1000)), true)
+      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(Satoshi(10))), true)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
       txid <- client.publishTransaction(signed.finalTx)
       tx <- client.getTransaction(txid)

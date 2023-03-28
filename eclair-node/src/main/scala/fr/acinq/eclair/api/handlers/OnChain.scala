@@ -65,19 +65,6 @@ trait OnChain {
     complete(eclairApi.globalBalance())
   }
 
-  val enumerate: Route = postRequest("enumerate") { implicit t =>
-    val json = new JObject(List(
-      "type" -> JString("eclair"),
-      "model" -> JString("eclair"),
-      "label" -> JString(""),
-      "path" -> JString(""),
-      "fingerprint" -> JString(this.eclairApi.getOnchainMasterFingerprintHex),
-      "needs_pin_sent" -> JBool(false),
-      "needs_passphrase_sent" -> JBool(false)
-    ))
-    complete(List(json))
-  }
-
   val getmasterxpub: Route = postRequest("getmasterxpub") { implicit t =>
     formFields("account".as[Long]) { account =>
       val xpub = this.eclairApi.getOnchainMasterPubKey(account)
@@ -86,17 +73,27 @@ trait OnChain {
   }
 
   val getdescriptors: Route = postRequest("getdescriptors") { implicit t =>
-    formFields("fingerprint".as[String], "chain".as[String].?, "account".as[Long]) {
-      (fingerprint, chain_opt, account) =>
-        val (receiveDescs, internalDescs) = this.eclairApi.getDescriptors(Integer.parseUnsignedInt(fingerprint, 16), chain_opt, account)
-        val json = new JObject(List(
-          "receive" -> JArray(receiveDescs.map(s => JString(s))),
-          "internal" -> JArray(internalDescs.map(s => JString(s)))
+    formFields("account".as[Long].?) {
+      (account_opt) =>
+        val (receiveDescs, internalDescs) = this.eclairApi.getDescriptors(account_opt.getOrElse(0L))
+
+        // format JSON result to be compatible with Bitcoin Core's importdescriptors RPC call
+        val receive = receiveDescs.map(desc => JObject(
+          "desc" -> JString(desc),
+          "active" -> JBool(true),
+          "timestamp" -> JString("now")
         ))
+        val change = internalDescs.map(desc => JObject(
+          "desc" -> JString(desc),
+          "active" -> JBool(true),
+          "timestamp" -> JString("now"),
+          "internal" -> JBool(true)
+        ))
+        val json = JArray(receive ++ change)
         complete(json)
     }
   }
 
-  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ enumerate ~ getmasterxpub ~ getdescriptors
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ getmasterxpub ~ getdescriptors
 
 }
