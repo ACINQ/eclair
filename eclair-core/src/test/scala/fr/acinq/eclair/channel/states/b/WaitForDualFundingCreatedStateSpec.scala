@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, Warning}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReestablish, CommitSig, Error, Init, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, Warning}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, UInt64, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -212,6 +212,43 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(wallet.rolledback.size == 2)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv INPUT_DISCONNECTED (alice sent commit_sig)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete] // bob doesn't receive alice's tx_complete
+    alice2bob.expectMsgType[CommitSig] // bob doesn't receive alice's commit_sig
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+
+    val channelId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].channelId
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == CLOSED)
+
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    assert(alice2bob.expectMsgType[ChannelReestablish].nextFundingTxId_opt.contains(fundingTxId))
+    alice ! Error(channelId, "unknown channel")
+    aliceListener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv TickChannelOpenTimeout", Tag(ChannelStateTestsTags.DualFunding)) { f =>

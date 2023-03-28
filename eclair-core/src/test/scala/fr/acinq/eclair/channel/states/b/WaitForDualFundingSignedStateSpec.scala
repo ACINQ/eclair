@@ -299,6 +299,60 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv INPUT_DISCONNECTED", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceData = alice.stateData
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    assert(alice.stateData == aliceData)
+    aliceListener.expectNoMessage(100 millis)
+
+    val bobData = bob.stateData
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+    assert(bob.stateData == bobData)
+    bobListener.expectNoMessage(100 millis)
+    assert(wallet.rolledback.isEmpty)
+  }
+
+  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
+    alice2bob.expectMsgType[CommitSig]
+    bob2alice.expectMsgType[CommitSig]
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    reconnect(f, fundingTxId)
+  }
+
+  test("recv INPUT_DISCONNECTED (commit_sig received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    reconnect(f, fundingTxId)
+  }
+
   private def reconnect(f: FixtureParam, fundingTxId: ByteVector32): Unit = {
     import f._
 

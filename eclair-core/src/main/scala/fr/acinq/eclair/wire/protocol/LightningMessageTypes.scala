@@ -165,7 +165,9 @@ case class ChannelReestablish(channelId: ByteVector32,
                               nextRemoteRevocationNumber: Long,
                               yourLastPerCommitmentSecret: PrivateKey,
                               myCurrentPerCommitmentPoint: PublicKey,
-                              tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                              tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val nextFundingTxId_opt: Option[ByteVector32] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txHash.reverse)
+}
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
