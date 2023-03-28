@@ -43,9 +43,9 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
       Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1200_000), Script.pay2wpkh(getPublicKey(2))) :: Nil, lockTime = 0),
     )
     val bip32paths = Seq(
-      new KeyPathWithMaster(onchainKeyManager.getOnchainMasterMasterFingerprint, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/0")),
-      new KeyPathWithMaster(onchainKeyManager.getOnchainMasterMasterFingerprint, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/1")),
-      new KeyPathWithMaster(onchainKeyManager.getOnchainMasterMasterFingerprint, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/2")),
+      new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/0")),
+      new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/1")),
+      new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/2")),
     )
 
     val tx = Transaction(version = 2,

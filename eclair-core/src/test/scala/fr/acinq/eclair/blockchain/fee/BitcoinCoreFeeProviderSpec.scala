@@ -34,7 +34,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
-  override val useExternalSigner = false
+  override val useEclairSigner = false
 
   override def beforeAll(): Unit = {
     startBitcoind()

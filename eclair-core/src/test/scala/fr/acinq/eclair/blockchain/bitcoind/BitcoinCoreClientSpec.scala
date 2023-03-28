@@ -61,7 +61,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("encrypt wallet") {
-    assume(!useExternalSigner)
+    assume(!useEclairSigner)
 
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient
@@ -1137,8 +1137,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
 }
 
-class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
-  override val useExternalSigner = true
+class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
+  override val useEclairSigner = true
 
   test("wallets managed by eclair implement BIP84") {
     val sender = TestProbe()
@@ -1149,9 +1149,10 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
     val master = DeterministicWallet.generate(seed)
 
     val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
-    setExternalSignerScript(onchainKeyManager)
-    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, true).pipeTo(sender.ref)
+    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
+    val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
+    importEclairDescriptors(jsonRpcClient, onchainKeyManager)
 
     // this account xpub can be used to create a watch-only wallet
     val accountXPub = DeterministicWallet.encode(
@@ -1159,10 +1160,7 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
       DeterministicWallet.vpub)
     assert(onchainKeyManager.getOnchainMasterPubKey(0) == accountXPub)
 
-    val wallet1 = new BitcoinCoreClient(
-      new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex")),
-      Some(onchainKeyManager)
-    )
+    val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
 
     def getBip32Path(address: String): DeterministicWallet.KeyPath = {
       wallet1.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
@@ -1192,14 +1190,12 @@ class BitcoinCoreClientWithExternalSignerSpec extends BitcoinCoreClientSpec {
       val entropy = randomBytes32()
       val hex = entropy.toString()
       val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
-      setExternalSignerScript(onchainKeyManager)
-      bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, true).pipeTo(sender.ref)
+      bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
       sender.expectMsgType[JValue]
 
-      val wallet1 = new BitcoinCoreClient(
-        new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex")),
-        Some(onchainKeyManager)
-      )
+      val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
+      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+      val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
       wallet1.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 

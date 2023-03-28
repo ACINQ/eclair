@@ -173,9 +173,7 @@ trait Eclair {
 
   def getOnchainMasterPubKey(account: Long): String
 
-  def getOnchainMasterFingerprintHex: String
-
-  def getDescriptors(fingerprint: Int, chain_opt: Option[String], account: Long): (List[String], List[String])
+  def getDescriptors(account: Long): (List[String], List[String])
 
   def stop(): Future[Unit]
 }
@@ -662,7 +660,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
-  override def getDescriptors(fingerprint: Int, chain_opt: Option[String], account: Long): (List[String], List[String]) = this.appKit.nodeParams.onchainKeyManager.getDescriptors(fingerprint, chain_opt, account)
+  override def getDescriptors(account: Long): (List[String], List[String]) = this.appKit.nodeParams.onchainKeyManager.getDescriptors(account)
 
   override def getOnchainMasterPubKey(account: Long): String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterPubKey(account)
 
@@ -673,6 +671,4 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sys.exit(0)
     Future.successful(())
   }
-
-  override def getOnchainMasterFingerprintHex: String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterMasterFingerprintHex
 }
