@@ -56,6 +56,7 @@ object CommonCodecs {
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
+  val uint64Loverflow: Codec[Long] = int64L.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
   val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
@@ -86,19 +87,29 @@ object CommonCodecs {
     case i => Attempt.successful(i)
   }, Attempt.successful)
 
-  // Bitcoin-style varint codec (CompactSize).
+  // Bitcoin-style varint codec (CompactSize), but big-endian.
   // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
   val varint: Codec[UInt64] = discriminatorWithDefault(
-    discriminated[UInt64].by(uint8L)
+    discriminated[UInt64].by(uint8)
       .\(0xff) { case i if i >= UInt64(0x100000000L) => i }(minimalvalue(uint64, UInt64(0x100000000L)))
       .\(0xfe) { case i if i >= UInt64(0x10000) => i }(minimalvalue(uint32.xmap(UInt64(_), _.toBigInt.toLong), UInt64(0x10000)))
       .\(0xfd) { case i if i >= UInt64(0xfd) => i }(minimalvalue(uint16.xmap(UInt64(_), _.toBigInt.toInt), UInt64(0xfd))),
-    uint8L.xmap(UInt64(_), _.toBigInt.toInt)
+    uint8.xmap(UInt64(_), _.toBigInt.toInt)
   )
 
   // This codec can be safely used for values < 2^63 and will fail otherwise.
   // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
   val varintoverflow: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
+
+  // Bitcoin varint codec (CompactSize), which is little-endian.
+  // See https://bitcoin.org/en/developer-reference#compactsize-unsigned-integers for reference.
+  val varintLoverflow: Codec[Long] = discriminatorWithDefault(
+    discriminated[Long].by(uint8)
+      .\(0xff) { case i if i >= 0x100000000L => i }(minimalvalue(uint64Loverflow, 0x100000000L))
+      .\(0xfe) { case i if i >= 0x10000 => i }(minimalvalue(uint32L, 0x10000))
+      .\(0xfd) { case i if i >= 0xfd => i }(minimalvalue(uint16L.xmap(_.toLong, _.toInt), 0xfd)),
+    uint8L.xmap(_.toLong, _.toInt)
+  )
 
   val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
 

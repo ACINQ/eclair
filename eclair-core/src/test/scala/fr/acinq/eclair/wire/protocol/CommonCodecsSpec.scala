@@ -67,11 +67,16 @@ class CommonCodecsSpec extends AnyFunSuite {
     val expected = Map(
       UInt64(0L) -> hex"00",
       UInt64(42L) -> hex"2a",
+      UInt64(252L) -> hex"fc",
       UInt64(253L) -> hex"fd 00 fd",
       UInt64(254L) -> hex"fd 00 fe",
       UInt64(255L) -> hex"fd 00 ff",
       UInt64(550L) -> hex"fd 02 26",
+      UInt64(65535L) -> hex"fd ff ff",
+      UInt64(65536L) -> hex"fe 00 01 00 00",
       UInt64(998000L) -> hex"fe 00 0f 3a 70",
+      UInt64(4294967295L) -> hex"fe ff ff ff ff",
+      UInt64(4294967296L) -> hex"ff 00 00 00 01 00 00 00 00",
       UInt64(1311768467284833366L) -> hex"ff 12 34 56 78 90 12 34 56",
       UInt64.MaxValue -> hex"ff ff ff ff ff ff ff ff ff"
     ).view.mapValues(_.toBitVector)
@@ -110,11 +115,16 @@ class CommonCodecsSpec extends AnyFunSuite {
     val expected = Map(
       0L -> hex"00",
       42L -> hex"2a",
+      252L -> hex"fc",
       253L -> hex"fd 00 fd",
       254L -> hex"fd 00 fe",
       255L -> hex"fd 00 ff",
       550L -> hex"fd 02 26",
+      65535L -> hex"fd ff ff",
+      65536L -> hex"fe 00 01 00 00",
       998000L -> hex"fe 00 0f 3a 70",
+      4294967295L -> hex"fe ff ff ff ff",
+      4294967296L -> hex"ff 00 00 00 01 00 00 00 00",
       1311768467284833366L -> hex"ff 12 34 56 78 90 12 34 56",
       Long.MaxValue -> hex"ff 7f ff ff ff ff ff ff ff"
     ).view.mapValues(_.toBitVector)
@@ -135,6 +145,56 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for (testCase <- testCases) {
       assert(varintoverflow.decode(testCase).isFailure, testCase.toByteVector)
+    }
+  }
+
+  test("encode/decode with varintLoverflow codec") {
+    val expected = Map(
+      0L -> hex"00",
+      42L -> hex"2a",
+      252L -> hex"fc",
+      253L -> hex"fd fd 00",
+      254L -> hex"fd fe 00",
+      255L -> hex"fd ff 00",
+      550L -> hex"fd 26 02",
+      65535L -> hex"fd ff ff",
+      65536L -> hex"fe 00 00 01 00",
+      998000L -> hex"fe 70 3a 0f 00",
+      4294967295L -> hex"fe ff ff ff ff",
+      4294967296L -> hex"ff 00 00 00 00 01 00 00 00",
+      1311768467284833366L -> hex"ff 56 34 12 90 78 56 34 12",
+      Long.MaxValue -> hex"ff ff ff ff ff ff ff ff 7f"
+    ).view.mapValues(_.toBitVector)
+
+    for ((long, ref) <- expected) {
+      val encoded = varintLoverflow.encode(long).require
+      assert(ref == encoded, ref)
+      val decoded = varintLoverflow.decode(encoded).require.value
+      assert(long == decoded, long)
+    }
+  }
+
+  test("decode invalid varintLoverflow") {
+    val testCases = Seq(
+      hex"fd", // truncated
+      hex"fe 01", // truncated
+      hex"fe", // truncated
+      hex"fe 34 12", // truncated
+      hex"ff", // truncated
+      hex"ff 78 56 34 12", // truncated
+      hex"fd 00 00", // not minimally-encoded
+      hex"fd fc 00", // not minimally-encoded
+      hex"fe 00 00 00 00", // not minimally-encoded
+      hex"fe ff ff 00 00", // not minimally-encoded
+      hex"ff 00 00 00 00 00 00 00 00", // not minimally-encoded
+      hex"ff ff ff ff 01 00 00 00 00", // not minimally-encoded
+      hex"ff ff ff ff ff 00 00 00 00", // not minimally-encoded
+      hex"ff 00 00 00 00 00 00 00 80", // overflow
+      hex"ff ff ff ff ff ff ff ff ff" // overflow
+    ).map(_.toBitVector)
+
+    for (testCase <- testCases) {
+      assert(varintLoverflow.decode(testCase).isFailure, testCase.toByteVector)
     }
   }
 
