@@ -236,7 +236,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(wallet.rolledback.length == 2)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
   test("recv invalid CommitSig", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -264,7 +264,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(wallet.rolledback.length == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
 
     alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
     bob2alice.expectMsgType[TxAbort]
@@ -302,7 +302,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     awaitCond(wallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
 
     // Bob has sent his signatures already, so he cannot close the channel yet.
     alice2bob.forward(bob, TxSignatures(channelId(alice), randomBytes32(), Nil))

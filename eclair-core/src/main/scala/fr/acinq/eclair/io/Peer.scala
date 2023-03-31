@@ -511,18 +511,20 @@ object Peer {
 
   sealed trait OpenChannelResponse
   object OpenChannelResponse {
+    /**
+     * This response doesn't fully guarantee that the channel will actually be opened, because our peer may potentially
+     * double-spend the funding transaction. Callers must wait for on-chain confirmations if they want guarantees that
+     * the channel has been opened.
+     */
+    case class Created(channelId: ByteVector32, fundingTxId: ByteVector32, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
     case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
-    case class Opened(channelId: ByteVector32) extends OpenChannelResponse { override def toString  = s"created channel $channelId" }
-    case object Cancelled extends OpenChannelResponse { override def toString  = s"channel creation cancelled" }
+    case object Cancelled extends OpenChannelResponse { override def toString  = "channel creation cancelled" }
     case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }
     case object TimedOut extends OpenChannelResponse { override def toString = "open channel cancelled, took too long" }
-    case class RemoteError(ascii: String) extends OpenChannelResponse { override def toString = s"peer aborted the dual funding flow: '$ascii'" }
-    case class Exception(t: Throwable) extends OpenChannelResponse { override def toString = t.getMessage }
-    // @formatter:on
+    case class RemoteError(ascii: String) extends OpenChannelResponse { override def toString = s"peer aborted the channel funding flow: '$ascii'" }
   }
 
   case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
-
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])

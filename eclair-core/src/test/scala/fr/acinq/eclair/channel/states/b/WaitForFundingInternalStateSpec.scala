@@ -68,7 +68,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     alice ! Status.Failure(new RuntimeException("insufficient funds"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
   test("recv Error") { f =>
