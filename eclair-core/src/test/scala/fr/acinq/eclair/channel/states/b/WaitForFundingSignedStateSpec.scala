@@ -96,7 +96,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid == fundingTxId)
     assert(txPublished.miningFee > 0.sat)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
   test("recv FundingSigned with valid signature (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
@@ -107,7 +107,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // alice doesn't watch for the funding tx to confirm, she only waits for the transaction to be published
     alice2blockchain.expectMsgType[WatchPublished]
     alice2blockchain.expectNoMessage(100 millis)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
   test("recv FundingSigned with valid signature (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -117,7 +117,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == 1) // when funder we trust ourselves so we never wait more than 1 block
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Opened]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
   test("recv FundingSigned with invalid signature") { f =>
@@ -126,7 +126,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Exception]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
     listener.expectMsgType[ChannelAborted]
   }
 

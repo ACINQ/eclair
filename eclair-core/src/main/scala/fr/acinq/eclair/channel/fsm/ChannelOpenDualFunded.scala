@@ -235,7 +235,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       import d.init.{localParams, remoteInit}
       Helpers.validateParamsDualFundedInitiator(nodeParams, d.init.channelType, localParams.initFeatures, remoteInit.features, d.lastSent, accept) match {
         case Left(t) =>
-          d.init.replyTo ! OpenChannelResponse.Exception(t)
+          d.init.replyTo ! OpenChannelResponse.Rejected(t.getMessage)
           handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
@@ -342,7 +342,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.Succeeded(fundingTx, commitment) =>
         d.deferred.foreach(self ! _)
         watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
-        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Opened(d.channelId))
+        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, commitment.fundingTxId, fundingTx.sharedTx.tx.localFees))
         val commitments = Commitments(
           params = d.channelParams,
           changes = CommitmentChanges.init(),
@@ -357,7 +357,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           case sharedTx: FullySignedSharedTransaction => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending sharedTx.localSigs calling publishFundingTx(fundingTx)
         }
       case f: InteractiveTxBuilder.Failed =>
-        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Exception(f.cause))
+        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(f.cause.getMessage))
         goto(CLOSED) sending TxAbort(d.channelId, f.cause.getMessage)
     }
 
@@ -581,8 +581,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f.cause))
               stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, f.cause.getMessage)
           }
-        case msg =>
-          log.warning("ignoring unexpected local interactive-tx message: {}", msg)
+        case _ =>
+          // This can happen if we received a tx_abort right before receiving the interactive-tx result.
+          log.warning("ignoring interactive-tx result with rbfStatus={}", d.rbfStatus.getClass.getSimpleName)
           stay()
       }
 
@@ -625,7 +626,15 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleNewBlockDualFundingUnconfirmed(c, d)
 
-    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleDualFundingDoubleSpent(e, d)
+    case Event(e: BITCOIN_FUNDING_DOUBLE_SPENT, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      d.rbfStatus match {
+        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, FundingTxDoubleSpent(d.channelId))
+        case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
+          txBuilder ! InteractiveTxBuilder.Abort
+          cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, FundingTxDoubleSpent(d.channelId)))
+        case _ => ()
+      }
+      handleDualFundingDoubleSpent(e, d)
 
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       if (switchToZeroConf(remoteChannelReady, d)) {
@@ -641,16 +650,24 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.rbfStatus match {
+        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException("rbf attempt failed: disconnected"))
         case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
           cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException("rbf attempt failed: disconnected")))
           txBuilder ! InteractiveTxBuilder.Abort
-        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException("rbf attempt failed: disconnected"))
         case RbfStatus.RbfAborted => // nothing to do
         case RbfStatus.NoRbf => // nothing to do
       }
       goto(OFFLINE) using d.copy(rbfStatus = RbfStatus.NoRbf)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      d.rbfStatus match {
+        case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"remote error: ${e.toAscii}"))
+        case RbfStatus.RbfInProgress(cmd_opt, txBuilder) =>
+          txBuilder ! InteractiveTxBuilder.Abort
+          cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"remote error: ${e.toAscii}")))
+        case _ => ()
+      }
+      handleRemoteError(e, d)
   })
 
   when(WAIT_FOR_DUAL_FUNDING_READY)(handleExceptions {
