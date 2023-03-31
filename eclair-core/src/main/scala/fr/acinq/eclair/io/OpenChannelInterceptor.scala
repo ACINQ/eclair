@@ -17,7 +17,6 @@
 package fr.acinq.eclair.io
 
 import akka.actor
-import akka.actor.Status
 import akka.actor.typed.eventstream.EventStream.Publish
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
@@ -28,7 +27,7 @@ import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.io.Peer.SpawnChannelNonInitiator
+import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.Error
@@ -59,7 +58,7 @@ object OpenChannelInterceptor {
     val channelFlags: ChannelFlags = open.fold(_.channelFlags, _.channelFlags)
     val channelType_opt: Option[ChannelType] = open.fold(_.channelType_opt, _.channelType_opt)
   }
-  case class OpenChannelInitiator(replyTo: ActorRef[Any], remoteNodeId: PublicKey, open: Peer.OpenChannel, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]) extends WaitForRequestCommands
+  case class OpenChannelInitiator(replyTo: ActorRef[OpenChannelResponse], remoteNodeId: PublicKey, open: Peer.OpenChannel, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]) extends WaitForRequestCommands
 
   private sealed trait CheckRateLimitsCommands extends Command
   private case class PendingChannelsRateLimiterResponse(response: PendingChannelsRateLimiter.Response) extends CheckRateLimitsCommands
@@ -79,7 +78,7 @@ object OpenChannelInterceptor {
   def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
-         new OpenChannelInterceptor(peer, pendingChannelsRateLimiter, pluginTimeout, nodeParams, wallet, context).waitForRequest()
+        new OpenChannelInterceptor(peer, pendingChannelsRateLimiter, pluginTimeout, nodeParams, wallet, context).waitForRequest()
       }
     }
 
@@ -129,13 +128,13 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
     if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.localFeatures.hasFeature(Wumbo)) {
-      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
       waitForRequest()
     } else if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.remoteFeatures.hasFeature(Wumbo)) {
-      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo"))
+      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo")
       waitForRequest()
     } else if (request.open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
-      request.replyTo ! Status.Failure(new RuntimeException(s"fundingAmount=${request.open.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
       waitForRequest()
     } else {
       // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
@@ -144,7 +143,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
       val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
-      peer ! Peer.SpawnChannelInitiator(request.open, ChannelConfig.standard, channelType, localParams, request.replyTo.toClassic)
+      peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType, localParams)
       waitForRequest()
     }
   }
@@ -213,7 +212,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     Behaviors.receiveMessage {
       case m: B => f(m)
       case o: OpenChannelInitiator =>
-        o.replyTo ! Status.Failure(new RuntimeException("concurrent request rejected"))
+        o.replyTo ! OpenChannelResponse.Rejected("concurrent request rejected")
         Behaviors.same
       case o: OpenChannelNonInitiator =>
         context.log.warn(s"ignoring remote channel open: concurrent request rejected")

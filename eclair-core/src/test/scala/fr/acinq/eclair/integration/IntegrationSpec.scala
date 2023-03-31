@@ -22,7 +22,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -170,7 +170,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
   }
 
-  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi): ChannelOpenResponse.ChannelOpened = {
+  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi): OpenChannelResponse.Created = {
     val sender = TestProbe()
     connect(node1, node2)
     sender.send(node1.switchboard, Peer.OpenChannel(
@@ -181,7 +181,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       fundingTxFeerate_opt = None,
       channelFlags_opt = None,
       timeout_opt = None))
-    sender.expectMsgType[ChannelOpenResponse.ChannelOpened](10 seconds)
+    sender.expectMsgType[OpenChannelResponse.Created](10 seconds)
   }
 
   def getBlockHeight(): BlockHeight = {

@@ -38,7 +38,6 @@ import scodec.bits._
 import java.net.{Inet4Address, InetSocketAddress}
 import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.util.Success
 
 class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
