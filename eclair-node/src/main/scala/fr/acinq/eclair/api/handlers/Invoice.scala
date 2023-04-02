@@ -57,14 +57,6 @@ trait Invoice {
     }
   }
 
-  val listExpiredInvoices: Route = postRequest("listexpiredinvoices") { implicit t =>
-    withPaginated { paginated_opt =>
-      formFields(fromFormParam(), toFormParam()) { (from, to) =>
-        complete(eclairApi.expiredInvoices(from, to, paginated_opt))
-      }
-    }
-  }
-
   val parseInvoice: Route = postRequest("parseinvoice") { implicit t =>
     formFields(invoiceFormParam) { invoice =>
       complete(invoice)
@@ -77,6 +69,6 @@ trait Invoice {
     }
   }
 
-  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ listExpiredInvoices ~ parseInvoice ~ deleteInvoice
+  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice ~ deleteInvoice
 
 }

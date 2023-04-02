@@ -27,7 +27,6 @@ Offers are still experimental and some details could still change before they ar
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` allos to query received paid (#2607)
-- `listexpiredinvoices` returns expired invoices (#2607)
 
 ### Miscellaneous improvements and bug fixes
 
