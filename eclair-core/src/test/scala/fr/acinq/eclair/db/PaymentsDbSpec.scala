@@ -205,7 +205,7 @@ class PaymentsDbSpec extends AnyFunSuite {
 
         assert(db.listOutgoingPayments(1 unixms, 2000 unixms) == Seq(ps1, ps2, ps3, ps4, ps5, ps6))
         assert(db.listIncomingPayments(1 unixms, TimestampMilli.now(), None) == Seq(pr1, pr2, pr3))
-        assert(db.listExpiredIncomingPayments(1 unixms, 2000 unixms) == Seq(pr2))
+        assert(db.listExpiredIncomingPayments(1 unixms, 2000 unixms, None) == Seq(pr2))
       })
   }
 
@@ -509,9 +509,9 @@ class PaymentsDbSpec extends AnyFunSuite {
         assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2, pr1))
         assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2))
         assert(db.listIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli), None) == Seq.empty)
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli)) == Seq(pr2))
-        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli)) == Seq.empty)
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2100-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2))
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2020-12-31T23:59:59.00Z").toEpochMilli), None) == Seq(pr2))
+        assert(db.listExpiredIncomingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2011-12-31T23:59:59.00Z").toEpochMilli), None) == Seq.empty)
 
         assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2020-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-12-31T23:59:59.00Z").toEpochMilli)) == Seq(ps2, ps1, ps3))
         assert(db.listOutgoingPayments(TimestampMilli(Instant.parse("2010-01-01T00:00:00.00Z").toEpochMilli), TimestampMilli(Instant.parse("2021-01-15T23:59:59.00Z").toEpochMilli)) == Seq(ps2, ps1))
@@ -690,8 +690,8 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val now = TimestampMilli.now()
       assert(db.listIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2, pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending), payment3))
-      assert(db.listExpiredIncomingPayments(0 unixms, now) == Seq(expiredPayment1, expiredPayment2))
-      assert(db.listReceivedIncomingPayments(0 unixms, now) == Seq(payment3))
+      assert(db.listExpiredIncomingPayments(0 unixms, now, None) == Seq(expiredPayment1, expiredPayment2))
+      assert(db.listReceivedIncomingPayments(0 unixms, now, None) == Seq(payment3))
       assert(db.listPendingIncomingPayments(0 unixms, now, None) == Seq(pendingPayment1, pendingPayment2, payment1.copy(status = IncomingPaymentStatus.Pending), payment2.copy(status = IncomingPaymentStatus.Pending)))
 
       db.receiveIncomingPayment(paidInvoice1.paymentHash, 461 msat, receivedAt1)
@@ -712,7 +712,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listIncomingPayments(0 unixms, now, Some(Paginated(2, 2))) == Seq(pendingPayment1, pendingPayment2))
       assert(db.listPendingIncomingPayments(0 unixms, now, None) == Seq(pendingPayment1, pendingPayment2))
       assert(db.listPendingIncomingPayments(0 unixms, now, Some(Paginated(1, 1))) == Seq(pendingPayment2))
-      assert(db.listReceivedIncomingPayments(0 unixms, now) == Seq(payment1, payment2, payment4))
+      assert(db.listReceivedIncomingPayments(0 unixms, now, None) == Seq(payment1, payment2, payment4))
 
       assert(db.removeIncomingPayment(paidInvoice1.paymentHash).isFailure)
       db.removeIncomingPayment(paidInvoice1.paymentHash).failed.foreach(e => assert(e.getMessage == "Cannot remove a received incoming payment"))

@@ -314,14 +314,14 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.listPendingIncomingPayments(from, to, paginated_opt)
   }
 
-  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(secondary.listExpiredIncomingPayments(from, to))
-    primary.listExpiredIncomingPayments(from, to)
+  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = {
+    runAsync(secondary.listExpiredIncomingPayments(from, to, paginated_opt))
+    primary.listExpiredIncomingPayments(from, to, paginated_opt)
   }
 
-  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(secondary.listReceivedIncomingPayments(from, to))
-    primary.listReceivedIncomingPayments(from, to)
+  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[IncomingPayment] = {
+    runAsync(secondary.listReceivedIncomingPayments(from, to, paginated_opt))
+    primary.listReceivedIncomingPayments(from, to, paginated_opt)
   }
 
   override def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit = {
