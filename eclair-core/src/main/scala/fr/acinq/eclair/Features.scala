@@ -86,8 +86,6 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
     case None => activated.contains(feature)
   }
 
-  def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
-
   /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
   def areSupported(remoteFeatures: Features[T]): Boolean = {
     // we allow unknown odd features (it's ok to be odd)
@@ -219,7 +217,7 @@ object Features {
     val mandatory = 16
   }
 
-  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
