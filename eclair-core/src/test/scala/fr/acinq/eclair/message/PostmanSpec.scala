@@ -24,7 +24,10 @@ import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
 import fr.acinq.eclair.message.Postman._
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.payment.offer.OfferManager.RequestInvoice
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.InvoiceRequest
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
+import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{NodeParams, TestConstants, UInt64, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -34,15 +37,16 @@ import scala.concurrent.duration._
 
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(postman: ActorRef[Command], nodeParams: NodeParams, messageRecipient: TestProbe[OnionMessageResponse], switchboard: TestProbe[RelayMessage])
+  case class FixtureParam(postman: ActorRef[Command], nodeParams: NodeParams, messageRecipient: TestProbe[OnionMessageResponse], switchboard: TestProbe[RelayMessage], offerManager: TestProbe[RequestInvoice])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Alice.nodeParams
     val messageRecipient = TestProbe[OnionMessageResponse]("messageRecipient")
     val switchboard = TestProbe[RelayMessage]("switchboard")
-    val postman = testKit.spawn(Postman(nodeParams, switchboard.ref))
+    val offerManager = TestProbe[RequestInvoice]("offerManager")
+    val postman = testKit.spawn(Postman(nodeParams, switchboard.ref, offerManager.ref))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(postman, nodeParams, messageRecipient, switchboard)))
+      withFixture(test.toNoArgTest(FixtureParam(postman, nodeParams, messageRecipient, switchboard, offerManager)))
     } finally {
       testKit.stop(postman)
     }
@@ -131,7 +135,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     messageRecipient.expectNoMessage()
   }
 
-  test("send to route that starts at ourselves") {f =>
+  test("send to route that starts at ourselves") { f =>
     import f._
 
     val recipientKey = randomKey()
@@ -148,5 +152,15 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     messageRecipient.expectMessage(MessageSent)
     messageRecipient.expectNoMessage()
+  }
+
+  test("forward invoice request to offer manager") { f =>
+    import f._
+
+    val finalPayload = MessageOnion.FinalPayload(TlvStream(InvoiceRequest(TlvStream())), TlvStream(PathId(hex"abcd")))
+    postman ! WrappedMessage(finalPayload)
+
+    val request = offerManager.expectMessageType[RequestInvoice]
+    assert(request.messagePayload.pathId_opt.contains(hex"abcd"))
   }
 }

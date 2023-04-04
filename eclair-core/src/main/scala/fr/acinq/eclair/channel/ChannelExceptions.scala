@@ -17,9 +17,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, Error, InteractiveTxMessage, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, InteractiveTxMessage, UpdateAddHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 
 /**
@@ -27,9 +28,9 @@ import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, 
  */
 
 // @formatter:off
-sealed trait ChannelOpenError
-case class LocalError(t: Throwable) extends ChannelOpenError
-case class RemoteError(e: Error) extends ChannelOpenError
+sealed trait ChannelError
+case class LocalError(t: Throwable) extends ChannelError
+case class RemoteError(e: protocol.Error) extends ChannelError
 // @formatter:on
 
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)

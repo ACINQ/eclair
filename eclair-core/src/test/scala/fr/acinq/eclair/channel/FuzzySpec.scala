@@ -42,7 +42,7 @@ import org.scalatest.{Outcome, Tag}
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Random, Success}
 
 /**
  * Created by PM on 05/07/2016.
@@ -65,8 +65,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val bob2blockchain = TestProbe()
     val aliceRegister = system.actorOf(Props(new TestRegister()))
     val bobRegister = system.actorOf(Props(new TestRegister()))
-    val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister)))
-    val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister)))
+    val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister, TestProbe().ref)))
+    val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister, TestProbe().ref)))
     val aliceRelayer = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, aliceRegister, alicePaymentHandler, TestProbe().ref))
     val bobRelayer = system.actorOf(Relayer.props(bobParams, TestProbe().ref, bobRegister, bobPaymentHandler, TestProbe().ref))
     val wallet = new DummyOnChainWallet()
@@ -78,7 +78,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard())
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -125,7 +125,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
 
     def initiatePaymentOrStop(remaining: Int): Unit =
       if (remaining > 0) {
-        paymentHandler ! ReceiveStandardPayment(Some(requiredAmount), Left("One coffee"))
+        paymentHandler ! ReceiveStandardPayment(context.self, Some(requiredAmount), Left("One coffee"))
         context become {
           case invoice: Bolt11Invoice =>
             sendChannel ! buildCmdAdd(invoice)

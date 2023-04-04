@@ -61,7 +61,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   when(INSTANTIATING) {
     case Event(Init(storedChannels), _) =>
       val channels = storedChannels.map { state =>
-        val channel = spawnChannel(origin_opt = None)
+        val channel = spawnChannel()
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
@@ -108,7 +108,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
     case Event(e: SpawnChannelInitiator, _) =>
-      e.origin ! Status.Failure(new RuntimeException("channel creation failed: disconnected"))
+      e.replyTo ! OpenChannelResponse.Disconnected
       stay()
 
     case Event(_: SpawnChannelNonInitiator, _) => stay() // we got disconnected before creating the channel actor
@@ -152,8 +152,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         openChannelInterceptor ! OpenChannelInitiator(sender().toTyped, remoteNodeId, c, d.localFeatures, d.remoteFeatures)
         stay()
 
-      case Event(SpawnChannelInitiator(c, channelConfig, channelType, localParams, origin), d: ConnectedData) =>
-        val channel = spawnChannel(Some(origin))
+      case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
+        val channel = spawnChannel()
         c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
@@ -165,7 +165,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingAmount, None)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -195,7 +195,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
-          val channel = spawnChannel(None)
+          val channel = spawnChannel()
           log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
           open match {
             case Left(open) =>
@@ -385,8 +385,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       s(e)
   }
 
-  def spawnChannel(origin_opt: Option[ActorRef]): ActorRef = {
-    val channel = channelFactory.spawn(context, remoteNodeId, origin_opt)
+  def spawnChannel(): ActorRef = {
+    val channel = channelFactory.spawn(context, remoteNodeId)
     context watch channel
     channel
   }
@@ -440,12 +440,12 @@ object Peer {
   val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
 
   trait ChannelFactory {
-    def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef
+    def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
   case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnchainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
-    override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef =
-      context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
+      context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, pendingChannelsRateLimiter))
@@ -509,13 +509,30 @@ object Peer {
     fundingTxFeerate_opt.foreach(feerate => require(feerate >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feerate is below minimum ${FeeratePerKw.MinimumFeeratePerKw}"))
   }
 
-  case class SpawnChannelInitiator(cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, origin: ActorRef)
+  sealed trait OpenChannelResponse
+  object OpenChannelResponse {
+    /**
+     * This response doesn't fully guarantee that the channel will actually be opened, because our peer may potentially
+     * double-spend the funding transaction. Callers must wait for on-chain confirmations if they want guarantees that
+     * the channel has been opened.
+     */
+    case class Created(channelId: ByteVector32, fundingTxId: ByteVector32, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
+    case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
+    case object Cancelled extends OpenChannelResponse { override def toString  = "channel creation cancelled" }
+    case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }
+    case object TimedOut extends OpenChannelResponse { override def toString = "open channel cancelled, took too long" }
+    case class RemoteError(ascii: String) extends OpenChannelResponse { override def toString = s"peer aborted the channel funding flow: '$ascii'" }
+  }
+
+  case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
+
   sealed trait PeerInfoResponse {
     def nodeId: PublicKey
   }
+
   case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
 

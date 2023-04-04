@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
+import akka.actor.{ActorRef, Status}
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
@@ -49,12 +50,8 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // Note that we don't use wallet.commit because we don't want to rollback on failure, since our peer may be able
         // to publish and we may be able to RBF.
         wallet.publishTransaction(fundingTx.signedTx).onComplete {
-          case Success(_) =>
-            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees, "funding"))
-            channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelOpened(dualFundedTx.fundingParams.channelId)))
-          case Failure(t) =>
-            channelOpenReplyToUser(Left(LocalError(t)))
-            log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
+          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees, "funding"))
+          case Failure(t) => log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
         }
     }
   }
@@ -105,7 +102,6 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
       d.allFundingTxs.map(_.sharedTx.tx.buildUnsignedTx()).foreach(tx => wallet.rollback(tx))
-      channelOpenReplyToUser(Left(LocalError(FundingTxDoubleSpent(d.channelId))))
       goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {
       // Not all funding attempts have been double-spent, the channel may still confirm.

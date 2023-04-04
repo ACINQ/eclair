@@ -6,7 +6,8 @@
 
 ### Offers
 
-Eclair now supports paying offers:
+#### Paying offers
+
 ```shell
 $ ./eclair-cli payoffer --offer=<offer-to-pay> --amountMsat=<amountToPay>
 ```
@@ -16,6 +17,17 @@ All the parameters from `payinvoice` are also supported.
 Eclair will request an invoice and pay it (assuming it matches our request) without further interaction.
 
 Offers are still experimental and some details could still change before they are widely supported.
+
+#### Receiving payments for offers
+
+To be able to receive payments for offers, you will need to use a plugin.
+The plugin needs to create the offer and register a handler that will accept or reject the invoice requests and the payments.
+Eclair will check that these satisfy all the protocol requirements and the handler only needs to consider whether the item on offer can be delivered or not.
+
+Invoices generated for offers are not stored in the database to prevent a DoS vector.
+Instead, all the relevant data (offer id, preimage, amount, quantity, creation date and payer id) is included in the blinded route that will be used for payment.
+The handler can also add its own data.
+All this data is signed and encrypted so that it can not be read or forged by the payer.
 
 ### API changes
 

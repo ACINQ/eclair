@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -102,7 +103,8 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelFlags: ChannelFlags,
                                         channelConfig: ChannelConfig,
                                         channelType: SupportedChannelType,
-                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default) {
+                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default,
+                                        replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
@@ -200,7 +202,7 @@ sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
 
-final case class CMD_BUMP_FUNDING_FEE(replyTo: ActorRef, targetFeerate: FeeratePerKw, lockTime: Long) extends HasReplyToCommand
+final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, lockTime: Long) extends Command
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
@@ -248,21 +250,10 @@ object HtlcResult {
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
+final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: ByteVector32, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]
 final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
 final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
 final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
-
-/**
- * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
- *
- * If actor A sends a [[fr.acinq.eclair.io.Peer.OpenChannel]] and actor B sends a [[CMD_CLOSE]], then A will receive a
- * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[RES_SUCCESS]]
- */
-sealed trait ChannelOpenResponse
-object ChannelOpenResponse {
-  case class ChannelOpened(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"created channel $channelId" }
-  case class ChannelClosed(channelId: ByteVector32) extends ChannelOpenResponse { override def toString  = s"closed channel $channelId" }
-}
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -438,7 +429,7 @@ sealed trait RbfStatus
 object RbfStatus {
   case object NoRbf extends RbfStatus
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
-  case class RbfInProgress(rbf: typed.ActorRef[InteractiveTxBuilder.Command]) extends RbfStatus
+  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command]) extends RbfStatus
   case object RbfAborted extends RbfStatus
 }
 
@@ -467,7 +458,8 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
-                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
+                                                remoteFirstPerCommitmentPoint: PublicKey,
+                                                replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
@@ -483,7 +475,8 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               localSpec: CommitmentSpec,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
-                                              lastSent: FundingCreated) extends TransientChannelData {
+                                              lastSent: FundingCreated,
+                                              replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
@@ -507,7 +500,8 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
-                                                    deferred: Option[ChannelReady]) extends TransientChannelData
+                                                    deferred: Option[ChannelReady],
+                                                    replyTo_opt: Option[akka.actor.typed.ActorRef[Peer.OpenChannelResponse]]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,

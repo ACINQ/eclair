@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 
 import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
@@ -268,21 +268,6 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def addIncomingBlindedPayment(invoice: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String): Unit = withMetrics("payments/add-incoming-blinded", DbBackends.Postgres) {
-    withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, path_ids, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, invoice.paymentHash.toHex)
-        statement.setString(2, preimage.toHex)
-        statement.setBytes(3, encodePathIds(pathIds))
-        statement.setString(4, paymentType)
-        statement.setString(5, invoice.toString)
-        statement.setTimestamp(6, invoice.createdAt.toSqlTimestamp)
-        statement.setTimestamp(7, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
-        statement.executeUpdate()
-      }
-    }
-  }
-
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
@@ -291,6 +276,23 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         update.setString(3, paymentHash.toHex)
         val updated = update.executeUpdate()
         updated > 0
+      }
+    }
+  }
+
+  override def receiveIncomingOfferPayment(invoice: MinimalBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = withMetrics("payments/receive-incoming-offer", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at, received_msat, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)" +
+        "ON CONFLICT (payment_hash) DO UPDATE SET (received_msat, received_at) = (payments.received.received_msat + EXCLUDED.received_msat, EXCLUDED.received_at)")) { statement =>
+        statement.setString(1, invoice.paymentHash.toHex)
+        statement.setString(2, preimage.toHex)
+        statement.setString(3, paymentType)
+        statement.setString(4, invoice.toString)
+        statement.setTimestamp(5, invoice.createdAt.toSqlTimestamp)
+        statement.setTimestamp(6, (invoice.createdAt + invoice.relativeExpiry.toSeconds).toSqlTimestamp)
+        statement.setLong(7, amount.toLong)
+        statement.setTimestamp(8, receivedAt.toSqlTimestamp)
+        statement.executeUpdate()
       }
     }
   }
@@ -304,10 +306,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       case Success(invoice: Bolt11Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
         Some(IncomingStandardPayment(invoice, preimage, paymentType, createdAt, status))
-      case Success(invoice: Bolt12Invoice) =>
+      case Success(invoice: MinimalBolt12Invoice) =>
         val status = buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), invoice, rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp))
-        val pathIds = decodePathIds(BitVector(rs.getBytes("path_ids")))
-        Some(IncomingBlindedPayment(invoice, preimage, paymentType, pathIds, createdAt, status))
+        Some(IncomingBlindedPayment(invoice, preimage, paymentType, createdAt, status))
       case _ =>
         logger.error(s"could not parse DB invoice=$invoice, this should not happen")
         None

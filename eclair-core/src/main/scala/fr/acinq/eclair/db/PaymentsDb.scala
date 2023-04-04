@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampMilli}
-import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.util.Try
@@ -33,14 +32,17 @@ trait IncomingPaymentsDb {
   /** Add a new expected standard incoming payment (not yet received). */
   def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
-  /** Add a new expected blinded incoming payment (not yet received). */
-  def addIncomingBlindedPayment(pr: Bolt12Invoice, preimage: ByteVector32, pathIds: Map[PublicKey, ByteVector], paymentType: String = PaymentType.Blinded): Unit
-
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
    * If there was no matching invoice in the DB, this will return false.
    */
   def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
+
+  /**
+   * Add a new incoming offer payment as received.
+   * If the invoice is already paid, adds `amount` to the amount paid.
+   */
+  def receiveIncomingOfferPayment(pr: MinimalBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
@@ -128,15 +130,10 @@ case class IncomingStandardPayment(invoice: Bolt11Invoice,
                                    createdAt: TimestampMilli,
                                    status: IncomingPaymentStatus) extends IncomingPayment
 
-/**
- * A blinded incoming payment received by this node.
- *
- * @param pathIds map the last blinding point of a blinded path to the corresponding pathId.
- */
-case class IncomingBlindedPayment(invoice: Bolt12Invoice,
+/** A blinded incoming payment received by this node. */
+case class IncomingBlindedPayment(invoice: MinimalBolt12Invoice,
                                   paymentPreimage: ByteVector32,
                                   paymentType: String,
-                                  pathIds: Map[PublicKey, ByteVector],
                                   createdAt: TimestampMilli,
                                   status: IncomingPaymentStatus) extends IncomingPayment
 
@@ -302,19 +299,4 @@ object PaymentsDb {
       case Attempt.Failure(_) => Nil
     }
   }
-
-  private val pathIdCodec = (("blinding_key" | CommonCodecs.publicKey) :: ("path_id" | variableSizeBytes(uint16, bytes))).as[(PublicKey, ByteVector)]
-  private val pathIdsCodec = "path_ids" | listOfN(uint16, pathIdCodec)
-
-  def encodePathIds(pathIds: Map[PublicKey, ByteVector]): Array[Byte] = {
-    pathIdsCodec.encode(pathIds.toList).require.toByteArray
-  }
-
-  def decodePathIds(b: BitVector): Map[PublicKey, ByteVector] = {
-    pathIdsCodec.decode(b) match {
-      case Attempt.Successful(pathIds) => pathIds.value.toMap
-      case Attempt.Failure(_) => Map.empty
-    }
-  }
-
 }

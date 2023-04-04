@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.states
 
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.actor.{ActorContext, ActorRef, ActorSystem}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
@@ -94,7 +94,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
                           bob: TestFSMRef[ChannelState, ChannelData, Channel],
-                          aliceOrigin: TestProbe,
+                          aliceOpenReplyTo: TestProbe,
                           alice2bob: TestProbe,
                           bob2alice: TestProbe,
                           alice2blockchain: TestProbe,
@@ -124,7 +124,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet with OnchainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
-    val aliceOrigin = TestProbe()
+    val aliceOpenReplyTo = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alicePeer = TestProbe()
@@ -161,13 +161,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
-      TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
+      TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     }
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemB
       TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     }
-    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
+    SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
@@ -245,7 +245,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, initiatorPushAmount, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, initiatorPushAmount, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)

@@ -103,8 +103,8 @@ object Channel {
     }
   }
 
-  def props(nodeParams: NodeParams, wallet: OnChainChannelFunder with OnchainPubkeyCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory, origin_opt: Option[ActorRef]): Props =
-    Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory, origin_opt))
+  def props(nodeParams: NodeParams, wallet: OnChainChannelFunder with OnchainPubkeyCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory): Props =
+    Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory))
 
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   val ANNOUNCEMENTS_MINCONF = 6
@@ -172,7 +172,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with OnchainPubkeyCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory, val origin_opt: Option[ActorRef] = None)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
+class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with OnchainPubkeyCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
   extends FSM[ChannelState, ChannelData]
     with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunded
@@ -1533,6 +1533,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       replyTo ! RES_SUCCESS(c, d.channelId)
       stay()
 
+    case Event(c: CMD_BUMP_FUNDING_FEE, d) =>
+      c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf", stateName))
+      stay()
+
     // at restore, if the configuration has changed, the channel will send a command to itself to update the relay fees
     case Event(RES_SUCCESS(_: CMD_UPDATE_RELAY_FEE, channelId), d: DATA_NORMAL) if channelId == d.channelId => stay()
 
@@ -1834,10 +1838,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
+      case _ => None
     }
-    replyTo_opt.foreach { replyTo =>
-      replyTo ! RES_SUCCESS(c, newData.channelId)
-    }
+    replyTo_opt.foreach(_ ! RES_SUCCESS(c, newData.channelId))
     stay() using newData
   }
 
@@ -1854,6 +1857,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
+      case _ => None
     }
     replyTo_opt.foreach(replyTo => replyTo ! RES_FAILURE(c, cause))
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))

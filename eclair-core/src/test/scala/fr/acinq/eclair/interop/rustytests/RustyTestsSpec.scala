@@ -59,7 +59,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     TestUtils.forwardOutgoingToPipe(bobPeer, pipe)
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref)))
+    val paymentHandler = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, TestProbe().ref, TestProbe().ref)))
     paymentHandler ! new ForwardHandler(TestProbe().ref)
     // we just bypass the relayer for this test
     val relayer = paymentHandler
@@ -75,7 +75,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val bobInit = Init(Bob.channelParams.initFeatures)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Some(1000000000 msat), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Some(1000000000 msat), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType, replyTo = system.deadLetters)
     alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]

@@ -13,15 +13,17 @@ import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Switchboard}
+import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
@@ -50,6 +52,8 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       switchboard: ActorRef,
                                       paymentInitiator: ActorRef,
                                       paymentHandler: ActorRef,
+                                      offerManager: typed.ActorRef[OfferManager.Command],
+                                      postman: typed.ActorRef[Postman.Command],
                                       watcher: TestProbe,
                                       wallet: DummyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
@@ -87,7 +91,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
-    val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register), "payment-handler")
+    val offerManager = system.spawn(OfferManager(nodeParams, router, 1 minute), "offer-manager")
+    val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler, triggerer.ref.toTyped), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcherTyped, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
@@ -97,6 +102,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
+    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
@@ -113,6 +119,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       switchboard = switchboard,
       paymentInitiator = paymentInitiator,
       paymentHandler = paymentHandler,
+      offerManager = offerManager,
+      postman = postman,
       watcher = watcher,
       wallet = wallet,
       bitcoinClient = bitcoinClient
@@ -169,10 +177,10 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[ConnectionResult.Connected]
   }
 
-  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): ChannelOpened = {
+  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): OpenChannelResponse.Created = {
     val sender = TestProbe("sender")
     sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None))
-    sender.expectMsgType[ChannelOpened]
+    sender.expectMsgType[OpenChannelResponse.Created]
   }
 
   def fundingTx(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): Transaction = {
@@ -335,7 +343,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def sendPayment(node1: MinimalNodeFixture, node2: MinimalNodeFixture, amount: MilliSatoshi, hints: List[List[ExtraHop]] = List.empty)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
-    sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(Some(amount), Left("test payment"), extraHops = hints))
+    sender.send(node2.paymentHandler, MultiPartHandler.ReceiveStandardPayment(sender.ref.toTyped, Some(amount), Left("test payment"), extraHops = hints))
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     sendPayment(node1, amount, invoice)
