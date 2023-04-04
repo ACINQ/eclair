@@ -1361,9 +1361,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val commitSig = status.remoteCommit.sign(keyManager, d.commitments.params, status.commitInput)
               goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
             case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
-              // We retransmit commit_sig and tx_signatures (we sent them before, but they didn't receive it).
-              val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.commitInput)
-              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending Seq(commitSig, d.latestFundingTx.sharedTx.localSigs)
+              val toSend = d.latestFundingTx.sharedTx match {
+                case fundingTx: InteractiveTxBuilder.PartiallySignedSharedTransaction =>
+                  // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
+                  val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.commitInput)
+                  Seq(commitSig, fundingTx.localSigs)
+                case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
+                  // We've already received their tx_signatures, which means they've received and stored our commit_sig, we only need to retransmit our tx_signatures.
+                  Seq(fundingTx.localSigs)
+              }
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending toSend
             case _ =>
               // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
               // their tx_complete): we tell them to abort that RBF attempt.
