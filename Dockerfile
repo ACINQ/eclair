@@ -31,8 +31,8 @@ COPY eclair-node/pom.xml eclair-node/pom.xml
 COPY eclair-node/modules/assembly.xml eclair-node/modules/assembly.xml
 RUN mkdir -p eclair-core/src/main/scala && touch eclair-core/src/main/scala/empty.scala
 # Blank build. We only care about eclair-node, and we use install because eclair-node depends on eclair-core
-RUN mvn install -pl eclair-node -am
-RUN mvn clean
+RUN mvn install -pl eclair-node -am \
+    && mvn clean
 
 # Only then do we copy the sources
 COPY . .
