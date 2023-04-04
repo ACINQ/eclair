@@ -37,7 +37,8 @@ class ChannelException(val channelId: ByteVector32, message: String) extends Run
 
 // @formatter:off
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: ByteVector32, remote: ByteVector32) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
-case class InvalidFundingAmount                    (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_satoshis=$fundingAmount (min=$min max=$max)")
+case class FundingAmountTooLow                     (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (min=$min)")
+case class FundingAmountTooHigh                    (override val channelId: ByteVector32, fundingAmount: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (max=$max)")
 case class InvalidPushAmount                       (override val channelId: ByteVector32, pushAmount: MilliSatoshi, max: MilliSatoshi) extends ChannelException(channelId, s"invalid pushAmount=$pushAmount (max=$max)")
 case class InvalidMaxAcceptedHtlcs                 (override val channelId: ByteVector32, maxAcceptedHtlcs: Int, max: Int) extends ChannelException(channelId, s"invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
 case class InvalidChannelType                      (override val channelId: ByteVector32, ourChannelType: ChannelType, theirChannelType: ChannelType) extends ChannelException(channelId, s"invalid channel_type=$theirChannelType, expected channel_type=$ourChannelType")

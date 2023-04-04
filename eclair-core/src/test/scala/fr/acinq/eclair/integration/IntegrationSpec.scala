@@ -85,7 +85,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.channel.max-htlc-value-in-flight-percent" -> 100,
     "eclair.channel.max-block-processing-delay" -> "2 seconds",
     "eclair.channel.to-remote-delay-blocks" -> 24,
-    "eclair.channel.max-funding-satoshis" -> 500000000,
     "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
     "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())

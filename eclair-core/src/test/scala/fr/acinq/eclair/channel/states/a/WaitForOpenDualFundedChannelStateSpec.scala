@@ -133,7 +133,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
     bob ! open.copy(fundingAmount = 100 sat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, 100 sat, Bob.nodeParams.channelConf.minFundingSatoshis(false), Bob.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, 100 sat, Bob.nodeParams.channelConf.minFundingSatoshis(false)).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
@@ -40,33 +40,31 @@ import scala.concurrent.duration._
 
 class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
+  private val HighRemoteDustLimit = "high_remote_dust_limit"
+  private val StandardChannelType = "standard_channel_type"
+  private val LargeChannel = "large_channel"
+
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
-    val aliceNodeParams = Alice.nodeParams
-      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
-      .modify(_.channelConf.maxRemoteDustLimit).setToIf(test.tags.contains("high-remote-dust-limit"))(15000 sat)
 
-    val bobNodeParams = Bob.nodeParams
-      .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
+    val aliceNodeParams = Alice.nodeParams.modify(_.channelConf.maxRemoteDustLimit).setToIf(test.tags.contains(HighRemoteDustLimit))(15_000 sat)
 
-    val setup = init(aliceNodeParams, bobNodeParams, wallet_opt = Some(new NoOpOnChainWallet()), test.tags)
-
+    val setup = init(aliceNodeParams, Bob.nodeParams, wallet_opt = Some(new NoOpOnChainWallet()), test.tags)
     import setup._
+
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
     val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags, channelFlags)
-    val channelType = if (test.tags.contains("standard-channel-type")) ChannelTypes.Standard() else defaultChannelType
+    val channelType = if (test.tags.contains(StandardChannelType)) ChannelTypes.Standard() else defaultChannelType
     val commitTxFeerate = if (channelType.isInstanceOf[ChannelTypes.AnchorOutputs] || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      val fundingAmount = if (test.tags.contains(ChannelStateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
+      val fundingAmount = if (test.tags.contains(LargeChannel)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2bob.expectMsgType[OpenChannel]
@@ -140,7 +138,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
+  test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(StandardChannelType)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Alice asked for a standard channel whereas they both support anchor outputs.
@@ -151,7 +149,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
+  test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(StandardChannelType)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
@@ -210,7 +208,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (dust limit too low)", Tag("mainnet")) { f =>
+  test("recv AcceptChannel (dust limit too low)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // we don't want their dust limit to be below 354
@@ -285,7 +283,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (dust limit above our reserve)", Tag("high-remote-dust-limit")) { f =>
+  test("recv AcceptChannel (dust limit above our reserve)", Tag(HighRemoteDustLimit)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent
@@ -298,10 +296,10 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (wumbo size channel)", Tag(ChannelStateTestsTags.Wumbo), Tag("high-max-funding-size")) { f =>
+  test("recv AcceptChannel (large channel)", Tag(LargeChannel)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
+    assert(accept.minimumDepth == 13) // with large channel tag we create a 5BTC channel
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     aliceOpenReplyTo.expectNoMessage()

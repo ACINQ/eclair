@@ -149,37 +149,22 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     eventListener.expectMessageType[ChannelAborted]
   }
 
-  test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
+  test("don't spawn a wumbo channel if wumbo feature isn't enabled", Tag(ChannelStateTestsTags.DisableWumbo)) { f =>
     import f._
 
     val probe = TestProbe[Any]()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), Features.empty, Features.empty)
-
-    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == s"fundingAmount=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+    val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), Features.empty, initFeatures().add(Wumbo, Optional))
+    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("you must enable large channels support"))
   }
 
-  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.Wumbo)) { f =>
+  test("don't spawn a wumbo channel if remote doesn't support wumbo", Tag(ChannelStateTestsTags.DisableWumbo)) { f =>
     import f._
 
     val probe = TestProbe[Any]()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-
+    val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
     openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), initFeatures().add(Wumbo, Optional), Features.empty)
-
     assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
-  }
-
-  test("don't spawn a channel if fundingSatoshis is greater than maxFundingSatoshis", Tag(ChannelStateTestsTags.Wumbo)) { f =>
-    import f._
-
-    val probe = TestProbe[Any]()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
-
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None), initFeatures().add(Wumbo, Optional), initFeatures().add(Wumbo, Optional))
-
-    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == s"fundingAmount=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
 
   test("don't spawn a channel if we don't support their channel type") { f =>

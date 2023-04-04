@@ -127,14 +127,11 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
-    if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.localFeatures.hasFeature(Wumbo)) {
-      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
+    if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.localFeatures.hasFeature(Wumbo)) {
+      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING_WITHOUT_WUMBO} (see eclair.conf)")
       waitForRequest()
-    } else if (request.open.fundingAmount >= Channel.MAX_FUNDING && !request.remoteFeatures.hasFeature(Wumbo)) {
+    } else if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.remoteFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo")
-      waitForRequest()
-    } else if (request.open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) {
-      request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
       waitForRequest()
     } else {
       // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
