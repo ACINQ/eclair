@@ -892,6 +892,22 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  test("given a pre-defined channels route properly handles provided max fee") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+
+    {
+      val preComputedRoute = PredefinedChannelRoute(10000 msat, d, Seq(scid_ab, scid_bc, scid_cd), maxFee_opt = Some(1.msat))
+      sender.send(router, FinalizeRoute(preComputedRoute))
+      sender.expectMsgType[Status.Failure]
+    }
+    {
+      val preComputedRoute = PredefinedChannelRoute(10000 msat, d, Seq(scid_ab, scid_bc, scid_cd), maxFee_opt = Some(20.msat))
+      sender.send(router, FinalizeRoute(preComputedRoute))
+      sender.expectMsgType[Router.RouteResponse]
+    }
+  }
+
   test("restore stale channel that comes back from the dead") { fixture =>
     import fixture._
 
