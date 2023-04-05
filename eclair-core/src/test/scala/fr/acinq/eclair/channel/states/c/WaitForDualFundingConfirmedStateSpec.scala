@@ -532,13 +532,13 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // We don't have code to contribute to an interactive-tx without contributing to the funding output, so we tweak
     // internal channel data to simulate it.
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    val fundingTx1 = aliceData.latestFundingTx.copy(fundingParams = aliceData.latestFundingTx.fundingParams.copy(remoteAmount = 0 sat))
+    val fundingTx1 = aliceData.latestFundingTx.copy(fundingParams = aliceData.latestFundingTx.fundingParams.copy(remoteContribution = 0 sat))
     val aliceData1 = aliceData
       .modify(_.commitments.active.at(0).localFundingStatus)
       .setTo(fundingTx1)
     alice.setState(alice.stateName, aliceData1)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.minDepth_opt.nonEmpty)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.remoteAmount == 0.sat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.remoteContribution == 0.sat)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.tx.remoteInputs.nonEmpty)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx)
     val channelReady = bob2alice.expectMsgType[ChannelReady]

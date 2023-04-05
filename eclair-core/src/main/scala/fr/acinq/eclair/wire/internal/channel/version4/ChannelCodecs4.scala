@@ -239,14 +239,14 @@ private[channel] object ChannelCodecs4 {
       ("serialId" | uint64) ::
         ("outPoint" | outPointCodec) ::
         ("sequence" | uint32) ::
-        ("localAmount" | satoshi) ::
-        ("remoteAmount" | satoshi)).as[InteractiveTxBuilder.Input.Shared]
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared]
 
     private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
       ("serialId" | uint64) ::
         ("scriptPubKey" | lengthDelimited(bytes)) ::
-        ("localAmount" | satoshi) ::
-        ("remoteAmount" | satoshi)).as[InteractiveTxBuilder.Output.Shared]
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared]
 
     private val localInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Local] = (
       ("serialId" | uint64) ::

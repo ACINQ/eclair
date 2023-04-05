@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{RealShortChannelId, ToMilliSatoshiConversion, UInt64}
+import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -201,8 +201,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
             isInitiator = localParams.isInitiator,
-            localAmount = accept.fundingAmount,
-            remoteAmount = open.fundingAmount,
+            localContribution = accept.fundingAmount,
+            remoteContribution = open.fundingAmount,
             sharedInput_opt = None,
             fundingPubkeyScript = fundingPubkeyScript,
             localOutputs = Nil,
@@ -268,8 +268,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
             isInitiator = localParams.isInitiator,
-            localAmount = localAmount,
-            remoteAmount = remoteAmount,
+            localContribution = localAmount,
+            remoteContribution = remoteAmount,
             sharedInput_opt = None,
             fundingPubkeyScript = fundingPubkeyScript,
             localOutputs = Nil,
@@ -339,7 +339,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(status, commitSig) =>
         d.deferred.foreach(self ! _)
-        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees))
+        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status, None)
         goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 storing() sending commitSig
       case f: InteractiveTxBuilder.Failed =>
@@ -496,7 +496,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localAmount)
+              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution)
             }
           case _ =>
             log.warning("cannot initiate rbf, another one is already in progress")
@@ -535,19 +535,19 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               log.info("our peer wants to raise the feerate of the funding transaction (previous={} target={})", d.latestFundingTx.fundingParams.targetFeerate, msg.feerate)
               val fundingParams = d.latestFundingTx.fundingParams.copy(
                 // we don't change our funding contribution
-                remoteAmount = msg.fundingContribution,
+                remoteContribution = msg.fundingContribution,
                 lockTime = msg.lockTime,
                 targetFeerate = msg.feerate
               )
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 nodeParams, fundingParams,
                 channelParams = d.commitments.params,
-                purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+                purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 wallet))
               txBuilder ! InteractiveTxBuilder.Start(self)
               val toSend = Seq(
-                Some(TxAckRbf(d.channelId, fundingParams.localAmount)),
+                Some(TxAckRbf(d.channelId, fundingParams.localContribution)),
                 if (remainingRbfAttempts <= 3) Some(Warning(d.channelId, s"will accept at most ${remainingRbfAttempts - 1} future rbf attempts")) else None,
               ).flatten
               stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = None, txBuilder, remoteCommitSig = None)) sending toSend
@@ -572,7 +572,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           log.info("our peer accepted our rbf attempt and will contribute {} to the funding transaction", msg.fundingContribution)
           val fundingParams = d.latestFundingTx.fundingParams.copy(
             // we don't change our funding contribution
-            remoteAmount = msg.fundingContribution,
+            remoteContribution = msg.fundingContribution,
             lockTime = cmd.lockTime,
             targetFeerate = cmd.targetFeerate,
             // we now have more than one version of the funding tx, so we cannot use zero-conf.
@@ -581,7 +581,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             channelParams = d.commitments.params,
-            purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 sat, 0 sat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+            purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
@@ -657,7 +657,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           msg match {
             case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
             case InteractiveTxBuilder.Succeeded(status, commitSig) =>
-              cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, status.fundingTx.txId, status.fundingTx.tx.localFees))
+              cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
               remoteCommitSig_opt.foreach(self ! _)
               val d1 = d.copy(rbfStatus = RbfStatus.RbfWaitingForSigs(status))
               stay() using d1 storing() sending commitSig
