@@ -128,7 +128,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     alice ! accept.copy(fundingAmount = -1 sat)
     val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(accept.temporaryChannelId, InvalidFundingAmount(accept.temporaryChannelId, -1 sat, 0 sat, Alice.nodeParams.channelConf.maxFundingSatoshis).getMessage))
+    assert(error == Error(accept.temporaryChannelId, FundingAmountTooLow(accept.temporaryChannelId, -1 sat, 0 sat).getMessage))
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }

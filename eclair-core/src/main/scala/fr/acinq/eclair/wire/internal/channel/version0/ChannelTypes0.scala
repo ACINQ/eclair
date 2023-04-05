@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.CommitSig
-import fr.acinq.eclair.{BlockHeight, ChannelTypeFeature, Features, PermanentChannelFeature, channel}
+import fr.acinq.eclair.{BlockHeight, Features, channel}
 import scodec.bits.BitVector
 
 private[channel] object ChannelTypes0 {
@@ -198,16 +198,13 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelConfig()
       }
-      val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
-      val baseChannelFeatures: Set[PermanentChannelFeature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
-      val commitmentFeatures: Set[ChannelTypeFeature] = if (channelVersion.hasAnchorOutputs) {
-        Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+      val channelFeatures = if (channelVersion.hasAnchorOutputs) {
+        ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
       } else if (channelVersion.hasStaticRemotekey) {
-        Set(Features.StaticRemoteKey)
+        ChannelFeatures(Features.StaticRemoteKey)
       } else {
-        Set.empty
+        ChannelFeatures()
       }
-      val channelFeatures = ChannelFeatures(baseChannelFeatures ++ commitmentFeatures)
       val commitment = Commitment(
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the

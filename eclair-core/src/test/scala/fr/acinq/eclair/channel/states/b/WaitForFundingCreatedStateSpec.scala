@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -40,26 +40,23 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
+  private val LargeChannel = "large_channel"
+  private val FunderBelowCommitFees = "funder_below_commit_fees"
+
   case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    import com.softwaremill.quicklens._
-    val aliceNodeParams = Alice.nodeParams
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
-    val bobNodeParams = Bob.nodeParams
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
+    val setup = init(Alice.nodeParams, Bob.nodeParams, tags = test.tags)
+    import setup._
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_commit_fees")) {
+    val (fundingSatoshis, pushMsat) = if (test.tags.contains(FunderBelowCommitFees)) {
       (1_000_100 sat, (1_000_000 sat).toMilliSatoshi) // toLocal = 100 satoshis
-    } else if (test.tags.contains(ChannelStateTestsTags.Wumbo)) {
+    } else if (test.tags.contains(LargeChannel)) {
       (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
 
-    val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
-
-    import setup._
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
@@ -92,7 +89,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     assert(watchConfirmed.minDepth == Alice.nodeParams.channelConf.minDepthBlocks)
   }
 
-  test("recv FundingCreated (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
+  test("recv FundingCreated (large channel)", Tag(LargeChannel)) { f =>
     import f._
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
@@ -104,7 +101,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepthBlocks)
   }
 
-  test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_commit_fees")) { f =>
+  test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>
     import f._
     val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
     val missing = fees - 100.sat

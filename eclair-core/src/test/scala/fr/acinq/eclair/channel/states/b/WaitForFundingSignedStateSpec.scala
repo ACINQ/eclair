@@ -41,24 +41,20 @@ import scala.concurrent.duration._
 
 class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
+  private val LargeChannel = "large_channel"
+
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    import com.softwaremill.quicklens._
-    val aliceNodeParams = Alice.nodeParams
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
-    val bobNodeParams = Bob.nodeParams
-      .modify(_.channelConf.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
+    val setup = init(Alice.nodeParams, Bob.nodeParams, tags = test.tags)
+    import setup._
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains(ChannelStateTestsTags.Wumbo)) {
+    val (fundingSatoshis, pushMsat) = if (test.tags.contains(LargeChannel)) {
       (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
 
-    val setup = init(aliceNodeParams, bobNodeParams, tags = test.tags)
-
-    import setup._
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags.Private
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
@@ -110,7 +106,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
-  test("recv FundingSigned with valid signature (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
+  test("recv FundingSigned with valid signature (wumbo)", Tag(LargeChannel)) { f =>
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)

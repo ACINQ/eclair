@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
+import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill}
 import akka.testkit.TestActor.KeepRunning
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -68,7 +68,6 @@ class PeerSpec extends FixtureSpec {
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.ChannelType))(Features(ChannelType -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.StaticRemoteKey))(Features(StaticRemoteKey -> Optional))
-      .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.Wumbo))(Features(Wumbo -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))

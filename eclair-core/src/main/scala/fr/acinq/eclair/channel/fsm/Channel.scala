@@ -73,7 +73,6 @@ object Channel {
                          maxReserveToFundingRatio: Double,
                          minFundingPublicSatoshis: Satoshi,
                          minFundingPrivateSatoshis: Satoshi,
-                         maxFundingSatoshis: Satoshi,
                          toRemoteDelay: CltvExpiryDelta,
                          maxToLocalDelay: CltvExpiryDelta,
                          minDepthBlocks: Int,
@@ -111,7 +110,7 @@ object Channel {
   val ANNOUNCEMENTS_MINCONF = 6
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-  val MAX_FUNDING: Satoshi = 16777216 sat // = 2^24
+  val MAX_FUNDING_WITHOUT_WUMBO: Satoshi = 16777216 sat // = 2^24
   val MAX_ACCEPTED_HTLCS = 483
 
   // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions

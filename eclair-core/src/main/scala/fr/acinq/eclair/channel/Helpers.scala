@@ -87,10 +87,9 @@ object Helpers {
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
 
-    if (open.fundingSatoshis < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel) || open.fundingSatoshis > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), nodeParams.channelConf.maxFundingSatoshis))
-
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), Channel.MAX_FUNDING))
+    if (open.fundingSatoshis < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel)) return Left(FundingAmountTooLow(open.temporaryChannelId, open.fundingSatoshis, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel)))
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingSatoshis, Channel.MAX_FUNDING_WITHOUT_WUMBO))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
@@ -138,7 +137,8 @@ object Helpers {
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
 
     // BOLT #2: Channel funding limits
-    if (open.fundingAmount < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel) || open.fundingAmount > nodeParams.channelConf.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingAmount, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel), nodeParams.channelConf.maxFundingSatoshis))
+    if (open.fundingAmount < nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel)) return Left(FundingAmountTooLow(open.temporaryChannelId, open.fundingAmount, nodeParams.channelConf.minFundingSatoshis(open.channelFlags.announceChannel)))
+    if (open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(open.temporaryChannelId, open.fundingAmount, Channel.MAX_FUNDING_WITHOUT_WUMBO))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushAmount > open.fundingAmount) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushAmount, open.fundingAmount.toMilliSatoshi))
@@ -223,7 +223,8 @@ object Helpers {
     }
 
     // BOLT #2: Channel funding limits
-    if (accept.fundingAmount > nodeParams.channelConf.maxFundingSatoshis || accept.fundingAmount < 0.sat) return Left(InvalidFundingAmount(accept.temporaryChannelId, accept.fundingAmount, 0 sat, nodeParams.channelConf.maxFundingSatoshis))
+    if (accept.fundingAmount < 0.sat) return Left(FundingAmountTooLow(accept.temporaryChannelId, accept.fundingAmount, 0 sat))
+    if (accept.fundingAmount > Channel.MAX_FUNDING_WITHOUT_WUMBO && !localFeatures.hasFeature(Features.Wumbo)) return Left(FundingAmountTooHigh(accept.temporaryChannelId, accept.fundingAmount, Channel.MAX_FUNDING_WITHOUT_WUMBO))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))
@@ -370,7 +371,7 @@ object Helpers {
      */
     def minDepthFundee(channelConf: ChannelConf, localFeatures: Features[InitFeature], fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
       case _ if localFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
-      case funding if funding <= Channel.MAX_FUNDING => Some(channelConf.minDepthBlocks)
+      case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(channelConf.minDepthBlocks)
       case funding =>
         val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
         val scalingFactor = 15
