@@ -89,12 +89,17 @@ private[channel] object ChannelCodecs4 {
       .typecase(true, minimalHtlcCodec(htlcs.collect(DirectedHtlc.incoming)).as[IncomingHtlc])
       .typecase(false, minimalHtlcCodec(htlcs.collect(DirectedHtlc.outgoing)).as[OutgoingHtlc])
 
-    /** HTLCs are stored separately to avoid duplicating data. */
-    def commitmentSpecCodec(htlcs: Set[DirectedHtlc]): Codec[CommitmentSpec] = (
-      ("htlcs" | setCodec(minimalDirectedHtlcCodec(htlcs))) ::
+    private def baseCommitmentSpecCodec(directedHtlcCodec: Codec[DirectedHtlc]): Codec[CommitmentSpec] = (
+      ("htlcs" | setCodec(directedHtlcCodec)) ::
         ("feeratePerKw" | feeratePerKw) ::
         ("toLocal" | millisatoshi) ::
         ("toRemote" | millisatoshi)).as[CommitmentSpec]
+
+    /** HTLCs are stored separately to avoid duplicating data. */
+    def minimalCommitmentSpecCodec(htlcs: Set[DirectedHtlc]): Codec[CommitmentSpec] = baseCommitmentSpecCodec(minimalDirectedHtlcCodec(htlcs))
+
+    /** HTLCs are stored in full, the codec is stateless but creates duplication between local/remote commitment, and across commitments. */
+    val commitmentSpecCodec: Codec[CommitmentSpec] = baseCommitmentSpecCodec(htlcCodec)
 
     val outPointCodec: Codec[OutPoint] = lengthDelimited(bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
@@ -350,9 +355,9 @@ private[channel] object ChannelCodecs4 {
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
       ("fundingTxStatus" | fundingTxStatusCodec) ::
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
-        ("localCommit" | localCommitCodec(commitmentSpecCodec(htlcs))) ::
-        ("remoteCommit" | remoteCommitCodec(commitmentSpecCodec(htlcs.map(_.opposite)))) ::
-        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(commitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
+        ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
+        ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
+        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
 
     /**
      * When multiple commitments are active, htlcs are shared between all of these commitments.
@@ -451,12 +456,6 @@ private[channel] object ChannelCodecs4 {
     // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel
     // cannot be used for payments.
     private val interactiveTxWaitingForSigsCodec: Codec[InteractiveTxSigningSession.WaitingForSigs] = {
-      val commitmentSpecCodec: Codec[CommitmentSpec] = (
-        ("htlcs" | setCodec(htlcCodec)) ::
-          ("feeratePerKw" | feeratePerKw) ::
-          ("toLocal" | millisatoshi) ::
-          ("toRemote" | millisatoshi)).as[CommitmentSpec]
-
       val unsignedLocalCommitCodec: Codec[UnsignedLocalCommit] = (
         ("index" | uint64overflow) ::
           ("spec" | commitmentSpecCodec) ::
