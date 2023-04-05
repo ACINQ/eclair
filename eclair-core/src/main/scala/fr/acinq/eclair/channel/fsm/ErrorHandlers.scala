@@ -87,7 +87,7 @@ trait ErrorHandlers extends CommonHandlers {
         log.info(s"we have a valid closing tx, publishing it instead of our commitment: closingTxId=${bestUnpublishedClosingTx.tx.txid}")
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case dd: PersistentChannelData =>
+      case dd: ChannelDataWithCommitments =>
         // We publish our commitment even if we have nothing at stake: it's a nice thing to do because it lets our peer
         // get their funds back without delays.
         cause match {
@@ -117,7 +117,9 @@ trait ErrorHandlers extends CommonHandlers {
                 stop(FSM.Shutdown)
             }
         }
-      case _: TransientChannelData => goto(CLOSED) sending error // when there is no commitment yet, we just send an error to our peer and go to CLOSED state
+      // When there is no commitment yet, we just send an error to our peer and go to CLOSED state.
+      case _: ChannelDataWithoutCommitments => goto(CLOSED) sending error
+      case _: TransientChannelData => goto(CLOSED) sending error
     }
   }
 
@@ -132,8 +134,10 @@ trait ErrorHandlers extends CommonHandlers {
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
       // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
-      case hasCommitments: PersistentChannelData => spendLocalCurrent(hasCommitments)
-      case _: TransientChannelData => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
+      case hasCommitments: ChannelDataWithCommitments => spendLocalCurrent(hasCommitments)
+      // When there is no commitment yet, we just go to CLOSED state in case an error occurs.
+      case _: ChannelDataWithoutCommitments => goto(CLOSED)
+      case _: TransientChannelData => goto(CLOSED)
     }
   }
 
@@ -170,7 +174,7 @@ trait ErrorHandlers extends CommonHandlers {
     skip.foreach(output => log.info(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
   }
 
-  def spendLocalCurrent(d: PersistentChannelData) = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments) = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -220,7 +224,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentCurrent(commitTx: Transaction, d: PersistentChannelData) = {
+  def handleRemoteSpentCurrent(commitTx: Transaction, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == commitments.remoteCommit.txid, "txid mismatch")
@@ -252,7 +256,7 @@ trait ErrorHandlers extends CommonHandlers {
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, commitments)
   }
 
-  def handleRemoteSpentNext(commitTx: Transaction, d: PersistentChannelData) = {
+  def handleRemoteSpentNext(commitTx: Transaction, d: ChannelDataWithCommitments) = {
     val commitment = d.commitments.latest
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
@@ -289,7 +293,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleRemoteSpentOther(tx: Transaction, d: PersistentChannelData) = {
+  def handleRemoteSpentOther(tx: Transaction, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
     log.warning(s"funding tx spent in txid=${tx.txid}")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
@@ -331,7 +335,7 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  def handleOutdatedCommitment(channelReestablish: ChannelReestablish, d: PersistentChannelData) = {
+  def handleOutdatedCommitment(channelReestablish: ChannelReestablish, d: ChannelDataWithCommitments) = {
     val exc = PleasePublishYourCommitment(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) storing() sending error

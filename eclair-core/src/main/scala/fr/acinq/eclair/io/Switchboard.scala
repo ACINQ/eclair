@@ -56,8 +56,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
         log.info(s"closing channel ${c.channelId}")
         nodeParams.db.channels.removeChannel(c.channelId)
       })
-
-      val peerChannels = channels.groupBy(_.commitments.params.remoteParams.nodeId)
+      val peerChannels = channels.groupBy(_.remoteNodeId)
       peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
       log.info("restoring {} peer(s) with {} channel(s)", peerChannels.size, channels.size)
       unstashAll()

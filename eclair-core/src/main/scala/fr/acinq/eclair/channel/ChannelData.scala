@@ -21,13 +21,13 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, RealShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -66,6 +66,7 @@ case object WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_SIGNED extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CONFIRMED extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_READY extends ChannelState
 // Channel opened:
@@ -429,7 +430,8 @@ sealed trait RbfStatus
 object RbfStatus {
   case object NoRbf extends RbfStatus
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
-  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command]) extends RbfStatus
+  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends RbfStatus
+  case class RbfWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends RbfStatus
   case object RbfAborted extends RbfStatus
 }
 
@@ -444,7 +446,16 @@ case object Nothing extends TransientChannelData {
 }
 
 sealed trait PersistentChannelData extends ChannelData {
+  def remoteNodeId: PublicKey
+}
+sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
+  val channelId: ByteVector32 = channelParams.channelId
+  val remoteNodeId: PublicKey = channelParams.remoteNodeId
+  def channelParams: ChannelParams
+}
+sealed trait ChannelDataWithCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = commitments.channelId
+  val remoteNodeId: PublicKey = commitments.remoteNodeId
   def commitments: Commitments
 }
 
@@ -482,11 +493,10 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
                                                  deferred: Option[ChannelReady],
-                                                 lastSent: Either[FundingCreated, FundingSigned]) extends PersistentChannelData {
+                                                 lastSent: Either[FundingCreated, FundingSigned]) extends ChannelDataWithCommitments {
   def fundingTx_opt: Option[Transaction] = commitments.latest.localFundingStatus.signedTx_opt
 }
-final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments,
-                                             shortIds: ShortIds) extends PersistentChannelData
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
@@ -500,21 +510,26 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
-                                                    deferred: Option[ChannelReady],
+                                                    deferred: Option[CommitSig],
                                                     replyTo_opt: Option[akka.actor.typed.ActorRef[Peer.OpenChannelResponse]]) extends TransientChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams: ChannelParams,
+                                                   secondRemotePerCommitmentPoint: PublicKey,
+                                                   localPushAmount: MilliSatoshi,
+                                                   remotePushAmount: MilliSatoshi,
+                                                   signingSession: InteractiveTxSigningSession.WaitingForSigs,
+                                                   remoteChannelData_opt: Option[ByteVector]) extends ChannelDataWithoutCommitments
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       rbfStatus: RbfStatus,
-                                                      deferred: Option[ChannelReady]) extends PersistentChannelData {
+                                                      deferred: Option[ChannelReady]) extends ChannelDataWithCommitments {
   def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
   def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments,
-                                                  shortIds: ShortIds) extends PersistentChannelData
+final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,
@@ -522,12 +537,12 @@ final case class DATA_NORMAL(commitments: Commitments,
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
-                             closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData
-final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends PersistentChannelData
+                             closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
-                                  bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends PersistentChannelData {
+                                  bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.params.localParams.isInitiator || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
@@ -540,12 +555,12 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
-                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends PersistentChannelData {
+                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
 
-final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends PersistentChannelData
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
 
 /**
  * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these

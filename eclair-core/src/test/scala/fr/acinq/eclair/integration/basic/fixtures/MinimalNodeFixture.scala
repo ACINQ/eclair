@@ -184,7 +184,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   }
 
   def fundingTx(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): Transaction = {
-    val fundingTxid = getChannelData(node, channelId).asInstanceOf[PersistentChannelData].commitments.latest.fundingTxId
+    val fundingTxid = getChannelData(node, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.latest.fundingTxId
     node.wallet.funded(fundingTxid)
   }
 

@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.channel.ChannelTypes.AnchorOutputsZeroFeeHtlcTx
-import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL, PersistentChannelData, SupportedChannelType}
+import fr.acinq.eclair.channel.{ChannelDataWithCommitments, DATA_NORMAL, NORMAL, SupportedChannelType}
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.concurrent.IntegrationPatience
@@ -60,8 +60,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!bob.nodeParams.features.activated.contains(ZeroConf))
 
     val channelId = createChannel(f)
-    assert(!getChannelData(alice, channelId).asInstanceOf[PersistentChannelData].commitments.params.channelFeatures.hasFeature(ZeroConf))
-    assert(!getChannelData(bob, channelId).asInstanceOf[PersistentChannelData].commitments.params.channelFeatures.hasFeature(ZeroConf))
+    assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+    assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
   }
 
   test("open a channel alice-bob (zero-conf disabled on both sides, requested via channel type by alice)") { f =>

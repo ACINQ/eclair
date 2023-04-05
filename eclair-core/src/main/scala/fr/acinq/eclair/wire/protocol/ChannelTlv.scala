@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
@@ -135,7 +135,16 @@ object ChannelReadyTlv {
 sealed trait ChannelReestablishTlv extends Tlv
 
 object ChannelReestablishTlv {
-  val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint))
+
+  case class NextFundingTlv(txHash: ByteVector32) extends ChannelReestablishTlv
+
+  object NextFundingTlv {
+    val codec: Codec[NextFundingTlv] = tlvField("funding_tx_hash" | bytes32)
+  }
+
+  val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
+    .typecase(UInt64(333), NextFundingTlv.codec)
+  )
 }
 
 sealed trait UpdateFeeTlv extends Tlv

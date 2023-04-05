@@ -35,6 +35,7 @@ import fr.acinq.eclair.channel.Helpers.{Closing, Syncing, getRelayFees, scidForC
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -248,33 +249,36 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
       // we watch all unconfirmed funding txs, whatever our state is
       // (there can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf)
-      data.commitments.active.foreach { commitment =>
-        commitment.localFundingStatus match {
-          case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
-            // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
-            // the channel fully operational). We could have set a specific Unknown status, but it would have forced
-            // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
-            // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
-            // once, because at the next restore, the status of the funding tx will be "confirmed".
-            blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
-            watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
-          case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
-            publishFundingTx(fundingTx)
-            watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
-          case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
-            // those are zero-conf channels, the min-depth isn't critical, we use the default
-            watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
-          case _: LocalFundingStatus.ConfirmedFundingTx =>
-            data match {
-              case closing: DATA_CLOSING if Closing.nothingAtStake(closing) || Closing.isClosingTypeAlreadyKnown(closing).isDefined =>
-                // no need to do anything
-                ()
-              case closing: DATA_CLOSING =>
-                // in all other cases we need to be ready for any type of closing
-                watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet)
-              case _ =>
-                watchFundingSpent(commitment)
-            }
+      data match {
+        case _: ChannelDataWithoutCommitments => ()
+        case data: ChannelDataWithCommitments => data.commitments.active.foreach { commitment =>
+          commitment.localFundingStatus match {
+            case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
+              // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
+              // the channel fully operational). We could have set a specific Unknown status, but it would have forced
+              // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
+              // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
+              // once, because at the next restore, the status of the funding tx will be "confirmed".
+              blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+              watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
+            case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+              publishFundingTx(fundingTx)
+              watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
+            case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
+              // those are zero-conf channels, the min-depth isn't critical, we use the default
+              watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
+            case _: LocalFundingStatus.ConfirmedFundingTx =>
+              data match {
+                case closing: DATA_CLOSING if Closing.nothingAtStake(closing) || Closing.isClosingTypeAlreadyKnown(closing).isDefined =>
+                  // no need to do anything
+                  ()
+                case closing: DATA_CLOSING =>
+                  // in all other cases we need to be ready for any type of closing
+                  watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet)
+                case _ =>
+                  watchFundingSpent(commitment)
+              }
+          }
         }
       }
 
@@ -319,7 +323,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.shortIds, remoteNodeId))
 
           // we check the configuration because the values for channel_update may have changed while eclair was down
-          val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments.announceChannel)
+          val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
           if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
             fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
             nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
@@ -1091,7 +1095,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // Force-closing is our only option here, if we are in this state the channel was closing and it is too late
             // to negotiate a mutual close.
             log.info("channelId={} was confirmed at blockHeight={} txIndex={} with a previous funding txid={}", d.channelId, w.blockHeight, w.txIndex, w.tx.txid)
-            val commitment = commitments1.latest
             val d1 = d.copy(commitments = commitments1)
             spendLocalCurrent(d1)
           }
@@ -1273,30 +1276,52 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
       goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d1 sending error
 
-    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: PersistentChannelData) =>
+    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       activeConnection = r
+      val channelKeyPath = keyManager.keyPath(d.channelParams.localParams, d.channelParams.channelConfig)
+      val myFirstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
+      val channelReestablish = ChannelReestablish(
+        channelId = d.channelId,
+        nextLocalCommitmentNumber = 1,
+        nextRemoteRevocationNumber = 0,
+        yourLastPerCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
+        myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
+        TlvStream(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId.reverse)),
+      )
+      val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
+      goto(SYNCING) using d1 sending channelReestablish
 
+    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: ChannelDataWithCommitments) =>
+      activeConnection = r
       val remotePerCommitmentSecrets = d.commitments.remotePerCommitmentSecrets
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
-
+      val tlvs: TlvStream[ChannelReestablishTlv] = d match {
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.rbfStatus match {
+          case RbfStatus.RbfWaitingForSigs(status) => TlvStream(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case _ => d.latestFundingTx.sharedTx match {
+            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => TlvStream(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId.reverse))
+            case _: InteractiveTxBuilder.FullySignedSharedTransaction => TlvStream.empty
+          }
+        }
+        case _ => TlvStream.empty
+      }
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommitIndex + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
-        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+        tlvStream = tlvs
       )
-
       // we update local/remote connection-local global/local features, we don't persist it right now
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
-
       goto(SYNCING) using d1 sending channelReestablish
 
-    case Event(ProcessCurrentBlockHeight(c), d: PersistentChannelData) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -1318,8 +1343,41 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(_: ChannelReestablish, _: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
-    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
+    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
+      channelReestablish.nextFundingTxId_opt match {
+        case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId =>
+          // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+          val commitSig = d.signingSession.remoteCommit.sign(keyManager, d.channelParams, d.signingSession.commitInput)
+          goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
+        case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)
+      }
+
+    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
+      channelReestablish.nextFundingTxId_opt match {
+        case Some(fundingTxId) =>
+          d.rbfStatus match {
+            case RbfStatus.RbfWaitingForSigs(status) if status.fundingTx.txId == fundingTxId =>
+              // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+              val commitSig = status.remoteCommit.sign(keyManager, d.commitments.params, status.commitInput)
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
+            case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
+              val toSend = d.latestFundingTx.sharedTx match {
+                case fundingTx: InteractiveTxBuilder.PartiallySignedSharedTransaction =>
+                  // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
+                  val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.commitInput)
+                  Seq(commitSig, fundingTx.localSigs)
+                case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
+                  // We've already received their tx_signatures, which means they've received and stored our commit_sig, we only need to retransmit our tx_signatures.
+                  Seq(fundingTx.localSigs)
+              }
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending toSend
+            case _ =>
+              // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
+              // their tx_complete): we tell them to abort that RBF attempt.
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
+          }
+        case None => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+      }
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channelReady")
@@ -1461,9 +1519,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay() sending Warning(d.channelId, "spec violation: you sent announcement_signatures before channel_reestablish")
 
-    case Event(ProcessCurrentBlockHeight(c), d: PersistentChannelData) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: PersistentChannelData) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
@@ -1566,7 +1624,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // peer doesn't cancel the timer
     case Event(TickChannelOpenTimeout, _) => stay()
 
-    case Event(w: WatchPublishedTriggered, d: PersistentChannelData) =>
+    case Event(w: WatchPublishedTriggered, d: ChannelDataWithCommitments) =>
       // When our peer sends us channel_ready while we're still waiting for confirmations, we may opportunistically
       // switch to zero-conf, in which case we have both a WatchPublished and a WatchConfirmed pending. But it may not
       // actually be a real switch to zero-conf: maybe the transaction is confirmed, and they simply received the block
@@ -1605,7 +1663,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
       }
 
-    case Event(w: WatchFundingConfirmedTriggered, d: PersistentChannelData) =>
+    case Event(w: WatchFundingConfirmedTriggered, d: ChannelDataWithCommitments) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, commitment)) =>
           log.info(s"funding txid=${w.tx.txid} has been confirmed")
@@ -1642,7 +1700,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
 
-    case Event(WatchFundingSpentTriggered(tx), d: PersistentChannelData) =>
+    case Event(WatchFundingSpentTriggered(tx), d: ChannelDataWithCommitments) =>
       if (tx.txid == d.commitments.latest.remoteCommit.txid) {
         handleRemoteSpentCurrent(tx, d)
       } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid)) {
@@ -1660,7 +1718,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case state -> nextState =>
       if (state != nextState) {
         val commitments_opt = nextStateData match {
-          case d: PersistentChannelData => Some(d.commitments)
+          case d: ChannelDataWithCommitments => Some(d.commitments)
+          case _: ChannelDataWithoutCommitments => None
           case _: TransientChannelData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
@@ -1731,7 +1790,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       (stateData, nextState) match {
         case (_: TransientChannelData, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
         case (_: DATA_WAIT_FOR_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_CHANNEL_READY, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
-        case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED | _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY, CLOSING | CLOSED) => context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, stateData.channelId))
         case _ => ()
       }
   }
@@ -1786,7 +1845,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  private def handleCurrentFeerate(c: CurrentFeerates, d: PersistentChannelData) = {
+  private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     // TODO: we should consider *all* commitments
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.params.channelType, commitments.capacity, Some(c))
@@ -1812,7 +1871,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    * @param d the channel commtiments
    * @return
    */
-  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: PersistentChannelData) = {
+  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     // TODO: we should consider *all* commitments
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.params.channelType, commitments.capacity, Some(c))
@@ -1864,7 +1923,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     stay()
   }
 
-  private def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: PersistentChannelData) = {
+  private def handleRevocationTimeout(revocationTimeout: RevocationTimeout, d: ChannelDataWithCommitments) = {
     d.commitments.remoteNextCommitInfo match {
       case Left(_) if revocationTimeout.remoteCommitNumber + 1 == d.commitments.nextRemoteCommitIndex =>
         log.warning(s"waited for too long for a revocation to remoteCommitNumber=${revocationTimeout.remoteCommitNumber}, disconnecting")
@@ -1906,7 +1965,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     stay() using d.copy(channelUpdate = channelUpdate1) storing()
   }
 
-  private def handleSyncFailure(channelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure, d: PersistentChannelData) = {
+  private def handleSyncFailure(channelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure, d: ChannelDataWithCommitments) = {
     syncFailure match {
       case res: SyncResult.LocalLateProven =>
         log.error(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourLocalCommitmentNumber=${res.ourLocalCommitmentNumber} theirRemoteCommitmentNumber=${res.theirRemoteCommitmentNumber}")
@@ -1935,7 +1994,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     }
   }
 
-  private def handleNewBlock(c: CurrentBlockHeight, d: PersistentChannelData) = {
+  private def handleNewBlock(c: CurrentBlockHeight, d: ChannelDataWithCommitments) = {
     d match {
       case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => handleNewBlockDualFundingUnconfirmed(c, d)
       case _ =>

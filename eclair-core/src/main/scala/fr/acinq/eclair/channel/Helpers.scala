@@ -52,6 +52,7 @@ object Helpers {
   def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.modify(_.channelParams).using(_.updateFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_CHANNEL_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
@@ -581,7 +582,10 @@ object Helpers {
      *
      * @return true if channel was never open, or got closed immediately, had never any htlcs and local never had a positive balance
      */
-    def nothingAtStake(data: PersistentChannelData): Boolean = data.commitments.active.forall(nothingAtStake)
+    def nothingAtStake(data: PersistentChannelData): Boolean = data match {
+      case _: ChannelDataWithoutCommitments => true
+      case data: ChannelDataWithCommitments => data.commitments.active.forall(nothingAtStake)
+    }
 
     def nothingAtStake(commitment: Commitment): Boolean =
       commitment.localCommit.index == 0 &&

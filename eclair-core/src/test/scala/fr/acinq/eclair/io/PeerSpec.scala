@@ -20,7 +20,7 @@ import akka.actor.{ActorContext, ActorRef, ActorSystem, FSM, PoisonPill, Status}
 import akka.testkit.TestActor.KeepRunning
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
@@ -141,7 +141,7 @@ class PeerSpec extends FixtureSpec {
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
-  /** We need to be careful to avoir race conditions due to event stream asynchronous nature */
+  /** We need to be careful to avoid race conditions due to event stream asynchronous nature */
   def spawnClientSpawner(f: FixtureParam): Unit = {
     import f._
     val readyListener = TestProbe("ready-listener")
@@ -343,6 +343,15 @@ class PeerSpec extends FixtureSpec {
     channel.expectNoMessage(100 millis)
     peerConnection.expectNoMessage(100 millis)
     assert(peer.stateData.channels.size == 1)
+  }
+
+  test("send error when receiving message for unknown channel") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    val channelId = randomBytes32()
+    peerConnection.send(peer, ChannelReestablish(channelId, 1, 0, randomKey(), randomKey().publicKey))
+    peerConnection.expectMsg(Error(channelId, "unknown channel"))
   }
 
   test("handle OpenChannelInterceptor spawning a user initiated open channel request ") { f =>

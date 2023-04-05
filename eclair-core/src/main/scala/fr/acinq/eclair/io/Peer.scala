@@ -392,7 +392,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   }
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
-    val msg = Warning(unknownChannelId, "unknown channel")
+    val msg = Error(unknownChannelId, "unknown channel")
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
