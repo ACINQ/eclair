@@ -670,7 +670,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
-      val remoteReserve = (fundingParams.fundingAmount / 100).max(channelParams.localParams.dustLimit)
+      // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
+      // we added capacity to the channel with a splice-in.
+      val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution) / 100).max(channelParams.localParams.dustLimit)
       if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty) {
         log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
         return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))

@@ -166,26 +166,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(790_000 sat, defaultSpliceOutScriptPubKey)))
     alice ! cmd
-    alice2bob.expectMsgType[SpliceInit]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[SpliceAck]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAbort]
-    bob2alice.forward(alice)
     sender.expectMsgType[RES_FAILURE[_, _]]
   }
 

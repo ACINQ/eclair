@@ -774,7 +774,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               spliceInAmount = cmd.additionalLocalFunding,
               spliceOut = cmd.spliceOutputs,
               targetFeerate = targetFeerate)
-            if (d.commitments.latest.localCommit.spec.toLocal + fundingContribution < 0.sat) {
+            if (d.commitments.latest.localCommit.spec.toLocal + fundingContribution < d.commitments.latest.localChannelReserve) {
               log.warning("cannot do splice: insufficient funds")
               cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceRequest(d.channelId))
               stay()
