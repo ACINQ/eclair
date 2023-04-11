@@ -223,6 +223,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
       val JDecimal(fee) = json \ "fee"
       val fundedTx = Transaction.read(hex)
       val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
+
+      val addedOutputs = fundedTx.txOut.size - tx.txOut.size
+      require(addedOutputs <= 1, "more than one change output added")
+      require(addedOutputs == 0 || changePos >= 0, "change output added, but position not returned")
+      require(changePos < 0 || !tx.txOut.contains(fundedTx.txOut(changePos.intValue)), "existing output returned as change output")
+      require(options.changePosition.isEmpty || changePos == options.changePosition.get || changePos == -1, "change position added at wrong position")
+
       FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
     })
   }

@@ -307,8 +307,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("absence of rounding") {
-    val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val fundedTx = Transaction.read(hexOut)
+    val txIn = fundedTx.copy(txIn = Nil, txOut = fundedTx.txOut(0) :: Nil)
 
     (0 to 9).foreach { satoshi =>
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))
