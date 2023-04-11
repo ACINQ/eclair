@@ -3,7 +3,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.psbt.{Psbt, SignPsbtResult}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, DeterministicWallet, MnemonicCode}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, computeBIP84Address}
 import fr.acinq.bitcoin.utils.EitherKt
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -80,6 +80,16 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     ourInputs.foldLeft(psbt) { (p, i) => sigbnPsbtInput(p, i) }
   }
 
+
+  override def getPublicKey(keyPath: KeyPath): (Crypto.PublicKey, String) = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val pub = getPrivateKey(keyPath.keyPath).publicKey()
+    val address = computeBIP84Address(pub, chainHash)
+    (pub, address)
+  }
+
+  private def getPrivateKey(keyPath: fr.acinq.bitcoin.KeyPath) = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keyPath).getPrivateKey
+
   // check that an output belongs to us i.e. we can recompute its public from its bip32 path
   private def isOurOutput(psbt: Psbt, outputIndex: Int) = {
     val output = psbt.getOutputs.get(outputIndex)
@@ -87,8 +97,7 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     output.getDerivationPaths.size() match {
       case 1 =>
         output.getDerivationPaths.asScala.foreach { case (pub, keypath) =>
-          val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.getKeyPath).getPrivateKey
-          val check = priv.publicKey()
+          val check = getPrivateKey(keypath.getKeyPath).publicKey()
           require(pub == check, s"cannot compute public key for $txout")
           require(txout.publicKeyScript.contentEquals(fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wpkh(pub))), s"output pubkeyscript does not match ours for $txout")
         }
