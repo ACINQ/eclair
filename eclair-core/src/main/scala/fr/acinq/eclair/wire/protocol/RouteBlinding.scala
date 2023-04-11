@@ -34,9 +34,6 @@ sealed trait RouteBlindingEncryptedDataTlv extends Tlv
 
 object RouteBlindingEncryptedDataTlv {
 
-  /** Some padding can be added to ensure all payloads are the same size to improve privacy. */
-  case class Padding(dummy: ByteVector) extends RouteBlindingEncryptedDataTlv
-
   /** Id of the outgoing channel, used to identify the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends RouteBlindingEncryptedDataTlv
 
@@ -111,7 +108,6 @@ object RouteBlindingEncryptedDataCodecs {
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult}
 
-  private val padding: Codec[Padding] = tlvField(bytes)
   private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid)
   private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey)
   private val pathId: Codec[PathId] = tlvField(bytes)
@@ -121,7 +117,6 @@ object RouteBlindingEncryptedDataCodecs {
   private val allowedFeatures: Codec[AllowedFeatures] = tlvField(featuresCodec)
 
   private val encryptedDataTlvCodec = discriminated[RouteBlindingEncryptedDataTlv].by(varint)
-    .typecase(UInt64(1), padding)
     .typecase(UInt64(2), outgoingChannelId)
     .typecase(UInt64(4), outgoingNodeId)
     .typecase(UInt64(6), pathId)

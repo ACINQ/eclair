@@ -107,7 +107,7 @@ object OfferPayment {
         val blindedRoute = blindedRoutes(attemptNumber % blindedRoutes.length)
         OnionMessages.BlindedPath(blindedRoute)
       case Right(nodeId) =>
-        OnionMessages.Recipient(nodeId, None, None)
+        OnionMessages.Recipient(nodeId, None, Set.empty)
     }
     // TODO: Find a path made of channels as some nodes may refuse to relay messages to nodes with which they don't have a channel.
     val intermediateNodesToRecipient = Nil
