@@ -192,7 +192,7 @@ object OfferManager {
       def waitForHandler(): Behavior[Command] = {
         Behaviors.receiveMessagePartial {
           case RejectRequest(error) =>
-            postman ! Postman.SendMessage(Nil, pathToSender, None, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
+            postman ! Postman.SendMessage(pathToSender, None, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
             waitForSent()
           case ApproveRequest(amount, routes, pluginData_opt, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
@@ -210,7 +210,7 @@ object OfferManager {
           case WrappedInvoiceResponse(invoiceResponse) =>
             invoiceResponse match {
               case CreateInvoiceActor.InvoiceCreated(invoice) =>
-                postman ! Postman.SendMessage(Nil, pathToSender, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse), 0 seconds)
+                postman ! Postman.SendMessage(pathToSender, None, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
                 waitForSent()
               case f: CreateInvoiceActor.InvoiceCreationFailed =>
                 context.log.debug("invoice creation failed: {}", f.message)

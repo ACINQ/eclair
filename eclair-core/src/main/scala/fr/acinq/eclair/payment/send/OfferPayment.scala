@@ -109,10 +109,8 @@ object OfferPayment {
       case Right(nodeId) =>
         OnionMessages.Recipient(nodeId, None, None)
     }
-    // TODO: Find a path made of channels as some nodes may refuse to relay messages to nodes with which they don't have a channel.
-    val intermediateNodesToRecipient = Nil
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
-    postman ! SendMessage(intermediateNodesToRecipient, destination, Some((nodeParams.nodeId +: intermediateNodesToRecipient).reverse), messageContent, context.messageAdapter(WrappedMessageResponse), nodeParams.onionMessageConfig.timeout)
+    postman ! SendMessage(destination, None, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
     waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 

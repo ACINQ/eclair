@@ -22,6 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -222,6 +223,14 @@ object RouteCalculation {
       }
       d
     }
+  }
+
+  def handleMessageRouteRequest(d: Data, r: MessageRouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    Graph.breadthFirstSearch(d.graphWithBalances.graph, d.nodes, r.source, r.target, r.ignoredNodes, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) match {
+      case None => r.replyTo ! SendingMessage.MessageRouteNotFound
+      case Some(path) => r.replyTo ! SendingMessage.MessageRouteFound(path.drop(1))
+    }
+    d
   }
 
   /** This method is used after a payment failed, and we want to exclude some nodes that we know are failing */

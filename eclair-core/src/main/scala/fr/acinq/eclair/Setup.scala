@@ -374,7 +374,7 @@ class Setup(val datadir: File,
       _ = triggerer ! AsyncPaymentTriggerer.Start(switchboard.toTyped)
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
-      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
       kit = Kit(
         nodeParams = nodeParams,

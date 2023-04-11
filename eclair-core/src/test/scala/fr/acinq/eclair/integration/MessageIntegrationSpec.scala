@@ -58,7 +58,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
   test("try to reach unknown node") {
     val alice = new EclairImpl(nodes("A"))
     val probe = TestProbe()
-    alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Left(nodes("B").nodeParams.nodeId), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     val result = probe.expectMsgType[SendOnionMessageResponse]
     assert(!result.sent)
   }
@@ -70,7 +70,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Left(nodes("B").nodeParams.nodeId), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
@@ -85,7 +85,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("B").nodeParams.nodeId, None))
     assert(blindedRoute.introductionNodeId == nodes("A").nodeParams.nodeId)
 
-    alice.sendOnionMessage(Nil, Right(blindedRoute), None, ByteVector.empty).pipeTo(probe.ref)
+    alice.sendOnionMessage(None, Right(blindedRoute), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
@@ -96,11 +96,13 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), Some(Seq(nodes("A").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Left(nodes("B").nodeParams.nodeId), expectsReply = true, hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
-    bob.sendOnionMessage(Nil, Right(recv.finalPayload.records.get[ReplyPath].get.blindedRoute), None, hex"1d01ab")
+    val replyPath = recv.finalPayload.records.get[ReplyPath].get.blindedRoute
+    assert(replyPath.introductionNodeId == nodes("B").nodeParams.nodeId)
+    bob.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Right(replyPath), expectsReply = false, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage.isEmpty)
@@ -113,7 +115,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    bob.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), Some(Seq(nodes("B").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
+    bob.sendOnionMessage(Some(nodes("A").nodeParams.nodeId :: Nil), Left(nodes("A").nodeParams.nodeId), expectsReply = true, hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
@@ -129,7 +131,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    eve.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    eve.sendOnionMessage(Some(nodes("A").nodeParams.nodeId :: Nil), Left(nodes("A").nodeParams.nodeId), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
@@ -141,7 +143,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    fabrice.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    fabrice.sendOnionMessage(Some(nodes("A").nodeParams.nodeId :: Nil), Left(nodes("A").nodeParams.nodeId), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
@@ -153,7 +155,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
@@ -170,7 +172,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, encodedBytes).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, encodedBytes).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
@@ -187,7 +189,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, encodedBytes).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, encodedBytes).pipeTo(probe.ref)
     assert(!probe.expectMsgType[SendOnionMessageResponse].sent)
 
     eventListener.expectNoMessage()
@@ -200,7 +202,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("E").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("E").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     eventListener.expectNoMessage()
@@ -213,7 +215,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("F").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("F").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     eventListener.expectNoMessage()
@@ -279,7 +281,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("E").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("E").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
@@ -292,7 +294,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("F").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("F").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     eventListener.expectNoMessage()
@@ -304,7 +306,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
 
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(Nil, Left(nodes("C").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
 
@@ -356,7 +358,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     waitEventStreamSynced(nodes("C").system.eventStream)
-    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"7300").pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"7300").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
