@@ -62,7 +62,7 @@ object OnionMessages {
     Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
   }
 
-  private def buildRouteFrom(originKey: PrivateKey,
+  private[message] def buildRouteFrom(originKey: PrivateKey,
                              blindingSecret: PrivateKey,
                              intermediateNodes: Seq[IntermediateNode],
                              destination: Destination): Option[Sphinx.RouteBlinding.BlindedRoute] = {

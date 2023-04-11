@@ -20,13 +20,16 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.message.OnionMessages._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.perHopPayloadCodec
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage, OnionMessagePayloadTlv, OnionRoutingCodecs, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
 import fr.acinq.eclair.{UInt64, randomBytes, randomKey}
+import org.json4s._
+import org.json4s.jackson.JsonMethods._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -50,7 +53,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     }
   }
 
-  test("multi-hop onion message (reference test vector)") {
+  test("multi-hop onion message") {
     val alice = PrivateKey(hex"414141414141414141414141414141414141414141414141414141414141414101")
     assert(alice.publicKey == PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
     val bob = PrivateKey(hex"424242424242424242424242424242424242424242424242424242424242424201")
@@ -257,5 +260,65 @@ class OnionMessagesSpec extends AnyFunSuite {
     val pathId = randomBytes(65202)
 
     assert(buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty) == Left(MessageTooLarge(65433)))
+  }
+
+  test("reference test vector") {
+    implicit val formats: Formats = DefaultFormats
+
+    val testVector = parse(getClass.getResourceAsStream("/bolt4-test-onion-message.json"))
+    val alice = PrivateKey(ByteVector32.fromValidHex(((testVector \ "decrypt" \ "hops")(0) \ "privkey").extract[String]))
+    val bob = PrivateKey(ByteVector32.fromValidHex(((testVector \ "decrypt" \ "hops")(1) \ "privkey").extract[String]))
+    val carol = PrivateKey(ByteVector32.fromValidHex(((testVector \ "decrypt" \ "hops")(2) \ "privkey").extract[String]))
+    val dave = PrivateKey(ByteVector32.fromValidHex(((testVector \ "decrypt" \ "hops")(3) \ "privkey").extract[String]))
+    assert(PublicKey(ByteVector.fromValidHex(((testVector \ "decrypt" \ "hops")(0) \ "next_node_id").extract[String])) == bob.publicKey)
+    assert(PublicKey(ByteVector.fromValidHex(((testVector \ "decrypt" \ "hops")(1) \ "next_node_id").extract[String])) == carol.publicKey)
+    assert(PublicKey(ByteVector.fromValidHex(((testVector \ "decrypt" \ "hops")(2) \ "next_node_id").extract[String])) == dave.publicKey)
+
+    def getCustomTlvs(json: JValue): Set[GenericTlv] = {
+      Set(
+        (json \ "padding").extract[Option[String]].map(hex => GenericTlv(UInt64(1), ByteVector.fromValidHex(hex))),
+        (json \ "unknown_tag_1").extract[Option[String]].map(hex => GenericTlv(UInt64(1), ByteVector.fromValidHex(hex))),
+        (json \ "unknown_tag_561").extract[Option[String]].map(hex => GenericTlv(UInt64(561), ByteVector.fromValidHex(hex))),
+        (json \ "unknown_tag_65535").extract[Option[String]].map(hex => GenericTlv(UInt64(65535), ByteVector.fromValidHex(hex))),
+      ).flatten
+    }
+
+    val blindingSecretBob = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(1) \ "blinding_secret").extract[String]))
+    val pathId = ByteVector.fromValidHex(((testVector \ "generate" \ "hops")(3) \ "tlvs" \ "path_id").extract[String])
+    val pathBobToDave =
+      buildRoute(blindingSecretBob,
+        Seq(IntermediateNode(bob.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(1) \ "tlvs")), IntermediateNode(carol.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(2) \ "tlvs"))),
+        Recipient(dave.publicKey, Some(pathId), getCustomTlvs((testVector \ "generate" \ "hops")(3) \ "tlvs")))
+    val blindingSecretAlice = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(0) \ "blinding_secret").extract[String]))
+    val intermediateAlice = Seq(IntermediateNode(alice.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(0) \ "tlvs")))
+    val Some(pathAliceToDave) = buildRouteFrom(alice, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave))
+
+    val expectedPath = BlindedRoute(
+      PublicKey(ByteVector.fromValidHex((testVector \ "route" \ "introduction_node_id").extract[String])),
+      PublicKey(ByteVector.fromValidHex((testVector \ "route" \ "blinding").extract[String])),
+      Seq(
+        BlindedNode(
+          PublicKey(ByteVector.fromValidHex(((testVector \ "route" \ "hops")(0) \ "blinded_node_id").extract[String])),
+          ByteVector.fromValidHex(((testVector \ "route" \ "hops")(0) \ "encrypted_recipient_data").extract[String])),
+        BlindedNode(
+          PublicKey(ByteVector.fromValidHex(((testVector \ "route" \ "hops")(1) \ "blinded_node_id").extract[String])),
+          ByteVector.fromValidHex(((testVector \ "route" \ "hops")(1) \ "encrypted_recipient_data").extract[String])),
+        BlindedNode(
+          PublicKey(ByteVector.fromValidHex(((testVector \ "route" \ "hops")(2) \ "blinded_node_id").extract[String])),
+          ByteVector.fromValidHex(((testVector \ "route" \ "hops")(2) \ "encrypted_recipient_data").extract[String])),
+        BlindedNode(
+          PublicKey(ByteVector.fromValidHex(((testVector \ "route" \ "hops")(3) \ "blinded_node_id").extract[String])),
+          ByteVector.fromValidHex(((testVector \ "route" \ "hops")(3) \ "encrypted_recipient_data").extract[String])),
+      )
+    )
+
+    assert(pathAliceToDave == expectedPath)
+
+    val sessionKey = PrivateKey(ByteVector32.fromValidHex((testVector \ "generate" \ "session_key").extract[String]))
+    val messageContent = TlvStream(Set.empty[OnionMessagePayloadTlv], getCustomTlvs(testVector \ "onionmessage"))
+    val Right((_, message)) = buildMessage(alice, sessionKey, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave), messageContent)
+    val encodedPacket = OnionRoutingCodecs.onionRoutingPacketCodec(1300).encode(message.onionRoutingPacket).require.bytes.toHex
+    val expectedPacket = (testVector \ "onionmessage" \ "onion_message_packet").extract[String]
+    assert(encodedPacket == expectedPacket)
   }
 }
