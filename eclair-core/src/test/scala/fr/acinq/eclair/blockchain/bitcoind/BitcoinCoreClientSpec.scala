@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpen
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
@@ -150,6 +150,52 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       fundTxResponse.tx.txIn.foreach(txIn => assert(txIn.sequence == bitcoin.TxIn.SEQUENCE_FINAL - 1))
       bitcoinClient.rollback(fundTxResponse.tx).pipeTo(sender.ref)
       sender.expectMsg(true)
+    }
+    {
+      // check that bitcoin core is not lying to us
+      val txNotFunded = Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+
+      def makeEvilBitcoinClient(changePosMod: (Int) => Int, txMod: Transaction => Transaction): BitcoinCoreClient = {
+        val badRpcClient = new BitcoinJsonRPCClient {
+          override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
+            case "fundrawtransaction" => bitcoinClient.rpcClient.invoke(method, params: _*)(ec).map(json => json.mapField {
+              case ("changepos", JInt(pos)) => ("changepos", JInt(changePosMod(pos.toInt)))
+              case ("hex", JString(hex)) => ("hex", JString(txMod(Transaction.read(hex)).toString()))
+              case x => x
+            })(ec)
+            case _ => bitcoinClient.rpcClient.invoke(method, params: _*)(ec)
+          }
+        }
+        new BitcoinCoreClient(badRpcClient, if (useEclairSigner) Some(onchainKeyManager) else None)
+      }
+
+      // verify that bitcoin core is not lying to us
+      {
+        val bitcoinClient1 = makeEvilBitcoinClient((pos: Int) => -1, (tx: Transaction) => tx)
+        bitcoinClient1.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+      }
+      {
+        val bitcoinClient1 = makeEvilBitcoinClient((pos: Int) => pos, (tx: Transaction) => tx.copy(txOut = tx.txOut.reverse))
+        bitcoinClient1.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+      }
+      {
+        val bitcoinClient1 = makeEvilBitcoinClient((pos: Int) => pos, (tx: Transaction) => tx.copy(txOut = tx.txOut.head +: tx.txOut))
+        bitcoinClient1.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+      }
+      {
+        val bitcoinClient1 = makeEvilBitcoinClient((pos: Int) => 1, (tx: Transaction) => tx.copy(txOut = tx.txOut.reverse))
+        bitcoinClient1.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw, changePosition = Some(0))).pipeTo(sender.ref)
+        sender.expectMsgType[Failure]
+      }
+      {
+        val bitcoinClient1 = makeEvilBitcoinClient((pos: Int) => pos, (tx: Transaction) => tx)
+        bitcoinClient1.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw, changePosition = Some(0))).pipeTo(sender.ref)
+        bitcoinClient.rollback(sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
+        sender.expectMsg(true)
+      }
     }
   }
 
@@ -307,8 +353,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("absence of rounding") {
-    val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
+    val fundedTx = Transaction.read(hexOut)
+    val txIn = fundedTx.copy(txIn = Nil, txOut = fundedTx.txOut(0) :: Nil)
 
     (0 to 9).foreach { satoshi =>
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))

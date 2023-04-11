@@ -215,15 +215,28 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
   }
 
   //------------------------- FUNDING  -------------------------//
-
   def fundTransaction(tx: Transaction, options: FundTransactionOptions)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", tx.toString(), options).map(json => {
+    rpcClient.invoke("fundrawtransaction", tx.toString(), options).flatMap(json => {
       val JString(hex) = json \ "hex"
       val JInt(changePos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
       val fundedTx = Transaction.read(hex)
       val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
-      FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
+
+      val walletInputs = fundedTx.txIn.map(_.outPoint).toSet -- tx.txIn.map(_.outPoint).toSet
+      val addedOutputs = fundedTx.txOut.size - tx.txOut.size
+      Try {
+        require(addedOutputs <= 1, "more than one change output added")
+        require(addedOutputs == 0 || changePos >= 0, "change output added, but position not returned")
+        require(changePos < 0 || !tx.txOut.contains(fundedTx.txOut(changePos.intValue)), "existing output returned as change output")
+        require(options.changePosition.isEmpty || changePos == options.changePosition.get || changePos == -1, "change position added at wrong position")
+
+        FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
+      }
+      match {
+        case Success(response) => Future.successful(response)
+        case Failure(error) => unlockOutpoints(walletInputs.toSeq).flatMap(_ => Future.failed(error))
+      }
     })
   }
 
