@@ -31,7 +31,16 @@ import scala.concurrent.duration.FiniteDuration
 
 object OnionMessages {
 
+  /**
+   *
+   * @param relayPolicy          When to relay onion messages (always, never, only along existing channels).
+   * @param minIntermediateHops  For routes we build to us, minimum number of hops before our node. Dummy hops are added
+   *                             if needed to hide our position in the network.
+   * @param timeout              Time after which we consider that the message has been lost and stop waiting for a reply.
+   * @param maxAttempts          Maximum number of attempts for sending a message.
+   */
   case class OnionMessageConfig(relayPolicy: RelayPolicy,
+                                minIntermediateHops: Int,
                                 timeout: FiniteDuration,
                                 maxAttempts: Int)
 

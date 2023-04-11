@@ -29,15 +29,16 @@ import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, watcherAutopilot}
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceivingRoute}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendSpontaneousPayment}
 import fr.acinq.eclair.payment.send.{OfferPayment, PaymentLifecycle}
 import fr.acinq.eclair.testutils.FixtureSpec
-import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomBytes32, randomKey}
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
@@ -70,7 +71,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
 
     val f = ThreeNodesFixture(aliceParams, bobParams, carolParams, testData.name)
-    createChannels(f)
+    createChannels(f, testData)
     f
   }
 
@@ -78,7 +79,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     fixture.cleanup()
   }
 
-  private def createChannels(f: FixtureParam): Unit = {
+  private def createChannels(f: FixtureParam, testData: TestData): Unit = {
     import f._
 
     alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
@@ -87,7 +88,6 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     connect(alice, bob)
     connect(bob, carol)
-    connect(alice, carol) // TODO: remove once finding routes for invoice requests has been implemented
 
     val channelId_ab = openChannel(alice, bob, 500_000 sat).channelId
     val channelId_bc_1 = openChannel(bob, carol, 100_000 sat).channelId
@@ -97,6 +97,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       assert(getChannelData(bob, channelId_bc_1).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       assert(getChannelData(bob, channelId_bc_2).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
       // Carol must have received Bob's alias to create usable blinded routes to herself.
       assert(getRouterData(carol).privateChannels.values.forall(_.shortIds.remoteAlias_opt.nonEmpty))
     }
@@ -120,6 +121,25 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offer = Offer(None, "test", recipient.nodeId, Features.empty, recipient.nodeParams.chainHash)
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
+    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, payer.routeParams, blocking = true)
+    offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
+    (offer, sender.expectMsgType[PaymentEvent])
+  }
+
+  def sendPrivateOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute]): (Offer, PaymentEvent) = {
+    import f._
+
+    val sender = TestProbe("sender")
+    val recipientKey = randomKey()
+    val pathId = randomBytes32()
+    val offerPaths = routes.map(route => {
+      route.nodes.dropRight(1).map(IntermediateNode(_))
+      buildRoute(randomKey(), route.nodes.dropRight(1).map(IntermediateNode(_)), Recipient(route.nodes.last, Some(pathId)))
+    })
+    val offer = Offer(None, "test", recipientKey.publicKey, Features.empty, recipient.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(offerPaths)))
+    val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
+    recipient.offerManager ! OfferManager.RegisterOffer(offer, recipientKey, Some(pathId), handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
@@ -193,7 +213,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val amount = 50_000_000 msat
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
-    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
+    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes)
     verifyPaymentSuccess(offer, amount, result)
   }
 
