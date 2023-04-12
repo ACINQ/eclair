@@ -87,10 +87,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
     val fundingPurposeA = FundingTx(commitFeerate, firstPerCommitmentPointB)
     val fundingPurposeB = FundingTx(commitFeerate, firstPerCommitmentPointA)
+    val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
-      val inputInfo = InputInfo(OutPoint(randomBytes32(), 3), TxOut(amount, fundingParamsB.fundingPubkeyScript), Nil)
-      Multisig2of2Input(inputInfo, channelParamsA.remoteParams.fundingPubKey, channelParamsB.remoteParams.fundingPubKey)
+      val inputInfo = InputInfo(OutPoint(randomBytes32(), 3), TxOut(amount, fundingPubkeyScript), Nil)
+      Multisig2of2Input(inputInfo, fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)
     }
 
     def sharedInputs(commitmentA: Commitment, commitmentB: Commitment): (SharedFundingInput, SharedFundingInput) = {
@@ -193,7 +194,6 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         RemoteParams(
           nodeParams.nodeId,
           localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
-          nodeParams.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey,
           nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.paymentPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.delayedPaymentPoint(channelKeyPath).publicKey,
@@ -203,9 +203,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
 
     val channelId = randomBytes32()
-    val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(remoteParamsA.fundingPubKey, remoteParamsB.fundingPubKey)))
-    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingScript, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
-    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingScript, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
+    val fundingPubKeyA = nodeParamsA.channelKeyManager.fundingPublicKey(localParamsA.fundingKeyPath).publicKey
+    val fundingPubKeyB = nodeParamsB.channelKeyManager.fundingPublicKey(localParamsB.fundingKeyPath).publicKey
+    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
+    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, lockTime, dustLimit, targetFeerate, Some(3), requireConfirmedInputs)
     val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public)
     val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public)
 
@@ -312,11 +313,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(locksB == Set(toOutPoint(inputB1)))
 
       // Alice is responsible for adding the shared output.
-      assert(aliceParams.fundingPubkeyScript == bobParams.fundingPubkeyScript)
       assert(aliceParams.fundingAmount == fundingA + fundingB)
-      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == aliceParams.fundingPubkeyScript) == 1)
-      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == aliceParams.fundingPubkeyScript && o.amount == fundingA + fundingB))
-      assert(outputB1.pubkeyScript != aliceParams.fundingPubkeyScript)
+      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == f.fixtureParams.fundingPubkeyScript) == 1)
+      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == f.fixtureParams.fundingPubkeyScript && o.amount == fundingA + fundingB))
+      assert(outputB1.pubkeyScript != f.fixtureParams.fundingPubkeyScript)
 
       // Bob sends signatures first as he contributed less than Alice.
       val successA = alice2bob.expectMsgType[Succeeded]
@@ -369,11 +369,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       fwd.forwardAlice2Bob[TxComplete]
 
       // Alice is responsible for adding the shared output.
-      assert(aliceParams.fundingPubkeyScript == bobParams.fundingPubkeyScript)
       assert(aliceParams.fundingAmount == fundingA + fundingB)
-      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == aliceParams.fundingPubkeyScript) == 1)
-      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == aliceParams.fundingPubkeyScript && o.amount == fundingA + fundingB))
-      assert(outputB.pubkeyScript != aliceParams.fundingPubkeyScript)
+      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == f.fixtureParams.fundingPubkeyScript) == 1)
+      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == f.fixtureParams.fundingPubkeyScript && o.amount == fundingA + fundingB))
+      assert(outputB.pubkeyScript != f.fixtureParams.fundingPubkeyScript)
 
       // Alice sends signatures first as she contributed less than Bob.
       val successA = alice2bob.expectMsgType[Succeeded]
@@ -468,10 +467,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       fwd.forwardAlice2Bob[TxComplete]
 
       // Alice is responsible for adding the shared output.
-      assert(aliceParams.fundingPubkeyScript == bobParams.fundingPubkeyScript)
       assert(aliceParams.fundingAmount == fundingA)
-      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == aliceParams.fundingPubkeyScript) == 1)
-      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == aliceParams.fundingPubkeyScript && o.amount == fundingA))
+      assert(Seq(outputA1, outputA2).count(_.pubkeyScript == f.fixtureParams.fundingPubkeyScript) == 1)
+      assert(Seq(outputA1, outputA2).exists(o => o.pubkeyScript == f.fixtureParams.fundingPubkeyScript && o.amount == fundingA))
 
       // Bob sends signatures first as he did not contribute at all.
       val successA = alice2bob.expectMsgType[Succeeded]
@@ -696,7 +694,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(spliceTxB.tx.localFees == spliceTxA.tx.remoteFees)
       spliceOutputsA.foreach(txOut => assert(Set(outputA1, outputA2).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
       spliceOutputsB.foreach(txOut => assert(Set(outputB).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
-      assert(Set(outputA1, outputA2).exists(o => o.amount == fundingA1 + fundingB1 - subtractedFundingA - subtractedFundingB && o.pubkeyScript == fundingParamsA1.fundingPubkeyScript))
+      assert(Set(outputA1, outputA2).exists(o => o.amount == fundingA1 + fundingB1 - subtractedFundingA - subtractedFundingB && o.pubkeyScript == fixtureParams.fundingPubkeyScript))
 
       assert(commitmentA2.localCommit.spec.toLocal == (fundingA1 - subtractedFundingA).toMilliSatoshi)
       assert(commitmentA2.localCommit.spec.toRemote == (fundingB1 - subtractedFundingB).toMilliSatoshi)
@@ -792,7 +790,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(spliceTxB.tx.localFees == spliceTxA.tx.remoteFees)
       spliceOutputsA.foreach(txOut => assert(Set(outputA1, outputA2, outputA3, outputA4).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
       spliceOutputsB.foreach(txOut => assert(Set(outputB1, outputB2).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
-      assert(Set(outputA1, outputA2, outputA3, outputA4).exists(o => o.amount == fundingA1 + fundingB1 - subtractedFundingA - subtractedFundingB && o.pubkeyScript == fundingParamsA1.fundingPubkeyScript))
+      assert(Set(outputA1, outputA2, outputA3, outputA4).exists(o => o.amount == fundingA1 + fundingB1 - subtractedFundingA - subtractedFundingB && o.pubkeyScript == fixtureParams.fundingPubkeyScript))
 
       assert(commitmentA2.localCommit.spec.toLocal == (fundingA1 - subtractedFundingA).toMilliSatoshi)
       assert(commitmentA2.localCommit.spec.toRemote == (fundingB1 - subtractedFundingB).toMilliSatoshi)
@@ -885,7 +883,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val (spliceTxA, commitmentA2, _, commitmentB2) = fixtureParams.exchangeSigsBobFirst(fundingParamsB1, successA2, successB2)
       spliceOutputsA.foreach(txOut => assert(Set(outputA1, outputA2, outputA3).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
       spliceOutputsB.foreach(txOut => assert(Set(outputB1, outputB2).map(o => TxOut(o.amount, o.pubkeyScript)).contains(txOut)))
-      assert(Set(outputA1, outputA2, outputA3).exists(o => o.amount == fundingA1 + fundingB1 + additionalFundingA + additionalFundingB && o.pubkeyScript == fundingParamsA1.fundingPubkeyScript))
+      assert(Set(outputA1, outputA2, outputA3).exists(o => o.amount == fundingA1 + fundingB1 + additionalFundingA + additionalFundingB && o.pubkeyScript == fixtureParams.fundingPubkeyScript))
 
       assert(commitmentA2.localCommit.spec.toLocal == (fundingA1 + additionalFundingA).toMilliSatoshi)
       assert(commitmentA2.localCommit.spec.toRemote == (fundingB1 + additionalFundingB).toMilliSatoshi)
@@ -2226,11 +2224,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingPubkeyScript))
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(4), 100_000 sat, params.fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(4), 100_000 sat, params.fundingPubkeyScript))
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
@@ -2251,7 +2249,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), fundingParamsB.fundingAmount, fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), fundingParamsB.fundingAmount, params.fundingPubkeyScript))
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
@@ -2270,7 +2268,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_001 sat, params.fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_001 sat, params.fundingPubkeyScript))
     assert(probe.expectMsgType[RemoteFailure].cause == InvalidSharedOutputAmount(params.channelId, UInt64(2), 100_001 sat, 100_000 sat))
   }
 
@@ -2317,7 +2315,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingPubkeyScript))
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
@@ -2341,7 +2339,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob
-    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingParamsB.fundingPubkeyScript))
+    bob ! ReceiveMessage(TxAddOutput(params.channelId, UInt64(2), 100_000 sat, params.fundingPubkeyScript))
     // Alice <-- tx_complete --- Bob
     probe.expectMsgType[SendMessage]
     // Alice --- tx_add_output --> Bob

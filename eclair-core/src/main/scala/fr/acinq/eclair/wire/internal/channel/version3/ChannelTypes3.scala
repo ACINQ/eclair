@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.protocol.CommitSig
 
 private[channel] object ChannelTypes3 {
@@ -31,7 +32,7 @@ private[channel] object ChannelTypes3 {
   case class Commitments(channelId: ByteVector32,
                          channelConfig: ChannelConfig,
                          channelFeatures: ChannelFeatures,
-                         localParams: LocalParams, remoteParams: RemoteParams,
+                         localParams: LocalParams, remoteParams: ChannelTypes0.RemoteParams,
                          channelFlags: ChannelFlags,
                          localCommit: LocalCommit, remoteCommit: RemoteCommit,
                          localChanges: LocalChanges, remoteChanges: RemoteChanges,
@@ -42,9 +43,9 @@ private[channel] object ChannelTypes3 {
                          remoteFundingStatus: RemoteFundingStatus,
                          remotePerCommitmentSecrets: ShaChain) {
     def migrate(): channel.Commitments = channel.Commitments(
-      ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
+      ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams.migrate(), channelFlags),
       CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
-      Seq(Commitment(fundingTxIndex = 0, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit)))),
+      Seq(Commitment(fundingTxIndex = 0, remoteFundingPubKey = remoteParams.fundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit)))),
       inactive = Nil,
       remoteNextCommitInfo.fold(w => Left(WaitForRev(w.sentAfterLocalCommitIndex)), remotePerCommitmentPoint => Right(remotePerCommitmentPoint)),
       remotePerCommitmentSecrets,

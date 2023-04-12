@@ -280,37 +280,39 @@ case class ChannelReady(channelId: ByteVector32,
 
 case class SpliceInit(channelId: ByteVector32,
                       fundingContribution: Satoshi,
-                      lockTime: Long,
                       feerate: FeeratePerKw,
+                      lockTime: Long,
+                      fundingPubKey: PublicKey,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
       Some(ChannelTlv.PushAmountTlv(pushAmount)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
     ).flatten
-    SpliceInit(channelId, fundingContribution, lockTime, feerate, TlvStream(tlvs))
+    SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
 }
 
 case class SpliceAck(channelId: ByteVector32,
                      fundingContribution: Satoshi,
+                     fundingPubKey: PublicKey,
                      tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
       Some(ChannelTlv.PushAmountTlv(pushAmount)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
     ).flatten
-    SpliceAck(channelId, fundingContribution, TlvStream(tlvs))
+    SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
 }
 

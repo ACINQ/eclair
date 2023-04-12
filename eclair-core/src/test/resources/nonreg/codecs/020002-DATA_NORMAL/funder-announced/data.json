@@ -42,7 +42,6 @@
         "htlcMinimum" : 1,
         "toSelfDelay" : 1802,
         "maxAcceptedHtlcs" : 483,
-        "fundingPubKey" : "02eff5309b9368340edc6114d738b3590e6969bec4e95d8a080cf185e8b9ce5e4b",
         "revocationBasepoint" : "0343bf4bfbaea5c100f1f2bf1cdf82a0ef97c9a0069a2aec631e7c3084ba929b75",
         "paymentBasepoint" : "03c54e7d5ccfc13f1a6c7a441ffcfac86248574d1bc0fe9773836f4c724ea7b2bd",
         "delayedPaymentBasepoint" : "03765aaac2e8fa6dbce7de5143072e9d9d5e96a1fd451d02fe4ff803f413f303f8",

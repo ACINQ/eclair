@@ -69,7 +69,6 @@ private[channel] object ChannelCodecs4 {
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
-        ("fundingPubKey" | publicKey) ::
         ("revocationBasepoint" | publicKey) ::
         ("paymentBasepoint" | publicKey) ::
         ("delayedPaymentBasepoint" | publicKey) ::
@@ -227,7 +226,7 @@ private[channel] object ChannelCodecs4 {
         ("localContribution" | satoshiSigned) ::
         ("remoteContribution" | satoshiSigned) ::
         ("sharedInput_opt" | optional(bool8, sharedFundingInputCodec)) ::
-        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("remoteFundingPubKey" | publicKey) ::
         ("localOutputs" | listOfN(uint16, txOutCodec)) ::
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
@@ -354,6 +353,7 @@ private[channel] object ChannelCodecs4 {
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
       ("fundingTxIndex" | uint32) ::
+        ("fundingPubKey" | publicKey) ::
         ("fundingTxStatus" | fundingTxStatusCodec) ::
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::

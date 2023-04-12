@@ -41,15 +41,6 @@ private[channel] object ChannelCodecs1 {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
-    val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
-      ("secretkeybytes" | bytes32) ::
-        ("chaincode" | bytes32) ::
-        ("depth" | uint16) ::
-        ("path" | keyPathCodec) ::
-        ("parent" | int64))
-      .map { case a :: b :: c :: d :: e :: HNil => ExtendedPrivateKey(a, b, c, d, e) }
-      .decodeOnly
-
     val channelVersionCodec: Codec[ChannelTypes0.ChannelVersion] = bits(ChannelTypes0.ChannelVersion.LENGTH_BITS).as[ChannelTypes0.ChannelVersion]
 
     def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[LocalParams] = (
@@ -66,7 +57,7 @@ private[channel] object ChannelCodecs1 {
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 
-    val remoteParamsCodec: Codec[RemoteParams] = (
+    val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
@@ -80,7 +71,7 @@ private[channel] object ChannelCodecs1 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
-        ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams]
+        ("shutdownScript" | provide[Option[ByteVector]](None))).as[ChannelTypes0.RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 

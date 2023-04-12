@@ -66,7 +66,7 @@ private[channel] object ChannelCodecs2 {
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]
 
-    val remoteParamsCodec: Codec[RemoteParams] = (
+    val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
@@ -80,7 +80,7 @@ private[channel] object ChannelCodecs2 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
-        ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams]
+        ("shutdownScript" | provide[Option[ByteVector]](None))).as[ChannelTypes0.RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
