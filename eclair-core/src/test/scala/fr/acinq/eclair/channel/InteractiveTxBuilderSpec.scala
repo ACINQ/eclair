@@ -60,7 +60,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   private def addUtxo(wallet: BitcoinCoreClient, amount: Satoshi, probe: TestProbe): Unit = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
-    wallet.getReceiveAddress().pipeTo(probe.ref)
+    wallet.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
     val walletAddress = probe.expectMsgType[String]
     val tx = Transaction(version = 2, Nil, TxOut(amount, addressToPublicKeyScript(walletAddress, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0)
     val client = makeBitcoinCoreClient
@@ -997,7 +997,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       }
       val bigTxId = {
         // Dual funding cannot use transactions that exceed 65k bytes.
-        walletA.getP2wpkhPubkey().pipeTo(probe.ref)
+        walletA.getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
         val minerWallet = makeBitcoinCoreClient
@@ -1767,7 +1767,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Bob's available utxo is unconfirmed.
       val probe = TestProbe()
-      walletB.getP2wpkhPubkey().pipeTo(probe.ref)
+      walletB.getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
       walletB.sendToPubkeyScript(Script.write(Script.pay2wpkh(probe.expectMsgType[PublicKey])), 75_000 sat, FeeratePerKw(FeeratePerByte(1.sat))).pipeTo(probe.ref)
       probe.expectMsgType[ByteVector32]
 
@@ -1803,7 +1803,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Bob's available utxo is unconfirmed.
       val probe = TestProbe()
-      walletB.getReceiveAddress().pipeTo(probe.ref)
+      walletB.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
       walletB.sendToAddress(probe.expectMsgType[String], 75_000 sat, 1).pipeTo(probe.ref)
       probe.expectMsgType[ByteVector32]
 

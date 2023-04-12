@@ -71,7 +71,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     restartBitcoind(sender)
 
     val f = for {
-      address <- bitcoinClient.getReceiveAddress()
+      address <- bitcoinClient.getReceiveAddress(Block.RegtestGenesisBlock.hash)
       txid <- bitcoinClient.sendToPubkeyScript(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash), 10000.sat, FeeratePerKw(FeeratePerByte(3.sat)))
     } yield txid
     f.pipeTo(sender.ref)
@@ -162,7 +162,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val walletExternalFunds = new BitcoinCoreClient(createWallet("external_inputs", sender))
     // We receive some funds on an address that belongs to our wallet.
     Seq(25 millibtc, 15 millibtc, 20 millibtc).foreach(amount => {
-      walletExternalFunds.getReceiveAddress().pipeTo(sender.ref)
+      walletExternalFunds.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
       val walletAddress = sender.expectMsgType[String]
       defaultWallet.sendToPubkeyScript(Script.write(addressToPublicKeyScript(walletAddress, Block.RegtestGenesisBlock.hash)), amount, FeeratePerKw(FeeratePerByte(3.sat))).pipeTo(sender.ref)
       sender.expectMsgType[ByteVector32]
@@ -340,7 +340,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.onChainBalance().pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
-    bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
+    bitcoinClient.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -404,7 +404,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.onChainBalance().pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
-    bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
+    bitcoinClient.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -1036,13 +1036,13 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = makeBitcoinCoreClient
 
     // eclair onchain key nmanager does not yet support taproot descriptors
-    bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
+    bitcoinClient.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val defaultAddress = sender.expectMsgType[String]
     val decoded = Bech32.decodeWitnessAddress(defaultAddress)
     assert(decoded.getSecond == 0)
 
     // But we can explicitly use segwit v0 addresses.
-    bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
+    bitcoinClient.getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val amount = 50 millibtc
     val receiveKey = sender.expectMsgType[PublicKey]
     val address = computeP2WpkhAddress(receiveKey, Block.RegtestGenesisBlock.hash)
@@ -1077,10 +1077,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We fund our wallet with a single confirmed utxo.
     val sender = TestProbe()
     val wallet = new BitcoinCoreClient(createWallet("mempool_eviction", sender))
-    wallet.getP2wpkhPubkey().pipeTo(sender.ref)
+    wallet.getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val walletPubKey = sender.expectMsgType[PublicKey]
     val miner = makeBitcoinCoreClient
-    miner.getP2wpkhPubkey().pipeTo(sender.ref)
+    miner.getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
     val nonWalletPubKey = sender.expectMsgType[PublicKey]
     // We use a large input script to be able to fill the mempool with a few transactions.
     val bigInputScript = Script.write(Seq.fill(200)(Seq(OP_PUSHDATA(ByteVector.fill(15)(42)), OP_DROP)).flatten)
@@ -1170,13 +1170,13 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     }
 
     (0 to 10).foreach { _ =>
-      wallet1.getReceiveAddress().pipeTo(sender.ref)
+      wallet1.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
       val bip32path = getBip32Path(address)
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/84'/1'/0'/0"))
       assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
-      wallet1.getChangeAddress().pipeTo(sender.ref)
+      wallet1.getChangeAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
       val changeAddress = addressFromPublicKeyScript(Script.write(Script.pay2wpkh(sender.expectMsgType[ByteVector])), Block.RegtestGenesisBlock.hash)
       val bip32ChangePath = getBip32Path(changeAddress)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))
@@ -1197,7 +1197,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
       importEclairDescriptors(jsonRpcClient, onchainKeyManager)
       val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
-      wallet1.getReceiveAddress().pipeTo(sender.ref)
+      wallet1.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 
       // we can send to an onchain address if eclair signs the transactions
@@ -1214,4 +1214,26 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       sender.expectMsgType[ByteVector32]
     }
   }
+
+  test("fail if bitcoind returns an invalid address") {
+    val sender = TestProbe()
+    val entropy = randomBytes32()
+    val hex = entropy.toString()
+    val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
+    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
+
+    val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
+    importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+    val wallet = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
+    wallet.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(sender.ref)
+    sender.expectMsgType[String]
+    wallet.getReceiveAddress(Block.LivenetGenesisBlock.hash).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("address does not match public key"))
+    wallet.getP2wpkhPubkey(Block.LivenetGenesisBlock.hash).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("address does not match public key"))
+    wallet.getChangeAddress(Block.LivenetGenesisBlock.hash).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("address does not match public key"))
+  }
+
 }

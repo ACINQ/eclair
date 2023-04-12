@@ -399,7 +399,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput))
         Future.successful(txSingleOutput)
       case None =>
-        bitcoinClient.getChangeAddress().map(pubkeyHash => {
+        bitcoinClient.getChangeAddress(nodeParams.chainHash).map(pubkeyHash => {
           // replace PlaceHolderPubKey with a real wallet key
           val fundedTx = fundTxResponse.tx.copy(txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
           fundedTx

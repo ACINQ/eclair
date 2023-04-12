@@ -119,7 +119,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val probe = TestProbe()
     val walletClient = new BitcoinCoreClient(walletRpcClient) with OnchainPubkeyCache {
       val pubkey = {
-        getP2wpkhPubkey().pipeTo(probe.ref)
+        getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
 
@@ -138,7 +138,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Ensure our wallet has some funds.
     utxos.foreach(amount => {
-      walletClient.getReceiveAddress().pipeTo(probe.ref)
+      walletClient.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
       sendToAddress(walletAddress, amount)
     })
@@ -606,7 +606,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(mempoolTxs1.map(_.txid).contains(commitTx.tx.txid))
 
       // Our wallet receives new unconfirmed utxos: unfortunately, BIP 125 rule #2 doesn't let us use that input...
-      wallet.getReceiveAddress().pipeTo(probe.ref)
+      wallet.getReceiveAddress(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
       val walletTx = sendToAddress(walletAddress, 5 millibtc)
 
@@ -1601,7 +1601,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     importEclairDescriptors(walletRpcClient, keyManager)
     val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
       val pubkey = {
-        getP2wpkhPubkey().pipeTo(probe.ref)
+        getP2wpkhPubkey(Block.RegtestGenesisBlock.hash).pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
 

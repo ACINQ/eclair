@@ -272,7 +272,7 @@ class Setup(val datadir: File,
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
       useEclairSigner = if (config.hasPath("bitcoind.use-eclair-signer")) config.getBoolean("bitcoind.use-eclair-signer") else false
       bitcoinClient = new BitcoinCoreClient(bitcoin, if (useEclairSigner) Some(onchainKeyManager) else None) with OnchainPubkeyCache {
-        val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
+        val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, nodeParams.chainHash, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
           val key = finalPubkey.get()
@@ -280,7 +280,7 @@ class Setup(val datadir: File,
           key
         }
       }
-      initialPubkey <- bitcoinClient.getP2wpkhPubkey()
+      initialPubkey <- bitcoinClient.getP2wpkhPubkey(nodeParams.chainHash)
       _ = finalPubkey.set(initialPubkey)
 
       // If we started funding a transaction and restarted before signing it, we may have utxos that stay locked forever.
@@ -332,7 +332,7 @@ class Setup(val datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
+      _ = bitcoinClient.getReceiveAddress(nodeParams.chainHash).map(address => logger.info(s"initial wallet address=$address"))
 
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future

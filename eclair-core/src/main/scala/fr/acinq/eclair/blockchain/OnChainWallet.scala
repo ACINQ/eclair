@@ -86,10 +86,10 @@ trait OnChainAddressGenerator {
   /**
    * @param label used if implemented with bitcoin core, can be ignored by implementation
    */
-  def getReceiveAddress(label: String = "")(implicit ec: ExecutionContext): Future[String]
+  def getReceiveAddress(chainHash: ByteVector32, label: String = "")(implicit ec: ExecutionContext): Future[String]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
-  def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
+  def getP2wpkhPubkey(chainHash: ByteVector32)(implicit ec: ExecutionContext): Future[PublicKey]
 
 }
 
