@@ -1094,7 +1094,7 @@ case class Commitments(params: ChannelParams,
   }
 
   /**
-   * We can prune inactive commitments in two cases:
+   * We can prune commitments in two cases:
    * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitments (happens when using RBF)
    * - their funding tx has been permanently spent by a splice tx
    */
