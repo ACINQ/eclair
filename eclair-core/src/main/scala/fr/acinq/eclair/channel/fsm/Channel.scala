@@ -38,7 +38,7 @@ import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -768,9 +768,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.NoSplice =>
           if (d.commitments.isIdle && d.commitments.params.channelFeatures.hasFeature(DualFunding)) {
             val targetFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
-            val fundingContribution = InteractiveTxBuilder.computeLocalContribution(
+            val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
               isInitiator = true,
-              commitment = d.commitments.active.head,
+              sharedInput = Multisig2of2Input(keyManager, d.commitments.params, d.commitments.active.head),
               spliceInAmount = cmd.additionalLocalFunding,
               spliceOut = cmd.spliceOutputs,
               targetFeerate = targetFeerate)
