@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
@@ -250,8 +250,8 @@ object Helpers {
   }
 
   /** Compute the channelId of a dual-funded channel. */
-  def computeChannelId(open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): ByteVector32 = {
-    val bin = Seq(open.revocationBasepoint.value, accept.revocationBasepoint.value)
+  def computeChannelId(openRevocationBasepoint: PublicKey, acceptRevocationBasepoint: PublicKey): ByteVector32 = {
+    val bin = Seq(openRevocationBasepoint.value, acceptRevocationBasepoint.value)
       .sortWith(LexicographicalOrdering.isLessThan)
       .reduce(_ ++ _)
     Crypto.sha256(bin)
@@ -347,54 +347,6 @@ object Helpers {
   }
 
   object Funding {
-
-    /**
-     * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
-     * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
-     * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
-     * alias in that case).
-     */
-    def minDepthFunder(localFeatures: Features[InitFeature]): Option[Long] = {
-      if (localFeatures.hasFeature(Features.ZeroConf)) {
-        None
-      } else {
-        Some(1)
-      }
-    }
-
-    /**
-     * Returns the number of confirmations needed to safely handle the funding transaction,
-     * we make sure the cumulative block reward largely exceeds the channel size.
-     *
-     * @param fundingSatoshis funding amount of the channel
-     * @return number of confirmations needed, if any
-     */
-    def minDepthFundee(channelConf: ChannelConf, localFeatures: Features[InitFeature], fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
-      case _ if localFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
-      case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(channelConf.minDepthBlocks)
-      case funding =>
-        val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-        val scalingFactor = 15
-        val blocksToReachFunding = (((scalingFactor * funding.toBtc.toDouble) / blockReward).ceil + 1).toInt
-        Some(channelConf.minDepthBlocks.max(blocksToReachFunding))
-    }
-
-    /**
-     * When using dual funding, we wait for multiple confirmations even if we're the initiator because:
-     *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
-     *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
-     */
-    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], isInitiator: Boolean,  localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] = {
-      if (isInitiator && remoteContribution <= 0.sat) {
-        if (localFeatures.hasFeature(Features.ZeroConf)) {
-          None
-        } else {
-          Some(channelConf.minDepthBlocks)
-        }
-      } else {
-        minDepthFundee(channelConf, localFeatures, localContribution + remoteContribution)
-      }
-    }
 
     def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)

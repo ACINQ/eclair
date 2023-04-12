@@ -827,7 +827,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               lockTime = nodeParams.currentBlockHeight.toLong,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
-              minDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.params.localParams.initFeatures, isInitiator = false, localContribution = spliceAck.fundingContribution, remoteContribution = msg.fundingContribution),
+              minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = false, localContribution = spliceAck.fundingContribution, remoteContribution = msg.fundingContribution),
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
             )
             val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -867,7 +867,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             lockTime = spliceInit.lockTime,
             dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
             targetFeerate = spliceInit.feerate,
-            minDepth_opt = Funding.minDepthDualFunding(nodeParams.channelConf, d.commitments.params.localParams.initFeatures, isInitiator = true, localContribution = spliceInit.fundingContribution, remoteContribution = msg.fundingContribution),
+            minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = true, localContribution = spliceInit.fundingContribution, remoteContribution = msg.fundingContribution),
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(

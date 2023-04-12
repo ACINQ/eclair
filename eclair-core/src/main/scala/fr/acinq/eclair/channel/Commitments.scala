@@ -47,6 +47,53 @@ case class ChannelParams(channelId: ByteVector32,
   )
 
   /**
+   * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
+   * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
+   * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
+   * alias in that case).
+   */
+  def minDepthFunder: Option[Long] = {
+    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+      None
+    } else {
+      Some(1)
+    }
+  }
+
+  /**
+   * Returns the number of confirmations needed to safely handle the funding transaction,
+   * we make sure the cumulative block reward largely exceeds the channel size.
+   *
+   * @param fundingSatoshis funding amount of the channel
+   * @return number of confirmations needed, if any
+   */
+  def minDepthFundee(defaultMinDepth: Int, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
+    case _ if localParams.initFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
+    case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(defaultMinDepth)
+    case funding => Some(ChannelParams.minDepthScaled(defaultMinDepth, funding))
+  }
+
+  /**
+   * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
+   *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
+   *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
+   */
+  def minDepthSplices(defaultMinDepth: Int, isInitiator: Boolean, localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] = {
+    if (isInitiator && remoteContribution <= 0.sat) {
+      if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+        None
+      } else {
+        Some(defaultMinDepth)
+      }
+    } else {
+      minDepthFundee(defaultMinDepth, localContribution + remoteContribution)
+    }
+  }
+
+  def minDepthDualFunding(defaultMinDepth: Int, localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] =
+    minDepthSplices(defaultMinDepth, localParams.isInitiator, localContribution, remoteContribution)
+
+  /**
    *
    * @param localScriptPubKey local script pubkey (provided in CMD_CLOSE, as an upfront shutdown script, or set to the current final onchain script)
    * @return an exception if the provided script is not valid
@@ -74,6 +121,15 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
+}
+
+object ChannelParams {
+  def minDepthScaled(defaultMinDepth: Int, amount: Satoshi): Int = {
+    val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+    val scalingFactor = 15
+    val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
+    defaultMinDepth.max(blocksToReachFunding)
+  }
 }
 
 // @formatter:off

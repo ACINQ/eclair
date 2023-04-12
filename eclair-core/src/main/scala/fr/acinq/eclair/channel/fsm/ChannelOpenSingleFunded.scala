@@ -110,9 +110,26 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
+          val remoteParams = RemoteParams(
+            nodeId = remoteNodeId,
+            dustLimit = open.dustLimitSatoshis,
+            maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
+            requestedChannelReserve_opt = Some(open.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
+            htlcMinimum = open.htlcMinimumMsat,
+            toSelfDelay = open.toSelfDelay,
+            maxAcceptedHtlcs = open.maxAcceptedHtlcs,
+            fundingPubKey = open.fundingPubkey,
+            revocationBasepoint = open.revocationBasepoint,
+            paymentBasepoint = open.paymentBasepoint,
+            delayedPaymentBasepoint = open.delayedPaymentBasepoint,
+            htlcBasepoint = open.htlcBasepoint,
+            initFeatures = d.initFundee.remoteInit.features,
+            upfrontShutdownScript_opt = remoteShutdownScript)
+          log.debug("remote params: {}", remoteParams)
           val fundingPubkey = keyManager.fundingPublicKey(d.initFundee.localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(d.initFundee.localParams, d.initFundee.channelConfig)
-          val minimumDepth = Funding.minDepthFundee(nodeParams.channelConf, d.initFundee.localParams.initFeatures, open.fundingSatoshis)
+          val params = ChannelParams(d.initFundee.temporaryChannelId, d.initFundee.channelConfig, channelFeatures, d.initFundee.localParams, remoteParams, open.channelFlags)
+          val minimumDepth = params.minDepthFundee(nodeParams.channelConf.minDepthBlocks, open.fundingSatoshis)
           log.info("will use fundingMinDepth={}", minimumDepth)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -135,23 +152,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
               ChannelTlv.ChannelTypeTlv(d.initFundee.channelType)
             ))
-          val remoteParams = RemoteParams(
-            nodeId = remoteNodeId,
-            dustLimit = open.dustLimitSatoshis,
-            maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-            requestedChannelReserve_opt = Some(open.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
-            htlcMinimum = open.htlcMinimumMsat,
-            toSelfDelay = open.toSelfDelay,
-            maxAcceptedHtlcs = open.maxAcceptedHtlcs,
-            fundingPubKey = open.fundingPubkey,
-            revocationBasepoint = open.revocationBasepoint,
-            paymentBasepoint = open.paymentBasepoint,
-            delayedPaymentBasepoint = open.delayedPaymentBasepoint,
-            htlcBasepoint = open.htlcBasepoint,
-            initFeatures = d.initFundee.remoteInit.features,
-            upfrontShutdownScript_opt = remoteShutdownScript)
-          log.debug("remote params: {}", remoteParams)
-          val params = ChannelParams(d.initFundee.temporaryChannelId, d.initFundee.channelConfig, channelFeatures, d.initFundee.localParams, remoteParams, open.channelFlags)
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(params, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint) sending accept
       }
 
@@ -297,7 +297,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitment.fundingTxId}")
-              watchFundingConfirmed(commitment.fundingTxId, Funding.minDepthFundee(nodeParams.channelConf, params.localParams.initFeatures, fundingAmount))
+              watchFundingConfirmed(commitment.fundingTxId, params.minDepthFundee(nodeParams.channelConf.minDepthBlocks, fundingAmount))
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
       }
@@ -340,7 +340,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")
-          watchFundingConfirmed(commitment.fundingTxId, Funding.minDepthFunder(params.localParams.initFeatures))
+          watchFundingConfirmed(commitment.fundingTxId, params.minDepthFunder)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(d.channelId, fundingTx, fundingTxFee, d.replyTo)

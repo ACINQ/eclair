@@ -19,7 +19,6 @@ package fr.acinq.eclair.channel
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -27,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -39,15 +38,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  test("compute the funding tx min depth according to funding amount") {
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(1)).contains(4))
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf.copy(minDepthBlocks = 6), Features(), Btc(1)).contains(6)) // 4 conf would be enough but we use min-depth=6
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(6.25)).contains(16)) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(12.50)).contains(31))
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(12.60)).contains(32))
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(30)).contains(73))
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(), Btc(50)).contains(121))
-    assert(Helpers.Funding.minDepthFundee(nodeParams.channelConf, Features(Features.ZeroConf -> FeatureSupport.Optional), Btc(50)).isEmpty)
+  test("scale funding tx min depth according to funding amount") {
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 4)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.5)) == 31)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.6)) == 32)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(30)) == 73)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 121)
   }
 
   test("compute refresh delay") {
