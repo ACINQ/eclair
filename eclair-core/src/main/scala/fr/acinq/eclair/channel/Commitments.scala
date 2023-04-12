@@ -959,12 +959,15 @@ case class Commitments(params: ChannelParams,
   }
 
   def receiveCommit(commits: Seq[CommitSig], keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, RevokeAndAck)] = {
-    // first we make sure that we have exactly one commit_sig for each active commitment
-    if (commits.size != active.size) {
+    // We may receive more commit_sig than the number of active commitments, because there can be a race where we send
+    // splice_locked while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard
+    // the commit_sig that belong to commitments we deactivated.
+    if (commits.size < active.size) {
       return Left(CommitSigCountMismatch(channelId, active.size, commits.size))
     }
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 1)
+    // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
     val active1 = active.zip(commits).map { case (commitment, commit) =>
       commitment.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commit) match {
         case Left(f) => return Left(f)
@@ -1100,9 +1103,10 @@ case class Commitments(params: ChannelParams,
         val commitments1 = copy(
           active = active.map(updateMethod(commitment.fundingTxIndex)),
           inactive = inactive.map(updateMethod(commitment.fundingTxIndex))
-        ).deactivateCommitments().pruneCommitments()
-        val commitment1 = commitments1.all.find(_.fundingTxId == fundingTxId).get
-        Right(commitments1, commitment1)
+        )
+        val commitment1 = commitments1.all.find(_.fundingTxId == fundingTxId).get // NB: this commitment might be pruned at the next line
+        val commitments2 = commitments1.deactivateCommitments().pruneCommitments()
+        Right(commitments2, commitment1)
       case None =>
         log.warning(s"fundingTxId=$fundingTxId doesn't match any of our funding txs")
         Left(this)
@@ -1131,7 +1135,11 @@ case class Commitments(params: ChannelParams,
    * end up on-chain. This is a consequence of using zero-conf. Inactive commitments will be cleaned up by
    * [[pruneCommitments()]], when the next funding tx confirms.
    */
-  def deactivateCommitments()(implicit log: LoggingAdapter): Commitments = {
+  private def deactivateCommitments()(implicit log: LoggingAdapter): Commitments = {
+    // When a commitment is locked, it implicitly locks all previous commitments.
+    // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
+    // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
+    // That's why we compute each index (local and remote) separately and stop at the first one that matches.
     val lastLocalLockedIndex: Long = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).map(_.fundingTxIndex).getOrElse(-1)
     val lastRemoteLockedIndex: Long = active.find(_.remoteFundingStatus == RemoteFundingStatus.Locked).map(_.fundingTxIndex).getOrElse(-1)
     val lastLockedIndex = Math.min(lastLocalLockedIndex, lastRemoteLockedIndex)
@@ -1139,7 +1147,7 @@ case class Commitments(params: ChannelParams,
       case Some(lastLocked) =>
         // all commitments older than this one are inactive
         val inactive1 = active.filter(c => c.fundingTxId != lastLocked.fundingTxId && c.fundingTxIndex <= lastLocked.fundingTxIndex)
-        inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxid={}", c.fundingTxIndex, c.fundingTxId))
+        inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(
           active = active diff inactive1,
           inactive = inactive1 ++ inactive
@@ -1151,18 +1159,20 @@ case class Commitments(params: ChannelParams,
 
   /**
    * We can prune commitments in two cases:
-   * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitments (happens when using RBF)
+   * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
    * - their funding tx has been permanently spent by a splice tx
    */
-  def pruneCommitments()(implicit log: LoggingAdapter): Commitments = {
+  private def pruneCommitments()(implicit log: LoggingAdapter): Commitments = {
     all
       .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       .sortBy(_.fundingTxIndex)
       .lastOption match {
       case Some(lastConfirmed) =>
-        // we can prune all other commitments with the same or lower funding index
+        // We can prune all other commitments with the same or lower funding index.
+        // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer
+        // may not yet be aware of it, and will expect us to send commit_sig.
         val pruned = inactive.filter(c => c.fundingTxId != lastConfirmed.fundingTxId && c.fundingTxIndex <= lastConfirmed.fundingTxIndex)
-        pruned.foreach(c => log.info("pruning commitment index={} fundingTxid={}", c.fundingTxIndex, c.fundingTxId))
+        pruned.foreach(c => log.info("pruning commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(inactive = inactive diff pruned)
       case _ =>
         this
