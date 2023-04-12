@@ -320,5 +320,26 @@ class OnionMessagesSpec extends AnyFunSuite {
     val encodedPacket = OnionRoutingCodecs.onionRoutingPacketCodec(1300).encode(message.onionRoutingPacket).require.bytes.toHex
     val expectedPacket = (testVector \ "onionmessage" \ "onion_message_packet").extract[String]
     assert(encodedPacket == expectedPacket)
+
+    // Checking that the onion is relayed properly
+    process(alice, message) match {
+      case SendMessage(nextNodeId, onionForBob) =>
+        assert(nextNodeId == bob.publicKey)
+        process(bob, onionForBob) match {
+          case SendMessage(nextNodeId, onionForCarol) =>
+            assert(nextNodeId == carol.publicKey)
+            process(carol, onionForCarol) match {
+              case SendMessage(nextNodeId, onionForDave) =>
+                assert(nextNodeId == dave.publicKey)
+                process(dave, onionForDave) match {
+                  case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
+                  case x => fail(x.toString)
+                }
+              case x => fail(x.toString)
+            }
+          case x => fail(x.toString)
+        }
+      case x => fail(x.toString)
+    }
   }
 }
