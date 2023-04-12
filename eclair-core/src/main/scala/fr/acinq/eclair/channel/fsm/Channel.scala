@@ -815,25 +815,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               pushAmount = 0.msat,
               requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
             )
-            val parentCommitments = d.commitments.latest
+            val parentCommitment = d.commitments.latest.commitment
+            val nextFundingAmount = parentCommitment.capacity + spliceAck.fundingContribution + msg.fundingContribution
             val fundingParams = InteractiveTxParams(
               channelId = d.channelId,
               isInitiator = false,
               localContribution = spliceAck.fundingContribution,
               remoteContribution = msg.fundingContribution,
-              sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitments.commitment)),
-              fundingPubkeyScript = parentCommitments.commitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+              sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitment)),
+              fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
               localOutputs = Nil,
               lockTime = nodeParams.currentBlockHeight.toLong,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
-              minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = false, localContribution = spliceAck.fundingContribution, remoteContribution = msg.fundingContribution),
+              minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
             )
             val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
               nodeParams, fundingParams,
               channelParams = d.commitments.params,
-              purpose = InteractiveTxBuilder.SpliceTx(parentCommitments.commitment),
+              purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
               localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
               wallet
             ))
@@ -855,25 +856,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.spliceStatus match {
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
-          val parentCommitments = d.commitments.latest
+          val parentCommitment = d.commitments.latest.commitment
+          val nextFundingAmount = parentCommitment.capacity + spliceInit.fundingContribution + msg.fundingContribution
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitments.commitment)),
-            fundingPubkeyScript = parentCommitments.commitInput.txOut.publicKeyScript, // same pubkey script as before
+            sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitment)),
+            fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
             localOutputs = cmd.spliceOutputs,
             lockTime = spliceInit.lockTime,
             dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
             targetFeerate = spliceInit.feerate,
-            minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = true, localContribution = spliceInit.fundingContribution, remoteContribution = msg.fundingContribution),
+            minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             channelParams = d.commitments.params,
-            purpose = InteractiveTxBuilder.SpliceTx(parentCommitments.commitment),
+            purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
             localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
             wallet
           ))

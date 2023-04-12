@@ -61,8 +61,10 @@ case class ChannelParams(channelId: ByteVector32,
   }
 
   /**
-   * Returns the number of confirmations needed to safely handle the funding transaction,
-   * we make sure the cumulative block reward largely exceeds the channel size.
+   * Returns the number of confirmations needed to safely handle a funding transaction with remote inputs. We make sure
+   * the cumulative block reward largely exceeds the channel size, because an attacker that could create a reorg would
+   * be able to steal the entire channel funding, but would likely miss block rewards during that process, making it
+   * economically irrational for them.
    *
    * @param fundingSatoshis funding amount of the channel
    * @return number of confirmations needed, if any
@@ -77,21 +79,16 @@ case class ChannelParams(channelId: ByteVector32,
    * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
+   *
+   * @param fundingAmount the total target channel funding amount, including local and remote contributions.
    */
-  def minDepthSplices(defaultMinDepth: Int, isInitiator: Boolean, localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] = {
-    if (isInitiator && remoteContribution <= 0.sat) {
-      if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
-        None
-      } else {
-        Some(defaultMinDepth)
-      }
+  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] = {
+    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+      None
     } else {
-      minDepthFundee(defaultMinDepth, localContribution + remoteContribution)
+      minDepthFundee(defaultMinDepth, fundingAmount)
     }
   }
-
-  def minDepthDualFunding(defaultMinDepth: Int, localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] =
-    minDepthSplices(defaultMinDepth, localParams.isInitiator, localContribution, remoteContribution)
 
   /**
    *
