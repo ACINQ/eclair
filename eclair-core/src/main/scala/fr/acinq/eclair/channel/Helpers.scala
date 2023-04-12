@@ -384,7 +384,7 @@ object Helpers {
      *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
      *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
      */
-    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], isInitiator: Boolean, remoteContribution: Satoshi): Option[Long] = {
+    def minDepthDualFunding(channelConf: ChannelConf, localFeatures: Features[InitFeature], isInitiator: Boolean,  localContribution: Satoshi, remoteContribution: Satoshi): Option[Long] = {
       if (isInitiator && remoteContribution <= 0.sat) {
         if (localFeatures.hasFeature(Features.ZeroConf)) {
           None
@@ -392,7 +392,7 @@ object Helpers {
           Some(channelConf.minDepthBlocks)
         }
       } else {
-        minDepthFundee(channelConf, localFeatures, remoteContribution)
+        minDepthFundee(channelConf, localFeatures, localContribution + remoteContribution)
       }
     }
 
