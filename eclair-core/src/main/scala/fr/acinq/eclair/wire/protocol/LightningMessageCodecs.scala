@@ -24,8 +24,6 @@ import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
-import scala.util.Try
-
 /**
  * Created by PM on 15/11/2016.
  */
