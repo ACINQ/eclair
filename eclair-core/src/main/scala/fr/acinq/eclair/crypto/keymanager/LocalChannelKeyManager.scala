@@ -81,12 +81,11 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
   }
 
   override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
-    val baseFundingKeyPath = internalKeyPath(channelKeyPath, hardened(0))
     val keyPath = if (fundingTxIndex == 0) {
-      // For backward-compat with pre-splice channels, the initial funding tx of a channel use the base keypath with no derivation
-      baseFundingKeyPath
+      // For backward-compat with pre-splice channels, we treat the initial funding pubkey differently
+      internalKeyPath(channelKeyPath, hardened(0))
     } else {
-      baseFundingKeyPath.derive(fundingTxIndex)
+      internalKeyPath(channelKeyPath, hardened(6)).derive(fundingTxIndex)
     }
     publicKeys.get(keyPath)
   }
