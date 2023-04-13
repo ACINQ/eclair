@@ -1653,30 +1653,28 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice wants to:
       //  - increase the feerate of the splice transaction
       //  - splice more additional funds
-      // Before that, she sent htlcs to Bob which decreased her balance.
-      val initialBalanceA = commitmentA1.localCommit.spec.toLocal
-      val initialBalanceB = commitmentA1.localCommit.spec.toRemote
+      // Before that, she sent htlcs to Bob which decreased her balance in all active commitments.
       val amountPaid = 25_000_400 msat
       val commitmentA1bis = commitmentA1
-        .modify(_.localCommit.spec.toLocal).setTo(initialBalanceA - amountPaid)
-        .modify(_.localCommit.spec.toRemote).setTo(initialBalanceB + amountPaid)
-        .modify(_.remoteCommit.spec.toLocal).setTo(initialBalanceB + amountPaid)
-        .modify(_.remoteCommit.spec.toRemote).setTo(initialBalanceA - amountPaid)
+        .modify(_.localCommit.spec.toLocal).using(balance => balance - amountPaid)
+        .modify(_.localCommit.spec.toRemote).using(balance => balance + amountPaid)
+        .modify(_.remoteCommit.spec.toLocal).using(balance => balance + amountPaid)
+        .modify(_.remoteCommit.spec.toRemote).using(balance => balance - amountPaid)
       val commitmentA2bis = commitmentA2
-        .modify(_.localCommit.spec.toLocal).setTo(initialBalanceA - amountPaid)
-        .modify(_.localCommit.spec.toRemote).setTo(initialBalanceB + amountPaid)
-        .modify(_.remoteCommit.spec.toLocal).setTo(initialBalanceB + amountPaid)
-        .modify(_.remoteCommit.spec.toRemote).setTo(initialBalanceA - amountPaid)
+        .modify(_.localCommit.spec.toLocal).using(balance => balance - amountPaid)
+        .modify(_.localCommit.spec.toRemote).using(balance => balance + amountPaid)
+        .modify(_.remoteCommit.spec.toLocal).using(balance => balance + amountPaid)
+        .modify(_.remoteCommit.spec.toRemote).using(balance => balance - amountPaid)
       val commitmentB1bis = commitmentB1
-        .modify(_.localCommit.spec.toLocal).setTo(initialBalanceB + amountPaid)
-        .modify(_.localCommit.spec.toRemote).setTo(initialBalanceA - amountPaid)
-        .modify(_.remoteCommit.spec.toLocal).setTo(initialBalanceA - amountPaid)
-        .modify(_.remoteCommit.spec.toRemote).setTo(initialBalanceB + amountPaid)
+        .modify(_.localCommit.spec.toLocal).using(balance => balance + amountPaid)
+        .modify(_.localCommit.spec.toRemote).using(balance => balance - amountPaid)
+        .modify(_.remoteCommit.spec.toLocal).using(balance => balance - amountPaid)
+        .modify(_.remoteCommit.spec.toRemote).using(balance => balance + amountPaid)
       val commitmentB2bis = commitmentB2
-        .modify(_.localCommit.spec.toLocal).setTo(initialBalanceB + amountPaid)
-        .modify(_.localCommit.spec.toRemote).setTo(initialBalanceA - amountPaid)
-        .modify(_.remoteCommit.spec.toLocal).setTo(initialBalanceA - amountPaid)
-        .modify(_.remoteCommit.spec.toRemote).setTo(initialBalanceB + amountPaid)
+        .modify(_.localCommit.spec.toLocal).using(balance => balance + amountPaid)
+        .modify(_.localCommit.spec.toRemote).using(balance => balance - amountPaid)
+        .modify(_.remoteCommit.spec.toLocal).using(balance => balance - amountPaid)
+        .modify(_.remoteCommit.spec.toRemote).using(balance => balance + amountPaid)
       val additionalFundingA2 = 50_000 sat
       val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(5_000 sat), localContribution = additionalFundingA2, remoteContribution = 0 sat)
       val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(5_000 sat), localContribution = 0 sat, remoteContribution = additionalFundingA2)
@@ -1713,10 +1711,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA3 = alice2bob.expectMsgType[Succeeded]
       val successB3 = bob2alice.expectMsgType[Succeeded]
       val (spliceTxA2, commitmentA3, _, commitmentB3) = fixtureParams.exchangeSigsBobFirst(fundingParamsB2, successA3, successB3)
-      assert(commitmentA3.localCommit.spec.toLocal == commitmentA2bis.localCommit.spec.toLocal + additionalFundingA2)
-      assert(commitmentA3.localCommit.spec.toRemote == commitmentA2bis.localCommit.spec.toRemote)
-      assert(commitmentB3.localCommit.spec.toLocal == commitmentB2bis.localCommit.spec.toLocal)
-      assert(commitmentB3.localCommit.spec.toRemote == commitmentB2bis.localCommit.spec.toRemote + additionalFundingA2)
+      assert(commitmentA3.localCommit.spec.toLocal == commitmentA1bis.localCommit.spec.toLocal + additionalFundingA2)
+      assert(commitmentA3.localCommit.spec.toRemote == commitmentA1bis.localCommit.spec.toRemote)
+      assert(commitmentB3.localCommit.spec.toLocal == commitmentB1bis.localCommit.spec.toLocal)
+      assert(commitmentB3.localCommit.spec.toRemote == commitmentB1bis.localCommit.spec.toRemote + additionalFundingA2)
 
       walletA.publishTransaction(spliceTxA2.signedTx).pipeTo(probe.ref)
       probe.expectMsg(spliceTxA2.txId)
