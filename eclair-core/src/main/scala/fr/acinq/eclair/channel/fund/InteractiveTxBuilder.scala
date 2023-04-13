@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, KotlinUtils, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -101,13 +101,13 @@ object InteractiveTxBuilder {
   sealed trait SharedFundingInput {
     // @formatter:off
     def info: InputInfo
-    def weight: Long
+    def weight: Int
     def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64
     // @formatter:on
   }
 
   case class Multisig2of2Input(info: InputInfo, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
-    override val weight: Long = Multisig2of2Input.weight
+    override val weight: Int = 388
 
     override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = {
       val fundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
@@ -116,8 +116,6 @@ object InteractiveTxBuilder {
   }
 
   object Multisig2of2Input {
-    val weight: Long = 388
-
     def apply(keyManager: ChannelKeyManager, params: ChannelParams, commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
       info = commitment.commitInput,
       localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey,
@@ -156,29 +154,6 @@ object InteractiveTxBuilder {
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
-  }
-
-  def computeLocalContribution(isInitiator: Boolean, commitment: Commitment, spliceInAmount: Satoshi, spliceOut: List[TxOut], targetFeerate: FeeratePerKw): Satoshi = {
-    // If there is a splice-in, whatever the amount of the splice-in, fees will be paid for by bitcoind, when we call
-    // fundrawtransaction to pay the inputs. they won't change the contribution so we don't take them into account
-    val fees = if (spliceInAmount == 0.sat) {
-      val commonFieldsWeight = if (isInitiator) {
-        val dummyTx = Transaction(
-          version = 2,
-          txIn = Nil, // NB: we add the weight manually
-          txOut = commitment.commitInput.txOut +: Nil, // we're taking the previous output, it has the wrong amount but we don't care: only the weight matters to compute fees
-          lockTime = 0
-        )
-        dummyTx.weight() + Multisig2of2Input.weight
-      } else 0
-      val spliceOutputsWeight = spliceOut.map(KotlinUtils.scala2kmp).map(_.weight()).sum
-      val weight = commonFieldsWeight + spliceOutputsWeight
-      Transactions.weight2fee(targetFeerate, weight.toInt)
-    } else {
-      // if there is a splice-in, bitcoind will add fees when adding the input
-      0 sat
-    }
-    spliceInAmount - spliceOut.map(_.amount).sum - fees
   }
 
   // @formatter:off
@@ -670,10 +645,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
-      // To compute the remote reserve, we discard the local contribution. It's okay if they go below reserve because
-      // we added capacity to the channel with a splice-in.
-      val remoteReserve = ((fundingParams.fundingAmount - fundingParams.localContribution) / 100).max(channelParams.localParams.dustLimit)
-      if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty) {
+      val remoteReserve = (fundingParams.fundingAmount / 100).max(channelParams.localParams.dustLimit)
+      // We ignore the reserve requirement if we are splicing funds into the channel, which increases the size of the reserve.
+      if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty && localInputs.isEmpty) {
         log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
         return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
       }

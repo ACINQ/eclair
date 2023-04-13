@@ -19,8 +19,9 @@ package fr.acinq.eclair.channel.fund
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.TxAddInput
@@ -67,6 +68,30 @@ object InteractiveTxFunder {
 
   /** A wallet input that doesn't match interactive-tx construction requirements. */
   private case class UnusableInput(outpoint: OutPoint)
+
+  /**
+   * Compute the funding contribution we're making to the channel output, by aggregating splice-in and splice-out and
+   * paying on-chain fees either from our wallet inputs or our current channel balance.
+   */
+  def computeSpliceContribution(isInitiator: Boolean, sharedInput: SharedFundingInput, spliceInAmount: Satoshi, spliceOut: Seq[TxOut], targetFeerate: FeeratePerKw): Satoshi = {
+    val fees = if (spliceInAmount == 0.sat) {
+      val spliceOutputsWeight = spliceOut.map(KotlinUtils.scala2kmp).map(_.weight()).sum
+      val weight = if (isInitiator) {
+        // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
+        val dummyTx = Transaction(2, Nil, Seq(sharedInput.info.txOut), 0)
+        sharedInput.weight + dummyTx.weight() + spliceOutputsWeight
+      } else {
+        // The non-initiator only pays for the weights of their own inputs and outputs.
+        spliceOutputsWeight
+      }
+      Transactions.weight2fee(targetFeerate, weight)
+    } else {
+      // If we're splicing some funds into the channel, bitcoind will be responsible for adding more funds to pay the
+      // fees, so we don't need to pay them from our channel balance.
+      0 sat
+    }
+    spliceInAmount - spliceOut.map(_.amount).sum - fees
+  }
 
   private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
     // Wallet input transaction must fit inside the tx_add_input message.
@@ -161,7 +186,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight).toMap
+    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
@@ -222,7 +247,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
               case Some(changeOutput) =>
                 val txWeightWithoutInput = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)), 0).weight()
                 val commonWeight = fundingParams.sharedInput_opt match {
-                  case Some(sharedInput) => sharedInput.weight.toInt + txWeightWithoutInput
+                  case Some(sharedInput) => sharedInput.weight + txWeightWithoutInput
                   case None => txWeightWithoutInput
                 }
                 val overpaidFees = Transactions.weight2fee(fundingParams.targetFeerate, commonWeight)

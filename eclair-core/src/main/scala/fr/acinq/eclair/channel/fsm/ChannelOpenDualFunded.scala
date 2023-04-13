@@ -169,7 +169,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
           val localAmount = d.init.fundingContribution_opt.getOrElse(0 sat)
           val remoteAmount = open.fundingAmount
-          val minDepth_opt = channelParams.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, localContribution = localAmount, remoteContribution = remoteAmount)
+          val minDepth_opt = channelParams.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, localAmount + remoteAmount)
           val upfrontShutdownScript_opt = localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
           val tlvs: Set[AcceptDualFundedChannelTlv] = Set(
             upfrontShutdownScript_opt,
@@ -266,7 +266,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val localAmount = d.lastSent.fundingAmount
           val remoteAmount = accept.fundingAmount
-          val minDepth_opt = channelParams.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, localContribution = localAmount, remoteContribution = remoteAmount)
+          val minDepth_opt = channelParams.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, localAmount + remoteAmount)
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
             isInitiator = localParams.isInitiator,

@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, Possib
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.Features.DualFunding
+import fr.acinq.eclair.Features.SplicePrototype
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -38,7 +38,7 @@ import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -358,7 +358,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[SpliceStatus.SpliceRequested] || d.spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress] =>
+    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice =>
       val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
@@ -366,7 +366,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => handleCommandError(error, c)
       }
 
-    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress] =>
+    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice && !d.spliceStatus.isInstanceOf[SpliceStatus.SpliceRequested] =>
       // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
       // we know they are going to reject our splice attempt
       val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
@@ -514,7 +514,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               signingSession.receiveCommitSig(nodeParams, d.commitments.params, commit) match {
                 case Left(f) =>
                   rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
-                  handleLocalError(f, d, Some(commit))
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) => signingSession1 match {
                   case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
                     // No need to store their commit_sig, they will re-send it if we disconnect.
@@ -529,7 +529,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     stay() using d1 storing() sending signingSession1.localSigs
                 }
               }
+            case _ if d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
+              // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig
+              // that we receive before that should be ignored, it's either a retransmission of a commit_sig we've already
+              // received or a bug that will eventually lead to a force-close anyway.
+              log.info("ignoring commit_sig, we're still waiting for tx_signatures")
+              stay()
             case _ =>
+              // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all
+              // splice statuses, but it would force us to handle corner cases like race condition between splice_init
+              // and a non-splice commit_sig
               d.commitments.receiveCommit(sigs, keyManager) match {
                 case Right((commitments1, revocation)) =>
                   log.debug("received a new sig, spec:\n{}", commitments1.latest.specs2String)
@@ -766,11 +775,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.channelFeatures.hasFeature(DualFunding)) {
+          if (d.commitments.isIdle && d.commitments.params.remoteParams.initFeatures.hasFeature(SplicePrototype)) {
             val targetFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
-            val fundingContribution = InteractiveTxBuilder.computeLocalContribution(
+            val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
               isInitiator = true,
-              commitment = d.commitments.active.head,
+              sharedInput = Multisig2of2Input(keyManager, d.commitments.params, d.commitments.active.head),
               spliceInAmount = cmd.additionalLocalFunding,
               spliceOut = cmd.spliceOutputs,
               targetFeerate = targetFeerate)
@@ -783,7 +792,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceRequest(d.channelId))
               stay()
             } else {
-              log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
+              log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
               val spliceInit = SpliceInit(d.channelId,
                 fundingContribution = fundingContribution,
                 lockTime = nodeParams.currentBlockHeight.toLong,
@@ -794,7 +803,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
             }
           } else {
-            log.warning("cannot do splice")
+            log.warning("cannot initiate splice, channel is not idle or peer doesn't support splices")
             cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
             stay()
           }
@@ -804,36 +813,37 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           stay()
       }
 
-    // NB: we only accept splices on regtest
+    // NB: we only accept splices on regtest and testnet
     case Event(msg: SpliceInit, d: DATA_NORMAL) if nodeParams.chainHash == Block.RegtestGenesisBlock.hash || nodeParams.chainHash == Block.TestnetGenesisBlock.hash =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.channelFeatures.hasFeature(DualFunding)) {
+          if (d.commitments.isIdle && d.commitments.params.localParams.initFeatures.hasFeature(SplicePrototype)) {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val spliceAck = SpliceAck(d.channelId,
               fundingContribution = 0.sat, // only remote contributes to the splice
               pushAmount = 0.msat,
               requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
             )
-            val parentCommitments = d.commitments.latest
+            val parentCommitment = d.commitments.latest.commitment
+            val nextFundingAmount = parentCommitment.capacity + spliceAck.fundingContribution + msg.fundingContribution
             val fundingParams = InteractiveTxParams(
               channelId = d.channelId,
               isInitiator = false,
               localContribution = spliceAck.fundingContribution,
               remoteContribution = msg.fundingContribution,
-              sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitments.commitment)),
-              fundingPubkeyScript = parentCommitments.commitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
+              sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitment)),
+              fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
               localOutputs = Nil,
               lockTime = nodeParams.currentBlockHeight.toLong,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
-              minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = false, localContribution = spliceAck.fundingContribution, remoteContribution = msg.fundingContribution),
+              minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
             )
             val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
               nodeParams, fundingParams,
               channelParams = d.commitments.params,
-              purpose = InteractiveTxBuilder.SpliceTx(parentCommitments.commitment),
+              purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
               localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
               wallet
             ))
@@ -855,25 +865,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.spliceStatus match {
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
-          val parentCommitments = d.commitments.latest
+          val parentCommitment = d.commitments.latest.commitment
+          val nextFundingAmount = parentCommitment.capacity + spliceInit.fundingContribution + msg.fundingContribution
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitments.commitment)),
-            fundingPubkeyScript = parentCommitments.commitInput.txOut.publicKeyScript, // same pubkey script as before
+            sharedInput_opt = Some(Multisig2of2Input(keyManager, d.commitments.params, parentCommitment)),
+            fundingPubkeyScript = parentCommitment.commitInput.txOut.publicKeyScript, // same pubkey script as before
             localOutputs = cmd.spliceOutputs,
             lockTime = spliceInit.lockTime,
             dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
             targetFeerate = spliceInit.feerate,
-            minDepth_opt = d.commitments.params.minDepthSplices(nodeParams.channelConf.minDepthBlocks, isInitiator = true, localContribution = spliceInit.fundingContribution, remoteContribution = msg.fundingContribution),
+            minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             nodeParams, fundingParams,
             channelParams = d.commitments.params,
-            purpose = InteractiveTxBuilder.SpliceTx(parentCommitments.commitment),
+            purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
             localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
             wallet
           ))
@@ -924,7 +935,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           msg match {
             case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
             case InteractiveTxBuilder.Succeeded(signingSession, commitSig) =>
-              log.info(s"splice tx completed: new funding index=${signingSession.fundingTxIndex} txid=${signingSession.fundingTx.txId}")
+              log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
               val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession))
@@ -946,11 +957,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // we already sent our tx_signatures
           InteractiveTxSigningSession.addRemoteSigs(dfu.fundingParams, fundingTx, msg) match {
             case Left(cause) =>
-              val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
-              log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", msg.txId, unsignedFundingTx.txid, cause.getMessage)
+              log.warning("received invalid tx_signatures for fundingTxId={}: {}", msg.txId, cause.getMessage)
               // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
               // so we cannot close the channel yet.
-              stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
+              stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
             case Right(fundingTx) =>
               val dfu1 = dfu.copy(sharedTx = fundingTx)
               d.commitments.updateLocalFundingStatus(msg.txId, dfu1) match {
@@ -977,9 +987,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx)
               }
             case _ =>
-              log.debug("rejecting unexpected tx_signatures for txId={}", msg.txId)
-              reportSpliceFailure(d.spliceStatus, UnexpectedFundingSignatures(d.channelId))
-              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, UnexpectedFundingSignatures(d.channelId).getMessage)
+              // We may receive an outdated tx_signatures if the transaction is already confirmed.
+              log.warning("ignoring unexpected tx_signatures for txId={}", msg.txId)
+              stay()
           }
       }
 
@@ -1371,7 +1381,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             remoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
             nextRemoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
           }
-          // TODO: when using splices we should be updating all competing commitments
+
           handleCommandSuccess(c, d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)) storing() calling republish()
         case Left(cause) => handleCommandError(cause, c)
       }
@@ -1451,11 +1461,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       } else {
         d.commitments.resolveCommitment(tx) match {
           case Some(commitment) =>
-            log.warning(s"a commit tx for an older commitment has been published txid=${tx.txid} fundingTxIndex=${commitment.fundingTxIndex}")
+            log.warning(s"a commit tx for an older commitment has been published fundingTxId=${tx.txid} fundingTxIndex=${commitment.fundingTxIndex}")
             blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks)
             stay()
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
+            log.warning(s"ignoring unrecognized tx=${tx.txid}")
             stay()
         }
       }
@@ -1463,13 +1474,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(WatchAlternativeCommitTxConfirmedTriggered(_, _, tx), d: DATA_CLOSING) =>
       d.commitments.resolveCommitment(tx) match {
         case Some(commitment) =>
-          log.warning("a commit tx for fundingTxIndex={} fundingTxid={} has been confirmed", commitment.fundingTxIndex, commitment.fundingTxId)
+          log.warning("a commit tx for fundingTxIndex={} fundingTxId={} has been confirmed", commitment.fundingTxIndex, commitment.fundingTxId)
           val commitments1 = d.commitments.copy(
             active = commitment +: Nil,
             inactive = Nil
           )
           // we reset the state
           val d1 = d.copy(commitments = commitments1)
+          // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
           if (commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
             // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
             spendLocalCurrent(d1)
@@ -1484,7 +1496,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             handleRemoteSpentOther(tx, d1)
           }
         case None =>
-          log.warning(s"unrecognized alternative commit tx=${tx.txid}")
+          log.warning(s"ignoring unrecognized alternative commit tx=${tx.txid}")
           stay()
       }
 
@@ -1761,14 +1773,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // NB: there is a key difference between channel_ready and splice_confirmed:
             // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
             // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices, so
-            //   we must keep sending our most recent splice_confirmed at each reconnection
-            val spliceConfirmed = d.commitments.active
+            //   we must keep sending our most recent splice_locked at each reconnection
+            val spliceLocked = d.commitments.active
               .filter(c => c.fundingTxIndex > 0) // only consider splice txs
               .collectFirst { case c if c.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked] =>
-                log.debug(s"re-sending SpliceLocked for fundingTxid=${c.fundingTxId}")
+                log.debug(s"re-sending splice_locked for fundingTxId=${c.fundingTxId}")
                 SpliceLocked(d.channelId, c.fundingTxId.reverse)
               }
-            sendQueue = sendQueue ++ spliceConfirmed
+            sendQueue = sendQueue ++ spliceLocked
           }
 
           // resume splice signing session if any
@@ -1790,21 +1802,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                           log.info(s"re-sending commit_sig and tx_signatures for fundingTxIndex=${d.commitments.latest.fundingTxIndex} fundingTxId=${d.commitments.latest.fundingTxId}")
                           val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.commitInput)
                           sendQueue = sendQueue :+ commitSig :+ fundingTx.localSigs
-                        case _ => ()
+                        case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
+                          log.info(s"re-sending tx_signatures for fundingTxIndex=${d.commitments.latest.fundingTxIndex} fundingTxId=${d.commitments.latest.fundingTxId}")
+                          sendQueue = sendQueue :+ fundingTx.localSigs
                       }
-                      log.info(s"re-sending tx_signatures for fundingTxIndex=${d.commitments.latest.fundingTxIndex} fundingTxId=${d.commitments.latest.fundingTxId}")
-                      sendQueue = sendQueue :+ dfu.sharedTx.localSigs
                     case _ =>
-                    // The funding tx is published or confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
-                    // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
-                    // recompute our tx_signatures, but instead we do nothing: they will be notified that the funding tx has confirmed.
+                      // The funding tx is published or confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
+                      // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
+                      // recompute our tx_signatures, but instead we do nothing: they will be notified that the funding tx has confirmed.
+                      log.warning("cannot re-send tx_signatures for fundingTxId={}, transaction is already published or confirmed", fundingTxId)
                   }
                   d.spliceStatus
                 case _ =>
                   // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving
                   // their tx_complete): we tell them to abort that splice attempt.
                   log.info(s"aborting obsolete splice attempt for fundingTxId=$fundingTxId")
-                  sendQueue = sendQueue :+ TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
+                  sendQueue = sendQueue :+ TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
                   SpliceStatus.SpliceAborted
               }
             case None => d.spliceStatus
@@ -1864,7 +1877,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // we send it (if needed) when reconnected.
           val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
           if (d.commitments.params.localParams.isInitiator && !shutdownInProgress) {
-            // TODO: what should we do here if we have multiple commitments using different feerates?
+            // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
             val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
             val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.params.channelType, d.commitments.latest.capacity, None)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
@@ -2116,12 +2129,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       } else {
         d.commitments.resolveCommitment(tx) match {
           case Some(commitment) =>
-            log.warning(s"a commit tx for an older commitment has been published txid=${tx.txid} fundingTxIndex=${commitment.fundingTxIndex}")
+            log.warning(s"a commit tx for an older commitment has been published fundingTxId=${tx.txid} fundingTxIndex=${commitment.fundingTxIndex}")
             // we watch the commitment tx, in the meantime we force close using the latest commitment
             blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks)
             spendLocalCurrent(d)
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
+            log.warning(s"ignoring unrecognized tx=${tx.txid}")
             stay()
         }
       }
@@ -2279,7 +2293,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
-    // TODO: we should consider *all* commitments
+    // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.params.channelType, commitments.capacity, Some(c))
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
@@ -2305,7 +2319,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    * @return
    */
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
-    // TODO: we should consider *all* commitments
+    // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.params.channelType, commitments.capacity, Some(c))
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
