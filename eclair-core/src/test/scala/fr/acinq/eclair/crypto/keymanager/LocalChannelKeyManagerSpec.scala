@@ -65,7 +65,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb", isInitiator = true)
-    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
+    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
     val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
@@ -82,7 +82,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val seed = ByteVector.fromValidHex("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488", isInitiator = false)
-    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
+    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
     val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
@@ -99,7 +99,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val seed = ByteVector.fromValidHex("d8d5431487c2b19ee6486aad6c3bdfb99d10b727bade7fa848e2ab7901c15bff01")
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"ec1c41cd6be2b6e4ef46c1107f6c51fbb2066d7e1f7720bde4715af233ae1322", isInitiator = true)
-    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
+    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
     val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
@@ -116,7 +116,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val seed = ByteVector.fromValidHex("4b809dd593b36131c454d60c2f7bdfd49d12ec455e5b657c47a9ca0f5dfc5eef01")
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"2b4f045be5303d53f9d3a84a1e70c12251168dc29f300cf9cece0ec85cd8182b", isInitiator = false)
-    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
+    val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
     val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)

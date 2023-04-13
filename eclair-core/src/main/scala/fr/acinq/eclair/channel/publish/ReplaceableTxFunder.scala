@@ -283,7 +283,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
       case ClaimLocalAnchorWithWitnessData(anchorTx) =>
-        val localSig = keyManager.sign(anchorTx, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath), TxOwner.Local, cmd.commitment.params.commitmentFormat)
+        val localSig = keyManager.sign(anchorTx, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat)
         val signedTx = ClaimLocalAnchorWithWitnessData(addSigs(anchorTx, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn)
       case htlcTx: HtlcWithWitnessData =>

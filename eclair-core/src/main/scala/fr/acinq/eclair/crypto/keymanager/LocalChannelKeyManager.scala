@@ -80,7 +80,15 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }
 
-  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
+  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
+    val keyPath = if (fundingTxIndex == 0) {
+      // For backward-compat with pre-splice channels, we treat the initial funding pubkey differently
+      internalKeyPath(channelKeyPath, hardened(0))
+    } else {
+      internalKeyPath(channelKeyPath, hardened(6)).derive(fundingTxIndex)
+    }
+    publicKeys.get(keyPath)
+  }
 
   override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 

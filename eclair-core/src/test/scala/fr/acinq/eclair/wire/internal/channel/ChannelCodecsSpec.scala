@@ -274,7 +274,6 @@ object ChannelCodecsSpec {
     htlcMinimum = 5000 msat,
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
-    fundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey,
     revocationBasepoint = PrivateKey(ByteVector.fill(32)(2)).publicKey,
     paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
     delayedPaymentBasepoint = PrivateKey(ByteVector.fill(32)(4)).publicKey,
@@ -304,7 +303,9 @@ object ChannelCodecsSpec {
     val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey(), randomKey().publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING_WITHOUT_WUMBO.toMilliSatoshi)
     val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
     val fundingAmount = fundingTx.txOut.head.amount
-    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
+    val fundingTxIndex = 0
+    val remoteFundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey
+    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)
     val remoteSig = ByteVector64(hex"2148d2d4aac8c793eb82d31bcf22d4db707b9fd7eee1b89b4b1444c9e19ab7172bab8c3d997d29163fa0cb255c75afb8ade13617ad1350c1515e9be4a222a04d")
     val commitTx = Transaction(
       version = 2,
@@ -312,7 +313,7 @@ object ChannelCodecsSpec {
         outPoint = commitmentInput.outPoint,
         signatureScript = ByteVector.empty,
         sequence = 0,
-        witness = Scripts.witness2of2(randomBytes64(), remoteSig, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)) :: Nil,
+        witness = Scripts.witness2of2(randomBytes64(), remoteSig, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)) :: Nil,
       txOut = Nil,
       lockTime = 0
     )
@@ -323,7 +324,7 @@ object ChannelCodecsSpec {
     val commitments = Commitments(
       ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, channelFlags),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
-      Seq(Commitment(fundingTxIndex = 0, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
+      Seq(Commitment(fundingTxIndex, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)

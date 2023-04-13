@@ -70,7 +70,6 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       randomKey().publicKey,
       randomKey().publicKey,
       randomKey().publicKey,
-      randomKey().publicKey,
       Features(),
       None)
 
@@ -106,7 +105,6 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       randomKey().publicKey,
       randomKey().publicKey,
       randomKey().publicKey,
-      randomKey().publicKey,
       Features(ChannelRangeQueries -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory),
       None)
     assert(codec.decodeValue(codec.encode(remoteParams).require).require == remoteParams)
@@ -135,7 +133,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
     )
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
-      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, ByteVector.empty, Nil, 0, 330 sat, FeeratePerKw(500 sat), None, RequireConfirmedInputs(forLocal = false, forRemote = false)),
+      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), None, RequireConfirmedInputs(forLocal = false, forRemote = false)),
       fundingTxIndex = 0,
       PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomBytes32(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),

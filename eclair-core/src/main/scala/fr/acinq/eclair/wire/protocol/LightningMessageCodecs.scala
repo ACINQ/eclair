@@ -405,13 +405,15 @@ object LightningMessageCodecs {
   val spliceInitCodec: Codec[SpliceInit] = (
     ("channelId" | bytes32) ::
       ("fundingContribution" | satoshiSigned) ::
-      ("lockTime" | uint32) ::
       ("feerate" | feeratePerKw) ::
+      ("lockTime" | uint32) ::
+      ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[SpliceInit]
 
   val spliceAckCodec: Codec[SpliceAck] = (
     ("channelId" | bytes32) ::
       ("fundingContribution" | satoshiSigned) ::
+      ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[SpliceAck]
 
   val spliceLockedCodec: Codec[SpliceLocked] = (

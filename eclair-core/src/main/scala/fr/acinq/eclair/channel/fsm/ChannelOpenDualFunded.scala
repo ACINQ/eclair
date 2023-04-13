@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
@@ -27,7 +27,6 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ToMilliSatoshiConversion, UInt64}
 
@@ -105,7 +104,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
-      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
       val upfrontShutdownScript_opt = input.localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
       val tlvs: Set[OpenDualFundedChannelTlv] = Set(
@@ -153,7 +152,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             htlcMinimum = open.htlcMinimum,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
-            fundingPubKey = open.fundingPubkey,
             revocationBasepoint = open.revocationBasepoint,
             paymentBasepoint = open.paymentBasepoint,
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
@@ -161,7 +159,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
           val revocationBasePoint = keyManager.revocationPoint(channelKeyPath).publicKey
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
@@ -198,14 +196,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           txPublisher ! SetChannelId(remoteNodeId, channelId)
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, accept.temporaryChannelId, channelId))
           // We start the interactive-tx funding protocol.
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
             isInitiator = localParams.isInitiator,
             localContribution = accept.fundingAmount,
             remoteContribution = open.fundingAmount,
             sharedInput_opt = None,
-            fundingPubkeyScript = fundingPubkeyScript,
+            remoteFundingPubKey = open.fundingPubkey,
             localOutputs = Nil,
             lockTime = open.lockTime,
             dustLimit = open.dustLimit.max(accept.dustLimit),
@@ -252,7 +249,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             htlcMinimum = accept.htlcMinimum,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
-            fundingPubKey = accept.fundingPubkey,
             revocationBasepoint = accept.revocationBasepoint,
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
@@ -261,8 +257,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           // We start the interactive-tx funding protocol.
-          val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, d.lastSent.channelFlags)
           val localAmount = d.lastSent.fundingAmount
           val remoteAmount = accept.fundingAmount
@@ -273,7 +267,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             localContribution = localAmount,
             remoteContribution = remoteAmount,
             sharedInput_opt = None,
-            fundingPubkeyScript = fundingPubkeyScript,
+            remoteFundingPubKey = accept.fundingPubkey,
             localOutputs = Nil,
             lockTime = d.lastSent.lockTime,
             dustLimit = d.lastSent.dustLimit.max(accept.dustLimit),
@@ -400,7 +394,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: InteractiveTxMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       msg match {
         case txSigs: TxSignatures =>
-          d.signingSession.receiveTxSigs(nodeParams, txSigs) match {
+          d.signingSession.receiveTxSigs(nodeParams, d.channelParams, txSigs) match {
             case Left(f) =>
               rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
               goto(CLOSED) sending Error(d.channelId, f.getMessage)
@@ -448,7 +442,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.latestFundingTx.sharedTx match {
-        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxSigningSession.addRemoteSigs(d.latestFundingTx.fundingParams, fundingTx, txSigs) match {
+        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxSigningSession.addRemoteSigs(keyManager, d.commitments.params, d.latestFundingTx.fundingParams, fundingTx, txSigs) match {
           case Left(cause) =>
             val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
             log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
@@ -464,7 +458,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case _: FullySignedSharedTransaction =>
           d.rbfStatus match {
             case RbfStatus.RbfWaitingForSigs(signingSession) =>
-              signingSession.receiveTxSigs(nodeParams, txSigs) match {
+              signingSession.receiveTxSigs(nodeParams, d.commitments.params, txSigs) match {
                 case Left(f) =>
                   rollbackRbfAttempt(signingSession, d)
                   stay() using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, f.getMessage)

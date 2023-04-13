@@ -69,7 +69,6 @@ private[channel] object ChannelCodecs4 {
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
-        ("fundingPubKey" | publicKey) ::
         ("revocationBasepoint" | publicKey) ::
         ("paymentBasepoint" | publicKey) ::
         ("delayedPaymentBasepoint" | publicKey) ::
@@ -213,7 +212,7 @@ private[channel] object ChannelCodecs4 {
 
     private val multisig2of2InputCodec: Codec[InteractiveTxBuilder.Multisig2of2Input] = (
       ("info" | inputInfoCodec) ::
-        ("localFundingPubkey" | publicKey) ::
+        ("fundingTxIndex" | uint32) ::
         ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
 
     private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
@@ -227,7 +226,7 @@ private[channel] object ChannelCodecs4 {
         ("localContribution" | satoshiSigned) ::
         ("remoteContribution" | satoshiSigned) ::
         ("sharedInput_opt" | optional(bool8, sharedFundingInputCodec)) ::
-        ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
+        ("remoteFundingPubKey" | publicKey) ::
         ("localOutputs" | listOfN(uint16, txOutCodec)) ::
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
@@ -354,6 +353,7 @@ private[channel] object ChannelCodecs4 {
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
       ("fundingTxIndex" | uint32) ::
+        ("fundingPubKey" | publicKey) ::
         ("fundingTxStatus" | fundingTxStatusCodec) ::
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
