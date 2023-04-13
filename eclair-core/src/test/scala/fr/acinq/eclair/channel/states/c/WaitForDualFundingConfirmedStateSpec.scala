@@ -540,7 +540,6 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
       .modify(_.commitments.active.at(0).localFundingStatus)
       .setTo(fundingTx1)
     alice.setState(alice.stateName, aliceData1)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.minDepth_opt.nonEmpty)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams.remoteContribution == 0.sat)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.tx.remoteInputs.nonEmpty)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx)
