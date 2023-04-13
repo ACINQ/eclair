@@ -35,20 +35,20 @@ object OnionMessages {
                                 timeout: FiniteDuration,
                                 maxAttempts: Int)
 
-  case class IntermediateNode(nodeId: PublicKey, customTlvs: Set[GenericTlv] = Set.empty)
+  case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty)
 
   // @formatter:off
   sealed trait Destination
   case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination
-  case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], customTlvs: Set[GenericTlv] = Set.empty) extends Destination
+  case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination
   // @formatter:on
 
   private def buildIntermediatePayloads(intermediateNodes: Seq[IntermediateNode], nextTlvs: Set[RouteBlindingEncryptedDataTlv]): Seq[ByteVector] = {
     if (intermediateNodes.isEmpty) {
       Nil
     } else {
-      (intermediateNodes.tail.map(node => Set[RouteBlindingEncryptedDataTlv](OutgoingNodeId(node.nodeId))) :+ nextTlvs)
-        .zip(intermediateNodes).map { case (tlvs, hop) => TlvStream(tlvs, hop.customTlvs) }
+      (intermediateNodes.tail.map(node => Set(OutgoingNodeId(node.nodeId))) :+ nextTlvs)
+        .zip(intermediateNodes).map { case (tlvs, hop) => TlvStream(hop.padding.map(Padding).toSet[RouteBlindingEncryptedDataTlv] ++ tlvs, hop.customTlvs) }
         .map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes)
     }
   }
@@ -57,7 +57,7 @@ object OnionMessages {
                  intermediateNodes: Seq[IntermediateNode],
                  recipient: Recipient): Sphinx.RouteBlinding.BlindedRoute = {
     val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, Set(OutgoingNodeId(recipient.nodeId)))
-    val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.pathId.map(PathId)).flatten
+    val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
     val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs, recipient.customTlvs)).require.bytes
     Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
   }

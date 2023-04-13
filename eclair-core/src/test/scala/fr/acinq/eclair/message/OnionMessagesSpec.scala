@@ -75,7 +75,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val messageForBob = TlvStream[RouteBlindingEncryptedDataTlv](OutgoingNodeId(carol.publicKey), NextBlinding(blindingOverride.publicKey))
     val encodedForBob = blindedRouteDataCodec.encode(messageForBob).require.bytes
     assert(encodedForBob == hex"0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
-    val messageForCarol = TlvStream(Set[RouteBlindingEncryptedDataTlv](OutgoingNodeId(dave.publicKey)), Set(GenericTlv(UInt64(1), hex"0000000000000000000000000000000000000000000000000000000000000000000000")))
+    val messageForCarol = TlvStream[RouteBlindingEncryptedDataTlv](Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(dave.publicKey))
     val encodedForCarol = blindedRouteDataCodec.encode(messageForCarol).require.bytes
     assert(encodedForCarol == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
     val messageForDave = TlvStream[RouteBlindingEncryptedDataTlv](PathId(hex"01234567"))
@@ -108,7 +108,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val onionForAlice = OnionMessage(blindingSecret.publicKey, packet)
 
     // Building the onion with functions from `OnionMessages`
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, Set(GenericTlv(UInt64(1), hex"0000000000000000000000000000000000000000000000000000000000000000000000"))) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
     assert(replyPath == routeFromCarol)
     val Right((_, message)) = buildMessage(randomKey(), sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(message == onionForAlice)
@@ -192,7 +192,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(Sphinx.computeSharedSecret(blindingKey, carol) == sharedSecret)
     assert(Sphinx.mac(ByteVector("blinded_node_id".getBytes), sharedSecret) == ByteVector32(hex"02afb2187075c8af51488242194b44c02624785ccd6fd43b5796c68f3025bf88"))
     val blindedCarol = PublicKey(hex"02f4f524562868a09d5f54fb956ade3fa51ef071d64d923e395cc6db5e290ec67b")
-    val blindedPayload = TlvStream(Set[RouteBlindingEncryptedDataTlv](OutgoingNodeId(dave.publicKey)), Set(GenericTlv(UInt64(1), hex"0000000000000000000000000000000000000000000000000000000000000000000000")))
+    val blindedPayload = TlvStream[RouteBlindingEncryptedDataTlv](Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(dave.publicKey))
     val encodedBlindedPayload = blindedRouteDataCodec.encode(blindedPayload).require.bytes
     assert(encodedBlindedPayload == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
     val blindedRoute = Sphinx.RouteBlinding.create(blindingSecret, carol.publicKey :: Nil, encodedBlindedPayload :: Nil).route
@@ -283,14 +283,20 @@ class OnionMessagesSpec extends AnyFunSuite {
       ).flatten
     }
 
+    def makeRecipient(nodeKey: PrivateKey, json: JValue): Recipient =
+      Recipient(nodeKey.publicKey, Some(ByteVector.fromValidHex((json \ "path_id").extract[String])), (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
+
+    def makeIntermediateNode(nodeKey: PrivateKey, json: JValue): IntermediateNode =
+      IntermediateNode(nodeKey.publicKey, (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
+
     val blindingSecretBob = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(1) \ "blinding_secret").extract[String]))
     val pathId = ByteVector.fromValidHex(((testVector \ "generate" \ "hops")(3) \ "tlvs" \ "path_id").extract[String])
     val pathBobToDave =
       buildRoute(blindingSecretBob,
-        Seq(IntermediateNode(bob.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(1) \ "tlvs")), IntermediateNode(carol.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(2) \ "tlvs"))),
-        Recipient(dave.publicKey, Some(pathId), getCustomTlvs((testVector \ "generate" \ "hops")(3) \ "tlvs")))
+        Seq(makeIntermediateNode(bob, (testVector \ "generate" \ "hops")(1) \ "tlvs"), makeIntermediateNode(carol, (testVector \ "generate" \ "hops")(2) \ "tlvs")),
+        makeRecipient(dave, (testVector \ "generate" \ "hops")(3) \ "tlvs"))
     val blindingSecretAlice = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(0) \ "blinding_secret").extract[String]))
-    val intermediateAlice = Seq(IntermediateNode(alice.publicKey, getCustomTlvs((testVector \ "generate" \ "hops")(0) \ "tlvs")))
+    val intermediateAlice = Seq(makeIntermediateNode(alice, (testVector \ "generate" \ "hops")(0) \ "tlvs"))
     val Some(pathAliceToDave) = buildRouteFrom(alice, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave))
 
     val expectedPath = BlindedRoute(
