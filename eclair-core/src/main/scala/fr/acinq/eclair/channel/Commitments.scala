@@ -1136,21 +1136,23 @@ case class Commitments(params: ChannelParams,
     // When a commitment is locked, it implicitly locks all previous commitments.
     // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
     // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
-    // We need to carry that information from the latest locked commitment to all previous commitments.
-    active.foldLeft((Option.empty[Commitment], false, false)) {
-      case ((Some(locked), _, _), _) => (Some(locked), true, true)
-      case ((None, localLocked, remoteLocked), commitment) =>
-        val localLocked1 = localLocked || commitment.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]
-        // There is no explicit locking for the initial funding transaction: the channel isn't used at that point, so we
-        // act as if our peer immediately locked every RBF attempt.
-        val remoteLocked1 = remoteLocked || commitment.remoteFundingStatus == RemoteFundingStatus.Locked || commitment.fundingTxIndex == 0
-        if (localLocked1 && remoteLocked1) {
-          (Some(commitment), localLocked1, remoteLocked1)
-        } else {
-          (None, localLocked1, remoteLocked1)
-        }
-    } match {
-      case (Some(lastLocked), _, _) =>
+    // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
+    val lastLocalLocked_opt = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked])
+    val lastRemoteLocked_opt = active.find(_.remoteFundingStatus == RemoteFundingStatus.Locked)
+    val lastLocked_opt = (lastLocalLocked_opt, lastRemoteLocked_opt) match {
+      // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
+      // If both have the same fundingTxIndex, they must actually be the same commitment, because:
+      //  - we only allow RBF attempts when we're not using zero-conf
+      //  - transactions with the same fundingTxIndex double-spend each other, so only one of them can confirm
+      //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
+      //    would become invalid if another of the RBF attempts end up being confirmed)
+      case (Some(lastLocalLocked), Some(lastRemoteLocked)) => Some(Seq(lastLocalLocked, lastRemoteLocked).minBy(_.fundingTxIndex))
+      // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
+      case (Some(lastLocalLocked), None) if lastLocalLocked.fundingTxIndex == 0 => Some(lastLocalLocked)
+      case _ => None
+    }
+    lastLocked_opt match {
+      case Some(lastLocked) =>
         // all commitments older than this one are inactive
         val inactive1 = active.filter(c => c.fundingTxId != lastLocked.fundingTxId && c.fundingTxIndex <= lastLocked.fundingTxIndex)
         inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
