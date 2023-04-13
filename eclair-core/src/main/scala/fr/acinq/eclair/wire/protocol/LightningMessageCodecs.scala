@@ -24,6 +24,8 @@ import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
+import scala.util.Try
+
 /**
  * Created by PM on 15/11/2016.
  */
@@ -192,9 +194,8 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("tlvStream" | TxCompleteTlv.txCompleteTlvCodec)).as[TxComplete]
 
-  private val witnessElementCodec: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
-  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(uint16, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
-  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
+  private val witnessCodec: Codec[ScriptWitness] = bytes.xmap(b => ScriptWitness.read(b.toArray), w => ScriptWitness.write(w))
+  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, variableSizeBytes(uint16, witnessCodec)).xmap(l => l.toSeq, l => l.toList)
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
