@@ -204,11 +204,12 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSING)
   }
 
-  ignore("recv WatchFundingSpentTriggered (other commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     alice2bob.expectMsgType[ChannelReady]
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

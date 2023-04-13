@@ -248,7 +248,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // alice initiates the negotiation with a very low feerate
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceCloseSig.feeSatoshis == 1685.sat)
-    assert(aliceCloseSig.feeRange_opt == Some(FeeRange(1348 sat, 2022 sat)))
+    assert(aliceCloseSig.feeRange_opt.contains(FeeRange(1348 sat, 2022 sat)))
     alice2bob.forward(bob)
     // bob chooses alice's highest fee
     val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
@@ -541,10 +541,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  ignore("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
+    bobClose(f)
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == NEGOTIATING)
   }
 
   test("recv Error") { f =>

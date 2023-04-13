@@ -50,7 +50,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding
+    val tags = test.tags + ChannelStateTestsTags.DualFunding + ChannelStateTestsTags.Splicing
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
