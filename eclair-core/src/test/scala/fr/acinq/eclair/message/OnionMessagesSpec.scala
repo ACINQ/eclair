@@ -276,7 +276,6 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     def getCustomTlvs(json: JValue): Set[GenericTlv] = {
       Set(
-        (json \ "padding").extract[Option[String]].map(hex => GenericTlv(UInt64(1), ByteVector.fromValidHex(hex))),
         (json \ "unknown_tag_1").extract[Option[String]].map(hex => GenericTlv(UInt64(1), ByteVector.fromValidHex(hex))),
         (json \ "unknown_tag_561").extract[Option[String]].map(hex => GenericTlv(UInt64(561), ByteVector.fromValidHex(hex))),
         (json \ "unknown_tag_65535").extract[Option[String]].map(hex => GenericTlv(UInt64(65535), ByteVector.fromValidHex(hex))),
