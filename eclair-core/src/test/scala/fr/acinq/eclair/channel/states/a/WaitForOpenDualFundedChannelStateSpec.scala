@@ -89,7 +89,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     val channelIdAssigned = bobListener.expectMsgType[ChannelIdAssigned]
     assert(channelIdAssigned.temporaryChannelId == ByteVector32.Zeroes)
-    assert(channelIdAssigned.channelId == Helpers.computeChannelId(open, accept))
+    assert(channelIdAssigned.channelId == Helpers.computeChannelId(open.revocationBasepoint, accept.revocationBasepoint))
     assert(!accept.requireConfirmedInputs)
 
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)

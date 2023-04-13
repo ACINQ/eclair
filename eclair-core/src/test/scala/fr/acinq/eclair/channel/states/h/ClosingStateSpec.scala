@@ -1638,10 +1638,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(new String(error.data.toArray) == FundingTxSpent(channelId(alice), initialState.spendingTxs.head.txid).getMessage)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == CLOSING)
   }
 
   test("recv CMD_CLOSE") { f =>

@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Lexicographical
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
@@ -100,14 +101,13 @@ object InteractiveTxBuilder {
   sealed trait SharedFundingInput {
     // @formatter:off
     def info: InputInfo
-    def weight: Long
+    def weight: Int
     def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64
     // @formatter:on
   }
 
   case class Multisig2of2Input(info: InputInfo, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
-    // This value was computed assuming 73 bytes signatures (worst-case scenario).
-    override val weight: Long = 388
+    override val weight: Int = 388
 
     override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = {
       val fundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
@@ -153,7 +153,7 @@ object InteractiveTxBuilder {
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
-    val serialIdParity = if (isInitiator) 0 else 1
+    val serialIdParity: Int = if (isInitiator) 0 else 1
   }
 
   // @formatter:off
@@ -497,6 +497,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       Left(OutputBelowDust(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.dustLimit))
     } else if (addOutput.pubkeyScript == fundingParams.fundingPubkeyScript && addOutput.amount != fundingParams.fundingAmount) {
       Left(InvalidSharedOutputAmount(fundingParams.channelId, addOutput.serialId, addOutput.amount, fundingParams.fundingAmount))
+    } else if (!MutualClose.isValidFinalScriptPubkey(addOutput.pubkeyScript, allowAnySegwit = true)) {
+      Left(InvalidSpliceOutputScript(fundingParams.channelId, addOutput.serialId, addOutput.pubkeyScript))
     } else if (addOutput.pubkeyScript == fundingParams.fundingPubkeyScript) {
       Right(Output.Shared(addOutput.serialId, addOutput.pubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution))
     } else {
@@ -644,7 +646,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
       val remoteReserve = (fundingParams.fundingAmount / 100).max(channelParams.localParams.dustLimit)
-      if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty) {
+      // We ignore the reserve requirement if we are splicing funds into the channel, which increases the size of the reserve.
+      if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty && localInputs.isEmpty) {
         log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
         return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
       }
@@ -739,7 +742,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, signedTx, Left(localCommit), remoteCommit), commitSig)
+        val fundingTxIndex = purpose match {
+          case _: FundingTx => 0
+          case r: PreviousTxRbf => r.commitment.fundingTxIndex
+          case s: SpliceTx => s.commitment.fundingTxIndex + 1
+        }
+        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)
@@ -882,10 +890,11 @@ object InteractiveTxSigningSession {
    * peer has forgotten that channel (which may happen if we disconnected before they received our tx_complete).
    */
   case class WaitingForSigs(fundingParams: InteractiveTxParams,
+                            fundingTxIndex: Long,
                             fundingTx: PartiallySignedSharedTransaction,
                             localCommit: Either[UnsignedLocalCommit, LocalCommit],
                             remoteCommit: RemoteCommit) extends InteractiveTxSigningSession {
-    val commitInput = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
+    val commitInput: InputInfo = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
 
     def receiveCommitSig(nodeParams: NodeParams, channelParams: ChannelParams, remoteCommitSig: CommitSig)(implicit log: LoggingAdapter): Either[ChannelException, InteractiveTxSigningSession] = {
       localCommit match {
@@ -899,7 +908,7 @@ object InteractiveTxSigningSession {
               val signedLocalCommit = LocalCommit(unsignedLocalCommit.index, unsignedLocalCommit.spec, CommitTxAndRemoteSig(unsignedLocalCommit.commitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil)
               if (shouldSignFirst(channelParams, fundingTx.tx)) {
                 val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, nodeParams.currentBlockHeight, fundingParams)
-                val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
+                val commitment = Commitment(fundingTxIndex, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
                 Right(SendingSigs(fundingStatus, commitment, fundingTx.localSigs))
               } else {
                 Right(this.copy(localCommit = Right(signedLocalCommit)))
@@ -924,7 +933,7 @@ object InteractiveTxSigningSession {
             case Right(fullySignedTx) =>
               log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fullySignedTx, nodeParams.currentBlockHeight, fundingParams)
-              val commitment = Commitment(fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
+              val commitment = Commitment(fundingTxIndex, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
               Right(SendingSigs(fundingStatus, commitment, fullySignedTx.localSigs))
           }
       }

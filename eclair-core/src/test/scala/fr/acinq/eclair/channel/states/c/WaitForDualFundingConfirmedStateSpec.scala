@@ -270,14 +270,17 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     alice2bob.expectMsgType[ChannelReady]
     awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
 
     bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     bob2alice.expectMsgType[ChannelReady]
     awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
-
-    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
     assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
   }
 
@@ -614,7 +617,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
-    aliceListener.expectMsgType[TransactionPublished]
+    assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == bobCommitTx1.txid)
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
@@ -688,10 +691,11 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob2.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
   test("recv INPUT_DISCONNECTED (unsigned rbf attempt)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

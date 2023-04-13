@@ -92,7 +92,6 @@ object TxInitRbfTlv {
   val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
     .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
   )
-
 }
 
 object TxAckRbfTlv {
@@ -102,7 +101,6 @@ object TxAckRbfTlv {
   val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
     .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
   )
-
 }
 
 sealed trait TxAbortTlv extends Tlv

@@ -260,10 +260,11 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == WAIT_FOR_CHANNEL_READY)
   }
 
   test("recv Error") { f =>

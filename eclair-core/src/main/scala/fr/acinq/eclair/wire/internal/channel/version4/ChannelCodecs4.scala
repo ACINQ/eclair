@@ -13,7 +13,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateMessage}
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature, channel}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -224,8 +224,8 @@ private[channel] object ChannelCodecs4 {
     private val fundingParamsCodec: Codec[InteractiveTxBuilder.InteractiveTxParams] = (
       ("channelId" | bytes32) ::
         ("isInitiator" | bool8) ::
-        ("localAmount" | satoshi) ::
-        ("remoteAmount" | satoshi) ::
+        ("localContribution" | satoshiSigned) ::
+        ("remoteContribution" | satoshiSigned) ::
         ("sharedInput_opt" | optional(bool8, sharedFundingInputCodec)) ::
         ("fundingPubkeyScript" | lengthDelimited(bytes)) ::
         ("localOutputs" | listOfN(uint16, txOutCodec)) ::
@@ -353,7 +353,8 @@ private[channel] object ChannelCodecs4 {
         ("commit" | remoteCommitCodec(commitmentSpecCodec))).as[NextRemoteCommit]
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
-      ("fundingTxStatus" | fundingTxStatusCodec) ::
+      ("fundingTxIndex" | uint32) ::
+        ("fundingTxStatus" | fundingTxStatusCodec) ::
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
         ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
@@ -370,6 +371,7 @@ private[channel] object ChannelCodecs4 {
                                   // The direction we use is from our local point of view.
                                   htlcs: Set[DirectedHtlc],
                                   active: List[Commitment],
+                                  inactive: List[Commitment],
                                   remoteNextCommitInfo: Either[WaitForRev, PublicKey],
                                   remotePerCommitmentSecrets: ShaChain,
                                   originChannels: Map[Long, Origin],
@@ -379,6 +381,7 @@ private[channel] object ChannelCodecs4 {
           params = params,
           changes = changes,
           active = active,
+          inactive = inactive,
           remoteNextCommitInfo,
           remotePerCommitmentSecrets,
           originChannels,
@@ -391,14 +394,17 @@ private[channel] object ChannelCodecs4 {
       def apply(commitments: Commitments): EncodedCommitments = {
         // The direction we use is from our local point of view: we use sets, which deduplicates htlcs that are in both
         // local and remote commitments.
-        val htlcs = commitments.active.head.localCommit.spec.htlcs ++
-          commitments.active.head.remoteCommit.spec.htlcs.map(_.opposite) ++
-          commitments.active.head.nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(_.opposite)).getOrElse(Set.empty)
+        // All active commitments have the same htlc set, but each inactive commitment may have a distinct htlc set
+        val commitmentsSet = (commitments.active.head +: commitments.inactive).toSet
+        val htlcs = commitmentsSet.flatMap(_.localCommit.spec.htlcs) ++
+          commitmentsSet.flatMap(_.remoteCommit.spec.htlcs.map(_.opposite)) ++
+          commitmentsSet.flatMap(_.nextRemoteCommit_opt.toList.flatMap(_.commit.spec.htlcs.map(_.opposite)))
         EncodedCommitments(
           params = commitments.params,
           changes = commitments.changes,
           htlcs = htlcs,
           active = commitments.active.toList,
+          inactive = commitments.inactive.toList,
           remoteNextCommitInfo = commitments.remoteNextCommitInfo,
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets,
           originChannels = commitments.originChannels,
@@ -412,6 +418,7 @@ private[channel] object ChannelCodecs4 {
         ("changes" | changesCodec) ::
         (("htlcs" | setCodec(htlcCodec)) >>:~ { htlcs =>
           ("active" | listOfN(uint16, commitmentCodec(htlcs))) ::
+            ("inactive" | listOfN(uint16, commitmentCodec(htlcs))) ::
             ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
             ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
             ("originChannels" | originsMapCodec) ::
@@ -464,6 +471,7 @@ private[channel] object ChannelCodecs4 {
 
       val waitingForSigsCodec: Codec[InteractiveTxSigningSession.WaitingForSigs] = (
         ("fundingParams" | fundingParamsCodec) ::
+          ("fundingTxIndex" | uint32) ::
           ("fundingTx" | partiallySignedSharedTransactionCodec) ::
           ("localCommit" | either(bool8, unsignedLocalCommitCodec, localCommitCodec(commitmentSpecCodec))) ::
           ("remoteCommit" | remoteCommitCodec(commitmentSpecCodec))).as[InteractiveTxSigningSession.WaitingForSigs]
@@ -474,6 +482,10 @@ private[channel] object ChannelCodecs4 {
     val rbfStatusCodec: Codec[RbfStatus] = discriminated[RbfStatus].by(uint8)
       .\(0x01) { case status: RbfStatus if !status.isInstanceOf[RbfStatus.RbfWaitingForSigs] => RbfStatus.NoRbf }(provide(RbfStatus.NoRbf))
       .\(0x02) { case status: RbfStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[RbfStatus.RbfWaitingForSigs])
+
+    val spliceStatusCodec: Codec[SpliceStatus] = discriminated[SpliceStatus].by(uint8)
+      .\(0x01) { case status: SpliceStatus if !status.isInstanceOf[SpliceStatus.SpliceWaitingForSigs] => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
+      .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
@@ -513,7 +525,8 @@ private[channel] object ChannelCodecs4 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
+        ("spliceStatus" | spliceStatusCodec)).as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_05_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::

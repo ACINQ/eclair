@@ -185,14 +185,16 @@ trait ErrorHandlers extends CommonHandlers {
       stay()
     } else {
       val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-      val commitTx = d.commitments.latest.fullySignedLocalCommitTx(keyManager).tx
-      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, d.commitments.latest, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
+      val commitment = d.commitments.latest
+      log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
+      val commitTx = commitment.fullySignedLocalCommitTx(keyManager).tx
+      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitment, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
         case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
       }
-      goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, d.commitments.latest)
+      goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, commitment)
     }
   }
 
@@ -239,23 +241,6 @@ trait ErrorHandlers extends CommonHandlers {
     goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, commitments)
   }
 
-  def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
-    // It doesn't matter which commitment we use here, we'll only be able to claim our main outputs which is independent of the commitment.
-    val commitments = d.commitments.latest
-    log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, d.commitments.params.localParams.isInitiator), "future-remote-commit"))
-    val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
-    val remoteCommitPublished = RemoteCommitPublished(
-      commitTx = commitTx,
-      claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.commitments.params, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey),
-      claimHtlcTxs = Map.empty,
-      claimAnchorTxs = List.empty,
-      irrevocablySpent = Map.empty)
-    val nextData = DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, commitments)
-  }
-
   def handleRemoteSpentNext(commitTx: Transaction, d: ChannelDataWithCommitments) = {
     val commitment = d.commitments.latest
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
@@ -294,13 +279,14 @@ trait ErrorHandlers extends CommonHandlers {
   }
 
   def handleRemoteSpentOther(tx: Transaction, d: ChannelDataWithCommitments) = {
-    val commitments = d.commitments.latest
+    val commitment = d.commitments.latest
     log.warning(s"funding tx spent in txid=${tx.txid}")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments.params, d.commitments.remotePerCommitmentSecrets, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey) match {
-      case Some(revokedCommitPublished) =>
+    Closing.RevokedClose.getRemotePerCommitmentSecret(keyManager, d.commitments.params, d.commitments.remotePerCommitmentSecrets, tx) match {
+      case Some((commitmentNumber, remotePerCommitmentSecret)) =>
+        val revokedCommitPublished = Closing.RevokedClose.claimCommitTxOutputs(keyManager, d.commitments.params, tx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey)
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
-        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitments.commitInput, tx, d.commitments.params.localParams.isInitiator), "revoked-commit"))
+        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitment.commitInput, tx, d.commitments.params.localParams.isInitiator), "revoked-commit"))
         val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
         val nextData = d match {
@@ -310,11 +296,25 @@ trait ErrorHandlers extends CommonHandlers {
           case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
         }
         goto(CLOSING) using nextData storing() calling doPublish(revokedCommitPublished) sending error
-      case None =>
-        // the published tx was neither their current commitment nor a revoked one
-        log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
-        context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${commitments.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
-        goto(ERR_INFORMATION_LEAK)
+      case None => d match {
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
+          log.warning(s"they published a future commit (because we asked them to) in txid=${tx.txid}")
+          context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput, tx, d.commitments.latest.localParams.isInitiator), "future-remote-commit"))
+          val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
+          val remoteCommitPublished = RemoteCommitPublished(
+            commitTx = tx,
+            claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.commitments.params, remotePerCommitmentPoint, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, finalScriptPubKey),
+            claimHtlcTxs = Map.empty,
+            claimAnchorTxs = List.empty,
+            irrevocablySpent = Map.empty)
+          val nextData = DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+          goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments.latest)
+        case _ =>
+          // the published tx doesn't seem to be a valid commitment transaction
+          log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
+          context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"funding tx ${commitment.fundingTxId} of channel ${d.channelId} was spent by an unknown transaction, indicating that your DB has lost data or your node has been breached: please contact the dev team."))
+          goto(ERR_INFORMATION_LEAK)
+      }
     }
   }
 

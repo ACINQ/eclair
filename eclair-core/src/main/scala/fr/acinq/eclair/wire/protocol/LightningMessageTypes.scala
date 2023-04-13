@@ -49,7 +49,8 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
 sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
-sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
+sealed trait ForbiddenMessageDuringSplice extends LightningMessage // <- not in the spec
+sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageDuringSplice // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the spec
 // @formatter:on
@@ -277,9 +278,51 @@ case class ChannelReady(channelId: ByteVector32,
   val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
 }
 
+case class SpliceInit(channelId: ByteVector32,
+                      fundingContribution: Satoshi,
+                      lockTime: Long,
+                      feerate: FeeratePerKw,
+                      tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+}
+
+object SpliceInit {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
+    val tlvs: Set[SpliceInitTlv] = Set(
+      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+    ).flatten
+    SpliceInit(channelId, fundingContribution, lockTime, feerate, TlvStream(tlvs))
+  }
+}
+
+case class SpliceAck(channelId: ByteVector32,
+                     fundingContribution: Satoshi,
+                     tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+}
+
+object SpliceAck {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
+    val tlvs: Set[SpliceAckTlv] = Set(
+      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+    ).flatten
+    SpliceAck(channelId, fundingContribution, TlvStream(tlvs))
+  }
+}
+
+case class SpliceLocked(channelId: ByteVector32,
+                        fundingTxHash: ByteVector32,
+                        tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val fundingTxid: ByteVector32 = fundingTxHash.reverse
+}
+
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
-                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
@@ -331,7 +374,7 @@ case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
-  val fundingTxId_opt: Option[ByteVector32] = tlvStream.get[CommitSigTlv.FundingTxIdTlv].map(_.txId)
+  val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
 }
 
 case class RevokeAndAck(channelId: ByteVector32,

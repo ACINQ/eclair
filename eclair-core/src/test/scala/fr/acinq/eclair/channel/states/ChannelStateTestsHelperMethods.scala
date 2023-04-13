@@ -52,6 +52,8 @@ object ChannelStateTestsTags {
   val DisableWumbo = "disable_wumbo"
   /** If set, channels will use option_dual_fund. */
   val DualFunding = "dual_funding"
+  /** If set, peers will support splicing. */
+  val Splicing = "splicing"
   /** If set, channels will use option_static_remotekey. */
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
@@ -184,6 +186,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -196,6 +199,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
@@ -323,14 +327,16 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         bob2blockchain.expectMsgType[WatchPublished]
         alice ! WatchPublishedTriggered(fundingTx)
         bob ! WatchPublishedTriggered(fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingConfirmed]
+        bob2blockchain.expectMsgType[WatchFundingConfirmed]
       } else {
         alice2blockchain.expectMsgType[WatchFundingConfirmed]
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
         bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+        alice2blockchain.expectMsgType[WatchFundingSpent]
+        bob2blockchain.expectMsgType[WatchFundingSpent]
       }
-      alice2blockchain.expectMsgType[WatchFundingSpent]
-      bob2blockchain.expectMsgType[WatchFundingSpent]
       alice2bob.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[ChannelReady]
@@ -429,12 +435,22 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val rHasChanges = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    s2r.expectMsgType[CommitSig]
-    s2r.forward(r)
+    var sigs2r = 0
+    var batchSize = 0
+    do {
+      val sig = s2r.expectMsgType[CommitSig]
+      s2r.forward(r)
+      sigs2r += 1
+      batchSize = sig.batchSize
+    } while (sigs2r < batchSize)
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    r2s.expectMsgType[CommitSig]
-    r2s.forward(s)
+    var sigr2s = 0
+    do {
+      r2s.expectMsgType[CommitSig]
+      r2s.forward(s)
+      sigr2s += 1
+    } while (sigr2s < batchSize)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {

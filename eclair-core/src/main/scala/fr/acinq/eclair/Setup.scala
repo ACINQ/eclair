@@ -98,7 +98,7 @@ class Setup(val datadir: File,
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
 
-  if (chain != "regtest") {
+  if (chain != "regtest" && chain != "testnet") {
     // TODO: database format is WIP, we want to be able to squash changes and not support intermediate unreleased versions
     throw new RuntimeException("this unreleased version of Eclair only works on regtest")
   }

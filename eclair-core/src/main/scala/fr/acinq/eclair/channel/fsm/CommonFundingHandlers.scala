@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.ShortChannelId
@@ -72,14 +72,12 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
       case (commitments1, commitment) =>
-        require(commitments1.active.size == 1 && commitment.fundingTxId == w.tx.txid, "there must be exactly one commitment after an initial funding tx is confirmed")
         // first of all, we watch the funding tx that is now confirmed
         watchFundingSpent(commitment)
         // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
-        val otherFundingTxs = d.commitments.active // note how we use the unpruned original commitments
-          .filter(c => c.fundingTxId != commitment.fundingTxId)
-          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-        rollbackDualFundingTxs(otherFundingTxs)
+        rollbackDualFundingTxs(d.commitments.active // note how we use the unpruned original commitments
+          .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
+          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx })
         (commitments1, commitment)
     }
   }
@@ -114,10 +112,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
     blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
-    val commitments1 = commitments
-      .modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
-      .modify(_.active.at(0).remoteFundingStatus).setTo(RemoteFundingStatus.Locked)
-    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None)
+    val commitments1 = commitments.modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
+    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

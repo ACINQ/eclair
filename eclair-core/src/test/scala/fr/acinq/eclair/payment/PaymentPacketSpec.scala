@@ -711,7 +711,8 @@ object PaymentPacketSpec {
     new Commitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),
-      List(Commitment(LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,
       Map.empty,

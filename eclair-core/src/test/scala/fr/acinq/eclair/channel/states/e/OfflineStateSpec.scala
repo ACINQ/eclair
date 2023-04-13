@@ -409,10 +409,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice then finds out bob is lying
     bob2alice.send(alice, invalidReestablish)
     val error = alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    Transaction.correctlySpends(claimMainOutput, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(error == Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
+    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
   }
 
   test("change relay fee while offline", Tag(IgnoreChannelUpdates)) { f =>
@@ -799,10 +797,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == NORMAL)
   }
 
   def disconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel]): Unit = {

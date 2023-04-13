@@ -2073,14 +2073,16 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  test("allow all output types") {
+  test("allow standard output types") {
     val probe = TestProbe()
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val testCases = Seq(
       TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2pkh(randomKey().publicKey))),
       TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2sh(OP_1 :: Nil))),
-      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(OP_1 :: Nil)),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2wpkh(randomKey().publicKey))),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2wsh(OP_1 :: Nil))),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey()))),
     )
     testCases.foreach { output =>
       val alice = params.spawnTxBuilderAlice(wallet)
