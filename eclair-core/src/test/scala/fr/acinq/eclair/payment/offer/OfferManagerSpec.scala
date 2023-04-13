@@ -62,7 +62,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   def requestInvoice(payerKey: PrivateKey, offer: Offer, amount: MilliSatoshi, offerManager: ActorRef[Command], postman: ActorRef[Postman.Command], pathId_opt: Option[ByteVector32] = None): Unit = {
     val invoiceRequest = InvoiceRequest(offer, amount, 1, Features.empty, payerKey, offer.chains.head)
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Recipient(payerKey.publicKey, None))
-    val messagePayload = MessageOnion.FinalPayload(
+    val Right(messagePayload: MessageOnion.InvoiceRequestPayload) = MessageOnion.FinalPayload.validate(
       TlvStream(OnionMessagePayloadTlv.InvoiceRequest(invoiceRequest.records), OnionMessagePayloadTlv.ReplyPath(replyPath)),
       pathId_opt.map(pathId => TlvStream[RouteBlindingEncryptedDataTlv](RouteBlindingEncryptedDataTlv.PathId(pathId))).getOrElse(TlvStream.empty),
     )
