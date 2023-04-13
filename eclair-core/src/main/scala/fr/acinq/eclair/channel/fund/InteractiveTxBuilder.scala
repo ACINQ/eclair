@@ -176,7 +176,6 @@ object InteractiveTxBuilder {
     override val fundingTxIndex: Long = 0
   }
   case class SpliceTx(parentCommitment: Commitment) extends Purpose {
-    // Note that previous balances are truncated, which can give away 1 sat as mining fees.
     override val previousLocalBalance: MilliSatoshi = parentCommitment.localCommit.spec.toLocal
     override val previousRemoteBalance: MilliSatoshi = parentCommitment.remoteCommit.spec.toLocal
     override val previousFundingAmount: Satoshi = parentCommitment.capacity
