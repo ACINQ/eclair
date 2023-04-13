@@ -270,12 +270,18 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     alice2bob.expectMsgType[ChannelReady]
     awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
 
     bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     bob2alice.expectMsgType[ChannelReady]
     awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
   }
 
   def testBumpFundingFees(f: FixtureParam): FullySignedSharedTransaction = {
@@ -611,21 +617,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
-    aliceListener.expectMsgType[ChannelAborted]
-    assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
-    // alice publishes her local commitment for the current commit
-    val aliceCommitTx2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
-    assert(aliceCommitTx2.input.txid == fundingTx2.txid)
-    val claimMainDelayed2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx] // claim-main-delayed
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.tx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainDelayed2.tx.txid)
-
-    alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(42001), 42, bobCommitTx1)
-    assert(aliceListener.expectMsgType[TransactionPublished].tx == bobCommitTx1)
+    assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == bobCommitTx1.txid)
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid)
+    aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
   }
 
@@ -677,37 +674,21 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     alice2 ! WatchFundingSpentTriggered(bobCommitTx1)
-
-    // alice publishes her local commitment for the current commit
-    assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
-    val aliceCommitTx2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
-    assert(aliceCommitTx2.input.txid == fundingTx2.txid)
-    val aliceClaimMainDelayed2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx] // claim-main-delayed
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.tx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceClaimMainDelayed2.tx.txid)
-    awaitCond(alice2.stateName == CLOSING)
-    alice2 ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(42001), 42, bobCommitTx1)
-    val aliceClaimMain1 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
-    assert(aliceClaimMain1.input.txid == bobCommitTx1.txid)
+    val claimMainAlice = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainAlice.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceClaimMain1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainAlice.tx.txid)
+    awaitCond(alice2.stateName == CLOSING)
 
     bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
     bob2 ! WatchFundingSpentTriggered(aliceCommitTx1)
-    // bob publishes his local commitment for the current commit
-    assert(bob2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == aliceCommitTx1.txid)
-    assert(bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == bobCommitTx2.txid)
-    val bobClaimMainDelayed2 = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx] // claim-main-delayed
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx2.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == bobClaimMainDelayed2.tx.txid)
-    awaitCond(bob2.stateName == CLOSING)
-    bob2 ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(42001), 42, aliceCommitTx1)
-    val bobClaimMain1 = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
-    assert(bobClaimMain1.input.txid == aliceCommitTx1.txid)
+    val claimMainBob = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
+    assert(claimMainBob.input.txid == aliceCommitTx1.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == bobClaimMain1.tx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainBob.tx.txid)
+    awaitCond(bob2.stateName == CLOSING)
   }
 
   test("recv WatchFundingSpentTriggered (unrecognized commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

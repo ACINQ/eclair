@@ -1136,12 +1136,21 @@ case class Commitments(params: ChannelParams,
     // When a commitment is locked, it implicitly locks all previous commitments.
     // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
     // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
-    // That's why we compute each index (local and remote) separately and stop at the first one that matches.
-    val lastLocalLockedIndex: Long = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).map(_.fundingTxIndex).getOrElse(-1)
-    val lastRemoteLockedIndex: Long = active.find(_.remoteFundingStatus == RemoteFundingStatus.Locked).map(_.fundingTxIndex).getOrElse(-1)
-    val lastLockedIndex = Math.min(lastLocalLockedIndex, lastRemoteLockedIndex)
-    active.find(_.fundingTxIndex == lastLockedIndex) match {
-      case Some(lastLocked) =>
+    // We need to carry that information from the latest locked commitment to all previous commitments.
+    active.foldLeft((Option.empty[Commitment], false, false)) {
+      case ((Some(locked), _, _), _) => (Some(locked), true, true)
+      case ((None, localLocked, remoteLocked), commitment) =>
+        val localLocked1 = localLocked || commitment.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]
+        // There is no explicit locking for the initial funding transaction: the channel isn't used at that point, so we
+        // act as if our peer immediately locked every RBF attempt.
+        val remoteLocked1 = remoteLocked || commitment.remoteFundingStatus == RemoteFundingStatus.Locked || commitment.fundingTxIndex == 0
+        if (localLocked1 && remoteLocked1) {
+          (Some(commitment), localLocked1, remoteLocked1)
+        } else {
+          (None, localLocked1, remoteLocked1)
+        }
+    } match {
+      case (Some(lastLocked), _, _) =>
         // all commitments older than this one are inactive
         val inactive1 = active.filter(c => c.fundingTxId != lastLocked.fundingTxId && c.fundingTxIndex <= lastLocked.fundingTxIndex)
         inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
