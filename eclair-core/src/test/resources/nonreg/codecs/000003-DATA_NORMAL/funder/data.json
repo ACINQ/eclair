@@ -138,9 +138,6 @@
     "feeBaseMsat" : 1000,
     "feeProportionalMillionths" : 100,
     "htlcMaximumMsat" : 15000000000,
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   }
 }

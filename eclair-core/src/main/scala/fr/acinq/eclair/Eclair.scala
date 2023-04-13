@@ -46,7 +46,6 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -66,7 +65,7 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
-case class SendOnionMessageResponsePayload(encodedReplyPath: Option[String], replyPath: Option[Sphinx.RouteBlinding.BlindedRoute], unknownTlvs: Map[String, ByteVector])
+case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTlv])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
 // @formatter:on
 
@@ -620,8 +619,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         }
         appKit.postman.ask(ref => Postman.SendMessage(intermediateNodes, destination, replyPath, userTlvs, ref, appKit.nodeParams.onionMessageConfig.timeout)).map {
           case Postman.Response(payload) =>
-            val encodedReplyPath = payload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex)
-            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath_opt, payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
+            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)
           case Postman.MessageFailed(failure: String) => SendOnionMessageResponse(sent = false, Some(failure), None)

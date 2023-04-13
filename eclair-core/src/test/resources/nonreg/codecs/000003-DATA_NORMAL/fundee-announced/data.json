@@ -133,10 +133,7 @@
     "nodeId2" : "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134",
     "bitcoinKey1" : "028cef3ef020cfda09692afc29e38ac4756ca60736563a93220481091c9cd05b64",
     "bitcoinKey2" : "03660d280e24a9b16772a6e6418029719620a5caa29ebdf8339e5d700c611ab9e3",
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   },
   "channelUpdate" : {
     "signature" : "4e34a547c424182812bd39b35c1c244b98f2bbb5b7d07812b9a008bb69f3fd77788f4ad338a102c331892afa8d076167a6a6cfb4eac3b890387f0fdc98b5b8c3",
@@ -158,9 +155,6 @@
     "feeBaseMsat" : 1000,
     "feeProportionalMillionths" : 100,
     "htlcMaximumMsat" : 16777215000,
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   }
 }
