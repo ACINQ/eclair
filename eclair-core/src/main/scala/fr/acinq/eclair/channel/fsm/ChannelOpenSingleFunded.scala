@@ -73,7 +73,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL)(handleExceptions {
     case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
-      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath).publicKey
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -125,7 +125,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             initFeatures = d.initFundee.remoteInit.features,
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
-          val fundingPubkey = keyManager.fundingPublicKey(d.initFundee.localParams.fundingKeyPath).publicKey
+          val fundingPubkey = keyManager.fundingPublicKey(d.initFundee.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
           val channelKeyPath = keyManager.keyPath(d.initFundee.localParams, d.initFundee.channelConfig)
           val params = ChannelParams(d.initFundee.temporaryChannelId, d.initFundee.channelConfig, channelFeatures, d.initFundee.localParams, remoteParams, open.channelFlags)
           val minimumDepth = params.minDepthFundee(nodeParams.channelConf.minDepthBlocks, open.fundingSatoshis)
@@ -184,7 +184,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
-          val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath)
+          val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath, fundingTxIndex = 0)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, accept.fundingPubkey)))
           wallet.makeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate).pipeTo(self)
           val params = ChannelParams(init.temporaryChannelId, init.channelConfig, channelFeatures, init.localParams, remoteParams, open.channelFlags)
@@ -216,7 +216,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), TxOwner.Remote, params.channelFeatures.commitmentFormat)
+          val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0), TxOwner.Remote, params.channelFeatures.commitmentFormat)
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
@@ -263,7 +263,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
-          val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
+          val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
           val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.channelFeatures.commitmentFormat)
           val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
@@ -311,7 +311,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
     case Event(msg@FundingSigned(_, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
-      val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
+      val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
       val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.channelFeatures.commitmentFormat)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {

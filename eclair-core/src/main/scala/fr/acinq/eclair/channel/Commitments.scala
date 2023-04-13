@@ -202,9 +202,9 @@ case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: 
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey) {
-  def sign(keyManager: ChannelKeyManager, params: ChannelParams, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, index, params.localParams, params.remoteParams, remoteFundingPubKey, commitInput, remotePerCommitmentPoint, spec)
-    val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), TxOwner.Remote, params.commitmentFormat)
+  def sign(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, index, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, remotePerCommitmentPoint, spec)
+    val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Remote, params.commitmentFormat)
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Remote, params.commitmentFormat))
@@ -565,8 +565,8 @@ case class Commitment(fundingTxIndex: Long,
   def sendCommit(keyManager: ChannelKeyManager, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey)(implicit log: LoggingAdapter): (Commitment, CommitSig) = {
     // remote commitment will include all local proposed changes + remote acked changes
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, remoteCommit.index + 1, params.localParams, params.remoteParams, remoteFundingPubKey, commitInput, remoteNextPerCommitmentPoint, spec)
-    val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), TxOwner.Remote, params.commitmentFormat)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, remoteNextPerCommitmentPoint, spec)
+    val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Remote, params.commitmentFormat)
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
@@ -591,7 +591,7 @@ case class Commitment(fundingTxIndex: Long,
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
     val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommit.index + 1, params.localParams, params.remoteParams, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
+    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
     log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
     if (!checkSig(localCommitTx, commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
       return Left(InvalidCommitmentSignature(params.channelId, localCommitTx.tx.txid))
@@ -616,9 +616,9 @@ case class Commitment(fundingTxIndex: Long,
   /** Return a fully signed commit tx, that can be published as-is. */
   def fullySignedLocalCommitTx(params: ChannelParams, keyManager: ChannelKeyManager): CommitTx = {
     val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
-    val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath), TxOwner.Local, params.commitmentFormat)
+    val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Local, params.commitmentFormat)
     val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
-    val commitTx = addSigs(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey, remoteFundingPubKey, localSig, remoteSig)
+    val commitTx = addSigs(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey, localSig, remoteSig)
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
     require(checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
     commitTx
@@ -633,12 +633,13 @@ object Commitment {
                    commitTxNumber: Long,
                    localParams: LocalParams,
                    remoteParams: RemoteParams,
+                   fundingTxIndex: Long,
                    remoteFundingPubKey: PublicKey,
                    commitmentInput: InputInfo,
                    localPerCommitmentPoint: PublicKey,
                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
@@ -661,12 +662,13 @@ object Commitment {
                     commitTxNumber: Long,
                     localParams: LocalParams,
                     remoteParams: RemoteParams,
+                    fundingTxIndex: Long,
                     remoteFundingPubKey: PublicKey,
                     commitmentInput: InputInfo,
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey
     val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
     val localPaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
       localPaymentBasepoint
@@ -1087,7 +1089,7 @@ case class Commitments(params: ChannelParams,
 
   def validateSeed(keyManager: ChannelKeyManager): Boolean = {
     active.forall { commitment =>
-      val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey
+      val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
       val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
       commitment.commitInput.redeemScript == fundingScript

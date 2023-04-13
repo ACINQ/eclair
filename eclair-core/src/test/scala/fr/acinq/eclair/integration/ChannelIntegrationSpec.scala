@@ -433,8 +433,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommitIndex)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
-      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath).publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
+      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex), TxOwner.Local, commitmentFormat)
+      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex).publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>

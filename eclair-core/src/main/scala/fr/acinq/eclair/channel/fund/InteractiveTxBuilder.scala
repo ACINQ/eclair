@@ -106,19 +106,19 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
-  case class Multisig2of2Input(info: InputInfo, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
+  case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
     override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = {
-      val fundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath)
-      keyManager.sign(Transactions.SpliceTx(info, tx), fundingPubkey, TxOwner.Local, params.channelFeatures.commitmentFormat)
+      val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
+      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.channelFeatures.commitmentFormat)
     }
   }
 
   object Multisig2of2Input {
-    def apply(keyManager: ChannelKeyManager, params: ChannelParams, commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
+    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
       info = commitment.commitInput,
-      localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath).publicKey,
+      fundingTxIndex = commitment.fundingTxIndex,
       remoteFundingPubkey = commitment.remoteFundingPubKey
     )
   }
@@ -165,6 +165,7 @@ object InteractiveTxBuilder {
     def remoteCommitIndex: Long
     def remotePerCommitmentPoint: PublicKey
     def commitTxFeerate: FeeratePerKw
+    def fundingTxIndex: Long
   }
   case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = 0 msat
@@ -172,29 +173,32 @@ object InteractiveTxBuilder {
     override val previousFundingAmount: Satoshi = 0 sat
     override val localCommitIndex: Long = 0
     override val remoteCommitIndex: Long = 0
+    override val fundingTxIndex: Long = 0
   }
-  case class SpliceTx(commitment: Commitment) extends Purpose {
+  case class SpliceTx(parentCommitment: Commitment) extends Purpose {
     // Note that previous balances are truncated, which can give away 1 sat as mining fees.
-    override val previousLocalBalance: MilliSatoshi = commitment.localCommit.spec.toLocal
-    override val previousRemoteBalance: MilliSatoshi = commitment.remoteCommit.spec.toLocal
-    override val previousFundingAmount: Satoshi = commitment.capacity
-    override val localCommitIndex: Long = commitment.localCommit.index
-    override val remoteCommitIndex: Long = commitment.remoteCommit.index
-    override val remotePerCommitmentPoint: PublicKey = commitment.remoteCommit.remotePerCommitmentPoint
-    override val commitTxFeerate: FeeratePerKw = commitment.localCommit.spec.commitTxFeerate
+    override val previousLocalBalance: MilliSatoshi = parentCommitment.localCommit.spec.toLocal
+    override val previousRemoteBalance: MilliSatoshi = parentCommitment.remoteCommit.spec.toLocal
+    override val previousFundingAmount: Satoshi = parentCommitment.capacity
+    override val localCommitIndex: Long = parentCommitment.localCommit.index
+    override val remoteCommitIndex: Long = parentCommitment.remoteCommit.index
+    override val remotePerCommitmentPoint: PublicKey = parentCommitment.remoteCommit.remotePerCommitmentPoint
+    override val commitTxFeerate: FeeratePerKw = parentCommitment.localCommit.spec.commitTxFeerate
+    override val fundingTxIndex: Long = parentCommitment.fundingTxIndex + 1
   }
   /**
    * @param previousTransactions interactive transactions are replaceable and can be RBF-ed, but we need to make sure that
    *                             only one of them ends up confirming. We guarantee this by having the latest transaction
    *                             always double-spend all its predecessors.
    */
-  case class PreviousTxRbf(commitment: Commitment, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
+  case class PreviousTxRbf(replacedCommitment: Commitment, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
     // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
     override val previousFundingAmount: Satoshi = (previousLocalBalance + previousRemoteBalance).truncateToSatoshi
-    override val localCommitIndex: Long = commitment.localCommit.index
-    override val remoteCommitIndex: Long = commitment.remoteCommit.index
-    override val remotePerCommitmentPoint: PublicKey = commitment.remoteCommit.remotePerCommitmentPoint
-    override val commitTxFeerate: FeeratePerKw = commitment.localCommit.spec.commitTxFeerate
+    override val localCommitIndex: Long = replacedCommitment.localCommit.index
+    override val remoteCommitIndex: Long = replacedCommitment.remoteCommit.index
+    override val remotePerCommitmentPoint: PublicKey = replacedCommitment.remoteCommit.remotePerCommitmentPoint
+    override val commitTxFeerate: FeeratePerKw = replacedCommitment.localCommit.spec.commitTxFeerate
+    override val fundingTxIndex: Long = replacedCommitment.fundingTxIndex
   }
   // @formatter:on
 
@@ -380,7 +384,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private val log = context.log
   private val keyManager = nodeParams.channelKeyManager
-  private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath).publicKey
+  private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
   private val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, fundingParams.remoteFundingPubKey)))
   private val remoteNodeId = channelParams.remoteParams.nodeId
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
@@ -724,7 +728,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
       toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
-      purpose.commitTxFeerate, fundingTx.hash, fundingOutputIndex,
+      purpose.commitTxFeerate,
+      fundingTxIndex = purpose.fundingTxIndex,
+      fundingTx.hash, fundingOutputIndex,
       remotePerCommitmentPoint = purpose.remotePerCommitmentPoint, remoteFundingPubKey = fundingParams.remoteFundingPubKey,
       commitmentIndex = purpose.localCommitIndex) match {
       case Left(cause) =>
@@ -732,7 +738,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath)
+        val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
         val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, Nil)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
@@ -745,13 +751,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     signTx(completeTx)
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
-        log.info("interactive-tx partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-        val fundingTxIndex = purpose match {
-          case _: FundingTx => 0
-          case r: PreviousTxRbf => r.commitment.fundingTxIndex
-          case s: SpliceTx => s.commitment.fundingTxIndex + 1
-        }
-        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
+        log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
+        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, purpose.fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)
@@ -848,7 +849,7 @@ object InteractiveTxSigningSession {
     }
   }
 
-  def addRemoteSigs(fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures)(implicit log: LoggingAdapter): Either[ChannelException, FullySignedSharedTransaction] = {
+  def addRemoteSigs(keyManager: ChannelKeyManager, params: ChannelParams, fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures)(implicit log: LoggingAdapter): Either[ChannelException, FullySignedSharedTransaction] = {
     if (partiallySignedTx.tx.localInputs.length != partiallySignedTx.localSigs.witnesses.length) {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
@@ -859,7 +860,9 @@ object InteractiveTxSigningSession {
     val sharedSigs_opt = fundingParams.sharedInput_opt match {
       case Some(sharedInput: Multisig2of2Input) =>
         (partiallySignedTx.localSigs.previousFundingTxSig_opt, remoteSigs.previousFundingTxSig_opt) match {
-          case (Some(localSig), Some(remoteSig)) => Some(Scripts.witness2of2(localSig, remoteSig, sharedInput.localFundingPubkey, sharedInput.remoteFundingPubkey))
+          case (Some(localSig), Some(remoteSig)) =>
+            val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, sharedInput.fundingTxIndex).publicKey
+            Some(Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, sharedInput.remoteFundingPubkey))
           case _ =>
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
@@ -903,7 +906,7 @@ object InteractiveTxSigningSession {
     def receiveCommitSig(nodeParams: NodeParams, channelParams: ChannelParams, remoteCommitSig: CommitSig)(implicit log: LoggingAdapter): Either[ChannelException, InteractiveTxSigningSession] = {
       localCommit match {
         case Left(unsignedLocalCommit) =>
-          val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath)
+          val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, fundingTxIndex)
           val localSigOfLocalTx = nodeParams.channelKeyManager.sign(unsignedLocalCommit.commitTx, fundingPubKey, TxOwner.Local, channelParams.channelFeatures.commitmentFormat)
           val signedLocalCommitTx = Transactions.addSigs(unsignedLocalCommit.commitTx, fundingPubKey.publicKey, fundingParams.remoteFundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
           Transactions.checkSpendable(signedLocalCommitTx) match {
@@ -924,13 +927,13 @@ object InteractiveTxSigningSession {
       }
     }
 
-    def receiveTxSigs(nodeParams: NodeParams, remoteTxSigs: TxSignatures)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
+    def receiveTxSigs(nodeParams: NodeParams, channelParams: ChannelParams, remoteTxSigs: TxSignatures)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
       localCommit match {
         case Left(_) =>
           log.info("received tx_signatures before commit_sig")
           Left(UnexpectedFundingSignatures(fundingParams.channelId))
         case Right(signedLocalCommit) =>
-          addRemoteSigs(fundingParams, fundingTx, remoteTxSigs) match {
+          addRemoteSigs(nodeParams.channelKeyManager, channelParams, fundingParams, fundingTx, remoteTxSigs) match {
             case Left(f) =>
               log.info("received invalid tx_signatures")
               Left(f)

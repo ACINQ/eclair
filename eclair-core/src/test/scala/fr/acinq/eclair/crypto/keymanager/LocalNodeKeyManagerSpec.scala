@@ -45,7 +45,8 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     val channelKeyManager2 = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
     assert(nodeKeyManager1.nodeId != nodeKeyManager2.nodeId)
     val keyPath = KeyPath(1L :: Nil)
-    assert(channelKeyManager1.fundingPublicKey(keyPath) != channelKeyManager2.fundingPublicKey(keyPath))
+    assert(channelKeyManager1.fundingPublicKey(keyPath, fundingTxIndex = 0) != channelKeyManager2.fundingPublicKey(keyPath, fundingTxIndex = 0))
+    assert(channelKeyManager1.fundingPublicKey(keyPath, fundingTxIndex = 42) != channelKeyManager2.fundingPublicKey(keyPath, fundingTxIndex = 42))
     assert(channelKeyManager1.commitmentPoint(keyPath, 1) != channelKeyManager2.commitmentPoint(keyPath, 1))
   }
 
