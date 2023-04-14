@@ -78,6 +78,7 @@ object MessageOnion {
 
   object IntermediatePayload {
     def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, IntermediatePayload] = {
+      // Only EncryptedData is allowed (and required), unknown TLVs are forbidden too as they could allow probing the identity of the nodes.
       if (records.get[ReplyPath].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
       if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
       if (records.get[InvoiceRequest].nonEmpty) return Left(ForbiddenTlv(UInt64(64)))
@@ -90,8 +91,8 @@ object MessageOnion {
 
   /** Per-hop payload for a final node. */
   sealed trait FinalPayload extends PerHopPayload {
-    val blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]
-    val pathId_opt: Option[ByteVector] = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
+    def blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]
+    def pathId_opt: Option[ByteVector] = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
   }
 
   case class InvoiceRequestPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
