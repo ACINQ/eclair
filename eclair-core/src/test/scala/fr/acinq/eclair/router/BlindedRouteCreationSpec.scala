@@ -93,4 +93,18 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("non-final payloads must have the same size") {
+    val (a, b, c, d, e, f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
+    val (scid1, scid2, scid3, scid4, scid5) = (ShortChannelId(1), ShortChannelId(100), ShortChannelId(1000000), ShortChannelId(100000000), ShortChannelId(100000000000L))
+    val hops = Seq(
+      ChannelHop(scid1, a.publicKey, b.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid1, a.publicKey, b.publicKey, 0 msat, 0, cltvDelta = CltvExpiryDelta(0)))),
+      ChannelHop(scid2, b.publicKey, c.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid2, b.publicKey, c.publicKey, 20 msat, 20, cltvDelta = CltvExpiryDelta(20)))),
+      ChannelHop(scid3, c.publicKey, d.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid3, c.publicKey, d.publicKey, 5000 msat, 5000, cltvDelta = CltvExpiryDelta(5000)))),
+      ChannelHop(scid4, d.publicKey, e.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid4, d.publicKey, e.publicKey, 100000 msat, 100000, cltvDelta = CltvExpiryDelta(60000)))),
+      ChannelHop(scid5, e.publicKey, f.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid5, e.publicKey, f.publicKey, 999999999 msat, 999999999, cltvDelta = CltvExpiryDelta(65000)))),
+    )
+    val route = createBlindedRouteFromHops(hops, randomBytes32(), 0 msat, CltvExpiry(0))
+    assert(route.route.encryptedPayloads.dropRight(1).forall(_.length == 54))
+  }
+
 }

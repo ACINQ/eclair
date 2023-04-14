@@ -305,6 +305,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, Features.empty))
     // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
+    // Check that all non-final encrypted payloads for blinded routes have the same length.
+    assert(invoice.blindedPaths.flatMap(_.route.encryptedPayloads.dropRight(1)).map(_.length).toSet.size == 1)
   }
 
   test("Invoice generation with route blinding should fail when router returns an error") { f =>

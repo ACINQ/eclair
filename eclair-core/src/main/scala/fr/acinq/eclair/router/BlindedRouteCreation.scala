@@ -50,17 +50,40 @@ object BlindedRouteCreation {
       RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
       RouteBlindingEncryptedDataTlv.PathId(pathId),
     )).require.bytes
-    val payloads = hops.foldRight(Seq(finalPayload)) {
-      case (channel, payloads) =>
-        val payload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-          RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.shortChannelId),
-          RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
-          RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
-        )).require.bytes
-        payload +: payloads
-    }
+    val payloads = hops.map(channel =>
+      TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.shortChannelId),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
+      )
+    )
+    /*
+    Size of the payloads:
+    - OutgoingChannelId:
+      - tag: 1 byte
+      - length: 1 byte
+      - short_channel_id: 8 bytes
+    - PaymentRelay:
+      - tag: 1 byte
+      - length: 1 byte
+      - cltv_expiry_delta: 2 bytes
+      - fee_proportional_millionths: 4 bytes
+      - fee_base_msat: 0 to 4 bytes
+    - PaymentConstraints:
+      - tag: 1 byte
+      - length: 1 byte
+      - max_cltv_expiry: 4 bytes
+      - htlc_minimum_msat: 0 to 8 bytes
+    Total: 24 to 36 bytes
+     */
+    val targetLength = 36
+    val paddedPayloads = payloads.map(tlvs =>{
+      val payloadLength = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes.length
+      tlvs.copy(records = tlvs.records + RouteBlindingEncryptedDataTlv.Padding(ByteVector.fill(targetLength - payloadLength)(0)))
+    })
+    val encodedPayloads = paddedPayloads.map(RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(_).require.bytes) :+ finalPayload
     val nodeIds = hops.map(_.nodeId) :+ hops.last.nextNodeId
-    Sphinx.RouteBlinding.create(randomKey(), nodeIds, payloads)
+    Sphinx.RouteBlinding.create(randomKey(), nodeIds, encodedPayloads)
   }
 
   /** Create a blinded route where the recipient is also the introduction point (which reveals the recipient's identity). */
