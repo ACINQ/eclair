@@ -38,8 +38,23 @@ object LocalChannelKeyManager {
 }
 
 /**
- * This class manages channel secrets and private keys.
- * It exports points and public keys, and provides signing methods
+ * An implementation of [[ChannelKeyManager]] that supports deterministic derivation based on the initial funding pubkey.
+ *
+ * Specifically, there are two paths both of length 8 (256 bits):
+ *   - fundingKeyPath: chosen at random
+ *   - channelKeyPath: sha(fundingPubkey(0))
+ *
+ * The resulting paths looks like so on mainnet:
+ * {{{
+ *  funding:
+ *   - initial/static
+ *     47' / 1' / <fundingKeyPath> / <1 or 0> / 0
+ *   - dynamic
+ *     47' / 1' / <fundingKeyPath> / <1 or 0> / 6 / <index>
+ *
+ *  all others (payment, revocation, htlc, etc.):
+ *     47' / 1' / <channelKeyPath> / <1-5> / <index>
+ * }}}
  *
  * @param seed seed from which the channel keys will be derived
  */
@@ -58,7 +73,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
       override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
     })
 
-  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ channelKeyPath.path) :+ index)
+  private def internalKeyPath(keyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ keyPath.path) :+ index)
 
   private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 
@@ -80,12 +95,12 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }
 
-  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
+  override def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
     val keyPath = if (fundingTxIndex == 0) {
       // For backward-compat with pre-splice channels, we treat the initial funding pubkey differently
-      internalKeyPath(channelKeyPath, hardened(0))
+      internalKeyPath(fundingKeyPath, hardened(0))
     } else {
-      internalKeyPath(channelKeyPath, hardened(6)).derive(fundingTxIndex)
+      internalKeyPath(fundingKeyPath, hardened(6)).derive(fundingTxIndex)
     }
     publicKeys.get(keyPath)
   }
