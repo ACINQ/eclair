@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.Destination
 import fr.acinq.eclair.payment.offer.OfferManager
-import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
+import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoiceRequestPayload}
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
 
@@ -76,19 +76,18 @@ object Postman {
       val sendStatusTo = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
 
       Behaviors.receiveMessagePartial {
+        case WrappedMessage(invoiceRequestPayload: InvoiceRequestPayload) =>
+          offerManager ! OfferManager.RequestInvoice(invoiceRequestPayload, context.self)
+          Behaviors.same
         case WrappedMessage(finalPayload) =>
-          if (finalPayload.records.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty) {
-            offerManager ! OfferManager.RequestInvoice(finalPayload, context.self)
-          } else {
-            finalPayload.pathId_opt match {
-              case Some(pathId) if pathId.length == 32 =>
-                val id = ByteVector32(pathId)
-                subscribed.get(id).foreach(ref => {
-                  subscribed -= id
-                  ref ! Response(finalPayload)
-                })
-              case _ => // ignoring message with invalid or missing pathId
-            }
+          finalPayload.pathId_opt match {
+            case Some(pathId) if pathId.length == 32 =>
+              val id = ByteVector32(pathId)
+              subscribed.get(id).foreach(ref => {
+                subscribed -= id
+                ref ! Response(finalPayload)
+              })
+            case _ => // ignoring message with invalid or missing pathId
           }
           Behaviors.same
         case SendMessage(intermediateNodes, destination, replyPath, messageContent, replyTo, timeout) =>

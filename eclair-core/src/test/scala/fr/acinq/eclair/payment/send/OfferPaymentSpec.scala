@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.send.OfferPayment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
+import fr.acinq.eclair.wire.protocol.MessageOnion.InvoicePayload
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, randomBytes32, randomKey}
@@ -74,7 +74,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val preimage = randomBytes32()
     val paymentRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
     val invoice = Bolt12Invoice(invoiceRequest, preimage, merchantKey, 1 minute, Features.empty, Seq(paymentRoute))
-    replyTo ! Postman.Response(FinalPayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
+    replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send.invoice == invoice)
 
@@ -98,7 +98,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
       assert(invoiceRequest.offer == offer)
       replyTo ! Postman.NoReply
     }
-    probe.expectMsg(NoInvoice)
+    probe.expectMsg(NoInvoiceResponse)
     paymentInitiator.expectNoMessage(50 millis)
     TypedProbe().expectTerminated(offerPayment)
   }
@@ -119,9 +119,9 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val preimage = randomBytes32()
     val paymentRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
     val invoice = Bolt12Invoice(invoiceRequest, preimage, randomKey(), 1 minute, Features.empty, Seq(paymentRoute))
-    replyTo ! Postman.Response(FinalPayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
+    replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
 
-    probe.expectMsgType[InvalidInvoice]
+    probe.expectMsgType[InvalidInvoiceResponse]
     paymentInitiator.expectNoMessage(50 millis)
 
     TypedProbe().expectTerminated(offerPayment)

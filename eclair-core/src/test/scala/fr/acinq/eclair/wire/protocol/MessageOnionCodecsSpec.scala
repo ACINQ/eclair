@@ -1,16 +1,22 @@
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
-import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
+import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload, InvalidResponsePayload, InvoiceErrorPayload, InvoicePayload, InvoiceRequestPayload}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs._
+import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{OutgoingNodeId, PathId, PaymentConstraints, PaymentRelay}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, UInt64, randomKey}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, OutgoingNodeId, PathId, PaymentConstraints, PaymentRelay}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import scala.concurrent.duration.DurationInt
 
 class MessageOnionCodecsSpec extends AnyFunSuiteLike {
 
@@ -81,6 +87,45 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       val decoded = perHopPayloadCodec.decode(bin.bits).require.value
       assert(FinalPayload.validate(decoded, blindedTlvs) == Left(err))
     }
+  }
+
+  test("validate final payloads") {
+    val nodeKey = randomKey()
+    val offer = OfferTypes.Offer(Some(100_000 msat), "test offer", nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val payerKey = randomKey()
+    val request = OfferTypes.InvoiceRequest(offer, 100_000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
+    val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(randomBytes32()), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
+    val route = PaymentBlindedRoute(Sphinx.RouteBlinding.create(randomKey(), Seq(nodeKey.publicKey), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
+    val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(route))
+
+    val testCasesInvalid = Seq[TlvStream[OnionMessagePayloadTlv]](
+      // Empty final payload.
+      TlvStream(EncryptedData(hex"")),
+      // Unknown TLV.
+      TlvStream(Set[OnionMessagePayloadTlv](EncryptedData(hex"")), Set(GenericTlv(UInt64(1), hex""))),
+      // Invoice and unknown TLV.
+      TlvStream(Set[OnionMessagePayloadTlv](EncryptedData(hex""), Invoice(invoice.records)), Set(GenericTlv(UInt64(1), hex""))),
+      // Invoice and ReplyPath.
+      TlvStream(EncryptedData(hex""), Invoice(invoice.records), ReplyPath(route.route)),
+      // Invoice and InvoiceError.
+      TlvStream(EncryptedData(hex""), Invoice(invoice.records), InvoiceError(TlvStream(OfferTypes.Error("")))),
+      // InvoiceRequest without ReplyPath.
+      TlvStream(EncryptedData(hex""), InvoiceRequest(request.records)),
+    )
+
+    for (tlvs <- testCasesInvalid) {
+      val Right(finalPayload) = FinalPayload.validate(tlvs, TlvStream.empty)
+      assert(finalPayload.isInstanceOf[InvalidResponsePayload])
+    }
+
+    val Right(invoiceRequestPayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), InvoiceRequest(request.records), ReplyPath(route.route)), TlvStream.empty)
+    assert(invoiceRequestPayload.isInstanceOf[InvoiceRequestPayload])
+
+    val Right(invoicePayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), Invoice(invoice.records)), TlvStream.empty)
+    assert(invoicePayload.isInstanceOf[InvoicePayload])
+
+    val Right(invoiceErrorPayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), InvoiceError(TlvStream(OfferTypes.Error("")))), TlvStream.empty)
+    assert(invoiceErrorPayload.isInstanceOf[InvoiceErrorPayload])
   }
 
   test("onion packet can be any size") {

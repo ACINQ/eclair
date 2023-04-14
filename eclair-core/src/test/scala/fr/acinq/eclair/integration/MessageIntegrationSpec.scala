@@ -33,6 +33,7 @@ import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
 import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
@@ -98,13 +99,13 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), Some(Seq(nodes("A").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath_opt.nonEmpty)
-    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath_opt.get), None, hex"1d01ab")
+    assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
+    bob.sendOnionMessage(Nil, Right(recv.finalPayload.records.get[ReplyPath].get.blindedRoute), None, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage.isEmpty)
     assert(res.response.nonEmpty)
-    assert(res.response.get.unknownTlvs("29") == hex"ab")
+    assert(res.response.get.tlvs.unknown == Set(GenericTlv(UInt64(29), hex"ab")))
   }
 
   test("reply timeout") {
@@ -115,7 +116,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     bob.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), Some(Seq(nodes("B").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath_opt.nonEmpty)
+    assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage contains "No response")

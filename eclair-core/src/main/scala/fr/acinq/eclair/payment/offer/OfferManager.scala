@@ -60,7 +60,7 @@ object OfferManager {
    */
   case class DisableOffer(offer: Offer) extends Command
 
-  case class RequestInvoice(messagePayload: MessageOnion.FinalPayload, postman: ActorRef[Postman.SendMessage]) extends Command
+  case class RequestInvoice(messagePayload: MessageOnion.InvoiceRequestPayload, postman: ActorRef[Postman.SendMessage]) extends Command
 
   case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
 
@@ -106,22 +106,11 @@ object OfferManager {
         case DisableOffer(offer) =>
           normal(registeredOffers - offer.offerId)
         case RequestInvoice(messagePayload, postman) =>
-          messagePayload.records.get[OnionMessagePayloadTlv.InvoiceRequest] match {
-            case Some(request) => InvoiceRequest.validate(request.tlvs) match {
-              case Left(f) => context.log.debug("invalid invoice request: {}", f.failureMessage.message)
-              case Right(invoiceRequest) =>
-                registeredOffers.get(invoiceRequest.offer.offerId) match {
-                  case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && invoiceRequest.isValid =>
-                    messagePayload.replyPath_opt match {
-                      case Some(replyPath) =>
-                        val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, invoiceRequest, registered.handler, registered.nodeKey, router, OnionMessages.BlindedPath(replyPath), postman))
-                        child ! InvoiceRequestActor.RequestInvoice
-                      case None => context.log.debug("invoice request for offer {} is missing a reply path", invoiceRequest.offer.offerId)
-                    }
-                  case _ => context.log.debug("offer {} is not registered or invoice request is invalid", invoiceRequest.offer.offerId)
-                }
-            }
-            case None => context.log.debug("onion message doesn't contain an invoice request")
+          registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
+            case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
+              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey, router, OnionMessages.BlindedPath(messagePayload.replyPath), postman))
+              child ! InvoiceRequestActor.RequestInvoice
+            case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }
           Behaviors.same
         case ReceivePayment(replyTo, paymentHash, payload) =>

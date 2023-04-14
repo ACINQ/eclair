@@ -23,11 +23,11 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoicePayload}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
-import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomKey}
 
 object OfferPayment {
@@ -43,10 +43,10 @@ object OfferPayment {
 
   case class AmountInsufficient(amountNeeded: MilliSatoshi) extends Failure
 
-  case object NoInvoice extends Failure
+  case object NoInvoiceResponse extends Failure
 
-  case class InvalidInvoice(tlvs: TlvStream[OfferTypes.InvoiceTlv], request: InvoiceRequest, message: String) extends Failure {
-    override def toString: String = s"Invalid invoice: $message, invoice request: $request, received invoice: $tlvs"
+  case class InvalidInvoiceResponse(request: InvoiceRequest, response: FinalPayload) extends Failure {
+    override def toString: String = s"Invalid invoice response: $response, invoice request: $request"
   }
 
   sealed trait Command
@@ -126,28 +126,20 @@ object OfferPayment {
                      attemptNumber: Int,
                      sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedMessageResponse(Postman.Response(payload)) if payload.records.get[OnionMessagePayloadTlv.Invoice].nonEmpty =>
-        val tlvs = payload.records.get[OnionMessagePayloadTlv.Invoice].get.tlvs
-        Bolt12Invoice.validate(tlvs) match {
-          case Right(invoice) =>
-            invoice.validateFor(request) match {
-              case Left(reason) =>
-                replyTo ! InvalidInvoice(tlvs, request, reason)
-                Behaviors.stopped
-              case Right(()) =>
-                val recipientAmount = invoice.amount
-                paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
-                Behaviors.stopped
-            }
-          case Left(invalidTlvs) =>
-            replyTo ! InvalidInvoice(tlvs, request, invalidTlvs.toString)
-            Behaviors.stopped
-        }
-      case WrappedMessageResponse(_) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
-        // We didn't get an invoice, let's retry.
+      case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(request).isRight =>
+        val recipientAmount = payload.invoice.amount
+        paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, payload.invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+        Behaviors.stopped
+      case WrappedMessageResponse(Postman.Response(payload)) =>
+        // We've received a response but it is not an invoice as we expected or it is an invalid invoice.
+        replyTo ! InvalidInvoiceResponse(request, payload)
+        Behaviors.stopped
+      case WrappedMessageResponse(Postman.NoReply) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
+        // We didn't get a response, let's retry.
         sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber, sendPaymentConfig)
       case WrappedMessageResponse(_) =>
-        replyTo ! NoInvoice
+        // We can't reach the offer node or the offer node can't reach us.
+        replyTo ! NoInvoiceResponse
         Behaviors.stopped
     }
   }
