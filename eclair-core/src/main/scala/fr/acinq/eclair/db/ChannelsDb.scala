@@ -33,6 +33,8 @@ trait ChannelsDb {
 
   def listLocalChannels(): Seq[PersistentChannelData]
 
+  def listClosedChannels(): Seq[PersistentChannelData]
+
   def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]

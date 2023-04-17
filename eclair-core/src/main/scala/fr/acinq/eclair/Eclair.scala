@@ -104,6 +104,8 @@ trait Eclair {
 
   def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]]
 
+  def closedChannels(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
+
   def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
   def node(nodeId: PublicKey)(implicit timeout: Timeout): Future[Option[Router.PublicNode]]
@@ -284,6 +286,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]] = {
     sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+  }
+
+  override def closedChannels(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
+    Future {
+      appKit.nodeParams.db.channels.listClosedChannels().map { data =>
+        RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, state = CLOSED, data = data)
+      }
+    }
   }
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {

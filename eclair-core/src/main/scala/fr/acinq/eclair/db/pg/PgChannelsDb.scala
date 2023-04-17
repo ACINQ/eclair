@@ -228,6 +228,15 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
+  override def listClosedChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.createStatement) { statement =>
+        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=TRUE")
+          .mapCodec(channelDataCodec).toSeq
+      }
+    }
+  }
+
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO local.htlc_infos VALUES (?, ?, ?, ?)")) { statement =>

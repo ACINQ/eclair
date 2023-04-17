@@ -89,9 +89,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
       assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
 
+      assert(db.listClosedChannels().isEmpty)
       db.removeChannel(channel1.channelId)
       assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() == List(channel2b))
+      assert(db.listClosedChannels() == List(channel1))
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)

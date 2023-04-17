@@ -45,6 +45,7 @@ and COMMAND is one of the available commands:
     - forceclose
     - channel
     - channels
+    - closedchannels
     - allchannels
     - allupdates
     - channelstats

@@ -169,6 +169,13 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
+  override def listClosedChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
+    using(sqlite.createStatement) { statement =>
+      statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=1")
+        .mapCodec(channelDataCodec).toSeq
+    }
+  }
+
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)

@@ -127,6 +127,12 @@ trait Channel {
     }
   }
 
+  val closedChannels: Route = postRequest("closedchannels") { implicit t =>
+    formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
+      complete(eclairApi.closedChannels(toRemoteNodeId_opt))
+    }
+  }
+
   val allChannels: Route = postRequest("allchannels") { implicit t =>
     complete(eclairApi.allChannels())
   }
@@ -147,6 +153,6 @@ trait Channel {
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }
