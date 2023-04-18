@@ -38,22 +38,24 @@ object LocalChannelKeyManager {
 }
 
 /**
- * An implementation of [[ChannelKeyManager]] that supports deterministic derivation based on the initial funding pubkey.
+ * An implementation of [[ChannelKeyManager]] that supports deterministic derivation of keys, based on the initial
+ * funding pubkey.
  *
  * Specifically, there are two paths both of length 8 (256 bits):
- *   - fundingKeyPath: chosen at random
- *   - channelKeyPath: sha(fundingPubkey(0))
+ *   - `fundingKeyPath`: chosen at random using `newFundingKeyPath()`
+ *   - `channelKeyPath`: sha(fundingPubkey(0)) using `ChannelKeyManager.keyPath()`
  *
  * The resulting paths looks like so on mainnet:
  * {{{
  *  funding:
- *   - initial/static
- *     47' / 1' / <fundingKeyPath> / <1 or 0> / 0
- *   - dynamic
- *     47' / 1' / <fundingKeyPath> / <1 or 0> / 6 / <index>
+ *   - initial funding tx (*):
+ *     47' / 1' / <fundingKeyPath> / <1' or 0'> / 0'
+ *   - splice funding txs (index > 0):
+ *     47' / 1' / <fundingKeyPath> / <1' or 0'> / 6' / <index>
+ *   (*) The initial funding tx is computed differently for historical reasons.
  *
  *  all others (payment, revocation, htlc, etc.):
- *     47' / 1' / <channelKeyPath> / <1-5> / <index>
+ *     47' / 1' / <channelKeyPath> / <1'-5'> / <index>
  * }}}
  *
  * @param seed seed from which the channel keys will be derived
@@ -74,8 +76,6 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
     })
 
   private def internalKeyPath(keyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ keyPath.path) :+ index)
-
-  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
   override def newFundingKeyPath(isInitiator: Boolean): KeyPath = {
     val last = DeterministicWallet.hardened(if (isInitiator) 1 else 0)
@@ -102,6 +102,8 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
   override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
   override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
+
+  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
   override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
