@@ -821,7 +821,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(msg: SpliceInit, d: DATA_NORMAL) if nodeParams.chainHash == Block.RegtestGenesisBlock.hash || nodeParams.chainHash == Block.TestnetGenesisBlock.hash =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.localParams.initFeatures.hasFeature(SplicePrototype)) {
+          if (d.commitments.isIdle && d.commitments.params.remoteParams.initFeatures.hasFeature(SplicePrototype)) {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
