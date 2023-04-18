@@ -66,14 +66,15 @@ case class ChannelParams(channelId: ByteVector32,
    * be able to steal the entire channel funding, but would likely miss block rewards during that process, making it
    * economically irrational for them.
    *
-   * @param fundingSatoshis funding amount of the channel
+   * @param fundingAmount funding amount of the channel
    * @return number of confirmations needed, if any
    */
-  def minDepthFundee(defaultMinDepth: Int, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
-    case _ if localParams.initFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
-    case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(defaultMinDepth)
-    case funding => Some(ChannelParams.minDepthScaled(defaultMinDepth, funding))
-  }
+  def minDepthFundee(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] =
+    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+      None // zero-conf stay zero-conf, whatever the funding amount is
+    } else {
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
+    }
 
   /**
    * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
@@ -86,7 +87,7 @@ case class ChannelParams(channelId: ByteVector32,
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      minDepthFundee(defaultMinDepth, fundingAmount)
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
     }
   }
 
@@ -122,10 +123,15 @@ case class ChannelParams(channelId: ByteVector32,
 
 object ChannelParams {
   def minDepthScaled(defaultMinDepth: Int, amount: Satoshi): Int = {
-    val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-    val scalingFactor = 15
-    val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
-    defaultMinDepth.max(blocksToReachFunding)
+    if (amount <= Channel.MAX_FUNDING_WITHOUT_WUMBO) {
+      // small amount: not scaled
+      defaultMinDepth
+    } else {
+      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      defaultMinDepth.max(blocksToReachFunding)
+    }
   }
 }
 
