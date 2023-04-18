@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
@@ -81,15 +82,23 @@ case class ChannelParams(channelId: ByteVector32,
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
    *
-   * @param fundingAmount the total target channel funding amount, including local and remote contributions.
+   *  @param knownRemoteInput_opt The actual amount added by remote to the funding transaction. A non-zero amount means
+   *                              that remote has the ability to double-spend the transaction (even if the overall
+   *                              contribution is zero due to the presence of other outputs).
    */
-  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] = {
+  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, knownRemoteInput_opt: Option[Satoshi] = None): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
       Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
     }
   }
+
+  /**
+   * When the shared transaction has been built and we know exactly how our peer is going to contribute, we can compute
+   * the real min_depth that we are going to actually use.
+   */
+  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.map(_.txOut.amount).sum))
 
   /**
    *
