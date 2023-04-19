@@ -531,7 +531,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     stay() using d1 storing() sending signingSession1.localSigs
                 }
               }
-            case _ if d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
+            case _ if d.commitments.params.channelFeatures.hasFeature(Features.DualFunding) && d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
               // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig
               // that we receive before that should be ignored, it's either a retransmission of a commit_sig we've already
               // received or a bug that will eventually lead to a force-close anyway.
