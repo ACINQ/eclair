@@ -258,12 +258,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case data: ChannelDataWithCommitments => data.commitments.all.foreach { commitment =>
           commitment.localFundingStatus match {
             case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
-              // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
-              // the channel fully operational). We could have set a specific Unknown status, but it would have forced
-              // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
-              // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
-              // once, because at the next restore, the status of the funding tx will be "confirmed".
-              blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+              data match {
+                case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+                  // The funding tx is unconfirmed, we will watch for confirmations, but we also query the mempool
+                  // to decide if we should republish (when funder) or abandon the channel (when fundee)
+                  blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+                case _ =>
+                  // In the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
+                  // the channel fully operational). We could have set a specific Unknown status, but it would have forced
+                  // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
+                  // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
+                  // once, because at the next restore, the status of the funding tx will be "confirmed".
+                  ()
+              }
               watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
             case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
               publishFundingTx(fundingTx)
