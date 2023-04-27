@@ -1636,6 +1636,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       wallet.rollback(fundingTx)
       stay()
 
+    case Event(w: WatchTriggered, _) =>
+      log.warning("ignoring watch event, channel is closed (event={})", w)
+      stay()
+
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore
   })
 
