@@ -845,7 +845,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
               remoteFundingPubKey = msg.fundingPubKey,
               localOutputs = Nil,
-              lockTime = nodeParams.currentBlockHeight.toLong,
+              lockTime = msg.lockTime,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
