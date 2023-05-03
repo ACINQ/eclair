@@ -82,11 +82,11 @@ case class ChannelParams(channelId: ByteVector32,
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
    *
-   *  @param knownRemoteInput_opt The actual amount added by remote to the funding transaction. A non-zero amount means
-   *                              that remote has the ability to double-spend the transaction (even if the overall
-   *                              contribution is zero due to the presence of other outputs).
+   * @param fundingAmount         total funding amount of the channel.
+   * @param remoteContributes_opt true if the remote has the ability to double-spend the transaction (even if they're
+   *                              not contributing to the shared funding amount).
    */
-  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, knownRemoteInput_opt: Option[Satoshi] = None): Option[Long] = {
+  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, remoteContributes_opt: Option[Boolean] = None): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
@@ -98,7 +98,7 @@ case class ChannelParams(channelId: ByteVector32,
    * When the shared transaction has been built and we know exactly how our peer is going to contribute, we can compute
    * the real min_depth that we are going to actually use.
    */
-  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.map(_.txOut.amount).sum))
+  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
   /**
    *
