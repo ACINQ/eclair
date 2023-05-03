@@ -231,7 +231,6 @@ private[channel] object ChannelCodecs4 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
-        ("minDepth_opt" | optional(bool8, uint32)) ::
         ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
 
     private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
