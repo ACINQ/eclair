@@ -84,7 +84,8 @@ case class ChannelParams(channelId: ByteVector32,
    *
    * @param fundingAmount         total funding amount of the channel.
    * @param remoteContributes_opt true if the remote has the ability to double-spend the transaction (even if they're
-   *                              not contributing to the shared funding amount).
+   *                              not contributing to the shared funding amount). Should be empty if we don't know yet
+   *                              if the remote will contribute to the shared transaction.
    */
   def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, remoteContributes_opt: Option[Boolean] = None): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
