@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 
@@ -33,7 +33,7 @@ trait ChannelsDb {
 
   def listLocalChannels(): Seq[PersistentChannelData]
 
-  def listClosedChannels(): Seq[PersistentChannelData]
+  def listClosedChannels(paginated_opt: Option[Paginated]): Seq[PersistentChannelData]
 
   def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 

@@ -40,7 +40,7 @@ All this data is signed and encrypted so that it can not be read or forged by th
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` lists payments received by your node (#2607)
-- `closedchannels` lists closed channels (#2642)
+- `closedchannels` lists closed channels. It accepts `--count` and `--skip` parameters to limit the number of retrieved items as well (#2642)
 
 ### Miscellaneous improvements and bug fixes
 

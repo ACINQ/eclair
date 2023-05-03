@@ -19,7 +19,7 @@ package fr.acinq.eclair.api.handlers
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.{Satoshi, Script}
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -128,8 +128,8 @@ trait Channel {
   }
 
   val closedChannels: Route = postRequest("closedchannels") { implicit t =>
-    formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
-      complete(eclairApi.closedChannels(toRemoteNodeId_opt))
+    withPaginated { paginated_opt =>
+      complete(eclairApi.closedChannels(paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
     }
   }
 

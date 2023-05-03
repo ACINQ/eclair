@@ -229,9 +229,9 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.listLocalChannels()
   }
 
-  override def listClosedChannels(): Seq[PersistentChannelData] = {
-    runAsync(secondary.listLocalChannels())
-    primary.listLocalChannels()
+  override def listClosedChannels(paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = {
+    runAsync(secondary.listClosedChannels(paginated_opt))
+    primary.listClosedChannels(paginated_opt)
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {

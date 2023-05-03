@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -35,7 +35,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -99,6 +99,11 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         )(logger)
       }
 
+      def migration78(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local.channels(created_timestamp)")
+        statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local.channels(closed_timestamp)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
@@ -109,7 +114,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6)) =>
+          statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local.channels(created_timestamp)")
+          statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local.channels(closed_timestamp)")
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -125,6 +132,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 7) {
             migration67()
+          }
+          if (v < 8) {
+            migration78(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -222,16 +232,16 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
-        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")
+        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE ORDER BY created_timestamp")
           .mapCodec(channelDataCodec).toSeq
       }
     }
   }
 
-  override def listClosedChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+  override def listClosedChannels(paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
-        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=TRUE")
+        statement.executeQuery(limited("SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC", paginated_opt))
           .mapCodec(channelDataCodec).toSeq
       }
     }
