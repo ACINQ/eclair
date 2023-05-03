@@ -172,7 +172,7 @@ object ChannelReestablishTlv {
   }
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
-    .typecase(UInt64(333), NextFundingTlv.codec)
+    .typecase(UInt64(0), NextFundingTlv.codec)
   )
 }
 
