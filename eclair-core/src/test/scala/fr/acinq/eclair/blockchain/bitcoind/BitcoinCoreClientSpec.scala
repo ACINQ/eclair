@@ -853,6 +853,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val mempoolTx = sender.expectMsgType[MempoolTx]
     val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
 
+    bitcoinClient.getMempoolPackage(Set(tx.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Map(tx.txid -> mempoolTx))
+
     val targetFeerate = currentFeerate * 1.5
     bitcoinClient.cpfp(Set(OutPoint(tx, changeOutput)), targetFeerate).pipeTo(sender.ref)
     val cpfpTx = sender.expectMsgType[Transaction]
@@ -902,6 +905,13 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       signedTx
     }
 
+    bitcoinClient.getMempoolTx(fundingTx.txid).pipeTo(sender.ref)
+    val mempoolFundingTx = sender.expectMsgType[MempoolTx]
+    bitcoinClient.getMempoolTx(mutualCloseTx.txid).pipeTo(sender.ref)
+    val mempoolMutualCloseTx = sender.expectMsgType[MempoolTx]
+    bitcoinClient.getMempoolPackage(Set(fundingTx.txid, mutualCloseTx.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Map(fundingTx.txid -> mempoolFundingTx, mutualCloseTx.txid -> mempoolMutualCloseTx))
+
     val targetFeerate = FeeratePerKw(5000 sat)
     bitcoinClient.cpfp(Set(OutPoint(fundingTx, 1), OutPoint(mutualCloseTx, 0)), targetFeerate).pipeTo(sender.ref)
     val cpfpTx = sender.expectMsgType[Transaction]
@@ -949,6 +959,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       signTxResponse.tx
     }
 
+    def getMempoolTx(txid: ByteVector32): MempoolTx = {
+      val probe = TestProbe()
+      bitcoinClient.getMempoolTx(txid).pipeTo(probe.ref)
+      probe.expectMsgType[MempoolTx]
+    }
+
     def getWalletPubKey(sender: TestProbe): PublicKey = {
       bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
       sender.expectMsgType[PublicKey]
@@ -976,6 +992,15 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val txA5 = createTx(Seq((pubKeyA6, 50_000 sat)), Some(OutPoint(txA1, 1)))
     val txA6 = createTx(Seq((pubKeyA7, 50_000 sat)), Some(OutPoint(txA5, 0)))
     val txA7 = createTx(Seq((randomKey().publicKey, 50_000 sat)), Some(OutPoint(txA6, 0)))
+
+    bitcoinClient.getMempoolPackage(Set(txA3.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA3).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
+
+    bitcoinClient.getMempoolPackage(Set(txA2.txid, txA5.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA5).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
+
+    bitcoinClient.getMempoolPackage(Set(txA2.txid, txA4.txid, txA6.txid, txB3.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA3, txA4, txA5, txA6, txB1, txB2, txB3).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
 
     // We bump a subset of the mempool: TxA1 -> TxA6 and TxB1 -> TxB3
     val targetFeerate = FeeratePerKw(5000 sat)

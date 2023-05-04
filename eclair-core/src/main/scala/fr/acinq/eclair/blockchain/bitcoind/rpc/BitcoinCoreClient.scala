@@ -266,7 +266,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * @param targetFeerate feerate to apply to the package of unconfirmed transactions.
    */
   def cpfp(outpoints: Set[OutPoint], targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[Transaction] = {
-    getMempoolPackage(outpoints.map(_.txid), Map.empty).transformWith {
+    getMempoolPackage(outpoints.map(_.txid)).transformWith {
       case Failure(ex) => Future.failed(new IllegalArgumentException("unable to analyze mempool package: some transactions could not be found in your mempool", ex))
       case Success(mempoolPackage) =>
         getTxOutputs(outpoints).transformWith {
@@ -302,6 +302,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   }
 
   /** Recursively fetch unconfirmed parents and return the complete unconfirmed ancestors tree. */
+  def getMempoolPackage(leaves: Set[ByteVector32])(implicit ec: ExecutionContext): Future[Map[ByteVector32, MempoolTx]] = getMempoolPackage(leaves, Map.empty)
+
   private def getMempoolPackage(leaves: Set[ByteVector32], current: Map[ByteVector32, MempoolTx])(implicit ec: ExecutionContext): Future[Map[ByteVector32, MempoolTx]] = {
     Future.sequence(leaves.map(txid => getMempoolTx(txid))).flatMap(txs => {
       val current2 = current.concat(txs.map(tx => tx.txid -> tx))
