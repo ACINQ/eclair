@@ -48,13 +48,10 @@ object LocalChannelKeyManager {
  * The resulting paths looks like so on mainnet:
  * {{{
  *  funding:
- *   - initial funding tx (*):
- *     47' / 1' / <fundingKeyPath> / <1' or 0'> / 0'
- *   - splice funding txs (index > 0):
- *     47' / 1' / <fundingKeyPath> / <1' or 0'> / 6' / <index>
- *   (*) The initial funding tx is computed differently for historical reasons.
+ *   - funding txs:
+ *     47' / 1' / <fundingKeyPath> / <1' or 0'> / <index>'
  *
- *  all others (payment, revocation, htlc, etc.):
+ *  others channel basepoint keys (payment, revocation, htlc, etc.):
  *     47' / 1' / <channelKeyPath> / <1'-5'> / <index>
  * }}}
  *
@@ -86,12 +83,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
   }
 
   override def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
-    val keyPath = if (fundingTxIndex == 0) {
-      // For backward-compat with pre-splice channels, we treat the initial funding pubkey differently
-      internalKeyPath(fundingKeyPath, hardened(0))
-    } else {
-      internalKeyPath(fundingKeyPath, hardened(6)).derive(fundingTxIndex)
-    }
+    val keyPath = internalKeyPath(fundingKeyPath, hardened(fundingTxIndex))
     publicKeys.get(keyPath)
   }
 
