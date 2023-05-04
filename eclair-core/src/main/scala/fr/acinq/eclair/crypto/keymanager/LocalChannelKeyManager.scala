@@ -52,7 +52,7 @@ object LocalChannelKeyManager {
  *     47' / 1' / <fundingKeyPath> / <1' or 0'> / <index>'
  *
  *  others channel basepoint keys (payment, revocation, htlc, etc.):
- *     47' / 1' / <channelKeyPath> / <1'-5'> / <index>
+ *     47' / 1' / <channelKeyPath> / <1'-5'>
  * }}}
  *
  * @param seed seed from which the channel keys will be derived
