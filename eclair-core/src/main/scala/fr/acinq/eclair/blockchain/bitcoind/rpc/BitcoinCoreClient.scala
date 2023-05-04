@@ -270,7 +270,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       case Failure(ex) => Future.failed(new IllegalArgumentException("unable to analyze mempool package: some transactions could not be found in your mempool", ex))
       case Success(mempoolPackage) =>
         getTxOutputs(outpoints).transformWith {
-          case Failure(ex) => Future.failed(new IllegalArgumentException("some transactions could not be found", ex))
+          case Failure(ex) => Future.failed(new IllegalArgumentException("some outpoints are invalid or cannot be resolved", ex))
           case Success(txOutputs) =>
             getP2wpkhPubkeyHashForChange().transformWith {
               case Failure(ex) => Future.failed(new IllegalArgumentException("change address generation failed", ex))
@@ -316,11 +316,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
   /** Fetch transaction output details for the given outpoints. */
   private def getTxOutputs(outpoints: Set[OutPoint])(implicit ec: ExecutionContext): Future[Map[OutPoint, TxOut]] = {
-    Future.sequence(outpoints.map(_.txid).map(txid => getTransaction(txid))).map(txs => {
-      outpoints.flatMap(o => txs.find(tx => tx.txid == o.txid && o.index < tx.txOut.length) match {
+    Future.sequence(outpoints.map(_.txid).map(txid => getTransaction(txid))).flatMap(txs => {
+      val txOuts = outpoints.flatMap(o => txs.find(tx => tx.txid == o.txid && o.index < tx.txOut.length) match {
         case Some(tx) => Some(o -> tx.txOut(o.index.toInt))
         case None => None
       }).toMap
+      outpoints.find(o => !txOuts.contains(o)) match {
+        case Some(o) => Future.failed(new IllegalArgumentException(s"invalid outpoint $o"))
+        case None => Future.successful(txOuts)
+      }
     })
   }
 

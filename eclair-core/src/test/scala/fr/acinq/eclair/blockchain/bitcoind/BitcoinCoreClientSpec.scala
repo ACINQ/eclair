@@ -846,8 +846,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val tx = sendToAddress(getNewAddress(sender), 150_000 sat, sender)
-    assert(tx.txOut.length === 2) // there must be a change output
-    val changeOutput = if (tx.txOut.head.amount === 150_000.sat) 1 else 0
+    assert(tx.txOut.length == 2) // there must be a change output
+    val changeOutput = if (tx.txOut.head.amount == 150_000.sat) 1 else 0
 
     bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
     val mempoolTx = sender.expectMsgType[MempoolTx]
@@ -858,7 +858,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val cpfpTx = sender.expectMsgType[Transaction]
     bitcoinClient.getMempoolTx(cpfpTx.txid).pipeTo(sender.ref)
     val mempoolCpfpTx = sender.expectMsgType[MempoolTx]
-    assert(mempoolCpfpTx.ancestorFees === mempoolCpfpTx.fees + mempoolTx.fees)
+    assert(mempoolCpfpTx.ancestorFees == mempoolCpfpTx.fees + mempoolTx.fees)
     val expectedFees = Transactions.weight2fee(targetFeerate, tx.weight() + cpfpTx.weight())
     assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
     assert(mempoolCpfpTx.replaceable)
@@ -878,7 +878,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txNotFunded = Transaction(2, Nil, TxOut(250_000 sat, Script.pay2wsh(fundingScript)) :: Nil, 0)
       bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(fundingFeerate, changePosition = Some(1))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
-      assert(fundTxResponse.changePosition === Some(1))
+      assert(fundTxResponse.changePosition.contains(1))
       bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
       val signTxResponse = sender.expectMsgType[SignTransactionResponse]
       assert(signTxResponse.complete)
@@ -982,8 +982,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bumpedOutpoints = Set(OutPoint(txA2, 1), OutPoint(txA4, 1), OutPoint(txA6, 1), OutPoint(txB3, 1))
     bitcoinClient.cpfp(bumpedOutpoints, targetFeerate).pipeTo(sender.ref)
     val cpfpTx = sender.expectMsgType[Transaction]
-    assert(cpfpTx.txIn.find(_.outPoint.txid == txB4.txid) === None)
-    assert(cpfpTx.txIn.find(_.outPoint.txid == txA7.txid) === None)
+    assert(!cpfpTx.txIn.exists(_.outPoint.txid == txB4.txid))
+    assert(!cpfpTx.txIn.exists(_.outPoint.txid == txA7.txid))
 
     bitcoinClient.getMempoolTx(cpfpTx.txid).pipeTo(sender.ref)
     val mempoolCpfpTx = sender.expectMsgType[MempoolTx]
@@ -1001,6 +1001,21 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.cpfp(Set(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 3)), FeeratePerKw(1500 sat)).pipeTo(sender.ref)
     val failure = sender.expectMsgType[Failure]
     assert(failure.cause.getMessage.contains("some transactions could not be found"))
+  }
+
+  test("cannot bump transaction fees (invalid outpoint index)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val tx = sendToAddress(getNewAddress(sender), 150_000 sat, sender)
+    assert(tx.txOut.length == 2) // there must be a change output
+    bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
+    val mempoolTx = sender.expectMsgType[MempoolTx]
+    val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
+
+    val targetFeerate = currentFeerate * 1.5
+    bitcoinClient.cpfp(Set(OutPoint(tx, 3)), targetFeerate).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("some outpoints are invalid or cannot be resolved"))
   }
 
   test("cannot bump transaction fees (transaction already confirmed)") {
