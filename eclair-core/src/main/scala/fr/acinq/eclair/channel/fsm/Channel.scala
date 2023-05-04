@@ -258,12 +258,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case data: ChannelDataWithCommitments => data.commitments.all.foreach { commitment =>
           commitment.localFundingStatus match {
             case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
-              // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
-              // the channel fully operational). We could have set a specific Unknown status, but it would have forced
-              // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
-              // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
-              // once, because at the next restore, the status of the funding tx will be "confirmed".
-              blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+              data match {
+                case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+                  // The funding tx is unconfirmed, we will watch for confirmations, but we also query the mempool
+                  // to decide if we should republish (when funder) or abandon the channel (when fundee)
+                  blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+                case _ =>
+                  // In the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
+                  // the channel fully operational). We could have set a specific Unknown status, but it would have forced
+                  // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
+                  // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
+                  // once, because at the next restore, the status of the funding tx will be "confirmed".
+                  ()
+              }
               watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
             case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
               publishFundingTx(fundingTx)
@@ -531,7 +538,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     stay() using d1 storing() sending signingSession1.localSigs
                 }
               }
-            case _ if d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
+            case _ if d.commitments.params.channelFeatures.hasFeature(Features.DualFunding) && d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
               // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig
               // that we receive before that should be ignored, it's either a retransmission of a commit_sig we've already
               // received or a bug that will eventually lead to a force-close anyway.
@@ -821,7 +828,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(msg: SpliceInit, d: DATA_NORMAL) if nodeParams.chainHash == Block.RegtestGenesisBlock.hash || nodeParams.chainHash == Block.TestnetGenesisBlock.hash =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.localParams.initFeatures.hasFeature(SplicePrototype)) {
+          if (d.commitments.isIdle) {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
@@ -838,7 +845,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
               remoteFundingPubKey = msg.fundingPubKey,
               localOutputs = Nil,
-              lockTime = nodeParams.currentBlockHeight.toLong,
+              lockTime = msg.lockTime,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
@@ -1627,6 +1634,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
       wallet.rollback(fundingTx)
+      stay()
+
+    case Event(w: WatchTriggered, _) =>
+      log.warning("ignoring watch event, channel is closed (event={})", w)
       stay()
 
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore
