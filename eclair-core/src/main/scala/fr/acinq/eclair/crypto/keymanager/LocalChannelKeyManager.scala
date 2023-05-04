@@ -47,8 +47,7 @@ object LocalChannelKeyManager {
  *
  * The resulting paths looks like so on mainnet:
  * {{{
- *  funding:
- *   - funding txs:
+ *  funding txs:
  *     47' / 1' / <fundingKeyPath> / <1' or 0'> / <index>'
  *
  *  others channel basepoint keys (payment, revocation, htlc, etc.):
