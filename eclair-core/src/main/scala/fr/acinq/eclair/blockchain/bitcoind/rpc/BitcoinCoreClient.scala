@@ -272,15 +272,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
         getTxOutputs(outpoints).transformWith {
           case Failure(ex) => Future.failed(new IllegalArgumentException("some transactions could not be found", ex))
           case Success(txOutputs) =>
-            getChangeAddress().transformWith {
+            getP2wpkhPubkeyHashForChange().transformWith {
               case Failure(ex) => Future.failed(new IllegalArgumentException("change address generation failed", ex))
-              case Success(changeAddress) =>
+              case Success(changePubkeyHash) =>
                 val amountIn = txOutputs.values.map(_.amount).sum
                 // We build a transaction spending all the inputs provided to a single change output. Our  inputs are
                 // using either p2wpkh or p2tr: p2tr inputs are slightly smaller, but we don't bother doing an exact
                 // calculation and always use the weight of p2wpkh inputs for simplicity.
                 val p2wpkhInputWeight = 272
-                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, Script.pay2wpkh(changeAddress))), 0).weight()
+                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, Script.pay2wpkh(changePubkeyHash))), 0).weight()
                 val totalWeight = mempoolPackage.values.map(_.weight).sum + txWeight
                 val targetFees = Transactions.weight2fee(targetFeerate, totalWeight.toInt)
                 val currentFees = mempoolPackage.values.map(_.fees).sum
@@ -290,7 +290,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
                 } else if (amountIn <= missingFees + 660.sat) {
                   Future.failed(new IllegalArgumentException("input amount is not sufficient to cover the target feerate"))
                 } else {
-                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, Script.pay2wpkh(changeAddress))), 0)
+                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, Script.pay2wpkh(changePubkeyHash))), 0)
                   signTransaction(unsignedTx, Nil).transformWith {
                     case Failure(ex) => Future.failed(new IllegalArgumentException("tx signing failed: some inputs don't belong to our wallet", ex))
                     case Success(signedTx) => publishTransaction(signedTx.tx).map(_ => signedTx.tx)
@@ -450,7 +450,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   /**
    * @return the public key hash of a bech32 raw change address.
    */
-  def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
+  def getP2wpkhPubkeyHashForChange()(implicit ec: ExecutionContext): Future[ByteVector] = {
     rpcClient.invoke("getrawchangeaddress", "bech32").collect {
       case JString(changeAddress) =>
         val pubkeyHash = ByteVector.view(Bech32.decodeWitnessAddress(changeAddress).getThird)
