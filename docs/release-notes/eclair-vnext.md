@@ -40,6 +40,7 @@ All this data is signed and encrypted so that it can not be read or forged by th
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` lists payments received by your node (#2607)
+- `cpfpbumpfees` can be used to unblock chains of unconfirmed transactions by creating a child transaction that pays a high fee (#1783)
 
 ### Miscellaneous improvements and bug fixes
 

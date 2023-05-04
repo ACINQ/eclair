@@ -85,6 +85,7 @@ and COMMAND is one of the available commands:
   === OnChain ===
     - getnewaddress
     - sendonchain
+    - cpfpbumpfees
     - onchainbalance
     - onchaintransactions
     - globalbalance

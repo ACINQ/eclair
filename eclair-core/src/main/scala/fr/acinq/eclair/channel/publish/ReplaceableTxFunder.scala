@@ -381,7 +381,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
             (anchorTx.updateTx(fundedTx), fundTxResponse.amountIn)
           })
         case None =>
-          bitcoinClient.getChangeAddress().map(pubkeyHash => {
+          bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
             val fundedTx = fundTxResponse.tx.copy(txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
             (anchorTx.updateTx(fundedTx), fundTxResponse.amountIn)
           })

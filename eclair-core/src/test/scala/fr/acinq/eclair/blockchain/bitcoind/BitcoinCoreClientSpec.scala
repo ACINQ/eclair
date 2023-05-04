@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
@@ -840,6 +840,244 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We can't abandon a confirmed transaction.
     bitcoinClient.abandonTransaction(signedTx2.txIn.head.outPoint.txid).pipeTo(sender.ref)
     sender.expectMsg(false)
+  }
+
+  test("bump transaction fees with child-pays-for-parent (single tx)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val tx = sendToAddress(getNewAddress(sender), 150_000 sat, sender)
+    assert(tx.txOut.length == 2) // there must be a change output
+    val changeOutput = if (tx.txOut.head.amount == 150_000.sat) 1 else 0
+
+    bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
+    val mempoolTx = sender.expectMsgType[MempoolTx]
+    val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
+
+    bitcoinClient.getMempoolPackage(Set(tx.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Map(tx.txid -> mempoolTx))
+
+    val targetFeerate = currentFeerate * 1.5
+    bitcoinClient.cpfp(Set(OutPoint(tx, changeOutput)), targetFeerate).pipeTo(sender.ref)
+    val cpfpTx = sender.expectMsgType[Transaction]
+    bitcoinClient.getMempoolTx(cpfpTx.txid).pipeTo(sender.ref)
+    val mempoolCpfpTx = sender.expectMsgType[MempoolTx]
+    assert(mempoolCpfpTx.ancestorFees == mempoolCpfpTx.fees + mempoolTx.fees)
+    val expectedFees = Transactions.weight2fee(targetFeerate, tx.weight() + cpfpTx.weight())
+    assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
+    assert(mempoolCpfpTx.replaceable)
+
+    generateBlocks(1)
+  }
+
+  test("bump transaction fees with child-pays-for-parent (small package)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+
+    val fundingFeerate = FeeratePerKw(1000 sat)
+    val remoteFundingPrivKey = randomKey()
+    val walletFundingPrivKey = randomKey()
+    val fundingScript = Scripts.multiSig2of2(remoteFundingPrivKey.publicKey, walletFundingPrivKey.publicKey)
+    val fundingTx = {
+      val txNotFunded = Transaction(2, Nil, TxOut(250_000 sat, Script.pay2wsh(fundingScript)) :: Nil, 0)
+      bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(fundingFeerate, changePosition = Some(1))).pipeTo(sender.ref)
+      val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
+      assert(fundTxResponse.changePosition.contains(1))
+      bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      assert(signTxResponse.complete)
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      signTxResponse.tx
+    }
+
+    val mutualCloseTx = {
+      bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
+      val walletClosePubKey = sender.expectMsgType[PublicKey]
+      val remoteClosePubKey = randomKey().publicKey
+      // NB: the output amounts are chosen so that the feerate is ~750 sat/kw
+      val unsignedTx = Transaction(2, TxIn(OutPoint(fundingTx, 0), Seq.empty, 0) :: Nil, TxOut(130_000 sat, Script.pay2wpkh(walletClosePubKey)) :: TxOut(119_500 sat, Script.pay2wpkh(remoteClosePubKey)) :: Nil, 0)
+      val walletSig = Transaction.signInput(unsignedTx, 0, fundingScript, SigHash.SIGHASH_ALL, fundingTx.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, walletFundingPrivKey)
+      val remoteSig = Transaction.signInput(unsignedTx, 0, fundingScript, SigHash.SIGHASH_ALL, fundingTx.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, remoteFundingPrivKey)
+      val witness = Scripts.witness2of2(Crypto.der2compact(walletSig), Crypto.der2compact(remoteSig), walletFundingPrivKey.publicKey, remoteFundingPrivKey.publicKey)
+      val signedTx = unsignedTx.updateWitness(0, witness)
+      bitcoinClient.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    bitcoinClient.getMempoolTx(fundingTx.txid).pipeTo(sender.ref)
+    val mempoolFundingTx = sender.expectMsgType[MempoolTx]
+    bitcoinClient.getMempoolTx(mutualCloseTx.txid).pipeTo(sender.ref)
+    val mempoolMutualCloseTx = sender.expectMsgType[MempoolTx]
+    bitcoinClient.getMempoolPackage(Set(fundingTx.txid, mutualCloseTx.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Map(fundingTx.txid -> mempoolFundingTx, mutualCloseTx.txid -> mempoolMutualCloseTx))
+
+    val targetFeerate = FeeratePerKw(5000 sat)
+    bitcoinClient.cpfp(Set(OutPoint(fundingTx, 1), OutPoint(mutualCloseTx, 0)), targetFeerate).pipeTo(sender.ref)
+    val cpfpTx = sender.expectMsgType[Transaction]
+    bitcoinClient.getMempoolTx(cpfpTx.txid).pipeTo(sender.ref)
+    val mempoolCpfpTx = sender.expectMsgType[MempoolTx]
+    val packageWeight = fundingTx.weight() + mutualCloseTx.weight() + cpfpTx.weight()
+    val expectedFees = Transactions.weight2fee(targetFeerate, packageWeight)
+    assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
+    assert(mempoolCpfpTx.replaceable)
+
+    generateBlocks(1)
+  }
+
+  test("bump transaction fees with child-pays-for-parent (complex package)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val currentFeerate = FeeratePerKw(500 sat)
+
+    // We create two separate trees of transactions that will be bumped together:
+    //           TxA1              TxB1
+    //           /  \                \
+    //          /    \                \
+    //       TxA2*   TxA5             TxB2
+    //        /        \                \
+    //       /          \                \
+    //    TxA3          TxA6*            TxB3*
+    //     /              \                \
+    //    /                \                \
+    // TxA4*               TxA7             TxB4
+
+    def createTx(dest: Seq[(PublicKey, Satoshi)], walletInput_opt: Option[OutPoint]): Transaction = {
+      val txIn = walletInput_opt match {
+        case Some(walletInput) => TxIn(walletInput, Seq.empty, 0) :: Nil
+        case None => Nil
+      }
+      val txOut = dest.map { case (pubKey, amount) => TxOut(amount, Script.pay2wpkh(pubKey)) }
+      val txNotFunded = Transaction(2, txIn, txOut, 0)
+      bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(currentFeerate, changePosition = Some(txOut.length))).pipeTo(sender.ref)
+      val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
+      bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      assert(signTxResponse.complete)
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      signTxResponse.tx
+    }
+
+    def getMempoolTx(txid: ByteVector32): MempoolTx = {
+      val probe = TestProbe()
+      bitcoinClient.getMempoolTx(txid).pipeTo(probe.ref)
+      probe.expectMsgType[MempoolTx]
+    }
+
+    def getWalletPubKey(sender: TestProbe): PublicKey = {
+      bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
+      sender.expectMsgType[PublicKey]
+    }
+
+    val pubKeyA2 = getWalletPubKey(sender)
+    val pubKeyA3 = getWalletPubKey(sender)
+    val pubKeyA4 = getWalletPubKey(sender)
+    val pubKeyA5 = getWalletPubKey(sender)
+    val pubKeyA6 = getWalletPubKey(sender)
+    val pubKeyA7 = getWalletPubKey(sender)
+    val pubKeyB2 = getWalletPubKey(sender)
+    val pubKeyB3 = getWalletPubKey(sender)
+    val pubKeyB4 = getWalletPubKey(sender)
+
+    // NB: we use the same amount to ensure that an additional input will be added and there will be a change output.
+    val txB1 = createTx(Seq((pubKeyB2, 100_000 sat)), None)
+    val txB2 = createTx(Seq((pubKeyB3, 100_000 sat)), Some(OutPoint(txB1, 0)))
+    val txB3 = createTx(Seq((pubKeyB4, 100_000 sat)), Some(OutPoint(txB2, 0)))
+    val txB4 = createTx(Seq((randomKey().publicKey, 100_000 sat)), Some(OutPoint(txB3, 0)))
+    val txA1 = createTx(Seq((pubKeyA2, 75_000 sat), (pubKeyA5, 50_000 sat)), None)
+    val txA2 = createTx(Seq((pubKeyA3, 75_000 sat)), Some(OutPoint(txA1, 0)))
+    val txA3 = createTx(Seq((pubKeyA4, 75_000 sat)), Some(OutPoint(txA2, 0)))
+    val txA4 = createTx(Seq((randomKey().publicKey, 75_000 sat)), Some(OutPoint(txA3, 0)))
+    val txA5 = createTx(Seq((pubKeyA6, 50_000 sat)), Some(OutPoint(txA1, 1)))
+    val txA6 = createTx(Seq((pubKeyA7, 50_000 sat)), Some(OutPoint(txA5, 0)))
+    val txA7 = createTx(Seq((randomKey().publicKey, 50_000 sat)), Some(OutPoint(txA6, 0)))
+
+    bitcoinClient.getMempoolPackage(Set(txA3.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA3).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
+
+    bitcoinClient.getMempoolPackage(Set(txA2.txid, txA5.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA5).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
+
+    bitcoinClient.getMempoolPackage(Set(txA2.txid, txA4.txid, txA6.txid, txB3.txid)).pipeTo(sender.ref)
+    sender.expectMsg(Set(txA1, txA2, txA3, txA4, txA5, txA6, txB1, txB2, txB3).map(tx => tx.txid -> getMempoolTx(tx.txid)).toMap)
+
+    // We bump a subset of the mempool: TxA1 -> TxA6 and TxB1 -> TxB3
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val bumpedOutpoints = Set(OutPoint(txA2, 1), OutPoint(txA4, 1), OutPoint(txA6, 1), OutPoint(txB3, 1))
+    bitcoinClient.cpfp(bumpedOutpoints, targetFeerate).pipeTo(sender.ref)
+    val cpfpTx = sender.expectMsgType[Transaction]
+    assert(!cpfpTx.txIn.exists(_.outPoint.txid == txB4.txid))
+    assert(!cpfpTx.txIn.exists(_.outPoint.txid == txA7.txid))
+
+    bitcoinClient.getMempoolTx(cpfpTx.txid).pipeTo(sender.ref)
+    val mempoolCpfpTx = sender.expectMsgType[MempoolTx]
+    val packageWeight = txA1.weight() + txA2.weight() + txA3.weight() + txA4.weight() + txA5.weight() + txA6.weight() + txB1.weight() + txB2.weight() + txB3.weight() + cpfpTx.weight()
+    val expectedFees = Transactions.weight2fee(targetFeerate, packageWeight)
+    assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
+    assert(mempoolCpfpTx.replaceable)
+
+    generateBlocks(1)
+  }
+
+  test("cannot bump transaction fees (unknown transaction)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    bitcoinClient.cpfp(Set(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 3)), FeeratePerKw(1500 sat)).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("some transactions could not be found"))
+  }
+
+  test("cannot bump transaction fees (invalid outpoint index)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val tx = sendToAddress(getNewAddress(sender), 150_000 sat, sender)
+    assert(tx.txOut.length == 2) // there must be a change output
+    bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
+    val mempoolTx = sender.expectMsgType[MempoolTx]
+    val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
+
+    val targetFeerate = currentFeerate * 1.5
+    bitcoinClient.cpfp(Set(OutPoint(tx, 3)), targetFeerate).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("some outpoints are invalid or cannot be resolved"))
+  }
+
+  test("cannot bump transaction fees (transaction already confirmed)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val tx = sendToAddress(getNewAddress(sender), 45_000 sat, sender)
+    generateBlocks(1)
+
+    bitcoinClient.cpfp(Set(OutPoint(tx, 0)), FeeratePerKw(2500 sat)).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("some transactions could not be found"))
+  }
+
+  test("cannot bump transaction fees (non-wallet input)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val txNotFunded = Transaction(2, Nil, TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1000 sat), changePosition = Some(1))).pipeTo(sender.ref)
+    val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
+    bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
+    val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+    bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+    sender.expectMsg(signTxResponse.tx.txid)
+
+    bitcoinClient.cpfp(Set(OutPoint(signTxResponse.tx, 0)), FeeratePerKw(1500 sat)).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("some inputs don't belong to our wallet"))
+  }
+
+  test("cannot bump transaction fees (amount too low)") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val tx = sendToAddress(getNewAddress(sender), 2500 sat, sender)
+    val outputIndex = if (tx.txOut.head.amount == 2500.sat) 0 else 1
+    bitcoinClient.cpfp(Set(OutPoint(tx, outputIndex)), FeeratePerKw(50_000 sat)).pipeTo(sender.ref)
+    val failure = sender.expectMsgType[Failure]
+    assert(failure.cause.getMessage.contains("input amount is not sufficient to cover the target feerate"))
   }
 
   test("detect if tx has been double-spent") {

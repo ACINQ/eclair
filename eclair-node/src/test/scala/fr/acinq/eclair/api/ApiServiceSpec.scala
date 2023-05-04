@@ -25,14 +25,14 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OutPoint, SatoshiLong}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, DataLossProtect}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.directives.{EclairDirectives, ErrorResponse}
 import fr.acinq.eclair.api.serde.JsonSupport
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -567,6 +567,46 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+  }
+
+  test("'cpfpbumpfees'") {
+    val eclair = mock[Eclair]
+    eclair.cpfpBumpFees(any, any) returns Future.successful(randomBytes32())
+    val mockService = new MockService(eclair)
+    val (txId1, txId2) = (randomBytes32(), randomBytes32())
+
+    Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10", "outpoints" -> s"$txId1:2,$txId2:0,$txId1:13").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.cpfpBumpFees(FeeratePerByte(10 sat), Set(OutPoint(txId1.reverse, 2), OutPoint(txId1.reverse, 13), OutPoint(txId2.reverse, 0))).wasCalled(once)
+      }
+
+    Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+    Post("/cpfpbumpfees", FormData("outpoints" -> s"$txId1:2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+    Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10", "outpoints" -> s"$txId1,2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
       check {
         assert(handled)
         assert(status == BadRequest)
