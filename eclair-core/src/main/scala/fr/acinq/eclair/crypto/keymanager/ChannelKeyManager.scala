@@ -27,7 +27,7 @@ import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
 trait ChannelKeyManager {
-  def fundingPublicKey(keyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
+  def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 

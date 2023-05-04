@@ -215,7 +215,7 @@ object TransactionSerializer extends MinimalSerializer({
 })
 
 object KeyPathSerializer extends MinimalSerializer({
-  case x: KeyPath => JObject(JField("path", JArray(x.path.map(x => JLong(x)).toList)))
+  case x: KeyPath => JArray(x.path.map(x => JLong(x)).toList)
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
