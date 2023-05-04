@@ -258,16 +258,24 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case data: ChannelDataWithCommitments => data.commitments.all.foreach { commitment =>
           commitment.localFundingStatus match {
             case _: LocalFundingStatus.SingleFundedUnconfirmedFundingTx =>
-              // NB: in the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
-              // the channel fully operational). We could have set a specific Unknown status, but it would have forced
-              // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
-              // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
-              // once, because at the next restore, the status of the funding tx will be "confirmed".
-              blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+              data match {
+                case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+                  // The funding tx is unconfirmed, we will watch for confirmations, but we also query the mempool
+                  // to decide if we should republish (when funder) or abandon the channel (when fundee)
+                  blockchain ! GetTxWithMeta(self, commitment.fundingTxId)
+                case _ =>
+                  // In the case of legacy single-funded channels, the funding tx may actually be confirmed already (and
+                  // the channel fully operational). We could have set a specific Unknown status, but it would have forced
+                  // us to keep it forever. Instead, we just put a watch which, if the funding tx was indeed confirmed, will
+                  // trigger instantly, and the state will be updated and a watch-spent will be set. This will only happen
+                  // once, because at the next restore, the status of the funding tx will be "confirmed".
+                  ()
+              }
               watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
             case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
               publishFundingTx(fundingTx)
-              watchFundingConfirmed(fundingTx.sharedTx.txId, fundingTx.fundingParams.minDepth_opt)
+              val minDepth_opt = data.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, fundingTx.sharedTx.tx)
+              watchFundingConfirmed(fundingTx.sharedTx.txId, minDepth_opt)
             case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
               // those are zero-conf channels, the min-depth isn't critical, we use the default
               watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
@@ -523,13 +531,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
                     // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
                     // receive their tx_sigs.
-                    watchFundingConfirmed(signingSession.fundingTx.txId, signingSession.fundingParams.minDepth_opt)
+                    val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, signingSession1.fundingTx.sharedTx.tx)
+                    watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt)
                     val commitments1 = d.commitments.add(signingSession1.commitment)
                     val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                     stay() using d1 storing() sending signingSession1.localSigs
                 }
               }
-            case _ if d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
+            case _ if d.commitments.params.channelFeatures.hasFeature(Features.DualFunding) && d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
               // The latest funding transaction is unconfirmed and we're missing our peer's tx_signatures: any commit_sig
               // that we receive before that should be ignored, it's either a retransmission of a commit_sig we've already
               // received or a bug that will eventually lead to a force-close anyway.
@@ -819,7 +828,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(msg: SpliceInit, d: DATA_NORMAL) if nodeParams.chainHash == Block.RegtestGenesisBlock.hash || nodeParams.chainHash == Block.TestnetGenesisBlock.hash =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.localParams.initFeatures.hasFeature(SplicePrototype)) {
+          if (d.commitments.isIdle) {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
@@ -828,7 +837,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               pushAmount = 0.msat,
               requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
             )
-            val nextFundingAmount = parentCommitment.capacity + spliceAck.fundingContribution + msg.fundingContribution
             val fundingParams = InteractiveTxParams(
               channelId = d.channelId,
               isInitiator = false,
@@ -837,10 +845,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
               remoteFundingPubKey = msg.fundingPubKey,
               localOutputs = Nil,
-              lockTime = nodeParams.currentBlockHeight.toLong,
+              lockTime = msg.lockTime,
               dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
               targetFeerate = msg.feerate,
-              minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
             )
             val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -869,7 +876,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val nextFundingAmount = parentCommitment.capacity + spliceInit.fundingContribution + msg.fundingContribution
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
@@ -881,7 +887,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             lockTime = spliceInit.lockTime,
             dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
             targetFeerate = spliceInit.feerate,
-            minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, nextFundingAmount),
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -983,7 +988,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) =>
-                  watchFundingConfirmed(signingSession.fundingTx.txId, signingSession.fundingParams.minDepth_opt)
+                  val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, signingSession1.fundingTx.sharedTx.tx)
+                  watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt)
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
@@ -1628,6 +1634,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
       wallet.rollback(fundingTx)
+      stay()
+
+    case Event(w: WatchTriggered, _) =>
+      log.warning("ignoring watch event, channel is closed (event={})", w)
       stay()
 
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore

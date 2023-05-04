@@ -146,7 +146,6 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
-                                 minDepth_opt: Option[Long],
                                  requireConfirmedInputs: RequireConfirmedInputs) {
     /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = sharedInput_opt.map(_.info.txOut.amount).getOrElse(0 sat) + localContribution + remoteContribution

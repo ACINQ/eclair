@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
@@ -66,29 +67,39 @@ case class ChannelParams(channelId: ByteVector32,
    * be able to steal the entire channel funding, but would likely miss block rewards during that process, making it
    * economically irrational for them.
    *
-   * @param fundingSatoshis funding amount of the channel
+   * @param fundingAmount funding amount of the channel
    * @return number of confirmations needed, if any
    */
-  def minDepthFundee(defaultMinDepth: Int, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
-    case _ if localParams.initFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
-    case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(defaultMinDepth)
-    case funding => Some(ChannelParams.minDepthScaled(defaultMinDepth, funding))
-  }
+  def minDepthFundee(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] =
+    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+      None // zero-conf stay zero-conf, whatever the funding amount is
+    } else {
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
+    }
 
   /**
    * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
    *
-   * @param fundingAmount the total target channel funding amount, including local and remote contributions.
+   * @param fundingAmount         total funding amount of the channel.
+   * @param remoteContributes_opt true if the remote has the ability to double-spend the transaction (even if they're
+   *                              not contributing to the shared funding amount). Should be empty if we don't know yet
+   *                              if the remote will contribute to the shared transaction.
    */
-  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] = {
+  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, remoteContributes_opt: Option[Boolean] = None): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      minDepthFundee(defaultMinDepth, fundingAmount)
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
     }
   }
+
+  /**
+   * When the shared transaction has been built and we know exactly how our peer is going to contribute, we can compute
+   * the real min_depth that we are going to actually use.
+   */
+  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
   /**
    *
@@ -122,10 +133,15 @@ case class ChannelParams(channelId: ByteVector32,
 
 object ChannelParams {
   def minDepthScaled(defaultMinDepth: Int, amount: Satoshi): Int = {
-    val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-    val scalingFactor = 15
-    val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
-    defaultMinDepth.max(blocksToReachFunding)
+    if (amount <= Channel.MAX_FUNDING_WITHOUT_WUMBO) {
+      // small amount: not scaled
+      defaultMinDepth
+    } else {
+      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      defaultMinDepth.max(blocksToReachFunding)
+    }
   }
 }
 

@@ -41,6 +41,7 @@ All this data is signed and encrypted so that it can not be read or forged by th
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` lists payments received by your node (#2607)
 - `closedchannels` lists closed channels. It accepts `--count` and `--skip` parameters to limit the number of retrieved items as well (#2642)
+- `cpfpbumpfees` can be used to unblock chains of unconfirmed transactions by creating a child transaction that pays a high fee (#1783)
 
 ### Miscellaneous improvements and bug fixes
 
