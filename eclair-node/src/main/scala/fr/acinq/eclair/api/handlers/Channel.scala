@@ -129,7 +129,9 @@ trait Channel {
 
   val closedChannels: Route = postRequest("closedchannels") { implicit t =>
     withPaginated { paginated_opt =>
-      complete(eclairApi.closedChannels(paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
+      formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
+        complete(eclairApi.closedChannels(toRemoteNodeId_opt, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
+      }
     }
   }
 

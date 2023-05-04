@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.{CltvExpiry, Paginated}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -35,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 8
+  val CURRENT_VERSION = 7
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -99,11 +100,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         )(logger)
       }
 
-      def migration78(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local.channels(created_timestamp)")
-        statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local.channels(closed_timestamp)")
-      }
-
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
@@ -116,7 +112,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
           statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local.channels(created_timestamp)")
           statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local.channels(closed_timestamp)")
-        case Some(v@(2 | 3 | 4 | 5 | 6 | 7)) =>
+        case Some(v@(2 | 3 | 4 | 5 | 6)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -132,9 +128,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 7) {
             migration67()
-          }
-          if (v < 8) {
-            migration78(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -238,12 +231,30 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def listClosedChannels(paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
-    withLock { pg =>
+  private val listClosedChannelsSql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    val rs = withLock { pg =>
       using(pg.createStatement) { statement =>
-        statement.executeQuery(limited("SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC", paginated_opt))
-          .mapCodec(channelDataCodec).toSeq
+        remoteNodeId_opt match {
+          case None =>
+            statement.executeQuery(limited(listClosedChannelsSql, paginated_opt))
+              .mapCodec(channelDataCodec)
+          case Some(_) =>
+            statement.executeQuery(listClosedChannelsSql)
+              .mapCodec(channelDataCodec)
+        }
       }
+    }
+    remoteNodeId_opt match {
+      case None => rs.toSeq
+      case Some(nodeId) =>
+        val filtered = rs.filter(_.remoteNodeId == nodeId)
+        val limited = paginated_opt match {
+          case None => filtered
+          case Some(p) => filtered.slice(p.skip, p.skip + p.count)
+        }
+        limited.toSeq
     }
   }
 

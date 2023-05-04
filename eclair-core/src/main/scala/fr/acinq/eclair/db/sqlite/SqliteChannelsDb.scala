@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -31,7 +32,7 @@ import java.sql.{Connection, Statement}
 
 object SqliteChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 5
+  val CURRENT_VERSION = 4
 }
 
 class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
@@ -78,11 +79,6 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       )(logger)
     }
 
-    def migration45(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local_channels(created_timestamp)")
-      statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local_channels(closed_timestamp)")
-    }
-
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
@@ -90,7 +86,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
         statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local_channels(created_timestamp)")
         statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local_channels(closed_timestamp)")
-      case Some(v@(1 | 2 | 3 | 4)) =>
+      case Some(v@(1 | 2 | 3)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -100,9 +96,6 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         }
         if (v < 4) {
           migration34()
-        }
-        if (v < 5) {
-          migration45(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -179,10 +172,23 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def listClosedChannels(paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
+  private val listClosedChannelsSql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC"
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement) { statement =>
-      statement.executeQuery(limited("SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC", paginated_opt))
-        .mapCodec(channelDataCodec).toSeq
+      remoteNodeId_opt match {
+        case None =>
+          statement.executeQuery(limited(listClosedChannelsSql, paginated_opt))
+            .mapCodec(channelDataCodec).toSeq
+        case Some(nodeId) =>
+          val filtered = statement.executeQuery(listClosedChannelsSql)
+            .mapCodec(channelDataCodec).filter(_.remoteNodeId == nodeId)
+          val limited = paginated_opt match {
+            case None => filtered
+            case Some(p) => filtered.slice(p.skip, p.skip + p.count)
+          }
+          limited.toSeq
+      }
     }
   }
 
