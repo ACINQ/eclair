@@ -28,7 +28,7 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.{CltvExpiry, Paginated}
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.{Connection, Statement, Timestamp}
 import java.time.Instant
@@ -110,8 +110,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-          statement.executeUpdate("CREATE INDEX created_timestamp_idx ON local.channels(created_timestamp)")
-          statement.executeUpdate("CREATE INDEX closed_timestamp_idx ON local.channels(closed_timestamp)")
         case Some(v@(2 | 3 | 4 | 5 | 6)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
@@ -231,9 +229,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  private val listClosedChannelsSql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
-
   override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    val listClosedChannelsSql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
     val rs = withLock { pg =>
       using(pg.createStatement) { statement =>
         remoteNodeId_opt match {
