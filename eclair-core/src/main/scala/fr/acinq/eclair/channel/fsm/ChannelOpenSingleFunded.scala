@@ -220,7 +220,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
-            fundingTxid = fundingTx.hash,
+            fundingTxHash = fundingTx.hash,
             fundingOutputIndex = fundingTxOutputIndex,
             signature = localSigOfRemoteTx
           )

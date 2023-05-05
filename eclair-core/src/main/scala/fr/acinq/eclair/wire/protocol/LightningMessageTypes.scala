@@ -263,7 +263,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
-                          fundingTxid: ByteVector32,
+                          fundingTxHash: ByteVector32,
                           fundingOutputIndex: Int,
                           signature: ByteVector64,
                           tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
