@@ -72,7 +72,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         resetJsonColumns(pg, oldTableName = true)
         statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN json SET NOT NULL")
         statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local_channels ((json->>'type'))")
-        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local_channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
+        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local_channels ((json->'commitments'->'params'->'remoteParams'->>'nodeId'))")
       }
 
       def migration56(statement: Statement): Unit = {
@@ -107,7 +107,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
-          statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
+          statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'params'->'remoteParams'->>'nodeId'))")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
         case Some(v@(2 | 3 | 4 | 5 | 6)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
