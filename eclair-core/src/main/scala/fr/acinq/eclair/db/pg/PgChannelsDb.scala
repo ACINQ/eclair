@@ -26,9 +26,9 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated}
+import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampSecond}
 import grizzled.slf4j.Logging
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.BitVector
 
 import java.sql.{Connection, Statement, Timestamp}
 import java.time.Instant
@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -100,6 +100,10 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         )(logger)
       }
 
+      def migration78(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE INDEX local_channels_closed_timestamp_idx ON local.channels (closed_timestamp)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
@@ -110,7 +114,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6)) =>
+          statement.executeUpdate("CREATE INDEX local_channels_closed_timestamp_idx ON local.channels (closed_timestamp)")
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -126,6 +131,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 7) {
             migration67()
+          }
+          if (v < 8) {
+            migration78(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -217,32 +225,45 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }
+
+      using(pg.prepareStatement("UPDATE local.channels SET closed_timestamp=? WHERE channel_id=? AND closed_timestamp IS NULL")) { statement =>
+        statement.setTimestamp(1, TimestampSecond.now().toSqlTimestamp)
+        statement.setString(2, channelId.toHex)
+        statement.executeUpdate()
+      }
     }
   }
 
   override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
-        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE ORDER BY created_timestamp")
+        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")
           .mapCodec(channelDataCodec).toSeq
       }
     }
   }
 
-  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
-    val listClosedChannelsSql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
+  override def listClosedChannels(from: TimestampSecond, to: TimestampSecond, remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    val sql = "SELECT data FROM local.channels WHERE closed_timestamp>=? AND closed_timestamp<=? ORDER BY closed_timestamp"
     val rs = withLock { pg =>
-      using(pg.createStatement) { statement =>
         remoteNodeId_opt match {
           case None =>
-            statement.executeQuery(limited(listClosedChannelsSql, paginated_opt))
-              .mapCodec(channelDataCodec)
+            using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
+              statement.setTimestamp(1, from.toSqlTimestamp)
+              statement.setTimestamp(2, to.toSqlTimestamp)
+              statement.executeQuery()
+                .mapCodec(channelDataCodec)
+            }
           case Some(_) =>
-            statement.executeQuery(listClosedChannelsSql)
-              .mapCodec(channelDataCodec)
+            using(pg.prepareStatement(sql)) { statement =>
+              statement.setTimestamp(1, from.toSqlTimestamp)
+              statement.setTimestamp(2, to.toSqlTimestamp)
+              statement.executeQuery()
+                .mapCodec(channelDataCodec)
+            }
         }
       }
-    }
+
     remoteNodeId_opt match {
       case None => rs.toSeq
       case Some(nodeId) =>

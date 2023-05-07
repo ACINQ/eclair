@@ -104,7 +104,7 @@ trait Eclair {
 
   def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]]
 
-  def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
+  def closedChannels(from: TimestampSecond, to: TimestampSecond, nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
 
   def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -290,9 +290,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
   }
 
-  override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
+  override def closedChannels(from: TimestampSecond, to: TimestampSecond, nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     Future {
-      appKit.nodeParams.db.channels.listClosedChannels(nodeId_opt, paginated_opt).map { data =>
+      appKit.nodeParams.db.channels.listClosedChannels(from, to, nodeId_opt, paginated_opt).map { data =>
         RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, state = CLOSED, data = data)
       }
     }
