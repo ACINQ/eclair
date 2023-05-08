@@ -176,13 +176,12 @@ object RouteCalculation {
     })
   }
 
-  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest, sender: ActorRef)(implicit log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = r.paymentContext.map(_.parentId),
       paymentId_opt = r.paymentContext.map(_.id),
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
-      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges)
@@ -205,19 +204,19 @@ object RouteCalculation {
             // trampoline nodes).
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.hops.length))
-            ctx.sender() ! RouteResponse(routes)
+            sender ! RouteResponse(routes)
           case Failure(failure: InfiniteLoop) =>
             log.error(s"found infinite loop ${failure.path.map(edge => edge.desc).mkString(" -> ")}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
-            ctx.sender() ! Status.Failure(failure)
+            sender ! Status.Failure(failure)
           case Failure(failure: NegativeProbability) =>
             log.error(s"computed negative probability: edge=${failure.edge}, weight=${failure.weight}, heuristicsConstants=${failure.heuristicsConstants}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
-            ctx.sender() ! Status.Failure(failure)
+            sender ! Status.Failure(failure)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-            ctx.sender() ! Status.Failure(failure)
+            sender ! Status.Failure(failure)
         }
       }
       d

@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.Done
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props, Terminated, typed}
+import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, FSM, Props, Terminated, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -71,7 +71,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   val db: NetworkDb = nodeParams.db.network
 
-  {
+  private val dataHolder: VolatileRouterDataHolder = {
     log.info("loading network announcements from db...")
     val (pruned, channels) = db.listChannels().partition { case (_, pc) => pc.isStale(nodeParams.currentBlockHeight) }
     val nodes = db.listNodes().map(n => n.nodeId -> n).toMap
@@ -114,8 +114,14 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
       sync = Map.empty)
+    val holder = new VolatileRouterDataHolder(data)
     startWith(NORMAL, data)
+    holder
   }
+
+  private val numWorkers = Math.max(1, Runtime.getRuntime().availableProcessors() / 2)
+
+  private val workers = Array.fill(numWorkers)(context.actorOf(Props(new Worker(dataHolder, nodeParams))))
 
   when(NORMAL) {
 
@@ -165,11 +171,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       } else {
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.system.eventStream.publish(d.rebroadcast)
-        stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+        stayUsing(d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty)))
       }
 
     case Event(TickPruneStaleChannels, d) =>
-      stay() using StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
+      stayUsing(StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight))
 
     case Event(ExcludeChannel(desc, duration_opt), d) =>
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", desc.shortChannelId, desc.a, duration_opt.getOrElse("n/a"))
@@ -191,11 +197,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
           oldTimer.foreach(_.cancel())
           ExcludedForever
       }
-      stay() using d.copy(excludedChannels = d.excludedChannels + (desc -> newState))
+      stayUsing(d.copy(excludedChannels = d.excludedChannels + (desc -> newState)))
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
-      stay() using d.copy(excludedChannels = d.excludedChannels - desc)
+      stayUsing(d.copy(excludedChannels = d.excludedChannels - desc))
 
     case Event(GetExcludedChannels, d) =>
       sender() ! d.excludedChannels
@@ -235,10 +241,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(fr: FinalizeRoute, d) =>
-      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
+      stayUsing(RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr))
 
-    case Event(r: RouteRequest, d) =>
-      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
+    case Event(r: RouteRequest, _) =>
+      worker ! Worker.FindRoute(r, sender())
+      stay()
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -247,63 +254,63 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
-      stay() using Validation.handleChannelAnnouncement(d, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
+      stayUsing(Validation.handleChannelAnnouncement(d, watcher, RemoteGossip(peerConnection, remoteNodeId), c))
 
     case Event(r: ValidateResult, d) =>
-      stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
+      stayUsing(Validation.handleChannelValidationResponse(d, nodeParams, watcher, r))
 
     case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
-      stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
+      stayUsing(Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId))
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
+      stayUsing(Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
-      stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
+      stayUsing(Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n))
 
     case Event(scia: ShortChannelIdAssigned, d) =>
-      stay() using Validation.handleShortChannelIdAssigned(d, nodeParams.nodeId, scia)
+      stayUsing(Validation.handleShortChannelIdAssigned(d, nodeParams.nodeId, scia))
 
     case Event(u: ChannelUpdate, d: Data) => // from payment lifecycle
-      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
+      stayUsing(Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(LocalGossip)))))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) => // from network (gossip or peer)
-      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
+      stayUsing(Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.currentBlockHeight, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId))))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) => // from local channel
-      stay() using Validation.handleLocalChannelUpdate(d, nodeParams, watcher, lcu)
+      stayUsing(Validation.handleLocalChannelUpdate(d, nodeParams, watcher, lcu))
 
     case Event(lcd: LocalChannelDown, d: Data) =>
-      stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
+      stayUsing(Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd))
 
     case Event(e: AvailableBalanceChanged, d: Data) =>
-      stay() using Validation.handleAvailableBalanceChanged(d, e)
+      stayUsing(Validation.handleAvailableBalanceChanged(d, e))
 
     case Event(s: SendChannelQuery, d) =>
-      stay() using Sync.handleSendChannelQuery(d, s)
+      stayUsing(Sync.handleSendChannelQuery(d, s))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
-      stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
+      stayUsing(Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
       Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
-      stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
+      stayUsing(Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r))
 
     case Event(RouteCouldRelay(route), d) =>
-      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route))
+      stayUsing(d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route)))
 
     case Event(RouteDidRelay(route), d) =>
-      stay() using d.copy(graphWithBalances = d.graphWithBalances.routeDidRelay(route))
+      stayUsing(d.copy(graphWithBalances = d.graphWithBalances.routeDidRelay(route)))
 
     case Event(ChannelCouldNotRelay(amount, hop), d) =>
-      stay() using d.copy(graphWithBalances = d.graphWithBalances.channelCouldNotSend(hop, amount))
+      stayUsing(d.copy(graphWithBalances = d.graphWithBalances.channelCouldNotSend(hop, amount)))
   }
 
   initialize()
@@ -321,11 +328,51 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     }
     Logs.mdc(category_opt, remoteNodeId_opt = remoteNodeId_opt, channelId_opt = channelId_opt, nodeAlias_opt = Some(nodeParams.alias))
   }
+
+  private def stayUsing(nextStateData: Router.Data): FSM.State[Router.State, Router.Data] = {
+    dataHolder.update(nextStateData)
+    stay() using nextStateData
+  }
+
+  private def worker: ActorRef = {
+    val i = Math.abs(sender().hashCode()) % numWorkers
+    workers(i)
+  }
 }
 
 object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
+
+  /*
+    The JVM memory model does not allow to use FSM.stateData in other threads (it can return stale data for some of them).
+    So we use this helper class to make sure that fresh router data are always accessible from all threads involved.
+   */
+  private class VolatileRouterDataHolder(init: Router.Data) {
+    @volatile private var data: Router.Data = init
+
+    def update(nextStateData: Router.Data): Unit = {
+      data = nextStateData
+    }
+
+    def get: Router.Data = {
+      data
+    }
+  }
+
+  /**
+   * A helper actor that performs CPU-heavy route calculation
+   */
+  private class Worker(data: VolatileRouterDataHolder, nodeParams: NodeParams)(implicit log: DiagnosticLoggingAdapter) extends Actor {
+    override def receive: Receive = {
+      case Worker.FindRoute(r, s) =>
+        RouteCalculation.handleRouteRequest(data.get, nodeParams.currentBlockHeight, r, s)
+    }
+  }
+
+  private object Worker {
+    case class FindRoute(routeRequest: RouteRequest, sender: ActorRef)
+  }
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
                               maxFeeProportional: Double,
