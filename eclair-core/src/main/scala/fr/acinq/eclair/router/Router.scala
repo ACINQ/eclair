@@ -240,11 +240,12 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! d
       stay()
 
-    case Event(fr: FinalizeRoute, d) =>
-      stayUsing(RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr))
+    case Event(fr: FinalizeRoute, _) =>
+      worker ! Worker.FinalizeRoute(fr, sender())
+      stay()
 
     case Event(r: RouteRequest, _) =>
-      worker ! Worker.FindRoute(r, sender())
+      worker ! Worker.FindRoutes(r, sender())
       stay()
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
@@ -344,9 +345,9 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  /*
-    The JVM memory model does not allow to use FSM.stateData in other threads (it can return stale data for some of them).
-    So we use this helper class to make sure that fresh router data are always accessible from all threads involved.
+  /**
+   * The JVM memory model does not allow to use FSM.stateData in other threads (it can return stale data for some of them).
+   * So we use this helper class to make sure that fresh router data are always accessible from all threads involved.
    */
   private class VolatileRouterDataHolder(init: Router.Data) {
     @volatile private var data: Router.Data = init
@@ -361,17 +362,20 @@ object Router {
   }
 
   /**
-   * A helper actor that performs CPU-heavy route calculation
+   * A helper actor that performs CPU-heavy route calculations
    */
   private class Worker(data: VolatileRouterDataHolder, nodeParams: NodeParams)(implicit log: DiagnosticLoggingAdapter) extends Actor {
     override def receive: Receive = {
-      case Worker.FindRoute(r, s) =>
+      case Worker.FindRoutes(r, s) =>
         RouteCalculation.handleRouteRequest(data.get, nodeParams.currentBlockHeight, r, s)
+      case Worker.FinalizeRoute(fr, s) =>
+        RouteCalculation.finalizeRoute(data.get, nodeParams.nodeId, fr, s)
     }
   }
 
   private object Worker {
-    case class FindRoute(routeRequest: RouteRequest, sender: ActorRef)
+    case class FindRoutes(routeRequest: RouteRequest, sender: ActorRef)
+    case class FinalizeRoute(finalizeRoute: Router.FinalizeRoute, sender: ActorRef)
   }
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,

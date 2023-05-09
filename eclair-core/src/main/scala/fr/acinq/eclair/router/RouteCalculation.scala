@@ -49,13 +49,12 @@ object RouteCalculation {
     }
   }
 
-  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, sender: ActorRef)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
       paymentId_opt = fr.paymentContext.map(_.id),
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
-      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val extraEdges = fr.extraEdges.map(GraphEdge(_))
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
@@ -68,10 +67,10 @@ object RouteCalculation {
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-              ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
+              sender ! RouteResponse(Route(amount, hops, None) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
-              ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+              sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
         case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
@@ -95,9 +94,9 @@ object RouteCalculation {
               }
           }
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
-            ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
+            sender ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
+            sender ! RouteResponse(Route(amount, hops, None) :: Nil)
           }
       }
 
