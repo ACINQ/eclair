@@ -97,7 +97,8 @@ object EclairInternalsSerializer {
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
-      ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
+      ("balanceEstimateHalfLife" | finiteDurationCodec) ::
+      ("numberOfRouterWorkers" | int32)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ lengthPrefixedFeaturesCodec)
 

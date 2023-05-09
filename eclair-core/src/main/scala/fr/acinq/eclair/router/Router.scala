@@ -119,7 +119,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     holder
   }
 
-  private val numWorkers = Math.max(1, Runtime.getRuntime().availableProcessors() / 2)
+  private val numWorkers = if (nodeParams.routerConf.numberOfWorkers > 0) {
+    nodeParams.routerConf.numberOfWorkers
+  } else {
+    Math.max(1, Runtime.getRuntime.availableProcessors() / 2)
+  }
 
   private val workers = Array.fill(numWorkers)(context.actorOf(Props(new Worker(dataHolder, nodeParams))))
 
@@ -407,7 +411,8 @@ object Router {
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
                         pathFindingExperimentConf: PathFindingExperimentConf,
-                        balanceEstimateHalfLife: FiniteDuration) {
+                        balanceEstimateHalfLife: FiniteDuration,
+                        numberOfWorkers: Int) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }

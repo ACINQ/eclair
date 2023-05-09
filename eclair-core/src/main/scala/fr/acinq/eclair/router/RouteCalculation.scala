@@ -49,7 +49,7 @@ object RouteCalculation {
     }
   }
 
-  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, sender: ActorRef)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, sender: ActorRef)(implicit log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
