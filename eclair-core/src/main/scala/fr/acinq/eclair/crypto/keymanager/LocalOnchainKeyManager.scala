@@ -32,7 +32,7 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
   // root bip32 onchain path
   // we use BIP84 (p2wpkh) path: 84'/{0'/1'}
   private val rootPath = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => "84'/1'"
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => "84'/1'"
     case Block.LivenetGenesisBlock.hash => "84'/0'"
     case _ => throw new IllegalArgumentException(s"invalid chain hash ${chainHash}")
   }
@@ -41,7 +41,7 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
 
   override def getOnchainMasterPubKey(account: Long): String = {
     val prefix = chainHash match {
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => vpub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => vpub
       case Block.LivenetGenesisBlock.hash => zpub
       case _ => throw new IllegalArgumentException(s"invalid chain hash ${chainHash}")
     }

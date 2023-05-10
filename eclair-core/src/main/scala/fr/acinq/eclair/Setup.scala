@@ -244,6 +244,8 @@ class Setup(val datadir: File,
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+        case Block.SignetGenesisBlock.hash =>
+          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
