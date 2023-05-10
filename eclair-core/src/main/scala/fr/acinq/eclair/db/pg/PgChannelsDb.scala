@@ -35,7 +35,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -85,7 +85,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       def migration67(): Unit = {
         migrateTable(pg, pg,
           "local.channels",
-          s"UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
+          "UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
           (rs, statement) => {
             // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
             // store local commitment signatures anymore, and we want to clean up existing data
@@ -99,17 +99,31 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         )(logger)
       }
 
+      def migration78(statement: Statement): Unit = {
+        statement.executeUpdate("DROP INDEX IF EXISTS local.local_channels_remote_node_id_idx")
+        statement.executeUpdate("ALTER TABLE local.channels ADD COLUMN remote_node_id TEXT")
+        migrateTable(pg, pg,
+          "local.channels",
+          "UPDATE local.channels SET remote_node_id=?",
+          (rs, statement) => {
+            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+            statement.setString(1, state.remoteNodeId.toHex)
+          })(logger)
+        statement.executeUpdate("ALTER TABLE local.channels ALTER COLUMN remote_node_id SET NOT NULL")
+        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
 
-          statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
-          statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels ((json->'commitments'->'params'->'remoteParams'->>'nodeId'))")
+          statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6)) =>
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -125,6 +139,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 7) {
             migration67()
+          }
+          if (v < 8) {
+            migration78(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -153,14 +170,15 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       val encoded = channelDataCodec.encode(data).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local.channels (channel_id, data, json, is_closed)
-          | VALUES (?, ?, ?::JSONB, FALSE)
+          | INSERT INTO local.channels (channel_id, remote_node_id, data, json, is_closed)
+          | VALUES (?, ?, ?, ?::JSONB, FALSE)
           | ON CONFLICT (channel_id)
           | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
         statement.setString(1, data.channelId.toHex)
-        statement.setBytes(2, encoded)
-        statement.setString(3, serialization.write(data))
+        statement.setString(2, data.remoteNodeId.toHex)
+        statement.setBytes(3, encoded)
+        statement.setString(4, serialization.write(data))
         statement.executeUpdate()
       }
     }
