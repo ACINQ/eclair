@@ -30,6 +30,14 @@ Instead, all the relevant data (offer id, preimage, amount, quantity, creation d
 The handler can also add its own data.
 All this data is signed and encrypted so that it can not be read or forged by the payer.
 
+### Data model
+
+The database model has been completely reworked to handle splices. Mainly, a channel can have several commitments in parallel.
+Node operators that use Postgres as database backend and make SQL queries on channels' JSON content should reset the JSON column:
+
+1. Set `eclair.db.postgres.reset-json-columns = true` before restarting eclair
+2. Once restarted, set `eclair.db.postgres.reset-json-columns = false` (no need to restart again)
+
 ### API changes
 
 - `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
