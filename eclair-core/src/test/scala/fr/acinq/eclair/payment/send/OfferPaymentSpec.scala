@@ -65,7 +65,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val merchantKey = randomKey()
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
-    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams, blocking = false))
+    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(Recipient(recipientId, _, _, _), None, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
     assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
@@ -89,7 +89,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val merchantKey = randomKey()
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
-    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams, blocking = false))
+    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     for (_ <- 1 to nodeParams.onionMessageConfig.maxAttempts) {
       val Postman.SendMessage(Recipient(recipientId, _, _, _), None, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
       assert(recipientId == merchantKey.publicKey)
@@ -112,7 +112,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val merchantKey = randomKey()
 
     val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
-    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, 1, routeParams, blocking = false))
+    offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(Recipient(recipientId, _, _, _), None, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
     assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
