@@ -60,6 +60,7 @@ object OfferPayment {
   case class WrappedMessageResponse(response: OnionMessageResponse) extends Command
 
   case class SendPaymentConfig(externalId_opt: Option[String],
+                               connectDirectly: Boolean,
                                maxAttempts: Int,
                                routeParams: RouteParams,
                                blocking: Boolean)
@@ -110,7 +111,15 @@ object OfferPayment {
         OnionMessages.Recipient(nodeId, None, None)
     }
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
-    postman ! SendMessage(destination, None, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
+    val messageRoute_opt = if (sendPaymentConfig.connectDirectly) {
+      destination match {
+        case OnionMessages.BlindedPath(route) => Some(route.introductionNodeId :: Nil)
+        case OnionMessages.Recipient(nodeId, _, _, _) => Some(nodeId :: Nil)
+      }
+    } else {
+      None
+    }
+    postman ! SendMessage(destination, messageRoute_opt, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
     waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 

@@ -122,7 +122,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, payer.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
   }
@@ -141,7 +141,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipientKey, Some(pathId), handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, payer.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
   }
@@ -155,7 +155,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val handler = recipient.system.spawnAnonymous(offerHandler(recipientAmount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, paymentInterceptor.ref))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, maxAttempts = 1, payer.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, recipientAmount, 1, sendPaymentConfig)
     // We intercept the payment and modify it to use a different amount.
     val payment = paymentInterceptor.expectMsgType[SendPaymentToNode]
