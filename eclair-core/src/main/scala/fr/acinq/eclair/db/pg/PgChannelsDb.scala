@@ -101,15 +101,10 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
       def migration78(statement: Statement): Unit = {
         statement.executeUpdate("DROP INDEX IF EXISTS local.local_channels_remote_node_id_idx")
+        // We keep remote_node_id nullable, because we cannot expect all existing rows to have an up-to-date JSON format.
+        // Since we update the remote_node_id column every time the channel is updated, it ensures that it will eventually be filled.
         statement.executeUpdate("ALTER TABLE local.channels ADD COLUMN remote_node_id TEXT")
-        migrateTable(pg, pg,
-          "local.channels",
-          "UPDATE local.channels SET remote_node_id=?",
-          (rs, statement) => {
-            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-            statement.setString(1, state.remoteNodeId.toHex)
-          })(logger)
-        statement.executeUpdate("ALTER TABLE local.channels ALTER COLUMN remote_node_id SET NOT NULL")
+        statement.executeUpdate("UPDATE local.channels SET remote_node_id = (json->'commitments'->'remoteParams'->>'nodeId')")
         statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
       }
 
@@ -173,7 +168,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           | INSERT INTO local.channels (channel_id, remote_node_id, data, json, is_closed)
           | VALUES (?, ?, ?, ?::JSONB, FALSE)
           | ON CONFLICT (channel_id)
-          | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
+          | DO UPDATE SET remote_node_id = EXCLUDED.remote_node_id, data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
         statement.setString(1, data.channelId.toHex)
         statement.setString(2, data.remoteNodeId.toHex)
