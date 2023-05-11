@@ -38,6 +38,8 @@ Node operators that use Postgres as database backend and make SQL queries on cha
 1. Set `eclair.db.postgres.reset-json-columns = true` before restarting eclair
 2. Once restarted, set `eclair.db.postgres.reset-json-columns = false` (no need to restart again)
 
+Note that this requires re-writing every row of the database, which can be slow for nodes that have many channels.
+
 ### API changes
 
 - `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
