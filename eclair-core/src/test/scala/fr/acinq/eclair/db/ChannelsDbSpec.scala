@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.channel.RealScidStatus
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
@@ -29,7 +30,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -328,6 +329,12 @@ class ChannelsDbSpec extends AnyFunSuite {
           assert(getPgTimestamp(connection, testCase.channelId, "last_payment_received_timestamp") == testCase.lastPaymentReceivedTimestamp)
           assert(getPgTimestamp(connection, testCase.channelId, "last_connected_timestamp") == testCase.lastConnectedTimestamp)
           assert(getPgTimestamp(connection, testCase.channelId, "closed_timestamp") == testCase.closedTimestamp)
+          using(connection.prepareStatement(s"SELECT remote_node_id FROM local.channels WHERE channel_id=?")) { statement =>
+            statement.setString(1, testCase.channelId.toHex)
+            val rs = statement.executeQuery()
+            rs.next()
+            assert(rs.getString("remote_node_id") == testCase.remoteNodeId.toHex)
+          }
         }
       }
     )
@@ -351,6 +358,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 object ChannelsDbSpec {
 
   case class TestCase(channelId: ByteVector32,
+                      remoteNodeId: PublicKey,
                       data: ByteVector,
                       isClosed: Boolean,
                       createdTimestamp: Option[Long],
@@ -358,14 +366,18 @@ object ChannelsDbSpec {
                       lastPaymentReceivedTimestamp: Option[Long],
                       lastConnectedTimestamp: Option[Long],
                       closedTimestamp: Option[Long],
-                      commitmentNumbers: Seq[Int]
-                     )
+                      commitmentNumbers: Seq[Int])
 
   val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
     val channelId = randomBytes32()
-    val data = channelDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(channelId)).require.bytes
+    val remoteNodeId = randomKey().publicKey
+    val channel = ChannelCodecsSpec.normal
+      .modify(_.commitments.params.channelId).setTo(channelId)
+      .modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
+    val data = channelDataCodec.encode(channel).require.bytes
     TestCase(
       channelId = channelId,
+      remoteNodeId = remoteNodeId,
       data = data,
       isClosed = Random.nextBoolean(),
       createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
