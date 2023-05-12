@@ -19,27 +19,21 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, breadthFirstSearch, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, ShortChannelId}
+import fr.acinq.eclair.wire.protocol.Color
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits._
 
 class GraphSpec extends AnyFunSuite {
 
-  val (a, b, c, d, e, f, g, h) = (
-    PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), //a
-    PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"), //b
-    PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), //c
-    PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), //d
-    PublicKey(hex"02f38f4e37142cc05df44683a83e22dea608cf4691492829ff4cf99888c5ec2d3a"), //e
-    PublicKey(hex"03fc5b91ce2d857f146fd9b986363374ffe04dc143d8bcd6d7664c8873c463cdfc"), //f
-    PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), //g
-    PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5") //h
-  )
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
+  val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
+
 
   // +---- D -------+
   // |              |
@@ -386,5 +380,30 @@ class GraphSpec extends AnyFunSuite {
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.head.path == Seq(edgeAB))
+  }
+
+  test("route for messages") {
+    /*
+       A -- B -- C -- D
+        \____ E _____/
+    */
+    val edgeAB = makeEdge(1L, a, b, 100 msat, 1000, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeBC = makeEdge(2L, b, c, 1 msat, 3, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeDC = makeEdge(3L, d, c, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeEA = makeEdge(4L, e, a, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
+    val edgeED = makeEdge(5L, e, d, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
+    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeDC, edgeEA, edgeED))
+
+    val annBRelay = makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
+    val annCRelay = makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
+    val annD = makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty)
+    val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty)
+    val annERelay = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
+
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, b, c, d)))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, e, d)))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set(e), Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, b, c, d)))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, a, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a)))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, f, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).isEmpty)
   }
 }
