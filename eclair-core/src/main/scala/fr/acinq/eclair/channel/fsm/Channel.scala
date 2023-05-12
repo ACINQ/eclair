@@ -827,9 +827,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle) {
+          if (!d.commitments.isIdle) {
+            log.info("rejecting splice request: channel not idle")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+          } else if (msg.feerate < nodeParams.onChainFeeConf.feeEstimator.getMempoolMinFeeratePerKw()) {
+            log.info("rejecting splice request: feerate too low")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+          } else {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
-            val parentCommitment = d.commitments.latest.commitment
+          val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
               fundingContribution = 0.sat, // only remote contributes to the splice
               fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
@@ -858,9 +864,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             ))
             txBuilder ! InteractiveTxBuilder.Start(self)
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, splice = txBuilder, remoteCommitSig = None)) sending spliceAck
-          } else {
-            log.info("rejecting splice request, channel not idle or not compatible")
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           }
         case SpliceStatus.SpliceAborted =>
           log.info("rejecting splice attempt: our previous tx_abort was not acked")
