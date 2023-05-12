@@ -191,7 +191,7 @@ object Graph {
                          ignoredVertices: Set[PublicKey],
                          nodeFeatures: Features[NodeFeature]): Option[Seq[PublicKey]] = {
     if (sourceNode == targetNode) {
-      return Some(Nil)
+      return Some(targetNode:: Nil)
     }
     val toExplore = mutable.Queue.empty[List[PublicKey]]
     toExplore.enqueue(targetNode :: Nil)
