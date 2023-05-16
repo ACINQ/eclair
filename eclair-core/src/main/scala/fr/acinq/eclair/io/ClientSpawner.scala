@@ -52,11 +52,11 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
     case req: ClientSpawner.ConnectionRequest =>
       log.info("initiating new connection to nodeId={} origin={}", req.remoteNodeId, sender())
       context.actorOf(Client.props(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, req.address, req.remoteNodeId, origin_opt = Some(req.origin), req.isPersistent))
-    case DeadLetter(req: ClientSpawner.ConnectionRequest, _, _) =>
+    case DeadLetter(req: ClientSpawner.ConnectionRequest, source, _) =>
       // we only subscribe to the deadletters event stream when in cluster mode
-      // in that case we want to be warned when connections are spawned by the backend
-      log.warning("handling outgoing connection request locally")
-      self forward req
+      // if the cluster is not ready we fail the connection attempt
+      log.warning("reject outgoing connection attempt, no frontend node available")
+      source ! PeerConnection.ConnectionResult.FrontendUnavailable
     case _: DeadLetter =>
     // we don't care about other dead letters
   }
