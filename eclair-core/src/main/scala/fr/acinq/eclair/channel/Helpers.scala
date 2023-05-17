@@ -666,21 +666,15 @@ object Helpers {
       }
 
       def checkClosingSignature(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64)(implicit log: LoggingAdapter): Either[ChannelException, (ClosingTx, ClosingSigned)] = {
-        val lastCommitFeeSatoshi = commitment.commitInput.txOut.amount - commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.map(_.amount).sum
-        if (remoteClosingFee > lastCommitFeeSatoshi && commitment.params.commitmentFormat == DefaultCommitmentFormat) {
-          log.error(s"remote proposed a commit fee higher than the last commitment fee: remote closing fee=${remoteClosingFee.toLong} last commit fees=$lastCommitFeeSatoshi")
-          Left(InvalidCloseFee(commitment.channelId, remoteClosingFee))
-        } else {
-          val (closingTx, closingSigned) = makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
-          if (checkClosingDustAmounts(closingTx)) {
-            val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, closingSigned.signature, remoteClosingSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Success(_) => Right(signedClosingTx, closingSigned)
-              case _ => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-            }
-          } else {
-            Left(InvalidCloseAmountBelowDust(commitment.channelId, closingTx.tx.txid))
+        val (closingTx, closingSigned) = makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
+        if (checkClosingDustAmounts(closingTx)) {
+          val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, closingSigned.signature, remoteClosingSig)
+          Transactions.checkSpendable(signedClosingTx) match {
+            case Success(_) => Right(signedClosingTx, closingSigned)
+            case _ => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
           }
+        } else {
+          Left(InvalidCloseAmountBelowDust(commitment.channelId, closingTx.tx.txid))
         }
       }
 
