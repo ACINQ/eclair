@@ -3342,6 +3342,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectNoMessage(1 second)
   }
 
+  test("recv Error (ignored internal error from lnd)") { f =>
+    import f._
+
+    alice ! Error(channelId(alice), "internal error")
+    alice2bob.expectMsgType[Warning]
+    alice2blockchain.expectNoMessage(100 millis)
+  }
+
   def testErrorAnchorOutputsWithHtlcs(f: FixtureParam): Unit = {
     import f._
 
