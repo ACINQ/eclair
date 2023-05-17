@@ -64,13 +64,13 @@ object Helpers {
     }
   }
 
-  def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+  private def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     val canUseUpfrontShutdownScript = Features.canUseFeature(localFeatures, remoteFeatures, Features.UpfrontShutdownScript)
     val canUseAnySegwit = Features.canUseFeature(localFeatures, remoteFeatures, Features.ShutdownAnySegwit)
     extractShutdownScript(channelId, canUseUpfrontShutdownScript, canUseAnySegwit, upfrontShutdownScript_opt)
   }
 
-  def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+  private def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
       case (true, None) => Left(MissingUpfrontShutdownScript(channelId))
       case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
@@ -304,7 +304,7 @@ object Helpers {
    * @param remoteFeeratePerKw remote fee rate per kiloweight
    * @return true if the remote fee rate is too small
    */
-  def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
+  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
@@ -605,9 +605,6 @@ object Helpers {
 
     object MutualClose {
 
-      // used only to compute tx weights and estimate fees
-      lazy val dummyPublicKey: PublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
-
       def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = {
         Try(Script.parse(scriptPubKey)) match {
           case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
@@ -622,7 +619,7 @@ object Helpers {
       def firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
         // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.isInitiator, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
-        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitment.remoteFundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, Transactions.PlaceHolderPubKey, commitment.remoteFundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
       }
@@ -989,7 +986,7 @@ object Helpers {
        *
        * This function returns the per-commitment secret in the first case, and None in the other cases.
        */
-      def getRemotePerCommitmentSecret(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, commitTx: Transaction)(implicit log: LoggingAdapter): Option[(Long, PrivateKey)] = {
+      def getRemotePerCommitmentSecret(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, commitTx: Transaction): Option[(Long, PrivateKey)] = {
         import params._
         // a valid tx will always have at least one input, but this ensures we don't throw in tests
         val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)
