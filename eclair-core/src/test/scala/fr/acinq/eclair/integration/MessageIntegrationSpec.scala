@@ -172,7 +172,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, encodedBytes).pipeTo(probe.ref)
+    alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, encodedBytes).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)

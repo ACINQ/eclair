@@ -82,16 +82,16 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   private def createChannels(f: FixtureParam, testData: TestData): Unit = {
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
     bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
-    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
 
     connect(alice, bob)
     connect(bob, carol)
 
-    val channelId_ab = openChannel(alice, bob, 500_000 sat).channelId
-    val channelId_bc_1 = openChannel(bob, carol, 100_000 sat).channelId
-    val channelId_bc_2 = openChannel(bob, carol, 100_000 sat).channelId
+    val channelId_ab = openChannel(alice, bob, 500_000 sat, pushAmount_opt = Some(10_000_000 msat)).channelId
+    val channelId_bc_1 = openChannel(bob, carol, 100_000 sat, pushAmount_opt = Some(5_000_000 msat)).channelId
+    val channelId_bc_2 = openChannel(bob, carol, 100_000 sat, pushAmount_opt = Some(5_000_000 msat)).channelId
 
     eventually {
       assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
@@ -133,10 +133,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val sender = TestProbe("sender")
     val recipientKey = randomKey()
     val pathId = randomBytes32()
-    val offerPaths = routes.map(route => {
-      route.nodes.dropRight(1).map(IntermediateNode(_))
-      buildRoute(randomKey(), route.nodes.dropRight(1).map(IntermediateNode(_)), Recipient(route.nodes.last, Some(pathId)))
-    })
+    val offerPaths = routes.map(route => buildRoute(randomKey(), route.nodes.dropRight(1).map(IntermediateNode(_)), Recipient(route.nodes.last, Some(pathId))))
     val offer = Offer(None, "test", recipientKey.publicKey, Features.empty, recipient.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(offerPaths)))
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipientKey, Some(pathId), handler)

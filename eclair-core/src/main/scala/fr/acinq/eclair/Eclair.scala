@@ -623,9 +623,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Left(key) => OnionMessages.Recipient(key, None)
           case Right(route) => OnionMessages.BlindedPath(route)
         }
-        appKit.postman.ask(ref => Postman.SendMessage(destination, messageRoute_opt, userTlvs, expectsReply, ref)).map {
-          case Postman.Response(payload) =>
-            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
+        val routingStrategy = messageRoute_opt match {
+          case Some(route) => OnionMessages.RoutingStrategy.UseRoute(route)
+          case None => OnionMessages.RoutingStrategy.FindRoute
+        }
+        appKit.postman.ask(ref => Postman.SendMessage(destination, routingStrategy, userTlvs, expectsReply, ref)).map {
+          case Postman.Response(payload) => SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)
           case Postman.MessageFailed(failure: String) => SendOnionMessageResponse(sent = false, Some(failure), None)
