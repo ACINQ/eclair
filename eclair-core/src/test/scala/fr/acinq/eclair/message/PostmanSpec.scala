@@ -26,12 +26,11 @@ import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
 import fr.acinq.eclair.message.Postman._
-import fr.acinq.eclair.message.SendingMessage.MessageRouteFound
 import fr.acinq.eclair.payment.offer.OfferManager.RequestInvoice
-import fr.acinq.eclair.router.Router.MessageRouteRequest
+import fr.acinq.eclair.router.Router.{MessageRoute, MessageRouteRequest}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.{InvoiceRequest, ReplyPath}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
-import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OfferTypes, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, NodeParams, TestConstants, UInt64, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -65,7 +64,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val MessageRouteRequest(waitingForRoute, source, target, _) = router.expectMessageType[MessageRouteRequest]
     assert(source == nodeParams.nodeId)
     assert(target == recipientKey.publicKey)
-    waitingForRoute ! MessageRouteFound(Seq.empty)
+    waitingForRoute ! MessageRoute(Seq.empty, recipientKey.publicKey)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
@@ -94,7 +93,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val MessageRouteRequest(waitingForRoute, source, target, _) = router.expectMessageType[MessageRouteRequest]
     assert(source == nodeParams.nodeId)
     assert(target == recipientKey.publicKey)
-    waitingForRoute ! MessageRouteFound(Seq.empty)
+    waitingForRoute ! MessageRoute(Seq.empty, recipientKey.publicKey)
 
     val RelayMessage(messageId, _, nextNodeId, _, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
@@ -114,7 +113,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val MessageRouteRequest(waitingForRoute, source, target, _) = router.expectMessageType[MessageRouteRequest]
     assert(source == nodeParams.nodeId)
     assert(target == recipientKey.publicKey)
-    waitingForRoute ! MessageRouteFound(Seq.empty)
+    waitingForRoute ! MessageRoute(Seq.empty, recipientKey.publicKey)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
@@ -142,7 +141,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val MessageRouteRequest(waitingForRoute, source, target, _) = router.expectMessageType[MessageRouteRequest]
     assert(source == nodeParams.nodeId)
     assert(target == recipientKey.publicKey)
-    waitingForRoute ! MessageRouteFound(Seq.empty)
+    waitingForRoute ! MessageRoute(Seq.empty, recipientKey.publicKey)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)
@@ -166,7 +165,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val MessageRouteRequest(waitingForRoute, source, target, _) = router.expectMessageType[MessageRouteRequest]
     assert(source == nodeParams.nodeId)
     assert(target == nodeParams.nodeId)
-    waitingForRoute ! MessageRouteFound(Seq.empty)
+    waitingForRoute ! MessageRoute(Seq.empty, blindedRoute.introductionNodeId)
 
     val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
     assert(nextNodeId == recipientKey.publicKey)

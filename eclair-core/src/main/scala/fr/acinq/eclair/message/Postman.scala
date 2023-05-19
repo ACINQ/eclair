@@ -26,6 +26,7 @@ import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.Destination
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.{MessageRoute, MessageRouteNotFound, MessageRouteResponse}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoiceRequestPayload}
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
@@ -88,8 +89,12 @@ object Postman {
           child ! SendingMessage.SendMessage
           Behaviors.same
         case SendMessage(destination, Some(messageRoute), messageContent, expectsReply, replyTo) =>
+          val targetNodeId = destination match {
+            case destination: OnionMessages.BlindedPath => destination.route.introductionNodeId
+            case destination: OnionMessages.Recipient => destination.nodeId
+          }
           val child = context.spawnAnonymous(SendingMessage.waitingForRoute(nodeParams, switchboard, context.self, destination, messageContent, expectsReply, replyTo))
-          child ! SendingMessage.MessageRouteFound(messageRoute)
+          child ! SendingMessage.WrappedMessageRouteResponse(MessageRoute(messageRoute, targetNodeId))
           Behaviors.same
         case Subscribe(pathId, replyTo) =>
           subscribed += (pathId -> replyTo)
@@ -111,10 +116,8 @@ object SendingMessage {
   sealed trait Command
 
   case object SendMessage extends Command
-  case class SendingStatus(status: MessageRelay.Status) extends Command
-  sealed trait RouteResult extends Command
-  case class MessageRouteFound(messageRoute: Seq[PublicKey]) extends RouteResult
-  case object MessageRouteNotFound extends RouteResult
+  private case class SendingStatus(status: MessageRelay.Status) extends Command
+  case class WrappedMessageRouteResponse(response: MessageRouteResponse) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams,
@@ -132,7 +135,11 @@ object SendingMessage {
             case OnionMessages.BlindedPath(route) => route.introductionNodeId
             case OnionMessages.Recipient(nodeId, _, _, _) => nodeId
           }
-          router ! Router.MessageRouteRequest(context.self, nodeParams.nodeId, targetNodeId, Set.empty)
+          if (targetNodeId == nodeParams.nodeId) {
+            context.self ! WrappedMessageRouteResponse(MessageRoute(Nil, targetNodeId))
+          } else {
+            router ! Router.MessageRouteRequest(context.messageAdapter(WrappedMessageRouteResponse), nodeParams.nodeId, targetNodeId, Set.empty)
+          }
           waitingForRoute(nodeParams, switchboard, postman, destination, message, expectsReply, replyTo)
       }
     })
@@ -147,12 +154,12 @@ object SendingMessage {
                       replyTo: ActorRef[Postman.OnionMessageResponse]): Behavior[Command] = {
     Behaviors.setup(context => {
       Behaviors.receiveMessagePartial {
-        case MessageRouteFound(messageRoute) =>
+        case WrappedMessageRouteResponse(MessageRoute(intermediateNodes, _)) =>
           val messageId = randomBytes32()
           val replyRoute =
             if (expectsReply) {
-              val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - messageRoute.length)
-              val intermediateHops = (messageRoute.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
+              val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
+              val intermediateHops = (intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
               val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
               Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
             } else {
@@ -162,7 +169,7 @@ object SendingMessage {
             nodeParams.privateKey,
             randomKey(),
             randomKey(),
-            messageRoute.dropRight(1).map(OnionMessages.IntermediateNode(_)),
+            intermediateNodes.map(OnionMessages.IntermediateNode(_)),
             destination,
             TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet ++ message.records, message.unknown)) match {
             case Left(failure) =>
@@ -172,7 +179,7 @@ object SendingMessage {
               switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
               waitForSent(expectsReply, replyTo, postman)
           }
-        case MessageRouteNotFound =>
+        case WrappedMessageRouteResponse(MessageRouteNotFound(_)) =>
           replyTo ! Postman.MessageFailed("No route found")
           Behaviors.stopped
       }

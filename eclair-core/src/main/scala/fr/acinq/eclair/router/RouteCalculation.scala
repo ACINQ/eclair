@@ -22,11 +22,11 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.message.SendingMessage
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -225,10 +225,26 @@ object RouteCalculation {
     }
   }
 
-  def handleMessageRouteRequest(d: Data, r: MessageRouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
-    Graph.breadthFirstSearch(d.graphWithBalances.graph, d.nodes, r.source, r.target, r.ignoredNodes, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) match {
-      case None => r.replyTo ! SendingMessage.MessageRouteNotFound
-      case Some(path) => r.replyTo ! SendingMessage.MessageRouteFound(path.drop(1))
+  def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest): Data = {
+    val dummyMaxFee = 100_000_000.msat
+    val routeParams = RouteParams(
+      randomize = true,
+      SearchBoundaries(dummyMaxFee, 1.0, ROUTE_MAX_LENGTH, CltvExpiryDelta(4096)),
+      // We favor nodes that have older and larger channels, which is generally a good indication of liveness.
+      heuristics = Left(WeightRatios(
+        baseFactor = 0.0,
+        cltvDeltaFactor = 0.0,
+        ageFactor = 0.5,
+        capacityFactor = 0.5,
+        Relayer.RelayFees(0 msat, 0)
+      )),
+      mpp = MultiPartParams(0 msat, 1),
+      experimentName = "message",
+      includeLocalChannelCost = false
+    )
+    findRoute(d.graphWithBalances.graph, r.source, r.target, 1 msat, dummyMaxFee, numRoutes = 1, ignoredVertices = r.ignoredNodes, routeParams = routeParams, currentBlockHeight = currentBlockHeight) match {
+      case Failure(_) => r.replyTo ! MessageRouteNotFound(r.target)
+      case Success(routes) => r.replyTo ! MessageRoute(routes.head.hops.tail.map(_.nodeId), r.target)
     }
     d
   }

@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status
 import akka.actor.Status.Failure
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
@@ -714,6 +714,33 @@ class RouterSpec extends BaseRouterSpec {
     val excludedChannels2 = sender.expectMsgType[Map[ChannelDesc, ExcludedChannelStatus]]
     assert(excludedChannels2.size == 1)
     assert(excludedChannels2(bc) == ExcludedForever)
+  }
+
+  test("find message route") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+    // Neighbour: a -> b.
+    sender.send(router, MessageRouteRequest(sender.ref, a, b, Set.empty))
+    sender.expectMsg(MessageRoute(Nil, b))
+    // Remote node: a -> b -> c -> d.
+    sender.send(router, MessageRouteRequest(sender.ref, a, d, Set.empty))
+    sender.expectMsg(MessageRoute(Seq(b, c), d))
+    // Neighbour with private channel: a -> g.
+    sender.send(router, MessageRouteRequest(sender.ref, a, g, Set.empty))
+    sender.expectMsg(MessageRoute(Nil, g))
+    // Remote node with private channels: a -> g -> h.
+    sender.send(router, MessageRouteRequest(sender.ref, a, h, Set.empty))
+    sender.expectMsg(MessageRoute(Seq(g), h))
+    // Unknown node.
+    val unknownNode = randomKey().publicKey
+    sender.send(router, MessageRouteRequest(sender.ref, a, unknownNode, Set.empty))
+    sender.expectMsg(MessageRouteNotFound(unknownNode))
+    // Ignored nodes.
+    sender.send(router, MessageRouteRequest(sender.ref, a, c, ignoredNodes = Set(b)))
+    sender.expectMsg(MessageRouteNotFound(c))
+    // Request to ourselves.
+    sender.send(router, MessageRouteRequest(sender.ref, a, a, Set.empty))
+    sender.expectMsg(MessageRouteNotFound(a))
   }
 
   test("send routing state") { fixture =>

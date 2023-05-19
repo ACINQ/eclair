@@ -22,7 +22,7 @@ import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{RealShortChannelId, _}
 
 import scala.annotation.tailrec
@@ -182,38 +182,6 @@ object Graph {
     }
 
     shortestPaths.map(_.p).toSeq
-  }
-
-  def breadthFirstSearch(g: DirectedGraph,
-                         nodeAnnouncements: Map[PublicKey, NodeAnnouncement],
-                         sourceNode: PublicKey,
-                         targetNode: PublicKey,
-                         ignoredVertices: Set[PublicKey],
-                         nodeFeatures: Features[NodeFeature]): Option[Seq[PublicKey]] = {
-    if (sourceNode == targetNode) {
-      return Some(targetNode:: Nil)
-    }
-    val toExplore = mutable.Queue.empty[List[PublicKey]]
-    toExplore.enqueue(targetNode :: Nil)
-    val alreadyVisited = mutable.HashSet[PublicKey]()
-    alreadyVisited.add(targetNode)
-    alreadyVisited.addAll(ignoredVertices)
-    while (toExplore.nonEmpty) {
-      val currentPath = toExplore.dequeue()
-      for (nodeId <- g.getNeighbors(currentPath.head)) {
-        if (!alreadyVisited.contains(nodeId)) {
-          val path = nodeId :: currentPath
-          if (nodeId == sourceNode) {
-            return Some(path)
-          }
-          alreadyVisited.add(nodeId)
-          if (nodeAnnouncements.get(nodeId).map(_.features.nodeAnnouncementFeatures()).getOrElse(Features.empty).areSupported(nodeFeatures)) {
-            toExplore.enqueue(path)
-          }
-        }
-      }
-    }
-    None
   }
 
   /**
@@ -498,19 +466,19 @@ object Graph {
       )
 
       def apply(e: Invoice.ExtraEdge): GraphEdge = {
-          val maxBtc = 21e6.btc
-          GraphEdge(
-            desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
-            params = HopRelayParams.FromHint(e),
-            // Routing hints don't include the channel's capacity, so we assume it's big enough.
-            capacity = maxBtc.toSatoshi,
-            balance_opt = None,
-          )
+        val maxBtc = 21e6.btc
+        GraphEdge(
+          desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
+          params = HopRelayParams.FromHint(e),
+          // Routing hints don't include the channel's capacity, so we assume it's big enough.
+          capacity = maxBtc.toSatoshi,
+          balance_opt = None,
+        )
       }
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
-    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]], /*private val*/ undirectedNeighbors: Map[PublicKey, Set[PublicKey]]) {
+    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
 
       def addEdges(edges: Iterable[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
 
@@ -528,10 +496,7 @@ object Graph {
           removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
         } else {
           val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          val updatedNeighbors =
-            undirectedNeighbors.updatedWith(vertexIn)(n => Some(n.getOrElse(Set.empty) + vertexOut))
-              .updatedWith(vertexOut)(n => Some(n.getOrElse(Set.empty) + vertexIn))
-          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)), updatedNeighbors)
+          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
         }
       }
 
@@ -544,14 +509,7 @@ object Graph {
        */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
         if (containsEdge(desc)) {
-          val updatedVertices = vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc))
-          val updatedNeighbors = if (updatedVertices(desc.b).forall(_.desc.a != desc.a) && updatedVertices(desc.a).forall(_.desc.a != desc.b)) {
-            undirectedNeighbors.updated(desc.a, undirectedNeighbors(desc.a) - desc.b)
-              .updated(desc.b, undirectedNeighbors(desc.b) - desc.a)
-          } else {
-            undirectedNeighbors
-          }
-          DirectedGraph(updatedVertices, updatedNeighbors)
+          DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
         } else {
           this
         }
@@ -592,16 +550,11 @@ object Graph {
         vertices.getOrElse(keyB, List.empty)
       }
 
-      def getNeighbors(key: PublicKey): Set[PublicKey] = {
-        undirectedNeighbors.getOrElse(key, Set.empty)
-      }
-
       /**
        * Removes a vertex and all its associated edges (both incoming and outgoing)
        */
       def removeVertex(key: PublicKey): DirectedGraph = {
-        val updatedNeighbors = undirectedNeighbors(key).foldLeft(undirectedNeighbors - key)((acc, node) => acc.updatedWith(node)(_.map(_ - key)))
-        DirectedGraph(removeEdges(getIncomingEdgesOf(key).map(_.desc)).vertices - key, updatedNeighbors)
+        DirectedGraph(removeEdges(getIncomingEdgesOf(key).map(_.desc)).vertices - key)
       }
 
       /**
@@ -609,7 +562,7 @@ object Graph {
        */
       def addVertex(key: PublicKey): DirectedGraph = {
         vertices.get(key) match {
-          case None => DirectedGraph(vertices + (key -> List.empty), undirectedNeighbors)
+          case None => DirectedGraph(vertices + (key -> List.empty))
           case _ => this
         }
       }
@@ -658,8 +611,8 @@ object Graph {
     object DirectedGraph {
 
       // @formatter:off
-      def apply(): DirectedGraph = new DirectedGraph(Map.empty, Map.empty)
-      def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty), Map.empty)
+      def apply(): DirectedGraph = new DirectedGraph(Map.empty)
+      def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty))
       def apply(edge: GraphEdge): DirectedGraph = DirectedGraph().addEdge(edge)
       def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
       // @formatter:on
@@ -675,14 +628,11 @@ object Graph {
       def makeGraph(channels: SortedMap[RealShortChannelId, PublicChannel]): DirectedGraph = {
         // initialize the map with the appropriate size to avoid resizing during the graph initialization
         val mutableMap = new mutable.HashMap[PublicKey, List[GraphEdge]](initialCapacity = channels.size + 1, mutable.HashMap.defaultLoadFactor)
-        var undirectedNeighbors = Map.empty[PublicKey, Set[PublicKey]]
 
         // add all the vertices and edges in one go
         channels.values.foreach { channel =>
           channel.update_1_opt.foreach(u1 => addToMap(GraphEdge(u1, channel)))
           channel.update_2_opt.foreach(u2 => addToMap(GraphEdge(u2, channel)))
-          undirectedNeighbors = undirectedNeighbors.updatedWith(channel.nodeId1)(neighbors => Some(neighbors.getOrElse(Set.empty) + channel.nodeId2))
-          undirectedNeighbors = undirectedNeighbors.updatedWith(channel.nodeId2)(neighbors => Some(neighbors.getOrElse(Set.empty) + channel.nodeId1))
         }
 
         def addToMap(edge: GraphEdge): Unit = {
@@ -692,7 +642,7 @@ object Graph {
           }
         }
 
-        new DirectedGraph(mutableMap.toMap, undirectedNeighbors)
+        new DirectedGraph(mutableMap.toMap)
       }
 
       def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)

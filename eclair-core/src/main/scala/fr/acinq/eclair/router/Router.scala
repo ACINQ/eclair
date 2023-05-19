@@ -32,7 +32,6 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.Recipient
@@ -242,7 +241,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
     case Event(r: MessageRouteRequest, d) =>
-      stay() using RouteCalculation.handleMessageRouteRequest(d, r)
+      stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -585,10 +584,16 @@ object Router {
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
-  case class MessageRouteRequest(replyTo: typed.ActorRef[SendingMessage.RouteResult],
+  case class MessageRouteRequest(replyTo: typed.ActorRef[MessageRouteResponse],
                                  source: PublicKey,
                                  target: PublicKey,
                                  ignoredNodes: Set[PublicKey])
+
+  // @formatter:off
+  sealed trait MessageRouteResponse { def target: PublicKey }
+  case class MessageRoute(intermediateNodes: Seq[PublicKey], target: PublicKey) extends MessageRouteResponse
+  case class MessageRouteNotFound(target: PublicKey) extends MessageRouteResponse
+  // @formatter:on
 
   /**
    * Useful for having appropriate logging context at hand when finding routes
