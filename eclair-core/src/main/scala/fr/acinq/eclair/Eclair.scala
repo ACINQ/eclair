@@ -172,7 +172,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(messageRoute_opt: Option[Seq[PublicKey]], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], expectsReply: Boolean, userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
+  def sendOnionMessage(intermediateNodes_opt: Option[Seq[PublicKey]], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], expectsReply: Boolean, userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 
   def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[UUID]
 
@@ -623,7 +623,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(messageRoute_opt: Option[Seq[PublicKey]],
+  override def sendOnionMessage(intermediateNodes_opt: Option[Seq[PublicKey]],
                                 recipient: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute],
                                 expectsReply: Boolean,
                                 userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
@@ -633,9 +633,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Left(key) => OnionMessages.Recipient(key, None)
           case Right(route) => OnionMessages.BlindedPath(route)
         }
-        appKit.postman.ask(ref => Postman.SendMessage(destination, messageRoute_opt, userTlvs, expectsReply, ref)).map {
-          case Postman.Response(payload) =>
-            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
+        val routingStrategy = intermediateNodes_opt match {
+          case Some(intermediateNodes) => OnionMessages.RoutingStrategy.UseRoute(intermediateNodes)
+          case None => OnionMessages.RoutingStrategy.FindRoute
+        }
+        appKit.postman.ask(ref => Postman.SendMessage(destination, routingStrategy, userTlvs, expectsReply, ref)).map {
+          case Postman.Response(payload) => SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)
           case Postman.MessageFailed(failure: String) => SendOnionMessageResponse(sent = false, Some(failure), None)

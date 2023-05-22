@@ -189,9 +189,9 @@ object Graph {
                          sourceNode: PublicKey,
                          targetNode: PublicKey,
                          ignoredVertices: Set[PublicKey],
-                         nodeFeatures: Features[NodeFeature]): Option[Seq[PublicKey]] = {
+                         nodeFeatures: Features[NodeFeature]): MessageRouteResponse = {
     if (sourceNode == targetNode) {
-      return Some(targetNode:: Nil)
+      return MessageRoute(Nil, targetNode)
     }
     val toExplore = mutable.Queue.empty[List[PublicKey]]
     toExplore.enqueue(targetNode :: Nil)
@@ -202,10 +202,10 @@ object Graph {
       val currentPath = toExplore.dequeue()
       for (nodeId <- g.getNeighbors(currentPath.head)) {
         if (!alreadyVisited.contains(nodeId)) {
-          val path = nodeId :: currentPath
           if (nodeId == sourceNode) {
-            return Some(path)
+            return MessageRoute(currentPath.dropRight(1), targetNode)
           }
+          val path = nodeId :: currentPath
           alreadyVisited.add(nodeId)
           if (nodeAnnouncements.get(nodeId).map(_.features.nodeAnnouncementFeatures()).getOrElse(Features.empty).areSupported(nodeFeatures)) {
             toExplore.enqueue(path)
@@ -213,7 +213,7 @@ object Graph {
         }
       }
     }
-    None
+    MessageRouteNotFound(targetNode)
   }
 
   /**
@@ -510,7 +510,7 @@ object Graph {
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
-    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]], /*private val*/ undirectedNeighbors: Map[PublicKey, Set[PublicKey]]) {
+    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]], undirectedNeighbors: Map[PublicKey, Set[PublicKey]]) {
 
       def addEdges(edges: Iterable[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
 

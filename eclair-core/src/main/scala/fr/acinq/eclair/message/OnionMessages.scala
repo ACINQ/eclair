@@ -32,12 +32,11 @@ import scala.concurrent.duration.FiniteDuration
 object OnionMessages {
 
   /**
-   *
-   * @param relayPolicy          When to relay onion messages (always, never, only along existing channels).
-   * @param minIntermediateHops  For routes we build to us, minimum number of hops before our node. Dummy hops are added
-   *                             if needed to hide our position in the network.
-   * @param timeout              Time after which we consider that the message has been lost and stop waiting for a reply.
-   * @param maxAttempts          Maximum number of attempts for sending a message.
+   * @param relayPolicy         When to relay onion messages (always, never, only along existing channels).
+   * @param minIntermediateHops For routes we build to us, minimum number of hops before our node. Dummy hops are added
+   *                            if needed to hide our position in the network.
+   * @param timeout             Time after which we consider that the message has been lost and stop waiting for a reply.
+   * @param maxAttempts         Maximum number of attempts for sending a message.
    */
   case class OnionMessageConfig(relayPolicy: RelayPolicy,
                                 minIntermediateHops: Int,
@@ -50,6 +49,18 @@ object OnionMessages {
   sealed trait Destination
   case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination
+  // @formatter:on
+
+  // @formatter:off
+  sealed trait RoutingStrategy
+  object RoutingStrategy {
+    /** Use the provided route to reach the recipient or the blinded path's introduction node. */
+    case class UseRoute(intermediateNodes: Seq[PublicKey]) extends RoutingStrategy
+    /** Directly connect to the recipient or the blinded path's introduction node. */
+    val connectDirectly: UseRoute = UseRoute(Nil)
+    /** Use path-finding to find a route to reach the recipient or the blinded path's introduction node. */
+    case object FindRoute extends RoutingStrategy
+  }
   // @formatter:on
 
   private def buildIntermediatePayloads(intermediateNodes: Seq[IntermediateNode], nextTlvs: Set[RouteBlindingEncryptedDataTlv]): Seq[ByteVector] = {
@@ -72,9 +83,9 @@ object OnionMessages {
   }
 
   private[message] def buildRouteFrom(originKey: PrivateKey,
-                             blindingSecret: PrivateKey,
-                             intermediateNodes: Seq[IntermediateNode],
-                             destination: Destination): Option[Sphinx.RouteBlinding.BlindedRoute] = {
+                                      blindingSecret: PrivateKey,
+                                      intermediateNodes: Seq[IntermediateNode],
+                                      destination: Destination): Option[Sphinx.RouteBlinding.BlindedRoute] = {
     destination match {
       case recipient: Recipient => Some(buildRoute(blindingSecret, intermediateNodes, recipient))
       case BlindedPath(route) if route.introductionNodeId == originKey.publicKey =>

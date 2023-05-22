@@ -240,10 +240,7 @@ object RouteCalculation {
   }
 
   def handleMessageRouteRequest(d: Data, r: MessageRouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
-    Graph.breadthFirstSearch(d.graphWithBalances.graph, d.nodes, r.source, r.target, r.ignoredNodes, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) match {
-      case None => r.replyTo ! SendingMessage.MessageRouteNotFound
-      case Some(path) => r.replyTo ! SendingMessage.MessageRouteFound(path.drop(1))
-    }
+    r.replyTo ! Graph.breadthFirstSearch(d.graphWithBalances.graph, d.nodes, r.source, r.target, r.ignoredNodes, Features(Features.OnionMessages -> FeatureSupport.Mandatory))
     d
   }
 

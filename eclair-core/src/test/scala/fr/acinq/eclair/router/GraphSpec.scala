@@ -23,7 +23,7 @@ import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, breadthFirstSearch, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.router.Router.{ChannelDesc, MessageRoute, MessageRouteNotFound}
 import fr.acinq.eclair.wire.protocol.Color
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
@@ -400,10 +400,10 @@ class GraphSpec extends AnyFunSuite {
     val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty)
     val annERelay = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
 
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, b, c, d)))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, e, d)))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set(e), Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a, b, c, d)))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, a, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).contains(Seq(a)))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, f, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)).isEmpty)
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(b, c), d))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(e), d))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set(e), Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(b, c), d))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, a, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Nil, a))
+    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, f, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRouteNotFound(f))
   }
 }

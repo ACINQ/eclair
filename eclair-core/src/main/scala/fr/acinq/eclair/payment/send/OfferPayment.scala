@@ -111,15 +111,8 @@ object OfferPayment {
         OnionMessages.Recipient(nodeId, None, None)
     }
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
-    val messageRoute_opt = if (sendPaymentConfig.connectDirectly) {
-      destination match {
-        case OnionMessages.BlindedPath(route) => Some(route.introductionNodeId :: Nil)
-        case OnionMessages.Recipient(nodeId, _, _, _) => Some(nodeId :: Nil)
-      }
-    } else {
-      None
-    }
-    postman ! SendMessage(destination, messageRoute_opt, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
+    val routingStrategy = if (sendPaymentConfig.connectDirectly) OnionMessages.RoutingStrategy.connectDirectly else OnionMessages.RoutingStrategy.FindRoute
+    postman ! SendMessage(destination, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
     waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 
