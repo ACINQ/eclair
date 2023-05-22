@@ -1379,8 +1379,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val check = fr.acinq.bitcoin.Block.verifyTxOutProof(proof.toArray)
     val header = check.getFirst
     bitcoinClient.getTxConfirmationProof(tx.txid).pipeTo(sender.ref)
-    val headerInfos = sender.expectMsgType[List[BlockHeaderInfo]]
-    assert(header == headerInfos.head.header)
+    val confirmationProof = sender.expectMsgType[TxConfirmationProof]
+    assert(header == confirmationProof.headerInfos.head.header)
 
     // try again with a bitcoin client that returns a proof that is not valid for our tx but from the same block where it was confirmed
     bitcoinClient.getTxOutProof(dummyTx.txid).pipeTo(sender.ref)

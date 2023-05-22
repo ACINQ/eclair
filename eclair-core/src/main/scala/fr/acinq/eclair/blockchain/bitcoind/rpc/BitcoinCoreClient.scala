@@ -52,7 +52,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   //------------------------- TRANSACTIONS  -------------------------//
 
   def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
-    getRawTransaction(txid).map(raw => Transaction.read(raw))
+    getRawTransaction(txid).map(raw => {
+      val tx = Transaction.read(raw)
+      require(tx.txid == txid, "transaction id mismatch")
+      tx
+    })
 
   private def getRawTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
     rpcClient.invoke("getrawtransaction", txid).collect {
@@ -79,7 +83,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * @param txid transaction id
    * @return a list of block header information, starting from the block in which the transaction was published, up to the current tip
    */
-  def getTxConfirmationProof(txid: ByteVector32)(implicit ec: ExecutionContext): Future[List[BlockHeaderInfo]] = {
+  def getTxConfirmationProof(txid: ByteVector32)(implicit ec: ExecutionContext): Future[TxConfirmationProof] = {
     import KotlinUtils._
 
     /**
@@ -103,16 +107,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       // that can be used to rebuild the block's merkle root
       (header, txHashesAndPos) = verifyTxOutProof(proof)
       // inclusionData contains a header and a list of (txid, position) that can be used to re-build the header's merkle root
-      // check that the block hash included in the proof matches the block in which the tx was published
-      Some(blockHash) <- getTxBlockHash(txid)
-      _ = require(header.blockId.contentEquals(blockHash.toArray), "confirmation proof is not valid (block id mismatch)")
-      // check that our txid is included in the merkle root of the block it was published in
-      txids = txHashesAndPos.map { case (txhash, _) => txhash.reverse }
-      _ = require(txids.contains(txid), "confirmation proof is not valid (txid not found)")
+      // find the position of txid in the merkle root of the block it was published in
+      pos_opt = txHashesAndPos.find { case (hash, _) => hash.reverse == txid } map { case (_, pos) => pos }
+      _ = require(pos_opt.isDefined, "confirmation proof is not valid (txid not found)")
       // get the block in which our tx was confirmed and all following blocks
-      headerInfos <- getBlockInfos(blockHash, confirmations_opt.get)
-      _ = require(headerInfos.head.header.blockId.contentEquals(blockHash.toArray), "block header id mismatch")
-    } yield headerInfos
+      headerInfos <- getBlockInfos(header.blockId, confirmations_opt.get)
+      _ = require(headerInfos.head.header.blockId == header.blockId, "block header id mismatch")
+    } yield TxConfirmationProof(txid, headerInfos, pos_opt.get)
   }
 
   def getTxOutProof(txid: ByteVector32)(implicit ec: ExecutionContext): Future[ByteVector] =
@@ -716,6 +717,11 @@ object BitcoinCoreClient {
   case class TransactionInfo(tx: Transaction, confirmations: Int, blockId: Option[ByteVector32])
 
   case class BlockHeaderInfo(header: BlockHeader, confirmation: Long, height: Long, nextBlockHash: Option[ByteVector32])
+
+  case class TxConfirmationProof(txid: ByteVector32, headerInfos: List[BlockHeaderInfo], txIndex: Int) {
+    val confirmations = headerInfos.size
+    val height = headerInfos.head.height
+  }
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
