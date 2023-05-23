@@ -70,13 +70,21 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       JInt(timestamp) = blockchainInfo \ "mediantime"
     } yield GetTxWithMetaResponse(txid, tx_opt, TimestampSecond(timestamp.toLong))
 
-  /** Get the number of confirmations of a given transaction. */
-  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
-    rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the number of confirmations */)
-      .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
+
+  def getTxInfo(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[TransactionInfo]] =
+    rpcClient.invoke("getrawtransaction", txid, 1).map(json => {
+      val confirmations = Some((json \ "confirmations").extractOrElse[Int](0))
+      val blockHash = (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex)
+      val hex = (json \ "hex").extract[String]
+      val tx = Transaction.read(hex)
+      require(tx.txid == txid, "transaction id mismatch")
+      Some(TransactionInfo(tx, confirmations, blockHash))
+    })
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None // Invalid or non-wallet transaction id (code: -5)
       }
+
+  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = getTxInfo(txid).map(_.flatMap(_.confirmations))
 
   /**
    *
@@ -99,32 +107,54 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     }
 
     for {
-      confirmations_opt <- getTxConfirmations(txid)
-      if (confirmations_opt.isDefined && confirmations_opt.get > 0)
+      txinfo <- getTxInfo(txid)
+      confirmations_opt = txinfo.flatMap(_.confirmations)
+      if confirmations_opt.isDefined && confirmations_opt.get > 0
+      blockId = txinfo.flatMap(_.blockHash).get
+      // get the coinbase tx for this block, we'll use it to check the block's height
+      blockTxids <- getTransactionIds(blockId)
+      coinbaseTxid = blockTxids.head
+      coinbaseTx <- getTransaction(coinbaseTxid)
       // get the merkle proof for our txid
-      proof <- getTxOutProof(txid)
+      proof <- getTxOutProof(Seq(txid, coinbaseTxid), Some(blockId))
       // verify this merkle proof. if valid, we get the header for the block the tx was published in, and the tx hashes
       // that can be used to rebuild the block's merkle root
       (header, txHashesAndPos) = verifyTxOutProof(proof)
+      _ = require(txHashesAndPos.exists { case (hash, _) => hash.reverse == coinbaseTxid }, "confirmation proof is not valid for coinbase tx")
       // inclusionData contains a header and a list of (txid, position) that can be used to re-build the header's merkle root
       // find the position of txid in the merkle root of the block it was published in
       pos_opt = txHashesAndPos.find { case (hash, _) => hash.reverse == txid } map { case (_, pos) => pos }
       _ = require(pos_opt.isDefined, "confirmation proof is not valid (txid not found)")
       // get the block in which our tx was confirmed and all following blocks
+      height = decodeBlockHeight(coinbaseTx)
       headerInfos <- getBlockInfos(header.blockId, confirmations_opt.get)
       _ = require(headerInfos.head.header.blockId == header.blockId, "block header id mismatch")
+      _ = require(headerInfos.head.height == height, "block header height mismatch")
     } yield TxConfirmationProof(txid, headerInfos, pos_opt.get)
   }
 
-  def getTxOutProof(txid: ByteVector32)(implicit ec: ExecutionContext): Future[ByteVector] =
-    rpcClient.invoke("gettxoutproof", Array(txid)).collect { case JString(raw) => ByteVector.fromValidHex(raw) }
+  def getTxOutProof(txids: Seq[ByteVector32], blockHash_opt: Option[ByteVector32])(implicit ec: ExecutionContext): Future[ByteVector] = (blockHash_opt match {
+    case Some(blockHash) => rpcClient.invoke("gettxoutproof", txids.toArray, blockHash)
+    case None => rpcClient.invoke("gettxoutproof", txids.toArray)
+  }).collect { case JString(raw) => ByteVector.fromValidHex(raw) }
+
+  def getTxOutProof(txid: ByteVector32, blockHash_opt: Option[ByteVector32] = None)(implicit ec: ExecutionContext): Future[ByteVector] = getTxOutProof(Seq(txid), blockHash_opt)
+
+  def getBlock(blockId: ByteVector32)(implicit ec: ExecutionContext): Future[Block] = {
+    rpcClient.invoke("getblock", blockId.toString(), 0).collect {
+      case JString(raw) =>
+        val block = Block.read(raw)
+        require(block.blockId.contentEquals(blockId.toArray))
+        block
+    }
+  }
 
   // returns a chain a blocks of a given size starting at `blockId`
   def getBlockInfos(blockId: ByteVector32, count: Int)(implicit ec: ExecutionContext): Future[List[BlockHeaderInfo]] = {
     import KotlinUtils._
 
     def loop(blocks: List[BlockHeaderInfo]): Future[List[BlockHeaderInfo]] = if (blocks.size == count) Future.successful(blocks) else {
-      getBlockHeaderInfo(blocks.last.nextBlockHash.get.reverse).flatMap(info => loop(blocks :+ info))
+      getBlockHeaderInfo(blocks.last.nextBlockId.get).flatMap(info => loop(blocks :+ info))
     }
 
     getBlockHeaderInfo(blockId).flatMap(info => loop(List(info))).map(blocks => {
@@ -132,20 +162,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
         require(BlockHeader.checkProofOfWork(blocks(i).header))
         require(blocks(i).height == blocks(0).height + i)
         require(blocks(i).confirmation == blocks(0).confirmation - i)
-        require(blocks(i).nextBlockHash.contains(kmp2scala(blocks(i + 1).header.hash)))
-        require(blocks(i + 1).header.hashPreviousBlock == blocks(i).header.hash)
+        require(blocks(i).nextBlockId.contains(kmp2scala(blocks(i + 1).header.blockId)), "next block id mismatch")
+        require(blocks(i + 1).header.hashPreviousBlock == blocks(i).header.hash, "previous block id mismatch")
       }
       blocks
     })
   }
 
   /** Get the hash of the block containing a given transaction. */
-  private def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
-    rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the block hash */)
-      .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
-      .recover {
-        case t: JsonRPCError if t.error.code == -5 => None // Invalid or non-wallet transaction id (code: -5)
-      }
+  private def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] = getTxInfo(txid).map(i => i.flatMap(_.blockHash))
 
   /**
    * @return a Future[height, index] where height is the height of the block where this transaction was published, and
@@ -290,11 +315,18 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       val JInt(nonce) = json \ "nonce"
       val JString(bits) = json \ "bits"
       val merkleRoot = ByteVector32Kt.fromValidHex((json \ "merkleroot").extract[String]).reversed()
-      val previousblockhash = ByteVector32Kt.fromValidHex((json \ "previousblockhash").extract[String]).reversed()
-      val nextblockhash = (json \ "nextblockhash").extractOpt[String].map(h => ByteVector32.fromValidHex(h).reverse)
-      val header = new BlockHeader(version.longValue, previousblockhash, merkleRoot, time.longValue, java.lang.Long.parseLong(bits, 16), nonce.longValue)
+      val previousblockId = ByteVector32Kt.fromValidHex((json \ "previousblockhash").extract[String])
+      val nextblockId = (json \ "nextblockhash").extractOpt[String].map(h => ByteVector32.fromValidHex(h))
+      val header = new BlockHeader(version.longValue, previousblockId.reversed(), merkleRoot, time.longValue, java.lang.Long.parseLong(bits, 16), nonce.longValue)
       require(header.blockId == KotlinUtils.scala2kmp(blockId))
-      BlockHeaderInfo(header, confirmations.toLong, height.toLong, nextblockhash)
+      BlockHeaderInfo(header, confirmations.toLong, height.toLong, nextblockId)
+    })
+  }
+
+  def getTransactionIds(blockId: ByteVector32)(implicit ec: ExecutionContext): Future[Seq[ByteVector32]] = {
+    rpcClient.invoke("getblock", blockId.toString(), 1).map(json => {
+      val JArray(txids) = json \ "tx"
+      txids.map(txid => ByteVector32.fromValidHex(txid.extract[String]))
     })
   }
 
@@ -714,9 +746,11 @@ object BitcoinCoreClient {
 
   case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
-  case class TransactionInfo(tx: Transaction, confirmations: Int, blockId: Option[ByteVector32])
+  case class TransactionInfo(tx: Transaction, confirmations: Option[Int], blockHash: Option[ByteVector32])
 
-  case class BlockHeaderInfo(header: BlockHeader, confirmation: Long, height: Long, nextBlockHash: Option[ByteVector32])
+  case class BlockHeaderInfo(header: BlockHeader, confirmation: Long, height: Long, nextBlockId: Option[ByteVector32])
+
+  case class BlockInfo(headerInfo: BlockHeaderInfo, txids: Seq[ByteVector32])
 
   case class TxConfirmationProof(txid: ByteVector32, headerInfos: List[BlockHeaderInfo], txIndex: Int) {
     val confirmations = headerInfos.size
@@ -724,5 +758,23 @@ object BitcoinCoreClient {
   }
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
+
+  /**
+   * TODO: move this into bitcoin-kmp
+   * Extract the block height embedded in a block's coinbase tx (see BIP34)
+   *
+   * @param signatureScript coinbase transaction input signature script
+   * @return the block height committed to in the coinbase tx
+   */
+  def decodeBlockHeight(signatureScript: ByteVector): Long = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val it = fr.acinq.bitcoin.Script.INSTANCE.scriptIterator(signatureScript.toArray)
+    val op: ScriptElt = it.next()
+    require(op.isPush, "signature script does not match BIP34 rules")
+    Script.decodeNumber(op.asInstanceOf[OP_PUSHDATA].data, false, 4)
+  }
+
+  def decodeBlockHeight(coinbaseTx: Transaction): Long = decodeBlockHeight(coinbaseTx.txIn(0).signatureScript)
 
 }

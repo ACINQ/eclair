@@ -21,8 +21,8 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
-import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
+import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.{Bech32, Block, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -308,6 +308,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("create/commit/rollback funding txs") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
@@ -372,6 +374,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("unlock failed funding txs") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
@@ -1224,6 +1228,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("get pubkey for p2wpkh receive address") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
@@ -1247,6 +1252,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("generate segwit change outputs") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
@@ -1331,14 +1337,14 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val lastBlockId = sender.expectMsgType[ByteVector32]
     bitcoinClient.getBlockHeaderInfo(lastBlockId).pipeTo(sender.ref)
     val lastBlockInfo = sender.expectMsgType[BlockHeaderInfo]
-    assert(lastBlockInfo.nextBlockHash.isEmpty)
+    assert(lastBlockInfo.nextBlockId.isEmpty)
 
     bitcoinClient.getBlockHash(height.toInt - 1).pipeTo(sender.ref)
     val blockId = sender.expectMsgType[ByteVector32]
     bitcoinClient.getBlockHeaderInfo(blockId).pipeTo(sender.ref)
     val blockInfo = sender.expectMsgType[BlockHeaderInfo]
     assert(lastBlockInfo.header.hashPreviousBlock == blockInfo.header.hash)
-    assert(blockInfo.nextBlockHash.contains(kmp2scala(lastBlockInfo.header.hash)))
+    assert(blockInfo.nextBlockId.contains(kmp2scala(lastBlockInfo.header.blockId)))
   }
 
   test("get chains of block headers") {
@@ -1351,9 +1357,32 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.getBlockInfos(blockId, 5).pipeTo(sender.ref)
     val blockInfos = sender.expectMsgType[List[BlockHeaderInfo]]
     for (i <- 0 until blockInfos.size - 1) {
-      require(blockInfos(i).nextBlockHash.contains(kmp2scala(blockInfos(i + 1).header.hash)))
+      require(blockInfos(i).nextBlockId.contains(kmp2scala(blockInfos(i + 1).header.blockId)))
       require(blockInfos(i + 1).header.hashPreviousBlock == blockInfos(i).header.hash)
     }
+  }
+
+  test("get transaction ids") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val address = getNewAddress(sender)
+
+    generateBlocks(1)
+    val txs = (0 until 10).map(_ => sendToAddress(address, 10000.sat))
+    generateBlocks(1)
+    bitcoinClient.getBlockHeight().flatMap(height => bitcoinClient.getBlockHash(height.toInt)).pipeTo(sender.ref)
+    val blockHash = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getBlock(blockHash).pipeTo(sender.ref)
+    val block = sender.expectMsgType[Block]
+    assert(block.blockId.contentEquals(blockHash.toArray))
+    bitcoinClient.getTransactionIds(blockHash).pipeTo(sender.ref)
+    val txids = sender.expectMsgType[Seq[ByteVector32]]
+    assert((txs.map(_.txid).toSet -- txids).isEmpty)
+  }
+
+  test("decode embedded block height") {
+    val coinbaseTx = Transaction.read("010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff580399de0a1b4d696e656420627920416e74506f6f6c373436a10015037d15afd8fabe6d6d84ec36731b79c697ddf94ce60c369686671fddcfa1d89bab89445908e0acf31f0200000000000000514900009520020000000000ffffffff04d0ee6425000000001976a91411dbe48cc6b617f9c6adaf4d9ed5f625b1c7cb5988ac0000000000000000266a24aa21a9ed271daeb7b480018dd1dc9c53180c1a7eb89d004e7eb4ec2937e69909f3782a030000000000000000266a24b9e11b6d68d1fd4e697128e0b3901d0229ae7cd7f14124d9678aae7cb716beebe65fb1b800000000000000002b6a2952534b424c4f434b3af5be02402ea85e79a5198ef3a6988aded3fa928a6609120f27905328003b6f7b0120000000000000000000000000000000000000000000000000000000000000000000000000")
+    require(decodeBlockHeight(coinbaseTx) == 712345)
   }
 
   test("verify tx publication proofs") {
@@ -1374,7 +1403,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.getTxConfirmations(tx.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(6))
 
-    bitcoinClient.getTxOutProof(tx.txid).pipeTo(sender.ref)
+    bitcoinClient.getBlockHeight().flatMap(height => bitcoinClient.getBlockHash(height.toInt - 5)).pipeTo(sender.ref)
+    val blockHash = sender.expectMsgType[ByteVector32]
+    bitcoinClient.getTxOutProof(tx.txid, Some(blockHash)).pipeTo(sender.ref)
     val proof = sender.expectMsgType[ByteVector]
     val check = fr.acinq.bitcoin.Block.verifyTxOutProof(proof.toArray)
     val header = check.getFirst
@@ -1392,7 +1423,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       }
     })
     evilBitcoinClient.getTxConfirmationProof(tx.txid).pipeTo(sender.ref)
-    val error = sender.expectMsgType[Failure]
-    assert(error.cause.getMessage.contains("txid not found"))
+    sender.expectMsgType[Failure]
   }
 }
