@@ -277,13 +277,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(msg: OnionMessage, _: ConnectedData) =>
         OnionMessages.process(nodeParams.privateKey, msg) match {
           case OnionMessages.DropMessage(reason) =>
-            log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
+            log.debug("dropping message from {}: {}", remoteNodeId.value.toHex, reason.toString)
           case OnionMessages.SendMessage(nextNodeId, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
             switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
           case OnionMessages.SendMessage(_, _) =>
-            log.debug(s"dropping message from ${remoteNodeId.value.toHex}: relaying onion messages is disabled")
+            log.debug("dropping message from {}: relaying onion messages is disabled", remoteNodeId.value.toHex)
           case received: OnionMessages.ReceiveMessage =>
-            log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
+            log.info("received message from {}: {}", remoteNodeId.value.toHex, received)
             context.system.eventStream.publish(received)
         }
         stay()
