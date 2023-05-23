@@ -17,12 +17,14 @@
 package fr.acinq.eclair.crypto
 
 import kamon.Kamon
+import kamon.metric.MeasurementUnit
 
 object Monitoring {
 
   object Metrics {
     val SignTxCount = Kamon.counter("crypto.keymanager.sign.count")
     val SignTxDuration = Kamon.timer("crypto.keymanager.sign.duration")
+    val MessageSize = Kamon.histogram("messages.size", MeasurementUnit.information.bytes)
   }
 
   object Tags {
@@ -33,6 +35,13 @@ object Monitoring {
       val CommitTx = "commit"
       val HtlcTx = "htlc"
       val RevokedTx = "revoked"
+    }
+
+    val MessageDirection = "direction"
+
+    object MessageDirections {
+      val IN = "IN"
+      val OUT = "OUT"
     }
 
   }
