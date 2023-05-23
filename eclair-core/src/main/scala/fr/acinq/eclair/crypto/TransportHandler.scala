@@ -100,6 +100,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
     plaintextMessages.foreach(plaintext => Try(codec.decode(plaintext.toBitVector)) match {
       case Success(Attempt.Successful(DecodeResult(message, _))) =>
         diag(message, "IN")
+        Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, "IN").record(plaintext.size)
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Success(Attempt.Failure(err)) =>
@@ -217,6 +218,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         } else {
           diag(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
+          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, "OUT").record(blob.size)
           val (enc1, ciphertext) = d.encryptor.encrypt(blob)
           connection ! Tcp.Write(buf(ciphertext), WriteAck)
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
@@ -226,6 +228,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         def send(t: T) = {
           diag(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
+          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, "OUT").record(blob.size)
           val (enc1, ciphertext) = d.encryptor.encrypt(blob)
           connection ! Tcp.Write(buf(ciphertext), WriteAck)
           enc1
