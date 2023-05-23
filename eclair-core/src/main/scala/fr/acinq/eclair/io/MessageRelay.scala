@@ -49,7 +49,6 @@ object MessageRelay {
   }
 
   sealed trait RelayPolicy
-  case object NoRelay extends RelayPolicy
   case object RelayChannelsOnly extends RelayPolicy
   case object RelayAll extends RelayPolicy
   // @formatter:on
@@ -58,9 +57,6 @@ object MessageRelay {
     Behaviors.receivePartial {
       case (context, RelayMessage(messageId, switchboard, prevNodeId, nextNodeId, msg, policy, replyTo_opt)) =>
         policy match {
-          case NoRelay =>
-            replyTo_opt.foreach(_ ! AgainstPolicy(messageId, policy))
-            Behaviors.stopped
           case RelayChannelsOnly =>
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
             waitForPreviousPeer(messageId, switchboard, nextNodeId, msg, replyTo_opt)

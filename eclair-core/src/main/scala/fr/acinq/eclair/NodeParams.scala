@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrat
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
@@ -427,7 +427,6 @@ object NodeParams extends Logging {
     }
 
     val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
-      case "no-relay" => NoRelay
       case "channels-only" => RelayChannelsOnly
       case "relay-all" => RelayAll
     }
