@@ -28,7 +28,6 @@ object Monitoring {
   }
 
   object Tags {
-    val MessageDirection = "direction"
     val TxOwner = "txOwner"
     val TxType = "txType"
 
@@ -36,6 +35,13 @@ object Monitoring {
       val CommitTx = "commit"
       val HtlcTx = "htlc"
       val RevokedTx = "revoked"
+    }
+
+    val MessageDirection = "direction"
+
+    object MessageDirections {
+      val IN = "IN"
+      val OUT = "OUT"
     }
 
   }
