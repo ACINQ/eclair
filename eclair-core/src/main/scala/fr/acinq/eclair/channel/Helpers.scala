@@ -792,6 +792,8 @@ object Helpers {
           case u: UpdateFailHtlc => u.id
           case u: UpdateFailMalformedHtlc => u.id
         }.toSet
+        // these htlcs have been signed by our peer, but we haven't received their revocation and relayed them yet
+        val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.signed.collect { case add: UpdateAddHtlc => add.id }.toSet
 
         commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
@@ -803,6 +805,9 @@ object Helpers {
               })
             } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
               // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
+              None
+            } else if (nonRelayedIncomingHtlcs.contains(txInfo.htlcId)) {
+              // incoming htlc that we haven't relayed yet: we can safely discard it, our peer will claim it once it times out
               None
             } else {
               // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
