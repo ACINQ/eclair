@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
@@ -72,7 +73,8 @@ object ReplaceableTxFunder {
     Behaviors.setup { context =>
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
-          case FundTransaction(replyTo, cmd, tx, targetFeerate) =>
+          case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
+            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment))
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
@@ -86,6 +88,35 @@ object ReplaceableTxFunder {
   private def dummySignedCommitTx(commitment: FullCommitment): CommitTx = {
     val unsignedCommitTx = commitment.localCommit.commitTxAndRemoteSig.commitTx
     addSigs(unsignedCommitTx, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderSig, PlaceHolderSig)
+  }
+
+  /**
+   * The on-chain feerate can be arbitrarily high, but it wouldn't make sense to pay more fees than the amount we're
+   * trying to claim on-chain. We compute how much funds we have at risk and the feerate that matches this amount.
+   */
+  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment): FeeratePerKw = {
+    // We don't want to pay more in fees than the amount at risk in untrimmed pending HTLCs.
+    val maxFee = txInfo match {
+      case tx: HtlcTx => tx.input.txOut.amount
+      case tx: ClaimHtlcTx => tx.input.txOut.amount
+      case _: ClaimLocalAnchorOutputTx =>
+        val htlcBalance = commitment.localCommit.htlcTxsAndRemoteSigs.map(_.htlcTx.input.txOut.amount).sum
+        val mainBalance = commitment.localCommit.spec.toLocal.truncateToSatoshi
+        // If there are no HTLCs or a low HTLC amount, we may still want to get back our main balance.
+        // In that case, we spend at most 5% of our balance in fees.
+        htlcBalance.max(mainBalance * 5 / 100)
+    }
+    // We cannot know beforehand how many wallet inputs will be added, but an estimation should be good enough.
+    val weight = txInfo match {
+      // For HTLC transactions, we add a p2wpkh input and a p2wpkh change output.
+      case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessWeight + Transactions.claimP2WPKHOutputWeight
+      case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutWeight + Transactions.claimP2WPKHOutputWeight
+      case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
+      case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
+      case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
+      case _: ClaimLocalAnchorOutputTx => dummySignedCommitTx(commitment).tx.weight() + Transactions.claimAnchorOutputMinWeight
+    }
+    Transactions.fee2rate(maxFee, weight)
   }
 
   /**
@@ -203,6 +234,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private val log = context.log
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    log.info("funding {} tx (targetFeerate={})", txWithWitnessData.txInfo.desc, targetFeerate)
     txWithWitnessData match {
       case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
         val commitFeerate = cmd.commitment.localCommit.spec.commitTxFeerate
@@ -237,6 +269,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    log.info("bumping {} tx (targetFeerate={})", previousTx.signedTxWithWitnessData.txInfo.desc, targetFeerate)
     adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitment) match {
       case AdjustPreviousTxOutputResult.Skip(reason) =>
         log.warn("skipping {} fee bumping: {} (feerate={})", cmd.desc, reason, targetFeerate)
@@ -260,7 +293,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case AddInputsOk(fundedTx, totalAmountIn) =>
-        log.info("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
+        log.debug("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
         sign(fundedTx, targetFeerate, totalAmountIn)
       case AddInputsFailed(reason) =>
         if (reason.getMessage.contains("Insufficient funds")) {
