@@ -234,6 +234,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private val log = context.log
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    log.info("funding {} tx (targetFeerate={})", txWithWitnessData.txInfo.desc, targetFeerate)
     txWithWitnessData match {
       case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
         val commitFeerate = cmd.commitment.localCommit.spec.commitTxFeerate
@@ -268,6 +269,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    log.info("bumping {} tx (targetFeerate={})", previousTx.signedTxWithWitnessData.txInfo.desc, targetFeerate)
     adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitment) match {
       case AdjustPreviousTxOutputResult.Skip(reason) =>
         log.warn("skipping {} fee bumping: {} (feerate={})", cmd.desc, reason, targetFeerate)
@@ -291,7 +293,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case AddInputsOk(fundedTx, totalAmountIn) =>
-        log.info("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
+        log.debug("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
         sign(fundedTx, targetFeerate, totalAmountIn)
       case AddInputsFailed(reason) =>
         if (reason.getMessage.contains("Insufficient funds")) {
