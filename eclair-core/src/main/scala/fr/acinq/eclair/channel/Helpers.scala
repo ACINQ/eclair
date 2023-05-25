@@ -793,7 +793,7 @@ object Helpers {
           case u: UpdateFailMalformedHtlc => u.id
         }.toSet
         // these htlcs have been signed by our peer, but we haven't received their revocation and relayed them yet
-        val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.signed.collect { case add: UpdateAddHtlc => add.id }.toSet
+        val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
 
         commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
