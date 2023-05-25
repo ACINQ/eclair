@@ -245,23 +245,31 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
-    addHtlc(758640000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(758_640_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == 0.msat)
 
-    // actual test begins
-    // at this point alice has the minimal amount to sustain a channel
-    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first few HTLCs should be allowed
-    for (_ <- 1 to 7) {
-      bob ! CMD_ADD_HTLC(sender.ref, 12000000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    // At this point alice has the minimal amount to sustain a channel.
+    // Alice maintains an extra reserve to accommodate for a few more HTLCs, so the first few HTLCs should be allowed.
+    val htlcs = (1 to 7).map { _ =>
+      bob ! CMD_ADD_HTLC(sender.ref, 12_000_000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+      val add = bob2alice.expectMsgType[UpdateAddHtlc]
+      bob2alice.forward(alice, add)
+      add
     }
 
-    // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
-    val failedAdd = CMD_ADD_HTLC(sender.ref, 11000000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    // But this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more.
+    val failedAdd = CMD_ADD_HTLC(sender.ref, 11_000_000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     bob ! failedAdd
-    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1360 sat, 20000 sat, 22720 sat)
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 1360 sat, 20_000 sat, 22_720 sat)
     sender.expectMsg(RES_ADD_FAILED(failedAdd, error, Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)))
+
+    // If Bob had sent this HTLC, Alice would have accepted dipping into her reserve.
+    val add = htlcs.last.copy(id = htlcs.last.id + 1)
+    val proposedChanges = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.proposed.size
+    alice ! add
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.proposed.size == proposedChanges + 1)
   }
 
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
