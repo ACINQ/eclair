@@ -127,11 +127,10 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel2)
 
-      // make sure initially all metadata are empty
-      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").isEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Created)
@@ -146,14 +145,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Connected)
       assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Closed(null))
+      db.removeChannel(channel1.channelId)
       assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").nonEmpty)
 
-      // make sure all metadata are still empty for channel 2
-      assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "closed_timestamp").isEmpty)
     }
   }
