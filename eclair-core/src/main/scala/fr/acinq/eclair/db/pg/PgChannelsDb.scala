@@ -171,8 +171,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       val encoded = channelDataCodec.encode(data).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local.channels (channel_id, remote_node_id, data, json, is_closed)
-          | VALUES (?, ?, ?, ?::JSONB, FALSE)
+          | INSERT INTO local.channels (channel_id, remote_node_id, data, json, created_timestamp, last_connected_timestamp, is_closed)
+          | VALUES (?, ?, ?, ?::JSONB, ?, ?, FALSE)
           | ON CONFLICT (channel_id)
           | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
@@ -180,6 +180,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.setString(2, data.remoteNodeId.toHex)
         statement.setBytes(3, encoded)
         statement.setString(4, serialization.write(data))
+        statement.setTimestamp(5, Timestamp.from(Instant.now()))
+        statement.setTimestamp(6, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }
@@ -194,9 +196,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  /**
-   * Helper method to factor updating timestamp columns
-   */
+  /** Helper method to factor updating timestamp columns */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
     inTransaction(IsolationLevel.TRANSACTION_READ_UNCOMMITTED) { pg =>
       using(pg.prepareStatement(s"UPDATE local.channels SET $columnName=? WHERE channel_id=?")) { statement =>
@@ -209,11 +209,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
     val timestampColumn_opt = event match {
-      case ChannelEvent.EventType.Created => Some("created_timestamp")
       case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
       case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
       case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
-      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
       case _ => None
     }
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
@@ -231,8 +229,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate()
       }
 
-      using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE WHERE channel_id=?")) { statement =>
-        statement.setString(1, channelId.toHex)
+      using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE, closed_timestamp=? WHERE channel_id=?")) { statement =>
+        statement.setTimestamp(1, Timestamp.from(Instant.now()))
+        statement.setString(2, channelId.toHex)
         statement.executeUpdate()
       }
     }
