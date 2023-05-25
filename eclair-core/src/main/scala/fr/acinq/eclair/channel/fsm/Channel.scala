@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.Features.SplicePrototype
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -835,7 +835,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           } else {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
-          val parentCommitment = d.commitments.latest.commitment
+            val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
               fundingContribution = 0.sat, // only remote contributes to the splice
               fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
@@ -1682,6 +1682,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case _ => d.latestFundingTx.sharedTx match {
             case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => TlvStream(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId.reverse))
             case _: InteractiveTxBuilder.FullySignedSharedTransaction => TlvStream.empty
+          }
+        }
+        case d: DATA_NORMAL => d.spliceStatus match {
+          case SpliceStatus.SpliceWaitingForSigs(status) => TlvStream(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case _ => d.commitments.latest.localFundingStatus match {
+            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _) => TlvStream(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId.reverse))
+            case _ => TlvStream.empty
           }
         }
         case _ => TlvStream.empty
