@@ -115,9 +115,11 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       update.setBytes(1, encoded)
       update.setBytes(2, data.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, created_timestamp, last_connected_timestamp, is_closed) VALUES (?, ?, ?, ?, 0)")) { statement =>
           statement.setBytes(1, data.channelId.toArray)
           statement.setBytes(2, encoded)
+          statement.setLong(3, TimestampMilli.now().toLong)
+          statement.setLong(4, TimestampMilli.now().toLong)
           statement.executeUpdate()
         }
       }
@@ -144,11 +146,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
     val timestampColumn_opt = event match {
-      case ChannelEvent.EventType.Created => Some("created_timestamp")
       case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
       case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
       case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
-      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
       case _ => None
     }
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
@@ -165,8 +165,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1, closed_timestamp=? WHERE channel_id=?")) { statement =>
+      statement.setLong(1, TimestampMilli.now().toLong)
+      statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }
 

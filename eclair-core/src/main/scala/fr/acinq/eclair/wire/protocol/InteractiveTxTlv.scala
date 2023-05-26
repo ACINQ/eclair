@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, satoshiSigned, varint}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tsatoshi}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.codecs.discriminated
 
@@ -34,7 +34,8 @@ object TxAddInputTlv {
   case class SharedInputTxId(txid: ByteVector32) extends TxAddInputTlv
 
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
-    .typecase(UInt64(1105), tlvField(bytes32.as[SharedInputTxId]))
+    // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
+    .typecase(UInt64(1105), tlvField(bytes32.xmap(txId => txId.reverse, (txHash: ByteVector32) => txHash.reverse).as[SharedInputTxId]))
   )
 }
 

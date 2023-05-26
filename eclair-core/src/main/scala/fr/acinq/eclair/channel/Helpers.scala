@@ -64,13 +64,13 @@ object Helpers {
     }
   }
 
-  def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+  private def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     val canUseUpfrontShutdownScript = Features.canUseFeature(localFeatures, remoteFeatures, Features.UpfrontShutdownScript)
     val canUseAnySegwit = Features.canUseFeature(localFeatures, remoteFeatures, Features.ShutdownAnySegwit)
     extractShutdownScript(channelId, canUseUpfrontShutdownScript, canUseAnySegwit, upfrontShutdownScript_opt)
   }
 
-  def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+  private def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
       case (true, None) => Left(MissingUpfrontShutdownScript(channelId))
       case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
@@ -304,7 +304,7 @@ object Helpers {
    * @param remoteFeeratePerKw remote fee rate per kiloweight
    * @return true if the remote fee rate is too small
    */
-  def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
+  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
     remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
   }
 
@@ -605,9 +605,6 @@ object Helpers {
 
     object MutualClose {
 
-      // used only to compute tx weights and estimate fees
-      lazy val dummyPublicKey: PublicKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
-
       def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = {
         Try(Script.parse(scriptPubKey)) match {
           case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
@@ -622,7 +619,7 @@ object Helpers {
       def firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
         // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.isInitiator, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
-        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, commitment.remoteFundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
+        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, Transactions.PlaceHolderPubKey, commitment.remoteFundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
         log.info(s"using feerates=$feerates for initial closing tx")
         feerates.computeFees(closingWeight)
       }
@@ -666,21 +663,15 @@ object Helpers {
       }
 
       def checkClosingSignature(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64)(implicit log: LoggingAdapter): Either[ChannelException, (ClosingTx, ClosingSigned)] = {
-        val lastCommitFeeSatoshi = commitment.commitInput.txOut.amount - commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.map(_.amount).sum
-        if (remoteClosingFee > lastCommitFeeSatoshi && commitment.params.commitmentFormat == DefaultCommitmentFormat) {
-          log.error(s"remote proposed a commit fee higher than the last commitment fee: remote closing fee=${remoteClosingFee.toLong} last commit fees=$lastCommitFeeSatoshi")
-          Left(InvalidCloseFee(commitment.channelId, remoteClosingFee))
-        } else {
-          val (closingTx, closingSigned) = makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
-          if (checkClosingDustAmounts(closingTx)) {
-            val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, closingSigned.signature, remoteClosingSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Success(_) => Right(signedClosingTx, closingSigned)
-              case _ => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-            }
-          } else {
-            Left(InvalidCloseAmountBelowDust(commitment.channelId, closingTx.tx.txid))
+        val (closingTx, closingSigned) = makeClosingTx(keyManager, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
+        if (checkClosingDustAmounts(closingTx)) {
+          val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, closingSigned.signature, remoteClosingSig)
+          Transactions.checkSpendable(signedClosingTx) match {
+            case Success(_) => Right(signedClosingTx, closingSigned)
+            case _ => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
           }
+        } else {
+          Left(InvalidCloseAmountBelowDust(commitment.channelId, closingTx.tx.txid))
         }
       }
 
@@ -792,6 +783,8 @@ object Helpers {
           case u: UpdateFailHtlc => u.id
           case u: UpdateFailMalformedHtlc => u.id
         }.toSet
+        // these htlcs have been signed by our peer, but we haven't received their revocation and relayed them yet
+        val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
 
         commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
@@ -803,6 +796,9 @@ object Helpers {
               })
             } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
               // incoming htlc that we know for sure will never be fulfilled downstream: we can safely discard it
+              None
+            } else if (nonRelayedIncomingHtlcs.contains(txInfo.htlcId)) {
+              // incoming htlc that we haven't relayed yet: we can safely discard it, our peer will claim it once it times out
               None
             } else {
               // incoming htlc for which we don't have the preimage: we can't spend it immediately, but we may learn the
@@ -995,7 +991,7 @@ object Helpers {
        *
        * This function returns the per-commitment secret in the first case, and None in the other cases.
        */
-      def getRemotePerCommitmentSecret(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, commitTx: Transaction)(implicit log: LoggingAdapter): Option[(Long, PrivateKey)] = {
+      def getRemotePerCommitmentSecret(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, commitTx: Transaction): Option[(Long, PrivateKey)] = {
         import params._
         // a valid tx will always have at least one input, but this ensures we don't throw in tests
         val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)

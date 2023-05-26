@@ -101,6 +101,20 @@ case class ChannelParams(channelId: ByteVector32,
    */
   def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
+  /** Channel reserve that applies to our funds. */
+  def localChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+    (capacity / 100).max(remoteParams.dustLimit)
+  } else {
+    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+  }
+
+  /** Channel reserve that applies to our peer's funds. */
+  def remoteChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+    (capacity / 100).max(localParams.dustLimit)
+  } else {
+    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+  }
+
   /**
    *
    * @param localScriptPubKey local script pubkey (provided in CMD_CLOSE, as an upfront shutdown script, or set to the current final onchain script)
@@ -248,18 +262,10 @@ case class Commitment(fundingTxIndex: Long,
   val capacity: Satoshi = commitInput.txOut.amount
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(params.remoteParams.dustLimit)
-  } else {
-    params.remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
-  }
+  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity)
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(params.localParams.dustLimit)
-  } else {
-    params.localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
-  }
+  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity)
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
   // top of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
@@ -488,7 +494,10 @@ case class Commitment(fundingTxIndex: Long,
     // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
     // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
-    val missingForReceiver = reduced.toLocal - localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
+    // Note that Bolt 2 requires to also meet our channel reserve requirement, but we're more lenient than that because
+    // as long as we're able to pay the commit tx fee, it's ok if we dip into our channel reserve: we're receiving an
+    // HTLC, which means our balance will increase and meet the channel reserve again.
+    val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) fees else 0.sat)
     if (missingForSender < 0.sat) {
       return Left(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
     } else if (missingForReceiver < 0.sat) {

@@ -120,7 +120,7 @@
   "waitingSince" : 400000,
   "lastSent" : {
     "temporaryChannelId" : "0000000000000000000000000000000000000000000000000000000000000000",
-    "fundingTxid" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
+    "fundingTxHash" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
     "fundingOutputIndex" : 0,
     "signature" : "bd55d8660f54a1be6e123e2ed9cd6669d90b830d99dc6f9addd9ae65c447ea6b657e2fe39841f66c1d6a2fc80ad59e6f3d9bfaf177f4e95a579f0683bf3e9790",
     "tlvStream" : { }

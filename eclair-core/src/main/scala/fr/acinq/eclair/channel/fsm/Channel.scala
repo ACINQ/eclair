@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.Features.SplicePrototype
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -824,11 +824,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           stay()
       }
 
-    // NB: we only accept splices on regtest and testnet
-    case Event(msg: SpliceInit, d: DATA_NORMAL) if nodeParams.chainHash == Block.RegtestGenesisBlock.hash || nodeParams.chainHash == Block.TestnetGenesisBlock.hash =>
+    case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle) {
+          if (!d.commitments.isIdle) {
+            log.info("rejecting splice request: channel not idle")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+          } else if (msg.feerate < nodeParams.onChainFeeConf.feeEstimator.getMempoolMinFeeratePerKw()) {
+            log.info("rejecting splice request: feerate too low")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+          } else {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
@@ -859,9 +864,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             ))
             txBuilder ! InteractiveTxBuilder.Start(self)
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, splice = txBuilder, remoteCommitSig = None)) sending spliceAck
-          } else {
-            log.info("rejecting splice request, channel not idle or not compatible")
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           }
         case SpliceStatus.SpliceAborted =>
           log.info("rejecting splice attempt: our previous tx_abort was not acked")
@@ -1657,13 +1659,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       activeConnection = r
       val channelKeyPath = keyManager.keyPath(d.channelParams.localParams, d.channelParams.channelConfig)
       val myFirstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
+      val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId.reverse))
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = 1,
         nextRemoteRevocationNumber = 0,
         yourLastPerCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
         myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-        TlvStream(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId.reverse)),
+        TlvStream(nextFundingTlv),
       )
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
       goto(SYNCING) using d1 sending channelReestablish
@@ -1674,15 +1677,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
-      val tlvs: TlvStream[ChannelReestablishTlv] = d match {
+      val rbfTlv: Set[ChannelReestablishTlv] = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.rbfStatus match {
-          case RbfStatus.RbfWaitingForSigs(status) => TlvStream(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case RbfStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
           case _ => d.latestFundingTx.sharedTx match {
-            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => TlvStream(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId.reverse))
-            case _: InteractiveTxBuilder.FullySignedSharedTransaction => TlvStream.empty
+            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId.reverse))
+            case _: InteractiveTxBuilder.FullySignedSharedTransaction => Set.empty
           }
         }
-        case _ => TlvStream.empty
+        case d: DATA_NORMAL => d.spliceStatus match {
+          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case _ => d.commitments.latest.localFundingStatus match {
+            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId.reverse))
+            case _ => Set.empty
+          }
+        }
+        case _ => Set.empty
       }
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
@@ -1690,7 +1700,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-        tlvStream = tlvs
+        tlvStream = TlvStream(rbfTlv)
       )
       // we update local/remote connection-local global/local features, we don't persist it right now
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)

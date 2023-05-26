@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.payment.send
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentEvent, PaymentFailed, RemoteFailure}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TimestampSecond, randomBytes32, randomLong}
+import fr.acinq.eclair.{FeatureSupport, Features, MilliSatoshiLong, NodeParams, TimestampSecond, randomBytes32, randomLong}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -61,6 +61,9 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
             List(
               Bolt11Invoice.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)
               Bolt11Invoice.Description("ignored"),
+              Bolt11Invoice.PaymentSecret(randomBytes32()),
+              Bolt11Invoice.MinFinalCltvExpiry(6),
+              Bolt11Invoice.InvoiceFeatures(Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))),
             ),
             ByteVector.empty)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
@@ -81,7 +84,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
       scheduleProbe()
   }
 
-  def scheduleProbe() = context.system.scheduler.scheduleOnce(PROBING_INTERVAL, self, TickProbe)
+  private def scheduleProbe(): Cancellable = context.system.scheduler.scheduleOnce(PROBING_INTERVAL, self, TickProbe)
 
 }
 
@@ -89,15 +92,13 @@ object Autoprobe {
 
   def props(nodeParams: NodeParams, router: ActorRef, paymentInitiator: ActorRef) = Props(new Autoprobe(nodeParams, router, paymentInitiator))
 
-  val ROUTING_TABLE_REFRESH_INTERVAL = 10 minutes
+  private val ROUTING_TABLE_REFRESH_INTERVAL = 10 minutes
+  private val PROBING_INTERVAL = 20 seconds
+  private val PAYMENT_AMOUNT_MSAT = 100_000 msat // this is below dust_limit so there won't be an output in the commitment tx
 
-  val PROBING_INTERVAL = 20 seconds
+  private object TickProbe
 
-  val PAYMENT_AMOUNT_MSAT = (100 * 1000) msat // this is below dust_limit so there won't be an output in the commitment tx
-
-  object TickProbe
-
-  def pickPaymentDestination(nodeId: PublicKey, routingData: Router.Data): Option[PublicKey] = {
+  private def pickPaymentDestination(nodeId: PublicKey, routingData: Router.Data): Option[PublicKey] = {
     // we only pick direct peers with enabled public channels
     val peers = routingData.channels
       .collect {
