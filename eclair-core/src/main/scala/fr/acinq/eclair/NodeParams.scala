@@ -299,9 +299,10 @@ object NodeParams extends Logging {
 
     val maxToLocalCLTV = CltvExpiryDelta(config.getInt("channel.max-to-local-delay-blocks"))
     val offeredCLTV = CltvExpiryDelta(config.getInt("channel.to-remote-delay-blocks"))
-    require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
     val expiryDelta = CltvExpiryDelta(config.getInt("channel.expiry-delta-blocks"))
+    val maxExpiryDelta = CltvExpiryDelta(config.getInt("channel.max-expiry-delta-blocks"))
+    require(expiryDelta < maxExpiryDelta, "channel.max-expiry-delta-blocks must be at least a few times larger than channel.expiry-delta-blocks, otherwise you will fail to relay payments")
     val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("channel.fulfill-safety-before-timeout-blocks"))
     require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
     val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
@@ -479,6 +480,7 @@ object NodeParams extends Logging {
         maxToLocalDelay = maxToLocalCLTV,
         minDepthBlocks = config.getInt("channel.mindepth-blocks"),
         expiryDelta = expiryDelta,
+        maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
         minFinalExpiryDelta = minFinalExpiryDelta,
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
