@@ -230,9 +230,9 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.listLocalChannels()
   }
 
-  override def listClosedChannels(from: TimestampSecond, to: TimestampSecond, remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = {
-    runAsync(secondary.listClosedChannels(from, to, remoteNodeId_opt, paginated_opt))
-    primary.listClosedChannels(from, to, remoteNodeId_opt, paginated_opt)
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = {
+    runAsync(secondary.listClosedChannels(remoteNodeId_opt, paginated_opt))
+    primary.listClosedChannels(remoteNodeId_opt, paginated_opt)
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {

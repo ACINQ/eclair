@@ -253,21 +253,17 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def listClosedChannels(from: TimestampSecond, to: TimestampSecond, remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
-    val sql = "SELECT data FROM local.channels WHERE closed_timestamp>=? AND closed_timestamp<=? ORDER BY closed_timestamp"
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    val sql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp"
     val rs = withLock { pg =>
         remoteNodeId_opt match {
           case None =>
             using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
-              statement.setTimestamp(1, from.toSqlTimestamp)
-              statement.setTimestamp(2, to.toSqlTimestamp)
               statement.executeQuery()
                 .mapCodec(channelDataCodec)
             }
           case Some(_) =>
             using(pg.prepareStatement(sql)) { statement =>
-              statement.setTimestamp(1, from.toSqlTimestamp)
-              statement.setTimestamp(2, to.toSqlTimestamp)
               statement.executeQuery()
                 .mapCodec(channelDataCodec)
             }
