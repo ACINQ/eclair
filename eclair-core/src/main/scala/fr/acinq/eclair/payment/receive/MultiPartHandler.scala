@@ -472,12 +472,7 @@ object MultiPartHandler {
   }
 
   private def validatePaymentCltv(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload)(implicit log: LoggingAdapter): Boolean = {
-    val minExpiry = payload match {
-      case _: FinalPayload.Standard => nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
-      // For blinded payments, the min-final-expiry-delta is included in the blinded path instead of being added
-      // explicitly by the sender to their onion payload's expiry.
-      case _: FinalPayload.Blinded => nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight.max(payload.expiry.blockHeight))
-    }
+    val minExpiry = nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
     if (add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
       false
