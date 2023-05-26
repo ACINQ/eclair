@@ -240,8 +240,8 @@ object RouteCalculation {
   /** https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications */
   val ROUTE_MAX_LENGTH = 20
 
-  /** Max allowed CLTV for a route (one week) */
-  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(1008)
+  /** Max allowed CLTV for a route (two weeks) */
+  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(2016)
 
   /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
