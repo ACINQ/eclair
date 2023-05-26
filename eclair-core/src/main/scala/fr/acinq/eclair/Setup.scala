@@ -102,7 +102,6 @@ class Setup(val datadir: File,
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
-  val instanceId = UUID.randomUUID()
 
   /**
    * This counter holds the current blockchain height.
@@ -195,10 +194,9 @@ class Setup(val datadir: File,
     (bitcoinClient, chainHash)
   }
 
-  val databases = {
-    logger.info(s"connecting to database with instanceId=$instanceId")
-    Databases.init(config.getConfig("db"), instanceId, chaindir, db)
-  }
+  val instanceId = UUID.randomUUID()
+  logger.info(s"connecting to database with instanceId=$instanceId")
+  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
 
