@@ -7,9 +7,7 @@
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "fundingKeyPath" : {
-          "path" : [ 303987973, 3198768511, 3783619274, 2277156978, 1699864653, 63358126, 3265052696, 516813756, 2147483649 ]
-        },
+        "fundingKeyPath" : [ 303987973, 3198768511, 3783619274, 2277156978, 1699864653, 63358126, 3265052696, 516813756, 2147483649 ],
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
         "requestedChannelReserve_opt" : 10000,
@@ -39,7 +37,6 @@
         "htlcMinimum" : 1000,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 30,
-        "fundingPubKey" : "02b9da90e1ed391bd7b419b509f9499d09c52156c5deba6c927791c0074c1d18ff",
         "revocationBasepoint" : "033b164d14b54f08a951f9e40fb84e637021f376c9ae2907975f9ff0795431205d",
         "paymentBasepoint" : "03759da3f6bdcc2f595e1a98eb4803729743ab8608e28788cfe96726b5328c214c",
         "delayedPaymentBasepoint" : "03abc3ae99fac104e94f79cafcd70247cc336cdc21a53d4c3a4c321b54e20902e7",
@@ -76,6 +73,7 @@
       "remoteNextHtlcId" : 0
     },
     "active" : [ {
+      "fundingTxIndex" : 0,
       "fundingTx" : {
         "outPoint" : "7d314422179e4e93e201da84b7b86cf9a23470933877f10db675f9ada8dea683:0",
         "amountSatoshis" : 1000000
@@ -115,6 +113,7 @@
         "remotePerCommitmentPoint" : "0324b50221ad635b97f597802fbe5b2d6414fdf41f224ac1869d3772314e9fbfa5"
       }
     } ],
+    "inactive" : [ ],
     "remoteNextCommitInfo" : "0209317c45de4cff05adbf9d69edbc334a1c89325bade86f4194c6665336b7e9f8",
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }

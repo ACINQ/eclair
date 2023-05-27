@@ -16,9 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.{ActorRef, Status}
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
-import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -26,7 +24,9 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
+import fr.acinq.eclair.{Features, NotificationsLogger}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -50,15 +50,15 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // Note that we don't use wallet.commit because we don't want to rollback on failure, since our peer may be able
         // to publish and we may be able to RBF.
         wallet.publishTransaction(fundingTx.signedTx).onComplete {
-          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees, "funding"))
+          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees.truncateToSatoshi, "funding"))
           case Failure(t) => log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
         }
     }
   }
 
   /** Return true if we should stop waiting for confirmations when receiving our peer's channel_ready. */
-  def switchToZeroConf(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Boolean = d.latestFundingTx.fundingParams.minDepth_opt match {
-    case Some(_) =>
+  def switchToZeroConf(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Boolean = {
+    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, d.latestFundingTx.sharedTx.tx).nonEmpty) {
       // We're not using zero-conf, but our peer decided to trust us anyway. We can skip waiting for confirmations if:
       //  - they provided a channel alias
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)
@@ -66,10 +66,11 @@ trait DualFundingHandlers extends CommonFundingHandlers {
       remoteChannelReady.alias_opt.isDefined &&
         d.commitments.active.size == 1 &&
         d.latestFundingTx.sharedTx.tx.remoteInputs.isEmpty
-    case None =>
+    } else {
       // We're already using zero-conf, but our peer was very fast and we received their channel_ready before our
       // watcher notification that the funding tx has been successfully published.
       false
+    }
   }
 
   def handleNewBlockDualFundingUnconfirmed(c: CurrentBlockHeight, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) = {
@@ -119,6 +120,40 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
     if (inputs.nonEmpty) {
       wallet.rollback(Transaction(2, inputs, Nil, 0))
+    }
+  }
+
+  def rollbackFundingAttempt(tx: SharedTransaction, previousTxs: Seq[SignedSharedTransaction]): Unit = {
+    // We don't unlock previous inputs as the corresponding funding transaction may confirm.
+    val previousInputs = previousTxs.flatMap(_.tx.localInputs.map(_.outPoint)).toSet
+    val toUnlock = tx.localInputs.map(_.outPoint).toSet -- previousInputs
+    if (toUnlock.nonEmpty) {
+      val dummyTx = Transaction(2, toUnlock.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
+      wallet.rollback(dummyTx)
+    }
+  }
+
+  def rollbackRbfAttempt(signingSession: InteractiveTxSigningSession.WaitingForSigs, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Unit = {
+    rollbackFundingAttempt(signingSession.fundingTx.tx, d.allFundingTxs.map(_.sharedTx))
+  }
+
+  def reportRbfFailure(rbfStatus: RbfStatus, f: Throwable): Unit = {
+    rbfStatus match {
+      case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
+      case RbfStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
+        txBuilder ! InteractiveTxBuilder.Abort
+        cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
+      case _ => ()
+    }
+  }
+
+  def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
+    spliceStatus match {
+      case SpliceStatus.SpliceRequested(cmd, _) => cmd.replyTo ! RES_FAILURE(cmd, f)
+      case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
+        txBuilder ! InteractiveTxBuilder.Abort
+        cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
+      case _ => ()
     }
   }
 

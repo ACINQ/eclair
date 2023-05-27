@@ -7,9 +7,7 @@
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134",
-        "fundingKeyPath" : {
-          "path" : [ 1457788542, 1007597768, 1455922339, 479707306 ]
-        },
+        "fundingKeyPath" : [ 1457788542, 1007597768, 1455922339, 479707306 ],
         "dustLimit" : 546,
         "maxHtlcValueInFlightMsat" : 5000000000,
         "requestedChannelReserve_opt" : 167772,
@@ -35,7 +33,6 @@
         "htlcMinimum" : 1000,
         "toSelfDelay" : 2016,
         "maxAcceptedHtlcs" : 483,
-        "fundingPubKey" : "028cef3ef020cfda09692afc29e38ac4756ca60736563a93220481091c9cd05b64",
         "revocationBasepoint" : "02635ac9eedf5f219afbc4d125e37b5705f73c05deca71b05fe84096a691e055c1",
         "paymentBasepoint" : "034a711d28e8ed3ad389ec14ec75c199b6a45140c503bcc88110e3524e52ffbfb1",
         "delayedPaymentBasepoint" : "0316c70730b57a9e15845ce6f239e749ac78b25f44c90485a697066962a73d0467",
@@ -67,6 +64,7 @@
       "remoteNextHtlcId" : 4147
     },
     "active" : [ {
+      "fundingTxIndex" : 0,
       "fundingTx" : {
         "outPoint" : "3dd6450c0bb55d6e4ef6ba6bd62d9061af1690e0c6ebca5b79246ac1228f7307:1",
         "amountSatoshis" : 16777215
@@ -106,6 +104,7 @@
         "remotePerCommitmentPoint" : "03daadaed37bcfed40d15e34979fbf2a0643e748e8960363bb8e930cefe2255c35"
       }
     } ],
+    "inactive" : [ ],
     "remoteNextCommitInfo" : "034dcc0704325064a1fa68edc13adb5fd173051775df73a298ec291f22ad9d19f6",
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
@@ -132,10 +131,7 @@
     "nodeId2" : "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134",
     "bitcoinKey1" : "028cef3ef020cfda09692afc29e38ac4756ca60736563a93220481091c9cd05b64",
     "bitcoinKey2" : "03660d280e24a9b16772a6e6418029719620a5caa29ebdf8339e5d700c611ab9e3",
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   },
   "channelUpdate" : {
     "signature" : "4e34a547c424182812bd39b35c1c244b98f2bbb5b7d07812b9a008bb69f3fd77788f4ad338a102c331892afa8d076167a6a6cfb4eac3b890387f0fdc98b5b8c3",
@@ -157,9 +153,6 @@
     "feeBaseMsat" : 1000,
     "feeProportionalMillionths" : 100,
     "htlcMaximumMsat" : 16777215000,
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   }
 }

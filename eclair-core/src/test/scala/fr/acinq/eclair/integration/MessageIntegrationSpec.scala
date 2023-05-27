@@ -33,6 +33,7 @@ import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
 import fr.acinq.eclair.{EclairImpl, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
@@ -51,7 +52,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 30702, "eclair.api.port" -> 30782, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(commonConfig))
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.server.port" -> 30703, "eclair.api.port" -> 30783).asJava).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.server.port" -> 30704, "eclair.api.port" -> 30784, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "channels-only").asJava).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "no-relay").asJava).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "disabled").asJava).withFallback(commonConfig))
   }
 
   test("try to reach unknown node") {
@@ -98,13 +99,13 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), Some(Seq(nodes("A").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath_opt.nonEmpty)
-    bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath_opt.get), None, hex"1d01ab")
+    assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
+    bob.sendOnionMessage(Nil, Right(recv.finalPayload.records.get[ReplyPath].get.blindedRoute), None, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage.isEmpty)
     assert(res.response.nonEmpty)
-    assert(res.response.get.unknownTlvs("29") == hex"ab")
+    assert(res.response.get.tlvs.unknown == Set(GenericTlv(UInt64(29), hex"ab")))
   }
 
   test("reply timeout") {
@@ -115,7 +116,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     bob.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), Some(Seq(nodes("B").nodeParams.nodeId)), hex"3f00").pipeTo(probe.ref)
 
     val recv = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
-    assert(recv.finalPayload.replyPath_opt.nonEmpty)
+    assert(recv.finalPayload.records.get[ReplyPath].nonEmpty)
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
     assert(res.failureMessage contains "No response")
@@ -133,7 +134,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
 
-  test("send to connected node with no-relay") {
+  test("send from node with option_onion_messages disabled") {
     val fabrice = new EclairImpl(nodes("F"))
     connect(nodes("F"), nodes("A"))
 
@@ -141,6 +142,17 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     fabrice.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
+    assert(probe.expectMsgType[SendOnionMessageResponse].sent)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+  }
+
+  test("send to node with option_onion_messages disabled") {
+    val alice = new EclairImpl(nodes("A"))
+
+    val probe = TestProbe()
+    val eventListener = TestProbe()
+    nodes("F").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
+    alice.sendOnionMessage(Nil, Left(nodes("F").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
     eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }

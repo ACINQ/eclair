@@ -24,8 +24,8 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.CommitSig
-import fr.acinq.eclair.{BlockHeight, ChannelTypeFeature, Features, PermanentChannelFeature, channel}
-import scodec.bits.BitVector
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel}
+import scodec.bits.{BitVector, ByteVector}
 
 private[channel] object ChannelTypes0 {
 
@@ -180,6 +180,37 @@ private[channel] object ChannelTypes0 {
     val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
   }
 
+  case class RemoteParams(nodeId: PublicKey,
+                          dustLimit: Satoshi,
+                          maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                          requestedChannelReserve_opt: Option[Satoshi],
+                          htlcMinimum: MilliSatoshi,
+                          toSelfDelay: CltvExpiryDelta,
+                          maxAcceptedHtlcs: Int,
+                          fundingPubKey: PublicKey,
+                          revocationBasepoint: PublicKey,
+                          paymentBasepoint: PublicKey,
+                          delayedPaymentBasepoint: PublicKey,
+                          htlcBasepoint: PublicKey,
+                          initFeatures: Features[InitFeature],
+                          upfrontShutdownScript_opt: Option[ByteVector]) {
+    def migrate(): channel.RemoteParams = channel.RemoteParams(
+      nodeId = nodeId,
+      dustLimit = dustLimit,
+      maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
+      requestedChannelReserve_opt = requestedChannelReserve_opt,
+      htlcMinimum = htlcMinimum,
+      toSelfDelay = toSelfDelay,
+      maxAcceptedHtlcs = maxAcceptedHtlcs,
+      revocationBasepoint = revocationBasepoint,
+      paymentBasepoint = paymentBasepoint,
+      delayedPaymentBasepoint = delayedPaymentBasepoint,
+      htlcBasepoint = htlcBasepoint,
+      initFeatures = initFeatures,
+      upfrontShutdownScript_opt = upfrontShutdownScript_opt
+    )
+  }
+
   case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
   case class Commitments(channelVersion: ChannelVersion,
@@ -198,17 +229,16 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelConfig()
       }
-      val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
-      val baseChannelFeatures: Set[PermanentChannelFeature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
-      val commitmentFeatures: Set[ChannelTypeFeature] = if (channelVersion.hasAnchorOutputs) {
-        Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+      val channelFeatures = if (channelVersion.hasAnchorOutputs) {
+        ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
       } else if (channelVersion.hasStaticRemotekey) {
-        Set(Features.StaticRemoteKey)
+        ChannelFeatures(Features.StaticRemoteKey)
       } else {
-        Set.empty
+        ChannelFeatures()
       }
-      val channelFeatures = ChannelFeatures(baseChannelFeatures ++ commitmentFeatures)
       val commitment = Commitment(
+        fundingTxIndex = 0,
+        remoteFundingPubKey = remoteParams.fundingPubKey,
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
@@ -216,9 +246,10 @@ private[channel] object ChannelTypes0 {
         localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(
-        ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags),
+        ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams.migrate(), channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         Seq(commitment),
+        inactive = Nil,
         remoteNextCommitInfo.fold(w => Left(WaitForRev(w.sentAfterLocalCommitIndex)), remotePerCommitmentPoint => Right(remotePerCommitmentPoint)),
         remotePerCommitmentSecrets,
         originChannels

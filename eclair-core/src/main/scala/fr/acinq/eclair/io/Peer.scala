@@ -171,7 +171,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -181,7 +181,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
@@ -275,16 +275,16 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         gotoConnected(connectionReady, d.channels)
 
       case Event(msg: OnionMessage, _: ConnectedData) =>
-        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
-          OnionMessages.process(nodeParams.privateKey, msg) match {
-            case OnionMessages.DropMessage(reason) =>
-              log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case OnionMessages.SendMessage(nextNodeId, message) =>
-              switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
-            case received: OnionMessages.ReceiveMessage =>
-              log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
-              context.system.eventStream.publish(received)
-          }
+        OnionMessages.process(nodeParams.privateKey, msg) match {
+          case OnionMessages.DropMessage(reason) =>
+            log.debug("dropping message from {}: {}", remoteNodeId.value.toHex, reason.toString)
+          case OnionMessages.SendMessage(nextNodeId, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
+            switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
+          case OnionMessages.SendMessage(_, _) =>
+            log.debug("dropping message from {}: relaying onion messages is disabled", remoteNodeId.value.toHex)
+          case received: OnionMessages.ReceiveMessage =>
+            log.info("received message from {}: {}", remoteNodeId.value.toHex, received)
+            context.system.eventStream.publish(received)
         }
         stay()
 
@@ -392,7 +392,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
   }
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
-    val msg = Warning(unknownChannelId, "unknown channel")
+    val msg = Error(unknownChannelId, "unknown channel")
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 

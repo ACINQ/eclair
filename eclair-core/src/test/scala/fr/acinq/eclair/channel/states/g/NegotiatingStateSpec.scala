@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
 import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown, TlvStream, Warning}
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, randomBytes32}
@@ -248,7 +249,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // alice initiates the negotiation with a very low feerate
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceCloseSig.feeSatoshis == 1685.sat)
-    assert(aliceCloseSig.feeRange_opt == Some(FeeRange(1348 sat, 2022 sat)))
+    assert(aliceCloseSig.feeRange_opt.contains(FeeRange(1348 sat, 2022 sat)))
     alice2bob.forward(bob)
     // bob chooses alice's highest fee
     val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
@@ -415,17 +416,21 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("recv ClosingSigned (fee too high)") { f =>
+  test("recv ClosingSigned (fee higher than commit tx fee)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
-    bobClose(f)
+    val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    val commitFee = Transactions.commitTxFeeMsat(commitment.localParams.dustLimit, commitment.localCommit.spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    alice2bob.forward(bob, aliceCloseSig.copy(feeSatoshis = 99000 sat)) // sig doesn't matter, it is checked later
-    val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000 sat"))
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
-    bob2blockchain.expectMsgType[PublishTx]
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    assert(aliceCloseSig.feeSatoshis > commitFee.truncateToSatoshi)
+    alice2bob.forward(bob, aliceCloseSig)
+    val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
+    assert(bobCloseSig.feeSatoshis == aliceCloseSig.feeSatoshis)
+    awaitCond(bob.stateName == CLOSING)
+    val closingTx = bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.head.tx
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == closingTx.txid)
+    bob2alice.forward(alice, bobCloseSig)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == closingTx.txid)
   }
 
   test("recv ClosingSigned (invalid sig)") { f =>
@@ -541,10 +546,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
+    bobClose(f)
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == NEGOTIATING)
   }
 
   test("recv Error") { f =>

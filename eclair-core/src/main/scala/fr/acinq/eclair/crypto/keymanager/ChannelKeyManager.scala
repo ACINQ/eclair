@@ -27,7 +27,7 @@ import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
 trait ChannelKeyManager {
-  def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+  def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
@@ -44,7 +44,7 @@ trait ChannelKeyManager {
   def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
     if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
       // deterministic mode: use the funding pubkey to compute the channel key path
-      ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath))
+      ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0))
     } else {
       // legacy mode:  we reuse the funding key path as our channel key path
       localParams.fundingKeyPath

@@ -11,6 +11,7 @@
 ```shell
 $ ./eclair-cli payoffer --offer=<offer-to-pay> --amountMsat=<amountToPay>
 ```
+
 If the offer supports it, you can also specify `--quantity` to buy more than one at a time.
 All the parameters from `payinvoice` are also supported.
 
@@ -29,6 +30,14 @@ Instead, all the relevant data (offer id, preimage, amount, quantity, creation d
 The handler can also add its own data.
 All this data is signed and encrypted so that it can not be read or forged by the payer.
 
+### Data model
+
+The database model has been completely reworked to handle splices. Mainly, a channel can have several commitments in parallel.
+Node operators that use Postgres as database backend and make SQL queries on channels' JSON content should reset the JSON column:
+
+1. Set `eclair.db.postgres.reset-json-columns = true` before restarting eclair
+2. Once restarted, set `eclair.db.postgres.reset-json-columns = false` (no need to restart again)
+
 ### API changes
 
 - `audit` now accepts `--count` and `--skip` parameters to limit the number of retrieved items (#2474, #2487)
@@ -39,6 +48,7 @@ All this data is signed and encrypted so that it can not be read or forged by th
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` lists payments received by your node (#2607)
+- `cpfpbumpfees` can be used to unblock chains of unconfirmed transactions by creating a child transaction that pays a high fee (#1783)
 
 ### Miscellaneous improvements and bug fixes
 
@@ -63,6 +73,7 @@ An example plugin that demonstrates this functionality can be found in the [ecla
 We have added parameters to `eclair.conf` to allow nodes to manage the number of channel open requests from peers that are pending on-chain confirmation. A limit exists for each public peer node individually and for all private peer nodes in aggregate.
 
 The new configuration options and defaults are as follows:
+
 ```conf
 // a list of public keys; we will ignore limits on pending channels from these peers
 eclair.channel.channel-open-limits.channel-opener-whitelist = [] 
@@ -78,13 +89,29 @@ eclair.channel.channel-open-limits.max-total-pending-channels-private-nodes = 99
 
 We have added a parameter to `eclair.conf` to allow nodes to track the number of incoming connections they maintain from peers they do not have existing channels with. Once the limit is reached, Eclair will disconnect from the oldest tracked peers first.
 
-Outgoing connections and peers on the `sync-whitelist` are exempt from and do not count towards the limit. 
+Outgoing connections and peers on the `sync-whitelist` are exempt from and do not count towards the limit.
 
 The new configuration option and default is as follows:
+
 ```conf
 // maximum number of incoming connections from peers that do not have any channels with us
 eclair.peer-connection.max-no-channels = 250 
 ```
+
+#### Removed funding limits when Wumbo is enabled (#2624)
+
+We removed the `eclair.channel.max-funding-satoshis` configuration field.
+If node operators wish to limit the size of channels opened to them, there are two options.
+
+The first option is to disable large channels support by adding the following line to `eclair.conf`:
+
+```conf
+eclair.features.option_support_large_channel = disabled
+```
+
+But that option won't limit the number of inbound channels, so it isn't a guarantee that the node will "stay small".
+
+The second option is to leverage the new plugin support for channel open interception: node operators can reject channel open requests based on any metric that they see fit.
 
 ## Verifying signatures
 

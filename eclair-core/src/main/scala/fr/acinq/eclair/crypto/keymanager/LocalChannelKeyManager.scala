@@ -38,8 +38,21 @@ object LocalChannelKeyManager {
 }
 
 /**
- * This class manages channel secrets and private keys.
- * It exports points and public keys, and provides signing methods
+ * An implementation of [[ChannelKeyManager]] that supports deterministic derivation of keys, based on the initial
+ * funding pubkey.
+ *
+ * Specifically, there are two paths both of length 8 (256 bits):
+ *   - `fundingKeyPath`: chosen at random using `newFundingKeyPath()`
+ *   - `channelKeyPath`: sha(fundingPubkey(0)) using `ChannelKeyManager.keyPath()`
+ *
+ * The resulting paths looks like so on mainnet:
+ * {{{
+ *  funding txs:
+ *     47' / 1' / <fundingKeyPath> / <1' or 0'> / <index>'
+ *
+ *  others channel basepoint keys (payment, revocation, htlc, etc.):
+ *     47' / 1' / <channelKeyPath> / <1'-5'>
+ * }}}
  *
  * @param seed seed from which the channel keys will be derived
  */
@@ -58,19 +71,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
       override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
     })
 
-  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ channelKeyPath.path) :+ index)
-
-  private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
-
-  private def revocationSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
-
-  private def paymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
-
-  private def delayedPaymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
-
-  private def htlcSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
-
-  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
+  private def internalKeyPath(keyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ keyPath.path) :+ index)
 
   override def newFundingKeyPath(isInitiator: Boolean): KeyPath = {
     val last = DeterministicWallet.hardened(if (isInitiator) 1 else 0)
@@ -80,7 +81,10 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }
 
-  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
+  override def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
+    val keyPath = internalKeyPath(fundingKeyPath, hardened(fundingTxIndex))
+    publicKeys.get(keyPath)
+  }
 
   override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
@@ -89,6 +93,8 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
   override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
   override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
+
+  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
   override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 

@@ -86,8 +86,6 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
     case None => activated.contains(feature)
   }
 
-  def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
-
   /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
   def areSupported(remoteFeatures: Features[T]): Boolean = {
     // we allow unknown odd features (it's ok to be odd)
@@ -219,7 +217,7 @@ object Features {
     val mandatory = 16
   }
 
-  case object Wumbo extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
   }
@@ -296,6 +294,12 @@ object Features {
     val mandatory = 152
   }
 
+  // TODO: @pm47 custom splices implementation for phoenix, to be replaced once splices is spec-ed (currently reserved here: https://github.com/lightning/bolts/issues/605)
+  case object SplicePrototype extends Feature with InitFeature {
+    val rfcName = "splice_prototype"
+    val mandatory = 154
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -319,7 +323,8 @@ object Features {
     ZeroConf,
     KeySend,
     TrampolinePaymentPrototype,
-    AsyncPaymentPrototype
+    AsyncPaymentPrototype,
+    SplicePrototype,
   )
 
   // Features may depend on other features, as specified in Bolt 9.

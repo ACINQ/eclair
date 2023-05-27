@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, varint}
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tsatoshi}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, satoshiSigned, varint}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.codecs.discriminated
 
@@ -34,7 +34,8 @@ object TxAddInputTlv {
   case class SharedInputTxId(txid: ByteVector32) extends TxAddInputTlv
 
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
-    .typecase(UInt64(1105), tlvField(bytes32.as[SharedInputTxId]))
+    // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
+    .typecase(UInt64(1105), tlvField(bytes32.xmap(txId => txId.reverse, (txHash: ByteVector32) => txHash.reverse).as[SharedInputTxId]))
   )
 }
 
@@ -78,7 +79,10 @@ sealed trait TxInitRbfTlv extends Tlv
 sealed trait TxAckRbfTlv extends Tlv
 
 object TxRbfTlv {
-  /** Amount that the peer will contribute to the transaction's shared output. */
+  /**
+   * Amount that the peer will contribute to the transaction's shared output.
+   * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
+   */
   case class SharedOutputContributionTlv(amount: Satoshi) extends TxInitRbfTlv with TxAckRbfTlv
 }
 
@@ -87,9 +91,8 @@ object TxInitRbfTlv {
   import TxRbfTlv._
 
   val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
-    .typecase(UInt64(0), tlvField(tsatoshi.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
   )
-
 }
 
 object TxAckRbfTlv {
@@ -97,9 +100,8 @@ object TxAckRbfTlv {
   import TxRbfTlv._
 
   val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
-    .typecase(UInt64(0), tlvField(tsatoshi.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
   )
-
 }
 
 sealed trait TxAbortTlv extends Tlv

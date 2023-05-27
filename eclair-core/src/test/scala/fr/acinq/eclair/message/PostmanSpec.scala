@@ -20,15 +20,17 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.scalacompat.Block
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
 import fr.acinq.eclair.message.Postman._
 import fr.acinq.eclair.payment.offer.OfferManager.RequestInvoice
-import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.InvoiceRequest
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.{InvoiceRequest, ReplyPath}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
-import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{NodeParams, TestConstants, UInt64, randomKey}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OfferTypes, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, NodeParams, TestConstants, UInt64, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -66,7 +68,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
-    val replyPath = finalPayload.replyPath_opt.get
+    val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
 
@@ -109,7 +111,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     messageRecipient.expectMessage(NoReply)
 
-    val replyPath = finalPayload.replyPath_opt.get
+    val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right((_, reply)) = buildMessage(recipientKey, randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload) = OnionMessages.process(ourKey, reply)
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
@@ -129,7 +131,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
-    assert(finalPayload.replyPath_opt.isEmpty)
+    assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageRecipient.expectMessage(MessageSent)
     messageRecipient.expectNoMessage()
@@ -148,7 +150,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     postman ! SendingStatus(Sent(messageId))
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
-    assert(finalPayload.replyPath_opt.isEmpty)
+    assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageRecipient.expectMessage(MessageSent)
     messageRecipient.expectNoMessage()
@@ -157,8 +159,11 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("forward invoice request to offer manager") { f =>
     import f._
 
-    val finalPayload = MessageOnion.FinalPayload(TlvStream(InvoiceRequest(TlvStream())), TlvStream(PathId(hex"abcd")))
-    postman ! WrappedMessage(finalPayload)
+    val offer = OfferTypes.Offer(None, "", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val invoiceRequest = OfferTypes.InvoiceRequest(offer, 1000 msat, 1, Features.empty, randomKey(), Block.LivenetGenesisBlock.hash)
+    val replyPath = BlindedRoute(randomKey().publicKey, randomKey().publicKey, Seq(BlindedNode(randomKey().publicKey, hex"")))
+    val invoiceRequestPayload = MessageOnion.InvoiceRequestPayload(TlvStream(InvoiceRequest(invoiceRequest.records), ReplyPath(replyPath)), TlvStream(PathId(hex"abcd")))
+    postman ! WrappedMessage(invoiceRequestPayload)
 
     val request = offerManager.expectMessageType[RequestInvoice]
     assert(request.messagePayload.pathId_opt.contains(hex"abcd"))

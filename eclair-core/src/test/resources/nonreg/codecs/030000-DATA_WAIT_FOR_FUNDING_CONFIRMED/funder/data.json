@@ -7,9 +7,7 @@
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "fundingKeyPath" : {
-          "path" : [ 4092535092, 4227137620, 3959690417, 2298849496, 2106263857, 1090614243, 1495530077, 1280982866, 2147483649 ]
-        },
+        "fundingKeyPath" : [ 4092535092, 4227137620, 3959690417, 2298849496, 2106263857, 1090614243, 1495530077, 1280982866, 2147483649 ],
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
         "requestedChannelReserve_opt" : 10000,
@@ -38,7 +36,6 @@
         "htlcMinimum" : 1000,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 30,
-        "fundingPubKey" : "02e3048a4918587b33fb380e3061b7ac38ef4038551c0f098850d43e45ab1cb283",
         "revocationBasepoint" : "02f7c3bf47cdc640304eda4c761a26dfebfee561de15ba106f3d9982d3ef3fbe10",
         "paymentBasepoint" : "02be361b7bf1bdfb283cff3f83bf16f6f8fb67d3f480b541e76518939f667ab834",
         "delayedPaymentBasepoint" : "03fcaec5443dd423f160c9b77a48b2585b186f2d850147f57210d3f8a8c8d754a7",
@@ -74,6 +71,7 @@
       "remoteNextHtlcId" : 0
     },
     "active" : [ {
+      "fundingTxIndex" : 0,
       "fundingTx" : {
         "outPoint" : "f4e3ba374da1a85abcd12a86c9a25b1391bda144619c770fe03f3881c6ad17e9:0",
         "amountSatoshis" : 1000000
@@ -114,6 +112,7 @@
         "remotePerCommitmentPoint" : "032a992c123095216f7937a8b0baf442211eeb57942d586854a61a0dc6b01ca6ee"
       }
     } ],
+    "inactive" : [ ],
     "remoteNextCommitInfo" : "030af74aa1e98668a504d50fe6f664aff3fbdb5c8681f0667c34cdb80024fb950f",
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
@@ -121,12 +120,9 @@
   "waitingSince" : 400000,
   "lastSent" : {
     "temporaryChannelId" : "0000000000000000000000000000000000000000000000000000000000000000",
-    "fundingTxid" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
+    "fundingTxHash" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
     "fundingOutputIndex" : 0,
     "signature" : "bd55d8660f54a1be6e123e2ed9cd6669d90b830d99dc6f9addd9ae65c447ea6b657e2fe39841f66c1d6a2fc80ad59e6f3d9bfaf177f4e95a579f0683bf3e9790",
-    "tlvStream" : {
-      "records" : [ ],
-      "unknown" : [ ]
-    }
+    "tlvStream" : { }
   }
 }

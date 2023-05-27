@@ -511,6 +511,29 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2relayer.expectNoMessage(100 millis)
   }
 
+  test("recv WatchTxConfirmedTriggered (local commit with htlcs only signed by remote)") { f =>
+    import f._
+    // Bob sends an htlc and signs it.
+    addHtlc(75_000_000 msat, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcTxsAndRemoteSigs.size == 1)
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    // Note that alice has not signed the htlc yet!
+    // We make her unilaterally close the channel.
+    val closingState = localClose(alice, alice2blockchain)
+
+    channelUpdateListener.expectMsgType[LocalChannelDown]
+    assert(closingState.htlcTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
+    // Alice should ignore the htlc (she hasn't relayed it yet): it is Bob's responsibility to claim it.
+    // Once the commit tx and her main output are confirmed, she can consider the channel closed.
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, aliceCommitTx)
+    closingState.claimMainDelayedOutputTx.foreach(claimMain => alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, claimMain.tx))
+    awaitCond(alice.stateName == CLOSED)
+  }
+
   test("recv WatchTxConfirmedTriggered (local commit with fulfill only signed by local)") { f =>
     import f._
     // bob sends an htlc
@@ -1627,7 +1650,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    val bobCommitments = bob.stateData.asInstanceOf[PersistentChannelData].commitments
+    val bobCommitments = bob.stateData.asInstanceOf[DATA_CLOSING].commitments
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
       TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
       bobCommitments.localCommitIndex)
@@ -1638,10 +1661,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(new String(error.data.toArray) == FundingTxSpent(channelId(alice), initialState.spendingTxs.head.txid).getMessage)
   }
 
-  test("recv WatchFundingSpentTriggered (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)") { f =>
     import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
-    awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
+    alice2blockchain.expectNoMessage(100 millis)
+    assert(alice.stateName == CLOSING)
   }
 
   test("recv CMD_CLOSE") { f =>

@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrat
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
@@ -250,7 +250,6 @@ object NodeParams extends Logging {
       "reserve-to-funding-ratio" -> "channel.reserve-to-funding-ratio",
       "max-reserve-to-funding-ratio" -> "channel.max-reserve-to-funding-ratio",
       "min-funding-satoshis" -> "channel.min-funding-satoshis",
-      "max-funding-satoshis" -> "channel.max-funding-satoshis",
       "to-remote-delay-blocks" -> "channel.to-remote-delay-blocks",
       "max-to-local-delay-blocks" -> "channel.max-to-local-delay-blocks",
       "mindepth-blocks" -> "channel.mindepth-blocks",
@@ -428,7 +427,6 @@ object NodeParams extends Logging {
     }
 
     val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
-      case "no-relay" => NoRelay
       case "channels-only" => RelayChannelsOnly
       case "relay-all" => RelayAll
     }
@@ -477,7 +475,6 @@ object NodeParams extends Logging {
         maxReserveToFundingRatio = config.getDouble("channel.max-reserve-to-funding-ratio"),
         minFundingPublicSatoshis = Satoshi(config.getLong("channel.min-public-funding-satoshis")),
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
-        maxFundingSatoshis = Satoshi(config.getLong("channel.max-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
         minDepthBlocks = config.getInt("channel.mindepth-blocks"),

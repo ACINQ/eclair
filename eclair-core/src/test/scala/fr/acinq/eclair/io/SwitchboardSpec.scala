@@ -169,18 +169,18 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, unknownNodeId2, outgoing = false)
     peer.expectMsgType[Peer.Init]
 
+    // Do not disconnect an old peer when a new peer with channels connects.
+    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId2, outgoing = false)
+    peer.expectMsgType[Peer.Init]
+    peer.expectNoMessage(100 millis)
+
     // Disconnect the oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
     peer.fishForMessage() {
       case d: Peer.Disconnect => d.nodeId == unknownNodeId1
       case _: Peer.Init => false
     }
-
-    // Do not disconnect an old peer when a peer with channels connects.
-    switchboard ! ChannelIdAssigned(channel.ref, hasChannelsNodeId2, randomBytes32(), randomBytes32())
-    switchboard ! PeerConnection.Authenticated(peerConnection.ref, hasChannelsNodeId2, outgoing = false)
-    peer.expectMsgType[Peer.Init]
-    peer.expectNoMessage(100 millis)
 
     // Disconnect the next oldest tracked peer when an incoming connection from a peer without channels connects.
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, randomKey().publicKey, outgoing = false)
@@ -217,7 +217,7 @@ object SwitchboardSpec {
   }
 
   object DummyPeer {
-    def props(fwd: ActorRef) = Props(new DummyPeer(fwd))
+    def props(fwd: ActorRef): Props = Props(new DummyPeer(fwd))
   }
 
   case class FakePeerFactory(probe: TestProbe, peer: TestProbe) extends PeerFactory {

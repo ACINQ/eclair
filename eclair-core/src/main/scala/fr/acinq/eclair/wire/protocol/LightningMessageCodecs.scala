@@ -192,9 +192,8 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("tlvStream" | TxCompleteTlv.txCompleteTlvCodec)).as[TxComplete]
 
-  private val witnessElementCodec: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
-  private val witnessStackCodec: Codec[ScriptWitness] = listOfN(uint16, witnessElementCodec).xmap(s => ScriptWitness(s.toSeq), w => w.stack.toList)
-  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, witnessStackCodec).xmap(l => l.toSeq, l => l.toList)
+  private val witnessCodec: Codec[ScriptWitness] = bytes.xmap(b => ScriptWitness.read(b.toArray), w => ScriptWitness.write(w))
+  private val witnessesCodec: Codec[Seq[ScriptWitness]] = listOfN(uint16, variableSizeBytes(uint16, witnessCodec)).xmap(l => l.toSeq, l => l.toList)
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
@@ -403,7 +402,24 @@ object LightningMessageCodecs {
   //
 
   //
+  val spliceInitCodec: Codec[SpliceInit] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("feerate" | feeratePerKw) ::
+      ("lockTime" | uint32) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[SpliceInit]
 
+  val spliceAckCodec: Codec[SpliceAck] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[SpliceAck]
+
+  val spliceLockedCodec: Codec[SpliceLocked] = (
+    ("channelId" | bytes32) ::
+      ("fundingTxid" | bytes32) ::
+      ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
   //
 
   //
@@ -455,10 +471,12 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
     .typecase(513, onionMessageCodec)
-  // NB: blank lines to minimize merge conflicts
+    // NB: blank lines to minimize merge conflicts
 
-  //
-
+    //
+    .typecase(37000, spliceInitCodec)
+    .typecase(37002, spliceAckCodec)
+    .typecase(37004, spliceLockedCodec)
   //
 
   //

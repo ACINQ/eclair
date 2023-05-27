@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, OutPoint, 
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
@@ -35,13 +34,12 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
-import org.json4s.{DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySerializer, Serializer, ShortTypeHints, TypeHints, jackson}
+import org.json4s.{CustomSerializer, DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySerializer, Serializer, ShortTypeHints, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -217,7 +215,7 @@ object TransactionSerializer extends MinimalSerializer({
 })
 
 object KeyPathSerializer extends MinimalSerializer({
-  case x: KeyPath => JObject(JField("path", JArray(x.path.map(x => JLong(x)).toList)))
+  case x: KeyPath => JArray(x.path.map(x => JLong(x)).toList)
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
@@ -488,8 +486,8 @@ object OriginSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-case class CommitmentJson(fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
-object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
+case class CommitmentJson(fundingTxIndex: Long, fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
 // @formatter:on
 
 // @formatter:off
@@ -499,8 +497,8 @@ object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b =
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[String], channels: Int)
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address.map(_.toString), peerInfo.channels.size))
 
-private[json] case class MessageReceivedJson(pathId: Option[ByteVector], encodedReplyPath: Option[String], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
-object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.finalPayload.pathId_opt, m.finalPayload.replyPath_opt.map(route => blindedRouteCodec.encode(route).require.bytes.toHex), m.finalPayload.replyPath_opt, m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], tlvs: TlvStream[OnionMessagePayloadTlv])
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.finalPayload.pathId_opt, m.finalPayload.records))
 // @formatter:on
 
 // @formatter:off
@@ -516,6 +514,11 @@ object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStat
   case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid))
 })
 // @formatter:on
+
+object TlvStreamSerializer extends ConvertClassSerializer[TlvStream[_]](tlvs =>
+  tlvs.records.map(tlv => tlv.getClass.getSimpleName -> tlv).toMap ++
+    tlvs.unknown.map(unknown => ("Unknown" + unknown.tag.toString) -> unknown.value).toMap
+)
 
 case class CustomTypeHints(custom: Map[Class[_], String], override val typeHintFieldName: String = "type") extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
@@ -656,6 +659,12 @@ object JsonSerializers {
     OnionMessageReceivedSerializer +
     ShortIdsSerializer +
     FundingTxStatusSerializer +
-    CommitmentSerializer
+    CommitmentSerializer +
+    TlvStreamSerializer +
+    new CustomSerializer[SpliceStatus](_ => (
+      PartialFunction.empty, {
+      case _: SpliceStatus => JNothing
+    }
+    ))
 
 }

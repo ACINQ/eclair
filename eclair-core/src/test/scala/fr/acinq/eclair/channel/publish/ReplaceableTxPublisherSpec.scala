@@ -39,7 +39,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -380,6 +380,37 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("commit tx feerate too low, spending anchor output (feerate upper bound reached)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      assert(getMempool().length == 1)
+
+      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment)
+      val targetFeerate = FeeratePerKw(50_000 sat)
+      assert(maxFeerate <= targetFeerate / 2)
+      setFeerate(targetFeerate, blockTarget = 12)
+      publisher ! Publish(probe.ref, anchorTx)
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      val targetFee = Transactions.weight2fee(maxFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+      generateBlocks(5)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      val result = probe.expectMsgType[TxConfirmed]
+      assert(result.cmd == anchorTx)
+      assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
+      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+    }
+  }
+
   test("commit tx not published, publishing it and spending anchor output") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
@@ -517,7 +548,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
 
       // The feerate is (much) higher for higher block targets
-      val targetFeerate = FeeratePerKw(75_000 sat)
+      val targetFeerate = FeeratePerKw(20_000 sat)
       setFeerate(FeeratePerKw(3000 sat))
       setFeerate(targetFeerate, blockTarget = 6)
       publisher ! Publish(probe.ref, anchorTx)
@@ -801,13 +832,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  def closeChannelWithHtlcs(f: Fixture, overrideHtlcTarget: BlockHeight): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
+  def closeChannelWithHtlcs(f: Fixture, overrideHtlcTarget: BlockHeight, outgoingHtlcAmount: MilliSatoshi = 120_000_000 msat, incomingHtlcAmount: MilliSatoshi = 100_000_000 msat): (Transaction, PublishReplaceableTx, PublishReplaceableTx) = {
     import f._
 
     // Add htlcs in both directions and ensure that preimages are available.
-    addHtlc(5_000_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(outgoingHtlcAmount, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
+    val (r, htlc) = addHtlc(incomingHtlcAmount, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
@@ -871,6 +902,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val htlcSuccessTx = getMempoolTxs(1).head
     val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
     assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.2, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+    assert(htlcSuccessTx.fees <= htlcSuccess.txInfo.input.txOut.amount)
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -900,6 +932,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
     assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.2, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
+    assert(htlcTimeoutTx.fees <= htlcTimeout.txInfo.input.txOut.amount)
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -971,6 +1004,27 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcSuccessTx.txIn.length > 1)
       assert(htlcTimeout.txInfo.fee == 0.sat)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, targetFeerate)
+      assert(htlcTimeoutTx.txIn.length > 1)
+    }
+  }
+
+  test("htlc tx feerate zero, adding wallet inputs (feerate upper bound reached)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      val targetFeerate = FeeratePerKw(15_000 sat)
+      // HTLC amount is small, so we should cap the feerate to avoid paying more in fees than what we're claiming.
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 30, outgoingHtlcAmount = 5_000_000 msat, incomingHtlcAmount = 4_000_000 msat)
+      setFeerate(targetFeerate, blockTarget = 12)
+      assert(htlcSuccess.txInfo.fee == 0.sat)
+      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment)
+      assert(htlcSuccessMaxFeerate < targetFeerate / 2)
+      val htlcSuccessTx = testPublishHtlcSuccess(f, commitTx, htlcSuccess, htlcSuccessMaxFeerate)
+      assert(htlcSuccessTx.txIn.length > 1)
+      assert(htlcTimeout.txInfo.fee == 0.sat)
+      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment)
+      assert(htlcTimeoutMaxFeerate < targetFeerate / 2)
+      val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, htlcTimeoutMaxFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
     }
   }

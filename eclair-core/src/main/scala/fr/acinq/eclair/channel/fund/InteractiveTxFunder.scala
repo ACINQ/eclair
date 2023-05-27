@@ -19,8 +19,9 @@ package fr.acinq.eclair.channel.fund
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.TxAddInput
@@ -53,12 +54,12 @@ object InteractiveTxFunder {
   case object FundingFailed extends Response
   // @formatter:on
 
-  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, purpose: InteractiveTxBuilder.Purpose, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, fundingPubkeyScript: ByteVector, purpose: InteractiveTxBuilder.Purpose, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo) =>
-            val actor = new InteractiveTxFunder(replyTo, fundingParams, purpose, wallet, context)
+            val actor = new InteractiveTxFunder(replyTo, fundingParams, fundingPubkeyScript, purpose, wallet, context)
             actor.start()
         }
       }
@@ -67,6 +68,30 @@ object InteractiveTxFunder {
 
   /** A wallet input that doesn't match interactive-tx construction requirements. */
   private case class UnusableInput(outpoint: OutPoint)
+
+  /**
+   * Compute the funding contribution we're making to the channel output, by aggregating splice-in and splice-out and
+   * paying on-chain fees either from our wallet inputs or our current channel balance.
+   */
+  def computeSpliceContribution(isInitiator: Boolean, sharedInput: SharedFundingInput, spliceInAmount: Satoshi, spliceOut: Seq[TxOut], targetFeerate: FeeratePerKw): Satoshi = {
+    val fees = if (spliceInAmount == 0.sat) {
+      val spliceOutputsWeight = spliceOut.map(KotlinUtils.scala2kmp).map(_.weight()).sum
+      val weight = if (isInitiator) {
+        // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
+        val dummyTx = Transaction(2, Nil, Seq(sharedInput.info.txOut), 0)
+        sharedInput.weight + dummyTx.weight() + spliceOutputsWeight
+      } else {
+        // The non-initiator only pays for the weights of their own inputs and outputs.
+        spliceOutputsWeight
+      }
+      Transactions.weight2fee(targetFeerate, weight)
+    } else {
+      // If we're splicing some funds into the channel, bitcoind will be responsible for adding more funds to pay the
+      // fees, so we don't need to pay them from our channel balance.
+      0 sat
+    }
+    spliceInAmount - spliceOut.map(_.amount).sum - fees
+  }
 
   private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
     // Wallet input transaction must fit inside the tx_add_input message.
@@ -102,6 +127,7 @@ object InteractiveTxFunder {
 
 private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response],
                                   fundingParams: InteractiveTxParams,
+                                  fundingPubkeyScript: ByteVector,
                                   purpose: InteractiveTxBuilder.Purpose,
                                   wallet: OnChainChannelFunder,
                                   context: ActorContext[InteractiveTxFunder.Command])(implicit ec: ExecutionContext) {
@@ -121,7 +147,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     // The balances in the shared input may have changed since the previous funding attempt, so we ignore the previous
     // shared input and will add it explicitly later.
     val previousWalletInputs = previousTransactions.flatMap(_.tx.localInputs).distinctBy(_.outPoint)
-    val hasEnoughFunding = fundingParams.localAmount + fundingParams.localOutputs.map(_.amount).sum <= purpose.previousLocalBalance
+    val hasEnoughFunding = fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum <= 0.sat
     if (hasEnoughFunding) {
       log.info("we seem to have enough funding, no need to request wallet inputs from bitcoind")
       // We're not contributing to the shared output or we have enough funds in our shared input, so we don't need to
@@ -131,7 +157,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // contribute to the RBF attempt.
       if (fundingParams.isInitiator) {
         val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => Input.Shared(UInt64(0), sharedInput.info.outPoint, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance))
-        val sharedOutput = Output.Shared(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
+        val sharedOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution)
         val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
         val fundingContributions = sortFundingContributions(fundingParams, sharedInput ++ previousWalletInputs, sharedOutput +: nonChangeOutputs)
         replyTo ! fundingContributions
@@ -143,11 +169,11 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         Behaviors.stopped
       }
     } else {
-      // The shared input contains funds that belong to us *and* funds that belong to our peer, so we add our peer's
-      // balance to our shared output to cancel its effect on funding. We always include this shared input in our
-      // transaction and will let bitcoind make sure the target feerate is reached.
-      // Note that if the local amount is smaller than the dust limit, bitcoind will reject the funding attempt.
-      val sharedTxOut = TxOut(fundingParams.localAmount + purpose.previousRemoteBalance, fundingParams.fundingPubkeyScript)
+      // The shared input contains funds that belong to us *and* funds that belong to our peer, so we add the previous
+      // funding amount to our shared output to make sure bitcoind adds what is required for our local contribution.
+      // We always include the shared input in our transaction and will let bitcoind make sure the target feerate is reached.
+      // Note that if the shared output amount is smaller than the dust limit, bitcoind will reject the funding attempt.
+      val sharedTxOut = TxOut(purpose.previousFundingAmount + fundingParams.localContribution, fundingPubkeyScript)
       val sharedTxIn = fundingParams.sharedInput_opt.toSeq.map(sharedInput => TxIn(sharedInput.info.outPoint, ByteVector.empty, 0xfffffffdL))
       val previousWalletTxIn = previousWalletInputs.map(i => TxIn(i.outPoint, ByteVector.empty, i.sequence))
       val dummyTx = Transaction(2, sharedTxIn ++ previousWalletTxIn, sharedTxOut +: fundingParams.localOutputs, fundingParams.lockTime)
@@ -161,7 +187,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight).toMap
+    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
@@ -194,7 +220,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case inputDetails: InputDetails if inputDetails.unusableInputs.isEmpty =>
         // This funding iteration did not add any unusable inputs, so we can directly return the results.
         // The transaction should still contain the funding output.
-        if (fundedTx.txOut.count(_.publicKeyScript == fundingParams.fundingPubkeyScript) != 1) {
+        if (fundedTx.txOut.count(_.publicKeyScript == fundingPubkeyScript) != 1) {
           log.error("funded transaction is missing the funding output: {}", fundedTx)
           sendResultAndStop(FundingFailed, fundedTx.txIn.map(_.outPoint).toSet ++ unusableInputs.map(_.outpoint))
         } else if (fundingParams.localOutputs.exists(o => !fundedTx.txOut.contains(o))) {
@@ -206,7 +232,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           val fundingContributions = if (fundingParams.isInitiator) {
             // The initiator is responsible for adding the shared output and the shared input.
             val inputs = inputDetails.usableInputs
-            val fundingOutput = Output.Shared(UInt64(0), fundingParams.fundingPubkeyScript, fundingParams.localAmount, fundingParams.remoteAmount)
+            val fundingOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution)
             val outputs = Seq(fundingOutput) ++ nonChangeOutputs ++ changeOutput_opt.toSeq
             sortFundingContributions(fundingParams, inputs, outputs)
           } else {
@@ -220,9 +246,10 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
             // complexity of adding a change output, which would require a call to bitcoind to get a change address.
             val outputs = changeOutput_opt match {
               case Some(changeOutput) =>
+                val txWeightWithoutInput = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingPubkeyScript)), 0).weight()
                 val commonWeight = fundingParams.sharedInput_opt match {
-                  case Some(sharedInput) => sharedInput.weight.toInt + Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)), 0).weight()
-                  case None => Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingParams.fundingPubkeyScript)), 0).weight()
+                  case Some(sharedInput) => sharedInput.weight + txWeightWithoutInput
+                  case None => txWeightWithoutInput
                 }
                 val overpaidFees = Transactions.weight2fee(fundingParams.targetFeerate, commonWeight)
                 nonChangeOutputs :+ changeOutput.copy(amount = changeOutput.amount + overpaidFees)
@@ -241,7 +268,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           txIn = fundedTx.txIn.filter(txIn => !inputDetails.unusableInputs.map(_.outpoint).contains(txIn.outPoint)),
           // We remove the change output added by this funding iteration.
           txOut = fundedTx.txOut.filter {
-            case txOut if txOut.publicKeyScript == fundingParams.fundingPubkeyScript => true // shared output
+            case txOut if txOut.publicKeyScript == fundingPubkeyScript => true // shared output
             case txOut if fundingParams.localOutputs.contains(txOut) => true // non-change output
             case _ => false
           },

@@ -44,7 +44,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
         context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
-        replyTo ! OpenChannelResponse.Created(channelId, fundingTx.txid, fundingTxFee)
+        replyTo ! OpenChannelResponse.Created(channelId, fundingTxId = fundingTx.txid, fundingTxFee)
       case Success(false) =>
         replyTo ! OpenChannelResponse.Rejected("couldn't publish funding tx")
         self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
@@ -114,12 +114,12 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     goto(CLOSED) sending error
   }
 
-  def singleFundingMinDepth(d: PersistentChannelData) = {
+  def singleFundingMinDepth(d: ChannelDataWithCommitments): Long = {
     val minDepth_opt = if (d.commitments.params.localParams.isInitiator) {
-      Helpers.Funding.minDepthFunder(d.commitments.params.localParams.initFeatures)
+      d.commitments.params.minDepthFunder
     } else {
       // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
-      Helpers.Funding.minDepthFundee(nodeParams.channelConf, d.commitments.params.localParams.initFeatures, d.commitments.latest.commitInput.txOut.amount)
+      d.commitments.params.minDepthFundee(nodeParams.channelConf.minDepthBlocks, d.commitments.latest.commitInput.txOut.amount)
     }
     val minDepth = minDepth_opt.getOrElse {
       val defaultMinDepth = nodeParams.channelConf.minDepthBlocks

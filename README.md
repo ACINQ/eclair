@@ -62,7 +62,7 @@ This means that instead of re-implementing them, Eclair benefits from the verifi
 
 * Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 * You must configure your Bitcoin node to use `bech32` or `bech32m` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit`, `bech32` or `bech32m`), you must send them to a `bech32` or `bech32m` address before running Eclair.
-* Eclair requires Bitcoin Core 23.1 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+* Eclair requires Bitcoin Core 23.2 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -147,6 +147,22 @@ If you want to use a different wallet from the default one, you must set `eclair
 
 Eclair will return BTC from closed channels to the wallet configured.
 Any BTC found in the wallet can be used to fund the channels you choose to open.
+
+We also recommend tweaking the following parameters in `bitcoin.conf`:
+
+```conf
+# This parameter ensures that your wallet will not create chains of unconfirmed
+# transactions that would be rejected by other nodes.
+walletrejectlongchains=1
+# The following parameters set the maximum length of chains of unconfirmed
+# transactions to 20 instead of the default value of 25.
+limitancestorcount=20
+limitdescendantcount=20
+```
+
+Setting these parameters lets you unblock long chains of unconfirmed channel funding transactions by using child-pays-for-parent (CPFP) to make them confirm.
+
+With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by the rest of the network.
 
 ### Java Environment Variables
 
@@ -278,8 +294,13 @@ so you can easily run your Bitcoin node on both mainnet and testnet. For example
 ```conf
 server=1
 txindex=1
+
 addresstype=bech32
 changetype=bech32
+
+walletrejectlongchains=1
+limitancestorcount=20
+limitdescendantcount=20
 
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
