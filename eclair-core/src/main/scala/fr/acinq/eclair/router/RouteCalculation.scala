@@ -50,15 +50,11 @@ object RouteCalculation {
   }
 
   def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
-    def validateMaxRouteFee(amount: MilliSatoshi, maxFee_opt: Option[MilliSatoshi], hops: Seq[ChannelHop]): Either[Status.Failure, Unit] = {
+    def validateMaxRouteFee(route: Route, maxFee_opt: Option[MilliSatoshi]): Try[Route] = {
+      val routeFee = route.channelFee(includeLocalChannelCost = false)
       maxFee_opt match {
-        case Some(maxFee) =>
-          val fee = hops.tail.foldLeft(0.msat)((acc, hop) => acc + hop.fee(amount))
-          if (fee > maxFee) {
-            val routeStr = hops.map(hop => s"${hop.shortChannelId}:${hop.fee(amount).toLong}").mkString("->")
-            Left(Status.Failure(new IllegalArgumentException(s"payment fee ($fee) was above the maximum allowed fee ($maxFee), route: $routeStr")))
-          } else Right(())
-        case _ => Right(())
+        case Some(maxFee) if maxFee < routeFee => Failure(new IllegalArgumentException(s"Route fee ($routeFee) was above the maximum allowed fee ($maxFee) for route ${route.printChannels()}"))
+        case _ => Success(route)
       }
     }
 
@@ -80,11 +76,9 @@ object RouteCalculation {
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-              validateMaxRouteFee(amount, maxFee_opt, hops) match {
-                case Right(_) =>
-                  ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
-                case Left(feeFailure) =>
-                  ctx.sender() ! feeFailure
+              validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+                case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
+                case Failure(f) => ctx.sender() ! Status.Failure(f)
               }
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
@@ -114,11 +108,9 @@ object RouteCalculation {
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            validateMaxRouteFee(amount, maxFee_opt, hops) match {
-              case Right(_) =>
-                ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
-              case Left(feeFailure) =>
-                ctx.sender() ! feeFailure
+            validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+              case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
+              case Failure(f) => ctx.sender() ! Status.Failure(f)
             }
           }
       }

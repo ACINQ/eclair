@@ -897,7 +897,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     {
-      val preComputedRoute = PredefinedChannelRoute(10000 msat, d, Seq(scid_ab, scid_bc, scid_cd), maxFee_opt = Some(1.msat))
+      val preComputedRoute = PredefinedChannelRoute(10000 msat, d, Seq(scid_ab, scid_bc, scid_cd), maxFee_opt = Some(19.msat))
       sender.send(router, FinalizeRoute(preComputedRoute))
       sender.expectMsgType[Status.Failure]
     }
