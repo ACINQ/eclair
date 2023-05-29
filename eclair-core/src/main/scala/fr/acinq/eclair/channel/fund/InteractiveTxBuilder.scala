@@ -20,10 +20,10 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
-import fr.acinq.eclair.blockchain.OnChainWallet.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -766,16 +766,30 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   private def signTx(unsignedTx: SharedTransaction): Unit = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
     val tx = unsignedTx.buildUnsignedTx()
     val sharedSig_opt = fundingParams.sharedInput_opt.map(_.sign(keyManager, channelParams, tx))
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {
-      context.pipeToSelf(wallet.signTransaction(tx, allowIncomplete = true).map {
-        case SignTransactionResponse(signedTx, _) =>
+      // we only sign our wallet inputs, and check that we can spend our wallet outputs
+      val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == OutPoint(i.previousTx, i.previousTxOutput.toInt)))
+      val ourWalletOutputs = unsignedTx.localOutputs.map(o => tx.txOut.indexWhere(output => output.amount == o.amount && output.publicKeyScript == o.pubkeyScript))
+      context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
+        response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet
-          val sigs = signedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
-          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, sigs, sharedSig_opt))
+          val partiallySignedTx = response.extractPartiallySignedTx
+          // partially signed PSBT must include spent amounts for all inputs that were signed, and we can "trust" these amounts because they are included
+          // in the hash that we signed (see BIP143). If our bitcoin node lied about them, then our signatures are invalid
+          val actualLocalAmountIn = ourWalletInputs.map(i => kmp2scala(response.psbt.getInput(i).getWitnessUtxo.amount)).sum
+          val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
+          require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount ${actualLocalAmountIn} does not match what we expect ($expectedLocalAmountIn")
+          val actualLocalAmountOut = ourWalletOutputs.map(i => partiallySignedTx.txOut(i).amount).sum
+          val expectedLocalAmountOut = unsignedTx.localOutputs.map(_.amount).sum
+          require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount ${actualLocalAmountOut} does not match what we expect ($expectedLocalAmountOut")
+          val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt))
       }) {
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx)
