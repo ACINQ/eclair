@@ -162,7 +162,10 @@ limitdescendantcount=20
 
 Setting these parameters lets you unblock long chains of unconfirmed channel funding transactions by using child-pays-for-parent (CPFP) to make them confirm.
 
-With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by the rest of the network.
+With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by
+the rest of the network.
+
+You can also configure Eclair to manage Bitcoin Core's private keys, see our [guides](./docs/Guides.md) for more details.
 
 ### Java Environment Variables
 

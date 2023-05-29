@@ -22,12 +22,12 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, ByteVector32, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnchainPubkeyCache}
 import fr.acinq.eclair.channel._
@@ -36,12 +36,15 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, Up
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import org.json4s.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -118,11 +121,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
   }
 
-  // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType)(testFun: Fixture => Any): Unit = {
-    // Create a unique wallet for this test and ensure it has some btc.
-    val testId = UUID.randomUUID()
-    val walletRpcClient = createWallet(s"lightning-$testId")
+  def createTestWallet(walletName: String) = {
+    val walletRpcClient = createWallet(walletName)
     val probe = TestProbe()
     val walletClient = new BitcoinCoreClient(walletRpcClient) with OnchainPubkeyCache {
       val pubkey = {
@@ -133,11 +133,21 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
     }
 
+    (walletRpcClient, walletClient)
+  }
+
+  // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
+  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType)(testFun: Fixture => Any): Unit = {
+    // Create a unique wallet for this test and ensure it has some btc.
+    val testId = UUID.randomUUID()
+    val (walletRpcClient, walletClient) = createTestWallet(s"lightning-$testId")
+    val probe = TestProbe()
+
     // Ensure our wallet has some funds.
     utxos.foreach(amount => {
       walletClient.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
-      sendToAddress(walletAddress, amount, probe)
+      sendToAddress(walletAddress, amount)
     })
     generateBlocks(1)
 
@@ -636,7 +646,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Our wallet receives new unconfirmed utxos: unfortunately, BIP 125 rule #2 doesn't let us use that input...
       wallet.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
-      val walletTx = sendToAddress(walletAddress, 5 millibtc, probe)
+      val walletTx = sendToAddress(walletAddress, 5 millibtc)
 
       // A new block is found, and the feerate has increased for our block target, but we can't use our unconfirmed input.
       system.eventStream.subscribe(probe.ref, classOf[NotifyNodeOperator])
@@ -1638,4 +1648,29 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+}
+
+class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherSpec {
+  override def createTestWallet(walletName: String) = {
+    val probe = TestProbe()
+    // we use the wallet name as a passphrase to make sure we get a new empty wallet
+    val entropy = ByteVector.fromValidHex("01" * 32)
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
+    val keyManager = new LocalOnchainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
+    bitcoinrpcclient.invoke("createwallet", walletName, true, false, "", false, true, true, false).pipeTo(probe.ref)
+    probe.expectMsgType[JValue]
+
+    val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    importEclairDescriptors(walletRpcClient, keyManager)
+    val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
+      val pubkey = {
+        getP2wpkhPubkey().pipeTo(probe.ref)
+        probe.expectMsgType[PublicKey]
+      }
+
+      override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+    }
+
+    (walletRpcClient, walletClient)
+  }
 }

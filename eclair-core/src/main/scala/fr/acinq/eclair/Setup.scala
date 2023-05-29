@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
@@ -75,7 +75,8 @@ import scala.util.{Failure, Success}
 class Setup(val datadir: File,
             pluginParams: Seq[PluginParams],
             seeds_opt: Option[Seeds] = None,
-            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None,
+            onchainKeyManager_opt: Option[LocalOnchainKeyManager] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout: Timeout = Timeout(30 seconds)
   implicit val formats: org.json4s.Formats = org.json4s.DefaultFormats
@@ -221,6 +222,8 @@ class Setup(val datadir: File,
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+        case Block.SignetGenesisBlock.hash =>
+          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
@@ -244,7 +247,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash))) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -253,6 +256,7 @@ class Setup(val datadir: File,
           key
         }
       }
+      _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
       initialPubkey <- bitcoinClient.getP2wpkhPubkey()
       _ = finalPubkey.set(initialPubkey)
 
