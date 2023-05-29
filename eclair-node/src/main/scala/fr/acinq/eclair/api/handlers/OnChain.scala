@@ -22,6 +22,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import org.json4s.{JArray, JBool, JObject, JString}
 
 trait OnChain {
   this: Service with EclairDirectives =>
@@ -64,6 +65,38 @@ trait OnChain {
     complete(eclairApi.globalBalance())
   }
 
-  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance
+  val enumerate: Route = postRequest("enumerate") { implicit t =>
+    val json = new JObject(List(
+      "type" -> JString("eclair"),
+      "model" -> JString("eclair"),
+      "label" -> JString(""),
+      "path" -> JString(""),
+      "fingerprint" -> JString(this.eclairApi.getOnchainMasterMasterFingerprintHex),
+      "needs_pin_sent" -> JBool(false),
+      "needs_passphrase_sent" -> JBool(false)
+    ))
+    complete(List(json))
+  }
+
+  val getmasterxpub: Route = postRequest("getmasterxpub") { implicit t =>
+    formFields("account".as[Long]) { account =>
+      val xpub = this.eclairApi.getOnchainMasterPubKey(account)
+      complete(new JObject(List("xpub" -> JString(xpub))))
+    }
+  }
+
+  val getdescriptors: Route = postRequest("getdescriptors") { implicit t =>
+    formFields("fingerprint".as[String], "chain".as[String].?, "account".as[Long]) {
+      (fingerprint, chain_opt, account) =>
+        val (receiveDescs, internalDescs) = this.eclairApi.getDescriptors(Integer.parseUnsignedInt(fingerprint, 16), chain_opt, account)
+        val json = new JObject(List(
+          "receive" -> JArray(receiveDescs.map(s => JString(s))),
+          "internal" -> JArray(internalDescs.map(s => JString(s)))
+        ))
+        complete(json)
+    }
+  }
+
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ enumerate ~ getmasterxpub ~ getdescriptors
 
 }

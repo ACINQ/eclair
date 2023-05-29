@@ -17,16 +17,20 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.ProcessPsbtResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{randomBytes32, randomKey}
 import scodec.bits._
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.jdk.CollectionConverters.SeqHasAsJava
 
 /**
  * Created by PM on 06/07/2017.
@@ -50,7 +54,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(FundTransactionResponse(tx, 0 sat, None))
   }
 
-  override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Future.successful(SignTransactionResponse(tx, complete = true))
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[BitcoinCoreClient.ProcessPsbtResponse] = Future.successful(ProcessPsbtResponse(psbt, complete = true))
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
     published += (tx.txid -> tx)
@@ -94,7 +98,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
 
-  override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = Promise().future // will never be completed
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = Promise().future // will never be completed
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
 
@@ -150,7 +154,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
   }
 
-  override def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+  private def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     val signedTx = tx.txIn.zipWithIndex.foldLeft(tx) {
       case (currentTx, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
         case Some(inputTx) =>
@@ -166,6 +170,24 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
     inputs = inputs :+ tx
     Future.successful(tx.txid)
+  }
+
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val tx: Transaction = psbt.getGlobal.getTx
+    val signedPsbt = tx.txIn.zipWithIndex.foldLeft(new Psbt(tx)) {
+      case (currentPsbt, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
+        case Some(inputTx) =>
+          val sig = Transaction.signInput(tx, index, Script.pay2pkh(pubkey), SigHash.SIGHASH_ALL, inputTx.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, privkey)
+          val updated = currentPsbt.updateWitnessInput(txIn.outPoint, inputTx.txOut(txIn.outPoint.index.toInt), null, Script.pay2pkh(pubkey).map(scala2kmp).asJava, null, java.util.Map.of())
+          val finalized = updated.getRight.finalizeWitnessInput(txIn.outPoint, Script.witnessPay2wpkh(pubkey, sig))
+          finalized.getRight
+        case None => currentPsbt
+      }
+    }
+    val complete = signedPsbt.extract().isRight
+    Future.successful(ProcessPsbtResponse(signedPsbt, complete))
   }
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {

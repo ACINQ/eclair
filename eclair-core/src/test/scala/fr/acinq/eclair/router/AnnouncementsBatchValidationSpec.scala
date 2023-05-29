@@ -19,18 +19,19 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import sttp.client3.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.crypto.keymanager.OnchainKeyManager
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomKey}
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite
+import sttp.client3.okhttp.OkHttpFutureBackend
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
@@ -54,7 +55,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     val channels = for (i <- 0 until 50) yield {
       // let's generate a block every 10 txs so that we can compute short ids
       if (i % 10 == 0) generateBlocks(1, bitcoinClient)
-      simulateChannel(bitcoinClient)
+      simulateChannel(bitcoinClient, null)
     }
     generateBlocks(6, bitcoinClient)
     val announcements = channels.map(c => makeChannelAnnouncement(c, bitcoinClient))
@@ -85,7 +86,7 @@ object AnnouncementsBatchValidationSpec {
     Await.result(generatedF, 10 seconds)
   }
 
-  def simulateChannel(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): SimulatedChannel = {
+  def simulateChannel(bitcoinClient: BitcoinCoreClient, onchainKeyManager: OnchainKeyManager)(implicit ec: ExecutionContext): SimulatedChannel = {
     val node1Key = randomKey()
     val node2Key = randomKey()
     val node1BitcoinKey = randomKey()

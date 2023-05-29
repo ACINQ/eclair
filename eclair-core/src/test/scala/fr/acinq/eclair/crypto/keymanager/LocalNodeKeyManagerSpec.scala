@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
-import java.io.File
-import java.nio.file.Files
-
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
@@ -26,6 +23,9 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.{NodeParams, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
+
+import java.io.File
+import java.nio.file.Files
 
 
 class LocalNodeKeyManagerSpec extends AnyFunSuite {
@@ -54,7 +54,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
 
-    val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
+    val Seeds(_, _, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
     val nodeSeedDatFile = new File(seedDatFile.getParentFile, "node_seed.dat")
     assert(nodeSeedDatFile.exists())

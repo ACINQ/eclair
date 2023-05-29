@@ -21,13 +21,14 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.OnChainWallet.FundTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, ProcessPsbtResponse, Utxo}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
@@ -36,6 +37,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, UInt64, addressToPublicKeyScript, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -57,9 +59,19 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def addUtxo(wallet: BitcoinCoreClient, amount: Satoshi, probe: TestProbe): Unit = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
     wallet.getReceiveAddress().pipeTo(probe.ref)
     val walletAddress = probe.expectMsgType[String]
-    sendToAddress(walletAddress, amount, probe)
+    val tx = Transaction(version = 2, Nil, TxOut(amount, addressToPublicKeyScript(walletAddress, Block.RegtestGenesisBlock.hash)) :: Nil, lockTime = 0)
+    val client = makeBitcoinCoreClient
+    val f = for {
+      funded <- client.fundTransaction(tx, FeeratePerKw(750.sat), true)
+      signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
+      txid <- client.publishTransaction(signed.finalTx)
+    } yield txid
+    f.pipeTo(probe.ref)
+    probe.expectMsgType[ByteVector32]
   }
 
   private def createInput(channelId: ByteVector32, serialId: UInt64, amount: Satoshi): TxAddInput = {
@@ -979,24 +991,25 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(75_000 sat, 60_000 sat)
     withFixture(fundingA, utxosA, 0 sat, Nil, FeeratePerKw(5000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
+      import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
       // Add some unusable utxos to Alice's wallet.
       val probe = TestProbe()
       val legacyTxId = {
         // Dual funding disallows non-segwit inputs.
         val legacyAddress = getNewAddress(probe, rpcClientA, Some("legacy"))
-        sendToAddress(legacyAddress, 100_000 sat, probe).txid
+        sendToAddress(legacyAddress, 100_000 sat).txid
       }
       val bigTxId = {
         // Dual funding cannot use transactions that exceed 65k bytes.
         walletA.getP2wpkhPubkey().pipeTo(probe.ref)
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-        val minerWallet = new BitcoinCoreClient(bitcoinrpcclient)
+        val minerWallet = makeBitcoinCoreClient
         minerWallet.fundTransaction(tx, FeeratePerKw(500 sat), replaceable = true).pipeTo(probe.ref)
         val unsignedTx = probe.expectMsgType[FundTransactionResponse].tx
-        minerWallet.signTransaction(unsignedTx).pipeTo(probe.ref)
-        val signedTx = probe.expectMsgType[SignTransactionResponse].tx
+        minerWallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(probe.ref)
+        val signedTx = probe.expectMsgType[ProcessPsbtResponse].finalTx
         assert(Transaction.write(signedTx).length >= 65_000)
         minerWallet.publishTransaction(signedTx).pipeTo(probe.ref)
         probe.expectMsgType[ByteVector32]
@@ -1032,8 +1045,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val legacyTxIds = {
         // Dual funding disallows non-segwit inputs.
         val legacyAddress = getNewAddress(probe, rpcClientA, Some("legacy"))
-        val tx1 = sendToAddress(legacyAddress, 100_000 sat, probe).txid
-        val tx2 = sendToAddress(legacyAddress, 120_000 sat, probe).txid
+        val tx1 = sendToAddress(legacyAddress, 100_000 sat).txid
+        val tx2 = sendToAddress(legacyAddress, 120_000 sat).txid
         Seq(tx1, tx2)
       }
       generateBlocks(1)
@@ -1768,8 +1781,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Bob's available utxo is unconfirmed.
       val probe = TestProbe()
-      walletB.getReceiveAddress().pipeTo(probe.ref)
-      walletB.sendToAddress(probe.expectMsgType[String], 75_000 sat, 1).pipeTo(probe.ref)
+      walletB.getP2wpkhPubkey().pipeTo(probe.ref)
+      walletB.sendToPubkeyScript(Script.write(Script.pay2wpkh(probe.expectMsgType[PublicKey])), 75_000 sat, FeeratePerKw(FeeratePerByte(1.sat))).pipeTo(probe.ref)
       probe.expectMsgType[ByteVector32]
 
       alice ! Start(alice2bob.ref)
@@ -2548,4 +2561,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(initiatorSignedTx.signedTx == nonInitiatorSignedTx.signedTx)
   }
 
+}
+
+class InteractiveTxBuilderWithExternalSignerSpec extends InteractiveTxBuilderSpec {
+  override val useExternalSigner = true
 }

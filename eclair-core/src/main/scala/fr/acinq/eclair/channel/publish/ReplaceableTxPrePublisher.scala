@@ -64,22 +64,33 @@ object ReplaceableTxPrePublisher {
     def txInfo: ReplaceableTransactionWithInputInfo
     def updateTx(tx: Transaction): ReplaceableTxWithWitnessData
   }
-  /** Replaceable transaction for which we may need to add wallet inputs. */
+  /** Replaceable transaction for which we may need to add wallet inputs and outputs. */
   sealed trait ReplaceableTxWithWalletInputs extends ReplaceableTxWithWitnessData {
     override def updateTx(tx: Transaction): ReplaceableTxWithWalletInputs
+
+    def updateWalletInputsAndOutputs(walletIn: Seq[Int], walletOut: Seq[Int]): ReplaceableTxWithWalletInputs
+    def walletInputs: Seq[Int]
+    def walletOutputs: Seq[Int]
   }
-  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx) extends ReplaceableTxWithWalletInputs {
+  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx, override val walletInputs: Seq[Int], override val walletOutputs: Seq[Int]) extends ReplaceableTxWithWalletInputs {
     override def updateTx(tx: Transaction): ClaimLocalAnchorWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+
+    override def updateWalletInputsAndOutputs(walletIn: Seq[Int], walletOut: Seq[Int]): ClaimLocalAnchorWithWitnessData = this.copy(walletInputs = walletIn, walletOutputs = walletOut)
+
   }
   sealed trait HtlcWithWitnessData extends ReplaceableTxWithWalletInputs {
     override def txInfo: HtlcTx
     override def updateTx(tx: Transaction): HtlcWithWitnessData
+
+    override def updateWalletInputsAndOutputs(walletIn: Seq[Int], walletOut: Seq[Int]): HtlcWithWitnessData
   }
-  case class HtlcSuccessWithWitnessData(txInfo: HtlcSuccessTx, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcWithWitnessData {
+  case class HtlcSuccessWithWitnessData(txInfo: HtlcSuccessTx, remoteSig: ByteVector64, preimage: ByteVector32, override val walletInputs: Seq[Int], override val walletOutputs: Seq[Int]) extends HtlcWithWitnessData {
     override def updateTx(tx: Transaction): HtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+    override def updateWalletInputsAndOutputs(walletIn: Seq[Int], walletOut: Seq[Int]): HtlcSuccessWithWitnessData = this.copy(walletInputs = walletIn, walletOutputs = walletOut)
   }
-  case class HtlcTimeoutWithWitnessData(txInfo: HtlcTimeoutTx, remoteSig: ByteVector64) extends HtlcWithWitnessData {
+  case class HtlcTimeoutWithWitnessData(txInfo: HtlcTimeoutTx, remoteSig: ByteVector64, override val walletInputs: Seq[Int], override val walletOutputs: Seq[Int]) extends HtlcWithWitnessData {
     override def updateTx(tx: Transaction): HtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+    override def updateWalletInputsAndOutputs(walletIn: Seq[Int], walletOut: Seq[Int]): HtlcTimeoutWithWitnessData = this.copy(walletInputs = walletIn, walletOutputs = walletOut)
   }
   sealed trait ClaimHtlcWithWitnessData extends ReplaceableTxWithWitnessData {
     override def txInfo: ClaimHtlcTx
@@ -153,7 +164,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx, Nil, Nil))
         Behaviors.stopped
       case FundingTxNotFound =>
         log.debug("funding tx could not be found, we don't know yet if we need to claim our anchor")
@@ -171,7 +182,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case UnknownFailure(reason) =>
         log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx, Nil, Nil))
         Behaviors.stopped
     }
   }
@@ -228,7 +239,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             commitment.changes.localChanges.all.collectFirst {
               case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
             } match {
-              case Some(preimage) => Some(HtlcSuccessWithWitnessData(tx, remoteSig, preimage))
+              case Some(preimage) => Some(HtlcSuccessWithWitnessData(tx, remoteSig, preimage, Nil, Nil))
               case None =>
                 log.error(s"preimage not found for htlcId=${tx.htlcId}, skipping...")
                 None
@@ -241,7 +252,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
           case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
         } match {
-          case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
+          case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig, Nil, Nil))
           case None =>
             log.error(s"remote signature not found for htlcId=${tx.htlcId}, skipping...")
             None

@@ -840,7 +840,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       if (i % 10 == 0) {
         generateBlocks(1, Some(address))
       }
-      AnnouncementsBatchValidationSpec.simulateChannel(bitcoinClient)
+      AnnouncementsBatchValidationSpec.simulateChannel(bitcoinClient, onchainKeyManager)
     }
     generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")

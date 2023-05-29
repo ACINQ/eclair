@@ -16,14 +16,16 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
+import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{Bech32, Block}
+import fr.acinq.bitcoin.{Bech32, Block, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
+import fr.acinq.eclair.crypto.keymanager.OnchainKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -32,6 +34,7 @@ import org.json4s.Formats
 import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
+import java.util.Base64
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.ListHasAsScala
 import scala.util.{Failure, Success, Try}
@@ -42,8 +45,13 @@ import scala.util.{Failure, Success, Try}
 
 /**
  * The Bitcoin Core client provides some high-level utility methods to interact with Bitcoin Core.
+ *
+ * @param rpcClient             bitcoin core JSON rpc client
+ * @param onchainKeyManager_opt optional onchain key manager. If provided, it will be used to sign transactions (it is assumed that bitcoin
+ *                              core uses a wallet with "external signer" enabled, and that this external signer is eclair through its
+ *                              RPC API and using the same onchain key manager)
  */
-class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWallet with Logging {
+class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManager_opt: Option[OnchainKeyManager] = None) extends OnChainWallet with Logging {
 
   import BitcoinCoreClient._
 
@@ -224,25 +232,92 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq))
   }
 
+  private def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+    // we use an explicit map here because this RPC calls takes a String for the "sighashtype" parameter with an explicitly limited list of valid values
+    val sighashStrings = Map(
+      SigHash.SIGHASH_DEFAULT -> "DEFAULT",
+      SigHash.SIGHASH_ALL -> "ALL",
+      SigHash.SIGHASH_NONE -> "NONE",
+      SigHash.SIGHASH_SINGLE -> "SINGLE",
+      (SigHash.SIGHASH_ALL | SigHash.SIGHASH_ANYONECANPAY) -> "ALL|ANYONECANPAY",
+      (SigHash.SIGHASH_NONE | SigHash.SIGHASH_ANYONECANPAY) -> "NONE|ANYONECANPAY",
+      (SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY) -> "SINGLE|ANYONECANPAY")
+    val sighash = sighashType.map(s => sighashStrings.getOrElse(s, throw new IllegalArgumentException(s"invalid sighash flag ${sighashType}")))
+    val encoded = Base64.getEncoder.encodeToString(Psbt.write(psbt).toByteArray)
+    val params = Seq(encoded, sign) ++ sighash.toSeq
+    rpcClient.invoke("walletprocesspsbt", params: _*).map(json => {
+      val JString(base64) = json \ "psbt"
+      val JBool(complete) = json \ "complete"
+      val decoded = Psbt.read(Base64.getDecoder.decode(base64))
+      require(decoded.isRight, s"cannot decode psbt from $base64")
+      ProcessPsbtResponse(decoded.getRight, complete)
+    })
+  }
+
+  private def utxoUpdatePsbt(psbt: Psbt)(implicit ec: ExecutionContext): Future[Psbt] = {
+    val encoded = Base64.getEncoder.encodeToString(Psbt.write(psbt).toByteArray)
+
+    rpcClient.invoke("utxoupdatepsbt", encoded).map(json => {
+      val JString(base64) = json
+      val bin = Base64.getDecoder.decode(base64)
+      val decoded = Psbt.read(bin)
+      require(decoded.isRight, s"cannot decode psbt from $base64")
+      val psbt = decoded.getRight
+      psbt
+    })
+  }
+
+  private def unlockIfFails[T](txid: ByteVector32, locked: Seq[OutPoint])(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
+    f.recoverWith { case _ =>
+      unlockOutpoints(locked)
+        .recover { case t: Throwable => // no-op, just add a log in case of failure
+          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${txid}", t)
+          t
+        }
+        .flatMap(_ => f) // return signTransaction error
+        .recoverWith { case _ => f } // return signTransaction error
+    }
+  }
+
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+    import KotlinUtils._
+
+    def sign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw): Future[MakeFundingTxResponse] = {
+      val outputIndex = Transactions.findPubKeyScriptIndex(tx, pubkeyScript) getOrElse {
+        throw new RuntimeException(s"cannot find expected funding output")
+      }
+      val ourInputs = tx.txIn.indices.toList // all inputs are supposed to be ours
+      val ourOutputs = tx.txOut.indices.toList filterNot (_ == outputIndex) // all outputs except for the funding output are supposed to be ours
+      val psbt = new Psbt(tx)
+      for {
+        signed <- signPsbt(psbt, ourInputs, ourOutputs)
+        extracted = signed.psbt.extract()
+        _ = require(extracted.isRight, s"signing psbt failed with ${extracted.getLeft}")
+        actualFees = kmp2scala(signed.psbt.computeFees())
+        _ = require(actualFees == fees, s"actual funding fees $actualFees do not match bitcoin core fee $fees")
+        fundingTx = kmp2scala(extracted.getRight)
+        actualFeerate = FeeratePerKw((actualFees * 1000) / fundingTx.weight())
+        maxFeerate = requestedFeeRate + requestedFeeRate / 2
+        _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested fee rate $targetFeerate")
+        _ = logger.debug(s"created funding txid=${extracted.getRight.txid} outputIndex=$outputIndex fee=${fees}")
+      } yield MakeFundingTxResponse(fundingTx, outputIndex, fees)
+    }
+
     val partialFundingTx = Transaction(
       version = 2,
       txIn = Seq.empty[TxIn],
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
+
     for {
+      // TODO: we should check that mempoolMinFee is not dangerously high
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate))
-      // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
-      // there will probably be a change output, so we need to find which output is ours
-      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
-        case Right(outputIndex) => Future.successful(outputIndex)
-        case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
-      }
-      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
-    } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
+      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate))
+      lockedUtxos = tx.txIn.map(_.outPoint)
+      signedTx <- unlockIfFails(tx.txid, lockedUtxos)(sign(tx, fee, feerate))
+    } yield signedTx
   }
 
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
@@ -266,6 +341,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
    * @param targetFeerate feerate to apply to the package of unconfirmed transactions.
    */
   def cpfp(outpoints: Set[OutPoint], targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[Transaction] = {
+    import KotlinUtils._
+
     getMempoolPackage(outpoints.map(_.txid)).transformWith {
       case Failure(ex) => Future.failed(new IllegalArgumentException("unable to analyze mempool package: some transactions could not be found in your mempool", ex))
       case Success(mempoolPackage) =>
@@ -291,9 +368,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
                   Future.failed(new IllegalArgumentException("input amount is not sufficient to cover the target feerate"))
                 } else {
                   val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, Script.pay2wpkh(changePubkeyHash))), 0)
-                  signTransaction(unsignedTx, Nil).transformWith {
+                  signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, unsignedTx.txOut.indices).transformWith {
                     case Failure(ex) => Future.failed(new IllegalArgumentException("tx signing failed: some inputs don't belong to our wallet", ex))
-                    case Success(signedTx) => publishTransaction(signedTx.tx).map(_ => signedTx.tx)
+                    case Success(response) =>
+                      response.extractFinalTx match {
+                        case Left(error) => Future.failed(new IllegalArgumentException("tx signing failed: some inputs don't belong to our wallet", new RuntimeException(error.toString)))
+                        case Right(tx) => publishTransaction(tx).map(_ => tx)
+                      }
                   }
                 }
             }
@@ -332,41 +413,30 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
 
   //------------------------- SIGNING  -------------------------//
 
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+
+    def sign(psbt: Psbt): Future[ProcessPsbtResponse] = onchainKeyManager_opt match {
+      case Some(keyManager) => Try(keyManager.signPsbt(psbt, ourInputs, ourOutputs)) match {
+        case Success(signedPsbt) => Future.successful(ProcessPsbtResponse(signedPsbt, signedPsbt.extract().isRight))
+        case Failure(error) => Future.failed(error)
+      }
+      case None => processPsbt(psbt, sign = true)
+    }
+
+    for {
+      updated <- utxoUpdatePsbt(psbt)
+      filled <- processPsbt(updated, sign = false) // called with sign=false to fill input and output HD paths
+      signed <- sign(filled.psbt)
+    } yield signed
+  }
+
   def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil)
 
   def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil, allowIncomplete)
 
   def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
-    rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
-      val JString(hex) = json \ "hex"
-      val JBool(complete) = json \ "complete"
-      if (!complete && !allowIncomplete) {
-        val JArray(errors) = json \ "errors"
-        val message = errors.map(error => {
-          val JString(txid) = error \ "txid"
-          val JInt(vout) = error \ "vout"
-          val JString(scriptSig) = error \ "scriptSig"
-          val JString(message) = error \ "error"
-          s"txid=$txid vout=$vout scriptSig=$scriptSig error=$message"
-        }).mkString(", ")
-        throw JsonRPCError(Error(-1, message))
-      }
-      SignTransactionResponse(Transaction.read(hex), complete)
-    })
-  }
-
-  private def signTransactionOrUnlock(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
-    val f = signTransaction(tx)
-    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
-    f.recoverWith { case _ =>
-      unlockOutpoints(tx.txIn.map(_.outPoint))
-        .recover { case t: Throwable => // no-op, just add a log in case of failure
-          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t)
-          t
-        }
-        .flatMap(_ => f) // return signTransaction error
-        .recoverWith { case _ => f } // return signTransaction error
-    }
+    import KotlinUtils._
+    signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.extractFinalTx.getOrElse(p.extractPartiallySignedTx), p.extractFinalTx.isRight))
   }
 
   //------------------------- PUBLISHING  -------------------------//
@@ -464,6 +534,41 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     }
   }
 
+  /**
+   * Asks Bitcoin Core to fund and broadcsat a tx that sends funds to a given pubkey script
+   * If the current wallet uses Eclair to sign transaction, then we'll use our onchain key manager to sign the transaction,
+   * with the following assumptions:
+   * - all inputs belong to us
+   * - all outputs except for the one that sends to `pubkeyScript` belong to us`
+   *
+   *
+   * @param pubkeyScript public key script to sent funds to
+   * @param amount       amount to send
+   * @param feeratePerKw fee rate
+   * @return the txid of the sending tx.
+   */
+  def sendToPubkeyScript(pubkeyScript: ByteVector, amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+    import KotlinUtils._
+
+    val theirOutput = TxOut(amount, pubkeyScript)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = theirOutput :: Nil, lockTime = 0)
+    for {
+      fundedTx <- fundTransaction(tx, feeratePerKw, true)
+      lockedOutputs = fundedTx.tx.txIn.map(_.outPoint)
+      theirOutputPos = fundedTx.tx.txOut.indexOf(theirOutput)
+      signedPsbt <- unlockIfFails(fundedTx.tx.txid, lockedOutputs)(signPsbt(new Psbt(fundedTx.tx), fundedTx.tx.txIn.indices, fundedTx.tx.txOut.indices.filterNot(_ == theirOutputPos)))
+      signedTx = signedPsbt.finalTx
+      actualFees = kmp2scala(signedPsbt.psbt.computeFees())
+      actualFeerate = FeeratePerKw((actualFees * 1000) / signedTx.weight())
+      maxFeerate = actualFeerate + actualFeerate / 2
+      _ = require(actualFeerate < maxFeerate, s"actual fee rate $actualFeerate is more than 50% above requested fee rate $feeratePerKw")
+      txid <- publishTransaction(signedTx)
+    } yield txid
+  }
+
+  def sendToPubkeyScript(pubkeyScript: Seq[ScriptElt], amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[ByteVector32] = sendToPubkeyScript(Script.write(pubkeyScript), amount, feeratePerKw)
+
+  // calls Bitcoin Core's sendtoaddress RPC call directly. Will fail if wallet is using an external signer
   def sendToAddress(address: String, amount: Satoshi, confirmationTarget: Long)(implicit ec: ExecutionContext): Future[ByteVector32] = {
     rpcClient.invoke(
       "sendtoaddress",
@@ -586,6 +691,32 @@ object BitcoinCoreClient {
         if (inputWeights.isEmpty) None else Some(inputWeights)
       )
     }
+  }
+
+  case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean) {
+
+    import KotlinUtils._
+
+    // Extract a fully signed transaction from `psbt`
+    // If the transaction is just partially signed, this method wil fail and you must call extractPartiallySignedTx instead
+    def extractFinalTx: Either[UpdateFailure, Transaction] = {
+      val extracted = psbt.extract()
+      if (extracted.isLeft) Left(extracted.getLeft) else Right(extracted.getRight)
+    }
+
+    // Extract a partially signed transaction from `psbt`
+    def extractPartiallySignedTx: Transaction = {
+      var partiallySignedTx: Transaction = psbt.getGlobal.getTx
+      for (i <- 0 until psbt.getInputs.size()) {
+        val scriptWitness = psbt.getInputs.get(i).getScriptWitness
+        if (scriptWitness != null) {
+          partiallySignedTx = partiallySignedTx.updateWitness(i, scriptWitness)
+        }
+      }
+      partiallySignedTx
+    }
+
+    def finalTx = extractFinalTx.getOrElse(throw new RuntimeException("cannot extract transaction from psbt"))
   }
 
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
