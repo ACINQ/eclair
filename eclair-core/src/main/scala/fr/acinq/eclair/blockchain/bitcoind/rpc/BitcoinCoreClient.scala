@@ -550,7 +550,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
       signedTx = signedPsbt.finalTx
       actualFees = kmp2scala(signedPsbt.psbt.computeFees())
       actualFeerate = FeeratePerKw((actualFees * 1000) / signedTx.weight())
-      maxFeerate = actualFeerate + actualFeerate / 2
+      maxFeerate = feeratePerKw + feeratePerKw / 2
       _ = require(actualFeerate < maxFeerate, s"actual fee rate $actualFeerate is more than 50% above requested fee rate $feeratePerKw")
       txid <- publishTransaction(signedTx)
     } yield txid
