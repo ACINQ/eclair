@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, Bitco
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressFromPublicKeyScript, addressToPublicKeyScript, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, TimestampSecond, addressFromPublicKeyScript, addressToPublicKeyScript, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
@@ -157,6 +157,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
       def makeEvilBitcoinClient(changePosMod: (Int) => Int, txMod: Transaction => Transaction): BitcoinCoreClient = {
         val badRpcClient = new BitcoinJsonRPCClient {
+          override def wallet: Option[String] = if (useEclairSigner) Some("eclair") else None
+
           override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
             case "fundrawtransaction" => bitcoinClient.rpcClient.invoke(method, params: _*)(ec).map(json => json.mapField {
               case ("changepos", JInt(pos)) => ("changepos", JInt(changePosMod(pos.toInt)))
@@ -1423,7 +1425,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 }
 
 class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
-  override val useEclairSigner = true
+  override def useEclairSigner = true
 
   test("wallets managed by eclair implement BIP84") {
     val sender = TestProbe()
@@ -1433,7 +1435,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val seed = MnemonicCode.toSeed(mnemmonics, "")
     val master = DeterministicWallet.generate(seed)
 
-    val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
+    val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
     val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
@@ -1472,9 +1474,9 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val sender = TestProbe()
 
     (1 to 10).foreach { _ =>
-      val entropy = randomBytes32()
-      val hex = entropy.toString()
-      val onchainKeyManager = new LocalOnchainKeyManager(entropy, Block.RegtestGenesisBlock.hash, passphrase = "")
+      val seed = randomBytes32()
+      val hex = seed.toString()
+      val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
       bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
       sender.expectMsgType[JValue]
 

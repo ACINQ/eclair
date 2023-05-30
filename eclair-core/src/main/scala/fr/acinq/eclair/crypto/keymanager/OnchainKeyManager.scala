@@ -3,8 +3,11 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Descriptors
 
 trait OnchainKeyManager {
+  def wallet: String
+
   /**
    *
    * @param account account number (0 is used by most wallets)
@@ -24,7 +27,7 @@ trait OnchainKeyManager {
    * @param account account number
    * @return a pair of (main, change) wallet descriptors that can be imported into an onchain wallet
    */
-  def getDescriptors(account: Long): (List[String], List[String])
+  def getDescriptors(account: Long): Descriptors
 
   /**
    *

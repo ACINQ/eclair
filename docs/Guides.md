@@ -4,6 +4,7 @@ This section contains how-to guides for more advanced scenarios:
 
 * [Customize Logging](./Logging.md)
 * [Customize Features](./Features.md)
+* [Manage Bitcoin Core's private keys](./BitcoinCoreKeys.md)
 * [Use Tor with Eclair](./Tor.md)
 * [Multipart Payments](./MultipartPayments.md)
 * [Trampoline Payments](./TrampolinePayments.md)

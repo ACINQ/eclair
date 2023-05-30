@@ -22,7 +22,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, ByteVector32, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -40,7 +40,7 @@ import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, TimestampSecond, randomKey}
 import org.json4s.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -1647,7 +1647,9 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
   override def createTestWallet(walletName: String) = {
     val probe = TestProbe()
     // we use the wallet name as a passphrase to make sure we get a new empty wallet
-    val keyManager = new LocalOnchainKeyManager(ByteVector.fromValidHex("01" * 32), Block.RegtestGenesisBlock.hash, walletName)
+    val entropy = ByteVector.fromValidHex("01" * 32)
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
+    val keyManager = new LocalOnchainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     bitcoinrpcclient.invoke("createwallet", walletName, true, false, "", false, true, true, false).pipeTo(probe.ref)
     probe.expectMsgType[JValue]
 

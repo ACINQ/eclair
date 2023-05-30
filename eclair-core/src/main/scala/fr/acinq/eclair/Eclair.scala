@@ -30,7 +30,7 @@ import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -180,7 +180,7 @@ trait Eclair {
 
   def getOnchainMasterPubKey(account: Long): String
 
-  def getDescriptors(account: Long): (List[String], List[String])
+  def getDescriptors(account: Long): Descriptors
 
   def stop(): Future[Unit]
 }
@@ -701,9 +701,15 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
-  override def getDescriptors(account: Long): (List[String], List[String]) = this.appKit.nodeParams.onchainKeyManager.getDescriptors(account)
+  override def getDescriptors(account: Long): Descriptors = appKit.wallet match {
+    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getDescriptors(account)
+    case _ => throw new RuntimeException("onchain seed is not configured")
+  }
 
-  override def getOnchainMasterPubKey(account: Long): String = this.appKit.nodeParams.onchainKeyManager.getOnchainMasterPubKey(account)
+  override def getOnchainMasterPubKey(account: Long): String = appKit.wallet match {
+    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getOnchainMasterPubKey(account)
+    case _ => throw new RuntimeException("onchain seed is not configured")
+  }
 
   override def stop(): Future[Unit] = {
     // README: do not make this smarter or more complex !

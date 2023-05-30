@@ -75,7 +75,8 @@ import scala.util.{Failure, Success}
 class Setup(val datadir: File,
             pluginParams: Seq[PluginParams],
             seeds_opt: Option[Seeds] = None,
-            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None,
+            onchainKeyManager_opt: Option[LocalOnchainKeyManager] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
@@ -95,17 +96,13 @@ class Setup(val datadir: File,
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
-  val Seeds(nodeSeed, channelSeed, onchainSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
+  val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
 
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
-  val onchainKeyManager = {
-    val passphrase = if (config.hasPath("bitcoind.eclair-signer-passphrase")) config.getString("bitcoind.eclair-signer-passphrase") else ""
-    new LocalOnchainKeyManager(onchainSeed, NodeParams.hashFromChain(chain), passphrase)
-  }
 
   /**
    * This counter holds the current blockchain height.
@@ -202,7 +199,7 @@ class Setup(val datadir: File,
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onchainKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
@@ -267,8 +264,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      useEclairSigner = if (config.hasPath("bitcoind.use-eclair-signer")) config.getBoolean("bitcoind.use-eclair-signer") else false
-      bitcoinClient = new BitcoinCoreClient(bitcoin, if (useEclairSigner) Some(onchainKeyManager) else None) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash))) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -277,6 +273,7 @@ class Setup(val datadir: File,
           key
         }
       }
+      _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
       initialPubkey <- bitcoinClient.getP2wpkhPubkey()
       _ = finalPubkey.set(initialPubkey)
 
@@ -444,7 +441,7 @@ class Setup(val datadir: File,
 
 object Setup {
 
-  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector, onchainSeed: ByteVector)
+  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
 
 }
 

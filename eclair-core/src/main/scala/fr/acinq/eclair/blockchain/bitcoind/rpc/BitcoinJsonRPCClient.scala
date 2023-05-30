@@ -22,6 +22,7 @@ import java.io.IOException
 import scala.concurrent.{ExecutionContext, Future}
 
 trait BitcoinJsonRPCClient {
+  def wallet: Option[String]
 
   def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue]
 

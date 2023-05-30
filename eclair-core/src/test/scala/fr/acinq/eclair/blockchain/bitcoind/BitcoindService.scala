@@ -22,13 +22,13 @@ import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, TxOut, computeP2WpkhAddress}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, PreviousTx}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.PreviousTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.{LocalOnchainKeyManager, OnchainKeyManager}
 import fr.acinq.eclair.integration.IntegrationSpec
-import fr.acinq.eclair.{BlockHeight, TestUtils, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import scodec.bits.ByteVector
@@ -73,7 +73,7 @@ trait BitcoindService extends Logging {
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
-  val onchainKeyManager = new LocalOnchainKeyManager(ByteVector.fromValidHex("01" * 32), Block.RegtestGenesisBlock.hash)
+  val onchainKeyManager = new LocalOnchainKeyManager("eclair", ByteVector.fromValidHex("01" * 32), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
                     mempoolSize_opt: Option[Int] = None, // mempool size in MB
@@ -119,7 +119,7 @@ trait BitcoindService extends Logging {
     }))
   }
 
-  def makeBitcoinCoreClient: BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onchainKeyManager) else None)
+  def makeBitcoinCoreClient: BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, Some(onchainKeyManager))
 
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
@@ -174,8 +174,7 @@ trait BitcoindService extends Logging {
 
 
   def importEclairDescriptors(jsonRpcClient: BitcoinJsonRPCClient, keyManager: OnchainKeyManager, probe: TestProbe = TestProbe()): Unit = {
-    val (main, change) = keyManager.getDescriptors(0)
-    val descriptors = main.map(d => Descriptor(d)) ++ change.map(d => Descriptor(d, internal = true))
+    val descriptors = keyManager.getDescriptors(0).descriptors
     jsonRpcClient.invoke("importdescriptors", descriptors).pipeTo(probe.ref)
     probe.expectMsgType[JValue]
   }

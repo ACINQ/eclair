@@ -2563,5 +2563,5 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 }
 
 class InteractiveTxBuilderWithEclairSignerSpec extends InteractiveTxBuilderSpec {
-  override val useEclairSigner = true
+  override def useEclairSigner = true
 }

@@ -455,14 +455,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   test("start eclair nodes") {
-    var mapA = Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
-    var mapB = Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
-    var mapC = Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
-    if (useEclairSigner) {
-      mapA = mapA + ("eclair.bitcoind.use-eclair-signer" -> true)
-      mapB = mapB + ("eclair.bitcoind.use-eclair-signer" -> true)
-      mapC = mapC + ("eclair.bitcoind.use-eclair-signer" -> true)
-    }
+    val mapA = Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
+    val mapB = Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
+    val mapC = Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> TestUtils.availablePort, "eclair.api.port" -> TestUtils.availablePort)
     instantiateEclairNode("A", ConfigFactory.parseMap(mapA.asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(mapB.asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
     instantiateEclairNode("F", ConfigFactory.parseMap(mapC.asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
@@ -637,7 +632,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 }
 
 class StandardChannelIntegrationWithEclairSignerSpec extends StandardChannelIntegrationSpec {
-  override val useEclairSigner: Boolean = true
+  override def useEclairSigner: Boolean = true
 }
 
 abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {

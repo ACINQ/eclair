@@ -1,20 +1,40 @@
 package fr.acinq.eclair.crypto.keymanager
 
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptWitness
 import fr.acinq.bitcoin.psbt.{Psbt, SignPsbtResult}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, computeBIP84Address}
 import fr.acinq.bitcoin.utils.EitherKt
+import fr.acinq.eclair.TimestampSecond
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, Descriptors}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
+import java.io.File
 import scala.jdk.CollectionConverters.MapHasAsScala
 
-object LocalOnchainKeyManager {
+object LocalOnchainKeyManager extends Logging {
   def descriptorChecksum(span: String): String = fr.acinq.bitcoin.Descriptor.checksum(span)
+
+  def load(datadir: File, chainHash: ByteVector32): Option[LocalOnchainKeyManager] = {
+    val file = new File(datadir, "eclair-signer.conf")
+    if (file.exists()) {
+      val config = ConfigFactory.parseFile(file)
+      val wallet = config.getString("eclair.signer.wallet")
+      val mnemonics = config.getString("eclair.signer.mnemonics")
+      val passphrase = config.getString("eclair.signer.passphrase")
+      val timestamp = config.getLong("eclair.signer.timestamp")
+      val keyManager = new LocalOnchainKeyManager(wallet, MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond(timestamp), chainHash)
+      logger.info(s"using onchain key manager wallet=${wallet} xpub=${keyManager.getOnchainMasterPubKey(0)}")
+      Some(keyManager)
+    } else {
+      None
+    }
+  }
 }
 
-class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passphrase: String = "") extends OnchainKeyManager with Logging {
+class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, timestamp: TimestampSecond, chainHash: ByteVector32) extends OnchainKeyManager with Logging {
 
   import LocalOnchainKeyManager._
 
@@ -24,8 +44,6 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
   // by Eclair to fund transactions (only Eclair will be able to sign wallet inputs).
 
   // m / purpose' / coin_type' / account' / change / address_index
-  private val mnemonics = MnemonicCode.toMnemonics(entropy)
-  private val seed = MnemonicCode.toSeed(mnemonics, passphrase)
   private val master = DeterministicWallet.generate(seed)
   private val fingerprint = DeterministicWallet.fingerprint(master) & 0xFFFFFFFFL
   private val fingerPrintHex = String.format("%8s", fingerprint.toHexString).replace(' ', '0')
@@ -45,14 +63,13 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
       case Block.LivenetGenesisBlock.hash => zpub
       case _ => throw new IllegalArgumentException(s"invalid chain hash ${chainHash}")
     }
-
     // master pubkey for account 0 is m/84'/{0'/1'}/0'
     val accountPub = DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(rootKey, hardened(account)))
     DeterministicWallet.encode(accountPub, prefix)
   }
 
-  override def getDescriptors(account: Long): (List[String], List[String]) = {
-    val keyPath = s"$rootPath/$account'"
+  override def getDescriptors(account: Long): Descriptors = {
+    val keyPath = s"$rootPath/$account'".replace('\'', 'h') // Bitcoin Core understands both ' and h suffix for hardened derivation, and h is much easier to parse for external tools
     val prefix: Int = chainHash match {
       case Block.LivenetGenesisBlock.hash => xpub
       case _ => tpub
@@ -63,10 +80,11 @@ class LocalOnchainKeyManager(entropy: ByteVector, chainHash: ByteVector32, passp
     // 84'/{0'/1'}/0'/1/* for change addresses
     val receiveDesc = s"wpkh([${this.fingerPrintHex}/$keyPath]${encode(accountPub, prefix)}/0/*)"
     val changeDesc = s"wpkh([${this.fingerPrintHex}/$keyPath]${encode(accountPub, prefix)}/1/*)"
-    (
-      List(s"$receiveDesc#${descriptorChecksum(receiveDesc)}"),
-      List(s"$changeDesc#${descriptorChecksum(changeDesc)}")
-    )
+
+    Descriptors(wallet_name = wallet, descriptors = List(
+      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = Right(timestamp.toLong)),
+      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = Right(timestamp.toLong)),
+    ))
   }
 
   override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Psbt = {

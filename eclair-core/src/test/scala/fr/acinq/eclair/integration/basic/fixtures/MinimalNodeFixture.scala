@@ -69,7 +69,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       instanceId = UUID.randomUUID(),
       nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
       channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      onchainKeyManager = new LocalOnchainKeyManager(seed, Block.RegtestGenesisBlock.hash),
       torAddress_opt = None,
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),

@@ -22,7 +22,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
-import org.json4s.{JArray, JBool, JObject, JString}
+import org.json4s.{JObject, JString}
 
 trait OnChain {
   this: Service with EclairDirectives =>
@@ -75,22 +75,8 @@ trait OnChain {
   val getdescriptors: Route = postRequest("getdescriptors") { implicit t =>
     formFields("account".as[Long].?) {
       (account_opt) =>
-        val (receiveDescs, internalDescs) = this.eclairApi.getDescriptors(account_opt.getOrElse(0L))
-
-        // format JSON result to be compatible with Bitcoin Core's importdescriptors RPC call
-        val receive = receiveDescs.map(desc => JObject(
-          "desc" -> JString(desc),
-          "active" -> JBool(true),
-          "timestamp" -> JString("now")
-        ))
-        val change = internalDescs.map(desc => JObject(
-          "desc" -> JString(desc),
-          "active" -> JBool(true),
-          "timestamp" -> JString("now"),
-          "internal" -> JBool(true)
-        ))
-        val json = JArray(receive ++ change)
-        complete(json)
+        val descriptors = this.eclairApi.getDescriptors(account_opt.getOrElse(0L))
+        complete(descriptors.descriptors)
     }
   }
 

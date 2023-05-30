@@ -54,7 +54,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
 
-    val Seeds(_, _, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
+    val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
     val nodeSeedDatFile = new File(seedDatFile.getParentFile, "node_seed.dat")
     assert(nodeSeedDatFile.exists())
