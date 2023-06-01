@@ -162,12 +162,6 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }
-
-    using(sqlite.prepareStatement("UPDATE local_channels SET closed_timestamp=? WHERE channel_id=? AND closed_timestamp IS NULL")) { statement =>
-      statement.setLong(1, TimestampSecond.now().toLong)
-      statement.setBytes(2, channelId.toArray)
-      statement.executeUpdate()
-    }
   }
 
   override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
@@ -179,7 +173,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
 
   override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
-    val sql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp"
+    val sql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC"
     remoteNodeId_opt match {
         case None =>
           using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>

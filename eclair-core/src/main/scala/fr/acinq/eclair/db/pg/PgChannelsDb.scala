@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -235,12 +235,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.setString(2, channelId.toHex)
         statement.executeUpdate()
       }
-
-      using(pg.prepareStatement("UPDATE local.channels SET closed_timestamp=? WHERE channel_id=? AND closed_timestamp IS NULL")) { statement =>
-        statement.setTimestamp(1, TimestampSecond.now().toSqlTimestamp)
-        statement.setString(2, channelId.toHex)
-        statement.executeUpdate()
-      }
     }
   }
 
@@ -254,31 +248,15 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   }
 
   override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
-    val sql = "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp"
-    val rs = withLock { pg =>
-        remoteNodeId_opt match {
-          case None =>
-            using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
-              statement.executeQuery()
-                .mapCodec(channelDataCodec)
-            }
-          case Some(_) =>
-            using(pg.prepareStatement(sql)) { statement =>
-              statement.executeQuery()
-                .mapCodec(channelDataCodec)
-            }
-        }
+    val sql = remoteNodeId_opt match {
+      case None => "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
+      case Some(remoteNodeId) => s"SELECT data FROM local.channels WHERE is_closed=TRUE AND remote_node_id = '${remoteNodeId.toHex}' ORDER BY closed_timestamp DESC"
+    }
+    withLock { pg =>
+      using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
+        statement.executeQuery()
+          .mapCodec(channelDataCodec).toSeq
       }
-
-    remoteNodeId_opt match {
-      case None => rs.toSeq
-      case Some(nodeId) =>
-        val filtered = rs.filter(_.remoteNodeId == nodeId)
-        val limited = paginated_opt match {
-          case None => filtered
-          case Some(p) => filtered.slice(p.skip, p.skip + p.count)
-        }
-        limited.toSeq
     }
   }
 
