@@ -525,8 +525,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) => signingSession1 match {
                   case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
-                    // No need to store their commit_sig, they will re-send it if we disconnect.
-                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
+                    // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
+                    // it is more consistent with the case where we send our tx_signatures first.
+                    val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
+                    stay() using d1 storing()
                   case signingSession1: InteractiveTxSigningSession.SendingSigs =>
                     // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
                     // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
