@@ -55,6 +55,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     withFixture(test.toNoArgTest(setup))
