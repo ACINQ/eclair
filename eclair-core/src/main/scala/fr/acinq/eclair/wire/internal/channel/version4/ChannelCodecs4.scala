@@ -233,18 +233,20 @@ private[channel] object ChannelCodecs4 {
         ("targetFeerate" | feeratePerKw) ::
         ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
 
-    private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
-      ("serialId" | uint64) ::
-        ("outPoint" | outPointCodec) ::
-        ("sequence" | uint32) ::
-        ("localAmount" | millisatoshi) ::
-        ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared]
+    private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = discriminated[InteractiveTxBuilder.Input.Shared].by(byte)
+      .typecase(0x01, (
+        ("serialId" | uint64) ::
+          ("outPoint" | outPointCodec) ::
+          ("sequence" | uint32) ::
+          ("localAmount" | millisatoshi) ::
+          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared])
 
-    private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
-      ("serialId" | uint64) ::
-        ("scriptPubKey" | lengthDelimited(bytes)) ::
-        ("localAmount" | millisatoshi) ::
-        ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared]
+    private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = discriminated[InteractiveTxBuilder.Output.Shared].by(byte)
+      .typecase(0x01, (
+        ("serialId" | uint64) ::
+          ("scriptPubKey" | lengthDelimited(bytes)) ::
+          ("localAmount" | millisatoshi) ::
+          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared])
 
     private val localOnlyInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Local] = (
       ("serialId" | uint64) ::
