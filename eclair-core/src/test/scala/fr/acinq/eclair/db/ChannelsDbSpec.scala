@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.channel.RealScidStatus
@@ -30,7 +31,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -90,9 +91,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
       assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
 
+      assert(db.listClosedChannels(None, None).isEmpty)
       db.removeChannel(channel1.channelId)
       assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() == List(channel2b))
+      assert(db.listClosedChannels(None, None) == List(channel1))
+      assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
+      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None) == Nil)
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)

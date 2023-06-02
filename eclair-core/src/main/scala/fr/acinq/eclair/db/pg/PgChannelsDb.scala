@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.CltvExpiry
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -241,6 +242,19 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     withLock { pg =>
       using(pg.createStatement) { statement =>
         statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")
+          .mapCodec(channelDataCodec).toSeq
+      }
+    }
+  }
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+    val sql = remoteNodeId_opt match {
+      case None => "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
+      case Some(remoteNodeId) => s"SELECT data FROM local.channels WHERE is_closed=TRUE AND remote_node_id = '${remoteNodeId.toHex}' ORDER BY closed_timestamp DESC"
+    }
+    withLock { pg =>
+      using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
+        statement.executeQuery()
           .mapCodec(channelDataCodec).toSeq
       }
     }

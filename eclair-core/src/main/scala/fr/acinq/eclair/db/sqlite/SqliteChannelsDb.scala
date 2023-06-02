@@ -17,13 +17,14 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -168,6 +169,27 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
         .mapCodec(channelDataCodec).toSeq
     }
+  }
+
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
+    val sql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC"
+    remoteNodeId_opt match {
+        case None =>
+          using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>
+            statement.executeQuery().mapCodec(channelDataCodec).toSeq
+          }
+        case Some(nodeId) =>
+          using(sqlite.prepareStatement(sql)) { statement =>
+            val filtered = statement.executeQuery()
+              .mapCodec(channelDataCodec).filter(_.remoteNodeId == nodeId)
+            val limited = paginated_opt match {
+              case None => filtered
+              case Some(p) => filtered.slice(p.skip, p.skip + p.count)
+            }
+            limited.toSeq
+          }
+      }
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {

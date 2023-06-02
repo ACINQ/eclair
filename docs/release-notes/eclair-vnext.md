@@ -48,6 +48,7 @@ Node operators that use Postgres as database backend and make SQL queries on cha
 - `channel-opened` websocket event was updated to contain the final `channel_id` and be published when a channel is ready to process payments (#2567)
 - `getsentinfo` can now be used with `--offer` to list payments sent to a specific offer.
 - `listreceivedpayments` lists payments received by your node (#2607)
+- `closedchannels` lists closed channels. It accepts `--count` and `--skip` parameters to limit the number of retrieved items as well (#2642)
 - `cpfpbumpfees` can be used to unblock chains of unconfirmed transactions by creating a child transaction that pays a high fee (#1783)
 
 ### Miscellaneous improvements and bug fixes

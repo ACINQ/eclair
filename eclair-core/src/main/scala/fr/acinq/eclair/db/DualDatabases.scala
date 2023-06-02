@@ -1,6 +1,7 @@
 package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
@@ -10,7 +11,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 
 import java.io.File
@@ -227,6 +228,11 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
   override def listLocalChannels(): Seq[PersistentChannelData] = {
     runAsync(secondary.listLocalChannels())
     primary.listLocalChannels()
+  }
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = {
+    runAsync(secondary.listClosedChannels(remoteNodeId_opt, paginated_opt))
+    primary.listClosedChannels(remoteNodeId_opt, paginated_opt)
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
