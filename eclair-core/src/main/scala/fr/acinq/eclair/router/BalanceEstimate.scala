@@ -286,11 +286,13 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
   def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
 
-  def removeEdge(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.removeEdge(desc), balances.removeEdge(desc))
+  def disableEdge(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.disableEdge(desc), balances.removeEdge(desc))
 
-  def removeEdges(descList: Iterable[ChannelDesc]): GraphWithBalanceEstimates = GraphWithBalanceEstimates(
-    graph.removeEdges(descList),
-    descList.foldLeft(balances)((acc, edge) => acc.removeEdge(edge)),
+  def removeChannel(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.removeChannel(desc), balances.removeEdge(desc).removeEdge(desc.reversed))
+
+  def removeChannels(descList: Iterable[ChannelDesc]): GraphWithBalanceEstimates = GraphWithBalanceEstimates(
+    graph.removeChannels(descList),
+    descList.foldLeft(balances)((acc, edge) => acc.removeEdge(edge).removeEdge(edge.reversed)),
   )
 
   def routeCouldRelay(route: Route): GraphWithBalanceEstimates = {

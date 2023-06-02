@@ -20,6 +20,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -160,7 +161,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(route1 :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route1) == 1 :: 2 :: 3 :: 4 :: Nil)
 
-    val graphWithRemovedEdge = g.removeEdge(ChannelDesc(ShortChannelId(3L), c, d))
+    val graphWithRemovedEdge = g.disableEdge(ChannelDesc(ShortChannelId(3L), c, d))
     val route2 = findRoute(graphWithRemovedEdge, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     assert(route2 == Failure(RouteNotFound))
   }
@@ -315,10 +316,17 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("route not found (source OR target node not connected)") {
+    val priv_a = randomKey()
+    val a = priv_a.publicKey
+    val annA = makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty)
+    val priv_e = randomKey()
+    val e = priv_e.publicKey
+    val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty)
+
     val g = DirectedGraph(List(
       makeEdge(2L, b, c, 0 msat, 0),
       makeEdge(4L, c, d, 0 msat, 0)
-    )).addVertex(a).addVertex(e)
+    )).addVertex(annA).addVertex(annE)
 
     assert(findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000)) == Failure(RouteNotFound))
     assert(findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000)) == Failure(RouteNotFound))
@@ -919,7 +927,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       )
     )
 
-    val g = DirectedGraph.makeGraph(updates)
+    val g = DirectedGraph.makeGraph(updates, Map.empty)
     val params = DEFAULT_ROUTE_PARAMS
       .modify(_.boundaries.maxCltv).setTo(CltvExpiryDelta(1008))
       .modify(_.heuristics).setTo(Left(WeightRatios(baseFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCost = RelayFees(0 msat, 0))))

@@ -80,7 +80,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
     log.info("{} pruned channels at blockHeight={}", pruned.size, nodeParams.currentBlockHeight)
     // this will be used to calculate routes
-    val graph = DirectedGraph.makeGraph(channels)
+    val graph = DirectedGraph.makeGraph(channels, nodes)
     // send events for remaining channels/nodes
     context.system.eventStream.publish(ChannelsDiscovered(channels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
     context.system.eventStream.publish(ChannelUpdatesReceived(channels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
@@ -365,7 +365,9 @@ object Router {
   }
 
   // @formatter:off
-  case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+  case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){
+    def reversed: ChannelDesc = ChannelDesc(shortChannelId, b, a)
+  }
   object ChannelDesc {
     def apply(u: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2

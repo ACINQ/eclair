@@ -21,11 +21,11 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, breadthFirstSearch, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.{ChannelDesc, MessageRoute, MessageRouteNotFound}
+import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.protocol.Color
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
+import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -33,7 +33,16 @@ class GraphSpec extends AnyFunSuite {
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
-
+  val (annA, annB, annC, annD, annE, annF, annG, annH) = (
+    makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_f, "F", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_g, "G", Color(0, 0, 0), Nil, Features.empty),
+    makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features.empty),
+  )
 
   // +---- D -------+
   // |              |
@@ -52,15 +61,15 @@ class GraphSpec extends AnyFunSuite {
 
   test("instantiate a graph, with vertices and then add edges") {
     val graph = DirectedGraph(a)
-      .addVertex(b)
-      .addVertex(c)
-      .addVertex(d)
-      .addVertex(e)
+      .addVertex(annB)
+      .addVertex(annC)
+      .addVertex(annD)
+      .addVertex(annE)
 
     assert(graph.containsVertex(a) && graph.containsVertex(e))
     assert(graph.vertexSet().size == 5)
 
-    val otherGraph = graph.addVertex(a) // adding the same vertex twice!
+    val otherGraph = graph.addVertex(annA) // adding the same vertex twice!
     assert(otherGraph.vertexSet().size == 5)
 
     // add some edges to the graph
@@ -83,7 +92,7 @@ class GraphSpec extends AnyFunSuite {
     assert(graphWithEdges.edgesOf(d).size == 1)
     assert(graphWithEdges.edgesOf(e).size == 0)
 
-    val withRemovedEdges = graphWithEdges.removeEdge(edgeAD.desc)
+    val withRemovedEdges = graphWithEdges.disableEdge(edgeAD.desc)
     assert(withRemovedEdges.edgesOf(d).size == 1)
   }
 
@@ -138,13 +147,13 @@ class GraphSpec extends AnyFunSuite {
     assert(graph.edgeSet().size == 6)
     assert(graph.containsEdge(edgeBE.desc))
 
-    val withRemovedEdge = graph.removeEdge(edgeBE.desc)
+    val withRemovedEdge = graph.disableEdge(edgeBE.desc)
     assert(withRemovedEdge.edgeSet().size == 5)
 
-    val withRemovedList = graph.removeEdges(Seq(edgeAD.desc, edgeDC.desc))
+    val withRemovedList = graph.removeChannels(Seq(edgeAD.desc, edgeDC.desc))
     assert(withRemovedList.edgeSet().size == 4)
 
-    val withoutAnyIncomingEdgeInE = graph.removeEdges(Seq(edgeBE.desc, edgeCE.desc))
+    val withoutAnyIncomingEdgeInE = graph.removeChannels(Seq(edgeBE.desc, edgeCE.desc))
     assert(withoutAnyIncomingEdgeInE.containsVertex(e))
     assert(withoutAnyIncomingEdgeInE.edgesOf(e).isEmpty)
   }
@@ -216,7 +225,7 @@ class GraphSpec extends AnyFunSuite {
     val graph = DirectedGraph(Seq(edgeAB, edgeAD, edgeBC, edgeDC))
 
     assert(graph.edgesOf(a).toSet == Set(edgeAB, edgeAD))
-    assert(graph.getIncomingEdgesOf(a) == Nil)
+    assert(graph.getIncomingEdgesOf(a).toSeq == Nil)
     assert(graph.edgesOf(c) == Nil)
     assert(graph.getIncomingEdgesOf(c).toSet == Set(edgeBC, edgeDC))
 
@@ -225,7 +234,7 @@ class GraphSpec extends AnyFunSuite {
     val graph1 = graph.addEdge(edgeAB1).addEdge(edgeBC1)
 
     assert(graph1.edgesOf(a).toSet == Set(edgeAB1, edgeAD))
-    assert(graph1.getIncomingEdgesOf(a) == Nil)
+    assert(graph1.getIncomingEdgesOf(a).toSeq == Nil)
     assert(graph1.edgesOf(c) == Nil)
     assert(graph1.getIncomingEdgesOf(c).toSet == Set(edgeBC1, edgeDC))
   }
@@ -380,30 +389,5 @@ class GraphSpec extends AnyFunSuite {
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.head.path == Seq(edgeAB))
-  }
-
-  test("route for messages") {
-    /*
-       A -- B -- C -- D
-        \____ E _____/
-    */
-    val edgeAB = makeEdge(1L, a, b, 100 msat, 1000, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeBC = makeEdge(2L, b, c, 1 msat, 3, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeDC = makeEdge(3L, d, c, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeEA = makeEdge(4L, e, a, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
-    val edgeED = makeEdge(5L, e, d, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
-    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeDC, edgeEA, edgeED))
-
-    val annBRelay = makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
-    val annCRelay = makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
-    val annD = makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty)
-    val annE = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty)
-    val annERelay = makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional))
-
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(b, c), d))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(e), d))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annERelay), a, d, Set(e), Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Seq(b, c), d))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, a, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRoute(Nil, a))
-    assert(breadthFirstSearch(graph, Map(b -> annBRelay, c -> annCRelay, d -> annD, e -> annE), a, f, Set.empty, Features(Features.OnionMessages -> FeatureSupport.Mandatory)) == MessageRouteNotFound(f))
   }
 }

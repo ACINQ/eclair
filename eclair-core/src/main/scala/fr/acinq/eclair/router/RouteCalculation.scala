@@ -240,7 +240,7 @@ object RouteCalculation {
   }
 
   def handleMessageRouteRequest(d: Data, r: MessageRouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
-    r.replyTo ! Graph.breadthFirstSearch(d.graphWithBalances.graph, d.nodes, r.source, r.target, r.ignoredNodes, Features(Features.OnionMessages -> FeatureSupport.Mandatory))
+    // TODO
     d
   }
 
@@ -401,7 +401,7 @@ object RouteCalculation {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
         case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
-      }
+      }.toSeq
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)

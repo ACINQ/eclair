@@ -179,8 +179,7 @@ object Validation {
         // mutable variable is simpler here
         var graph = d.graphWithBalances
         // remove previous private edges
-        pubChan.update_1_opt.foreach(u => graph = graph.removeEdge(ChannelDesc(u, privateChannel)))
-        pubChan.update_2_opt.foreach(u => graph = graph.removeEdge(ChannelDesc(u, privateChannel)))
+        graph.removeChannel(ChannelDesc(privateChannel.shortIds.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
         // add new public edges
         pubChan.update_1_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
         pubChan.update_2_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
@@ -228,8 +227,7 @@ object Validation {
     db.removeChannel(shortChannelId) // NB: this also removes channel updates
     // we also need to remove updates from the graph
     val graphWithBalances1 = d.graphWithBalances
-      .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
-      .removeEdge(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
+      .removeChannel(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
     // we notify front nodes
     ctx.system.eventStream.publish(ChannelLost(shortChannelId))
     lostNodes.foreach {
@@ -361,8 +359,8 @@ object Validation {
             update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
             d.graphWithBalances.addEdge(GraphEdge(u, pc1))
           } else {
-            update.left.foreach(_ => log.info("removed local shortChannelId={} public={} from the network graph", u.shortChannelId, publicChannel))
-            d.graphWithBalances.removeEdge(ChannelDesc(u, pc1.ann))
+            update.left.foreach(_ => log.info("disabled local shortChannelId={} public={} in the network graph", u.shortChannelId, publicChannel))
+            d.graphWithBalances.disableEdge(ChannelDesc(u, pc1.ann))
           }
           d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graphWithBalances = graphWithBalances1)
         } else {
@@ -401,8 +399,8 @@ object Validation {
             update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
             d.graphWithBalances.addEdge(GraphEdge(u, pc1))
           } else {
-            update.left.foreach(_ => log.info("removed local channelId={} public={} from the network graph", pc.channelId, publicChannel))
-            d.graphWithBalances.removeEdge(ChannelDesc(u, pc1))
+            update.left.foreach(_ => log.info("disabled local channelId={} public={} in the network graph", pc.channelId, publicChannel))
+            d.graphWithBalances.disableEdge(ChannelDesc(u, pc1))
           }
           d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graphWithBalances = graphWithBalances1)
         } else {
@@ -556,8 +554,7 @@ object Validation {
       log.info("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
       // we remove the corresponding updates from the graph
       val graphWithBalances1 = d.graphWithBalances
-        .removeEdge(ChannelDesc(localAlias, localNodeId, remoteNodeId))
-        .removeEdge(ChannelDesc(localAlias, remoteNodeId, localNodeId))
+        .removeChannel(ChannelDesc(localAlias, localNodeId, remoteNodeId))
       // and we remove the channel and channel_update from our state
       d.copy(privateChannels = d.privateChannels - channelId, scid2PrivateChannels = scid2PrivateChannels1, graphWithBalances = graphWithBalances1)
     } else {
