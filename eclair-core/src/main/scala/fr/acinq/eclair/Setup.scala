@@ -38,7 +38,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
-import fr.acinq.eclair.io.{ClientSpawner, Peer, PendingChannelsRateLimiter, Server, Switchboard}
+import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -102,11 +102,6 @@ class Setup(val datadir: File,
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
-  val instanceId = UUID.randomUUID()
-
-  logger.info(s"instanceid=$instanceId")
-
-  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.
@@ -135,18 +130,12 @@ class Setup(val datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
-  pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
-
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
-
-  val bitcoin = {
+  val (bitcoin, bitcoinChainHash) = {
     val wallet = {
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
@@ -191,9 +180,9 @@ class Setup(val datadir: File,
       }
     } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
+    logger.info(s"bitcoind version=$bitcoinVersion")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
-    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
     if (chainHash != Block.RegtestGenesisBlock.hash) {
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
@@ -202,8 +191,19 @@ class Setup(val datadir: File,
     }
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
-    bitcoinClient
+    (bitcoinClient, chainHash)
   }
+
+  val instanceId = UUID.randomUUID()
+  logger.info(s"connecting to database with instanceId=$instanceId")
+  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
+
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+  pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   def bootstrap: Future[Kit] = {
     for {
