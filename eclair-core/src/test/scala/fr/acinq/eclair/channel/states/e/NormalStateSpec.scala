@@ -163,10 +163,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val expiryTooBig = (Channel.MAX_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight)
+    val maxAllowedExpiryDelta = alice.underlyingActor.nodeParams.channelConf.maxExpiryDelta
+    val expiryTooBig = (maxAllowedExpiryDelta + 1).toCltvExpiry(currentBlockHeight)
     val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32(), expiryTooBig, TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
     alice ! add
-    val error = ExpiryTooBig(channelId(alice), maximum = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockHeight = currentBlockHeight)
+    val error = ExpiryTooBig(channelId(alice), maximum = maxAllowedExpiryDelta.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockHeight = currentBlockHeight)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMessage(200 millis)
   }

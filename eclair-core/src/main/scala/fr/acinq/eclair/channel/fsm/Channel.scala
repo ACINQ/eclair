@@ -80,6 +80,7 @@ object Channel {
                          maxToLocalDelay: CltvExpiryDelta,
                          minDepthBlocks: Int,
                          expiryDelta: CltvExpiryDelta,
+                         maxExpiryDelta: CltvExpiryDelta,
                          fulfillSafetyBeforeTimeout: CltvExpiryDelta,
                          minFinalExpiryDelta: CltvExpiryDelta,
                          maxBlockProcessingDelay: FiniteDuration,
@@ -127,10 +128,6 @@ object Channel {
   val MAX_NEGOTIATION_ITERATIONS = 20
 
   val MIN_CLTV_EXPIRY_DELTA: CltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_CLTV_EXPIRY_DELTA
-  val MAX_CLTV_EXPIRY_DELTA: CltvExpiryDelta = CltvExpiryDelta(7 * 144) // one week
-
-  // since BOLT 1.1, there is a max value for the refund delay of the main commitment tx
-  val MAX_TO_SELF_DELAY: CltvExpiryDelta = CltvExpiryDelta(2016)
 
   // as a non-initiator, we will wait that many blocks for the funding tx to confirm (initiator will rely on the funding tx being double-spent)
   val FUNDING_TIMEOUT_FUNDEE = 2016
@@ -387,7 +384,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
+      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
