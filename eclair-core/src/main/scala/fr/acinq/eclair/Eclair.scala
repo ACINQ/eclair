@@ -180,7 +180,7 @@ trait Eclair {
 
   def getOnchainMasterPubKey(account: Long): String
 
-  def getDescriptors(account: Long): Descriptors
+  def getDescriptors(account: Long, hSuffix: Boolean = true): Descriptors
 
   def stop(): Future[Unit]
 }
@@ -701,8 +701,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, blocking = true).mapTo[PaymentEvent]
   }
 
-  override def getDescriptors(account: Long): Descriptors = appKit.wallet match {
-    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getDescriptors(account)
+  override def getDescriptors(account: Long, hSuffix: Boolean = true): Descriptors = appKit.wallet match {
+    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getDescriptors(account, hSuffix)
     case _ => throw new RuntimeException("onchain seed is not configured")
   }
 

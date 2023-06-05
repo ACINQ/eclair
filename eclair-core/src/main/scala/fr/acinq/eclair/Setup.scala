@@ -264,7 +264,8 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash))) with OnchainPubkeyCache {
+      onchainKeyManager = onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash)).get
+      bitcoinClient = new BitcoinCoreClient(bitcoin, Some(onchainKeyManager)) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -273,7 +274,21 @@ class Setup(val datadir: File,
           key
         }
       }
-      _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
+      currentDescriptors <- bitcoinClient.listDescriptors()
+      _ <- if (bitcoinClient.useEclairSigner) {
+        logger.info("using eclair to sign bitcoin core transactions")
+        val descriptors = onchainKeyManager.getDescriptors(0, hSuffix = false).descriptors
+        if (!descriptors.forall(currentDescriptors.contains(_))) {
+          logger.info(s"current descriptors:\n$currentDescriptors")
+          logger.info(s"importing computed descriptors:\n$descriptors")
+          bitcoinClient.importDescriptors(descriptors)
+        } else {
+          logger.info(s"using current descriptors:\n$currentDescriptors")
+          Future.successful(Done)
+        }
+      } else {
+        Future.successful(Done)
+      }
       initialPubkey <- bitcoinClient.getP2wpkhPubkey()
       _ = finalPubkey.set(initialPubkey)
 

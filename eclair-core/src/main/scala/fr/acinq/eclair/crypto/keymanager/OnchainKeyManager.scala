@@ -25,9 +25,10 @@ trait OnchainKeyManager {
   /**
    *
    * @param account account number
+   * @param hSuffix use h instead of ' to indicate hardened path
    * @return a pair of (main, change) wallet descriptors that can be imported into an onchain wallet
    */
-  def getDescriptors(account: Long): Descriptors
+  def getDescriptors(account: Long, hSuffix: Boolean = true): Descriptors
 
   /**
    *

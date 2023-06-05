@@ -1481,8 +1481,10 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       sender.expectMsgType[JValue]
 
       val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
-      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+      val descriptors = onchainKeyManager.getDescriptors(0).descriptors
       val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
+      wallet1.importDescriptors(descriptors).pipeTo(sender.ref)
+      sender.expectMsgType[true]
       wallet1.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 

@@ -68,8 +68,9 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
     DeterministicWallet.encode(accountPub, prefix)
   }
 
-  override def getDescriptors(account: Long): Descriptors = {
-    val keyPath = s"$rootPath/$account'".replace('\'', 'h') // Bitcoin Core understands both ' and h suffix for hardened derivation, and h is much easier to parse for external tools
+  override def getDescriptors(account: Long, hSuffix: Boolean = true): Descriptors = {
+    val keyPath = s"$rootPath/$account'"
+    val keyPath1 = if (hSuffix) keyPath.replace('\'', 'h') else keyPath // Bitcoin Core understands both ' and h suffix for hardened derivation, and h is much easier to parse for external tools
     val prefix: Int = chainHash match {
       case Block.LivenetGenesisBlock.hash => xpub
       case _ => tpub
@@ -78,8 +79,8 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
     // descriptors for account 0 are:
     // 84'/{0'/1'}/0'/0/* for main addresses
     // 84'/{0'/1'}/0'/1/* for change addresses
-    val receiveDesc = s"wpkh([${this.fingerPrintHex}/$keyPath]${encode(accountPub, prefix)}/0/*)"
-    val changeDesc = s"wpkh([${this.fingerPrintHex}/$keyPath]${encode(accountPub, prefix)}/1/*)"
+    val receiveDesc = s"wpkh([${this.fingerPrintHex}/$keyPath1]${encode(accountPub, prefix)}/0/*)"
+    val changeDesc = s"wpkh([${this.fingerPrintHex}/$keyPath1]${encode(accountPub, prefix)}/1/*)"
 
     Descriptors(wallet_name = wallet, descriptors = List(
       Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = Right(timestamp.toLong)),

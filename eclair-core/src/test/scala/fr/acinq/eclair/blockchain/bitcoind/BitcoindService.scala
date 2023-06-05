@@ -175,7 +175,12 @@ trait BitcoindService extends Logging {
 
   def importEclairDescriptors(jsonRpcClient: BitcoinJsonRPCClient, keyManager: OnchainKeyManager, probe: TestProbe = TestProbe()): Unit = {
     val descriptors = keyManager.getDescriptors(0).descriptors
-    jsonRpcClient.invoke("importdescriptors", descriptors).pipeTo(probe.ref)
+    jsonRpcClient.invoke("importdescriptors", descriptors.collect(f => JObject(
+      "desc" -> JString(f.desc),
+      "internal" -> JBool(f.internal),
+      "active" -> JBool(f.active),
+      "timestamp" -> JString("now")
+    ))).pipeTo(probe.ref)
     probe.expectMsgType[JValue]
   }
 

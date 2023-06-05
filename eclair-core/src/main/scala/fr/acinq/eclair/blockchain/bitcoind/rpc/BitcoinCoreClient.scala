@@ -58,6 +58,39 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
 
   val useEclairSigner = onchainKeyManager_opt.exists(m => rpcClient.wallet.contains(m.wallet))
 
+  //------------------------- DESCRIPTORS  -------------------------//
+
+  def importDescriptors(descriptors: Seq[Descriptor])(implicit ec: ExecutionContext): Future[Boolean] = {
+    val json = descriptors.collect( f => JObject(
+      "desc" -> JString(f.desc),
+      "internal" -> JBool(f.internal),
+      "active" -> JBool(f.active),
+      f.timestamp match {
+        case Right(t) => "timestamp" -> JInt(t)
+        case Left(t) => "timestamp" -> JString(t)
+      }
+    ))
+    rpcClient.invoke("importdescriptors", json).collect {
+      case JArray(results) => results.forall(item => {
+        val JBool(success) = item \ "success"
+        val JArray(_) = item \ "warnings"
+        success
+      })
+    }
+  }
+
+  def listDescriptors()(implicit ec: ExecutionContext): Future[Seq[Descriptor]] =
+    rpcClient.invoke("listdescriptors").collect { f =>
+      val JArray(descriptors) = f \ "descriptors"
+      descriptors.map(d => {
+        val JString(desc) = d \ "desc"
+        val JBool(internal) = d \ "internal"
+        val JBool(active) = d \ "active"
+        val JInt(timestamp) = d \ "timestamp"
+        Descriptor(desc, internal, Right(timestamp.toLong), active)
+      })
+    }
+
   //------------------------- TRANSACTIONS  -------------------------//
 
   def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
