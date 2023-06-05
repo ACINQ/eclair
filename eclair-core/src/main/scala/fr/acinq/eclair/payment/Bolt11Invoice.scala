@@ -477,22 +477,23 @@ object Bolt11Invoice {
     /**
      * @return the unit allowing for the shortest representation possible
      */
-    def unit(amount: MilliSatoshi): Char = amount.toLong * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
-      case pico if pico % 1000 > 0 => 'p'
-      case pico if pico % 1000000 > 0 => 'n'
-      case pico if pico % 1000000000 > 0 => 'u'
-      case _ => 'm'
+    def unit(amount: MilliSatoshi): Option[Char] = amount.toLong * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
+      case pico if pico % 1_000 > 0 => Some('p')
+      case pico if pico % 1_000_000 > 0 => Some('n')
+      case pico if pico % 1_000_000_000 > 0 => Some('u')
+      case pico if pico % 1_000_000_000_000L > 0 => Some('m')
+      case _ => None
     }
 
     def decode(input: String): Try[Option[MilliSatoshi]] =
       (input match {
         case "" => Success(None)
         case a if a.last == 'p' && a.dropRight(1).last != '0' => Failure(new IllegalArgumentException("invalid sub-millisatoshi precision"))
-        case a if a.last == 'p' => Success(Some(MilliSatoshi(a.dropRight(1).toLong / 10L))) // 1 pico-bitcoin == 0.1 milli-satoshis
-        case a if a.last == 'n' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100L)))
-        case a if a.last == 'u' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100000L)))
-        case a if a.last == 'm' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L)))
-        case a => Success(Some(MilliSatoshi(a.toLong * 100000000000L)))
+        case a if a.last == 'p' => Success(Some(MilliSatoshi(a.dropRight(1).toLong / 10))) // 1 pico-bitcoin == 0.1 milli-satoshis
+        case a if a.last == 'n' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100)))
+        case a if a.last == 'u' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100_000)))
+        case a if a.last == 'm' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100_000_000)))
+        case a => Success(Some(MilliSatoshi(a.toLong * 100_000_000_000L)))
       }).map {
         case None => None
         case Some(MilliSatoshi(0)) => None
@@ -500,12 +501,15 @@ object Bolt11Invoice {
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {
-      (amount: @unchecked) match {
+      amount match {
         case None => ""
-        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 0.1 milli-satoshis
-        case Some(amt) if unit(amt) == 'n' => s"${amt.toLong / 100L}n"
-        case Some(amt) if unit(amt) == 'u' => s"${amt.toLong / 100000L}u"
-        case Some(amt) if unit(amt) == 'm' => s"${amt.toLong / 100000000L}m"
+        case Some(amt) => unit(amt) match {
+          case Some('p') => s"${amt.toLong * 10}p" // 1 pico-bitcoin == 0.1 milli-satoshis
+          case Some('n') => s"${amt.toLong / 100}n"
+          case Some('u') => s"${amt.toLong / 100_000}u"
+          case Some('m') => s"${amt.toLong / 100_000_000}m"
+          case _ => s"${amt.toLong / 100_000_000_000L}"
+        }
       }
     }
   }
