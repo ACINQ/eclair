@@ -83,17 +83,20 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("check minimal unit is used") {
-    assert('p' == Amount.unit(1 msat))
-    assert('p' == Amount.unit(99 msat))
-    assert('n' == Amount.unit(100 msat))
-    assert('p' == Amount.unit(101 msat))
-    assert('n' == Amount.unit((1 sat).toMilliSatoshi))
-    assert('u' == Amount.unit((100 sat).toMilliSatoshi))
-    assert('n' == Amount.unit((101 sat).toMilliSatoshi))
-    assert('u' == Amount.unit((1155400 sat).toMilliSatoshi))
-    assert('m' == Amount.unit((1 millibtc).toMilliSatoshi))
-    assert('m' == Amount.unit((10 millibtc).toMilliSatoshi))
-    assert('m' == Amount.unit((1 btc).toMilliSatoshi))
+    assert(Amount.unit(1 msat).contains('p'))
+    assert(Amount.unit(99 msat).contains('p'))
+    assert(Amount.unit(100 msat).contains('n'))
+    assert(Amount.unit(101 msat).contains('p'))
+    assert(Amount.unit((1 sat).toMilliSatoshi).contains('n'))
+    assert(Amount.unit((100 sat).toMilliSatoshi).contains('u'))
+    assert(Amount.unit((101 sat).toMilliSatoshi).contains('n'))
+    assert(Amount.unit((1155400 sat).toMilliSatoshi).contains('u'))
+    assert(Amount.unit((1 millibtc).toMilliSatoshi).contains('m'))
+    assert(Amount.unit((10 millibtc).toMilliSatoshi).contains('m'))
+    assert(Amount.unit((1 btc).toMilliSatoshi).isEmpty)
+    assert(Amount.unit((1.1 btc).toMilliSatoshi).contains('m'))
+    assert(Amount.unit((2 btc).toMilliSatoshi).isEmpty)
+    assert(Amount.unit((10 btc).toMilliSatoshi).isEmpty)
   }
 
   test("decode empty amount") {
@@ -470,11 +473,24 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(Bolt11Invoice.fromString(input.toUpperCase()).get.toString == input)
   }
 
-  test("Pay 1 BTC without multiplier") {
+  test("Pay 1 BTC with multiplier") {
     val ref = "lnbc1000m1pdkmqhusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5n2ees808r98m0rh4472yyth0c5fptzcxmexcjznrzmq8xald0cgqdqsf4ujqarfwqsxymmccqp2pv37ezvhth477nu0yhhjlcry372eef57qmldhreqnr0kx82jkupp3n7nw42u3kdyyjskdr8jhjy2vugr3skdmy8ersft36969xplkxsp2v7c58"
     val Success(invoice) = Bolt11Invoice.fromString(ref)
-    assert(invoice.amount_opt.contains(100000000000L msat))
+    assert(invoice.amount_opt.contains(100_000_000_000L msat))
     assert(features2bits(invoice.features) == BitVector.empty)
+  }
+
+  test("Pay 1 BTC without multiplier") {
+    val testCases = Seq(
+      100_000_000_000L.msat -> "lnbcrt11pj8wdh7sp5p2052f28az75s3eauqjskcwrzrjujf7rfqspsvk6hgppywytrdzspp5670t00mwakdy0l5w3lnw4rhdgnv4ctep974am6jp0zma627fhdfsdqqxqyjw5qcqp29qyysgqh2ce2cmptj33l35a9pt2l603aa34jpj8p35s302l0lhuujmtmkghrmkadv456h3rpsxjpschnpt5ugzltqsjtauvnfy799aufapav6gp202th5",
+      100_000_000_000_000L.msat -> "lnbcrt10001pj8wd3rsp5cv2vayxnm7d4783r0477rstzpkl7n4ftmalgu9v8akzf0nhqrs3qpp5vednenalh0v6gzxpzrdxf9cepv4274vc0tax5389cjq0zv9qvs9sdqqxqyjw5qcqp29qyysgqk5f8um72jlnw9unjltdgxw9e2fvec0cxq05tcwuen2jpu42q4p9pt2djk2ysu62nkpg49km59wrexm0wt3msevz53fr2tfnqxf5sdnqpu8th97",
+    )
+    testCases.foreach { case (amount, ref) =>
+      val Success(invoice) = Bolt11Invoice.fromString(ref)
+      assert(invoice.amount_opt.contains(amount))
+      val encoded = invoice.toString
+      assert(encoded == ref)
+    }
   }
 
   test("supported invoice features") {
