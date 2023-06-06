@@ -585,6 +585,7 @@ object PeerConnection {
     }
 
     case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
+    case object FrontendUnavailable extends ConnectionResult.Failure { override def toString: String = "frontend unavailable" }
     case class ConnectionFailed(address: NodeAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
     case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
