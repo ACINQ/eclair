@@ -38,12 +38,8 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
       val mediator = DistributedPubSub(context.system).mediator
       mediator ! Put(self)
     } else if (roles.contains("backend")) {
-      // When the cluster is enabled, the backend will handle outgoing connections when there are no front available, by
-      // registering to the dead letters.
-      // Another option would have been to register the backend along with the front to the regular distributed pubsub,
-      // but, even with affinity=false at sending, it would have resulted in outgoing connections being randomly assigned
-      // to all listeners equally (front and back). What we really want is to always spawn connections on the frontend
-      // when possible
+      // When the cluster is enabled, all outgoing connections are handled by the front. We still register the backend
+      // to dead letters so we can properly fail connection requests when no front are available.
       context.system.eventStream.subscribe(self, classOf[DeadLetter])
     }
   }
@@ -52,13 +48,12 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
     case req: ClientSpawner.ConnectionRequest =>
       log.info("initiating new connection to nodeId={} origin={}", req.remoteNodeId, sender())
       context.actorOf(Client.props(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, req.address, req.remoteNodeId, origin_opt = Some(req.origin), req.isPersistent))
-    case DeadLetter(req: ClientSpawner.ConnectionRequest, source, _) =>
+    case DeadLetter(_: ClientSpawner.ConnectionRequest, source, _) =>
       // we only subscribe to the deadletters event stream when in cluster mode
       // if the cluster is not ready we fail the connection attempt
-      log.warning("reject outgoing connection attempt, no frontend node available")
+      log.warning("rejecting outgoing connection attempt (no frontend node available)")
       source ! PeerConnection.ConnectionResult.FrontendUnavailable
-    case _: DeadLetter =>
-    // we don't care about other dead letters
+    case _: DeadLetter => // we don't care about other dead letters
   }
 }
 
