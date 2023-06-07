@@ -149,4 +149,16 @@ class LocalKeyManagerSpec extends AnyFunSuite {
     assert(keyManager.htlcPoint(channelKeyPath).publicKey == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
     assert(keyManager.commitmentSecret(channelKeyPath, 0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
   }
+
+  test("generate multisig swap-in address") {
+    val entropy = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+
+    val serverPublicKey = PublicKey(ByteVector.fromValidHex("02cd0e2ed9c42af42e0b30e2a0b339c8335bbdc1f895fe552d8e224aedc82d6c88"))
+    val swapInRefundDelay = 144 * 30 * 6
+    val swapInAddress = keyManager.multisigSwapInAddress(serverPublicKey, swapInRefundDelay)
+
+    assert(swapInAddress == "bcrt1qvwc4zcelvlj3pcy97pj09dz2hgq0ptav25nrjm54dt3ch09plxnq6pmjje")
+  }
 }

@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, _}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -136,7 +136,7 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     Transactions.sign(tx, currentKey)
   }
 
-  
+
   /**
     * Ths method is used to spend revoked transactions, with the corresponding revocation key
     *
@@ -156,5 +156,27 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     val localNodeSecret = nodeKey.privateKey
     val localFundingPrivKey = privateKeys.get(fundingKeyPath).privateKey
     Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
+  }
+
+  def multisigSwapInAddress(serverPublicKey: Crypto.PublicKey, refundDelay: Int): String = {
+    val userKeyPath = chainHash match {
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
+        DeterministicWallet.hardened(51) :: DeterministicWallet.hardened(0) :: DeterministicWallet.hardened(0) :: Nil
+      case Block.LivenetGenesisBlock.hash =>
+        DeterministicWallet.hardened(52) :: DeterministicWallet.hardened(0) :: DeterministicWallet.hardened(0) :: Nil
+    }
+    val userPrivateKey = DeterministicWallet.derivePrivateKey(master, userKeyPath).privateKey
+    val userPublicKey = userPrivateKey.publicKey
+    val redeemScript = OP_PUSHDATA(userPublicKey.value) :: OP_CHECKSIGVERIFY :: OP_PUSHDATA(serverPublicKey.value) :: OP_CHECKSIG :: OP_IFDUP :: OP_NOTIF :: OP_PUSHDATA(Script.encodeNumber(refundDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_ENDIF :: Nil
+    val pubkeyScript = Script.pay2wsh(redeemScript)
+
+    val hrp = chainHash match {
+      case Block.RegtestGenesisBlock.hash => "bcrt"
+      case Block.TestnetGenesisBlock.hash => "tb"
+      case Block.LivenetGenesisBlock.hash => "bc"
+    }
+    val witnessScript = pubkeyScript(1).asInstanceOf[OP_PUSHDATA].data
+    val address = Bech32.encodeWitnessAddress(hrp, 0, witnessScript)
+    address
   }
 }
