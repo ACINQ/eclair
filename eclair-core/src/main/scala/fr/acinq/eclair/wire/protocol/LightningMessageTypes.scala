@@ -562,6 +562,7 @@ case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Timest
 
 case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
 
+case class Stfu(channelId: ByteVector32, initiator: Byte) extends LightningMessage
 // NB: blank lines to minimize merge conflicts
 
 //

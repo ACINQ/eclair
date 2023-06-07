@@ -131,7 +131,8 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
-        remoteRbfLimits = RemoteRbfLimits(5, 0)
+        remoteRbfLimits = RemoteRbfLimits(5, 0),
+        quiescenceTimeout = 2 minutes
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -290,7 +291,8 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
-        remoteRbfLimits = RemoteRbfLimits(5, 0)
+        remoteRbfLimits = RemoteRbfLimits(5, 0),
+        quiescenceTimeout = 2 minutes
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),

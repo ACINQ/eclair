@@ -420,6 +420,10 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("fundingTxid" | bytes32) ::
       ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
+
+  val stfuCodec: Codec[Stfu] = (
+    ("channelId" | bytes32) ::
+      ("initiator" | byte) ).as[Stfu]
   //
 
   //
@@ -477,6 +481,7 @@ object LightningMessageCodecs {
     .typecase(37000, spliceInitCodec)
     .typecase(37002, spliceAckCodec)
     .typecase(37004, spliceLockedCodec)
+    .typecase(37006, stfuCodec)
   //
 
   //

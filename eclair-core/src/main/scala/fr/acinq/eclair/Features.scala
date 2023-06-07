@@ -300,6 +300,13 @@ object Features {
     val mandatory = 154
   }
 
+  // TODO: @remyers reserve feature bits here: currently reserved here: https://github.com/lightning/bolts/issues/605
+  // TODO: @remyers option_quiesce implementation, to be replaced once quiescence is spec-ed
+  case object QuiescePrototype extends Feature with InitFeature {
+    val rfcName = "option_quiesce_prototype"
+    val mandatory = 158
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -325,6 +332,7 @@ object Features {
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
+    QuiescePrototype
   )
 
   // Features may depend on other features, as specified in Bolt 9.

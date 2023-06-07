@@ -147,14 +147,4 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     }
   }
 
-  def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
-    spliceStatus match {
-      case SpliceStatus.SpliceRequested(cmd, _) => cmd.replyTo ! RES_FAILURE(cmd, f)
-      case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
-        txBuilder ! InteractiveTxBuilder.Abort
-        cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
-      case _ => ()
-    }
-  }
-
 }
