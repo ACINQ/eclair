@@ -50,6 +50,14 @@ object RouteCalculation {
   }
 
   def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    def validateMaxRouteFee(route: Route, maxFee_opt: Option[MilliSatoshi]): Try[Route] = {
+      val routeFee = route.channelFee(includeLocalChannelCost = false)
+      maxFee_opt match {
+        case Some(maxFee) if maxFee < routeFee => Failure(new IllegalArgumentException(s"Route fee ($routeFee) was above the maximum allowed fee ($maxFee) for route ${route.printChannels()}"))
+        case _ => Success(route)
+      }
+    }
+
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
@@ -61,19 +69,22 @@ object RouteCalculation {
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
-        case PredefinedNodeRoute(amount, hops) =>
+        case PredefinedNodeRoute(amount, hops, maxFee_opt) =>
           // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
           hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-              ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
+              validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+                case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
+                case Failure(f) => ctx.sender() ! Status.Failure(f)
+              }
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds) =>
+        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
               val channelDesc_opt = d.resolve(shortChannelId) match {
@@ -97,7 +108,10 @@ object RouteCalculation {
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            ctx.sender() ! RouteResponse(Route(amount, hops, None) :: Nil)
+            validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+              case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
+              case Failure(f) => ctx.sender() ! Status.Failure(f)
+            }
           }
       }
 
