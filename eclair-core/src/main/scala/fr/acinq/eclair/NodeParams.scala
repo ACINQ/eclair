@@ -33,8 +33,8 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
+import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -422,6 +422,15 @@ object NodeParams extends Logging {
       PathFindingExperimentConf(experiments.toMap)
     }
 
+    def getMessageRouteParams(config: Config): MessageRouteParams = {
+      val maxRouteLength = config.getInt("max-route-length")
+      val ratioBase = config.getDouble("ratios.base")
+      val ratioAge = config.getDouble("ratios.channel-age")
+      val ratioCapacity = config.getDouble("ratios.channel-capacity")
+      val disabledMultiplier = config.getDouble("ratios.disabled-multiplier")
+      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity, disabledMultiplier))
+    }
+
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
       case "local-close" => UnhandledExceptionStrategy.LocalClose
       case "stop" => UnhandledExceptionStrategy.Stop
@@ -557,6 +566,7 @@ object NodeParams extends Logging {
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
+        messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
       ),
       socksProxy_opt = socksProxy_opt,

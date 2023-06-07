@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Route}
+import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -284,6 +285,8 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 }
 
 case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
+  def addVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addVertex(ann), balances)
+
   def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
 
   def disableEdge(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.disableEdge(desc), balances.removeEdge(desc))

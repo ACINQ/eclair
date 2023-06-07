@@ -27,9 +27,9 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -200,6 +200,7 @@ object TestConstants {
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
+        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2, 1.5)),
         balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
@@ -357,6 +358,7 @@ object TestConstants {
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
+        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3, 3.14)),
         balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,

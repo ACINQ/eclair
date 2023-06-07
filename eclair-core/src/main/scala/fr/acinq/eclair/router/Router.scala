@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -241,7 +241,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
     case Event(r: MessageRouteRequest, d) =>
-      stay() using RouteCalculation.handleMessageRouteRequest(d, r)
+      stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -359,6 +359,7 @@ object Router {
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
                         pathFindingExperimentConf: PathFindingExperimentConf,
+                        messageRouteParams: MessageRouteParams,
                         balanceEstimateHalfLife: FiniteDuration) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
@@ -559,6 +560,8 @@ object Router {
       boundaries.maxFeeFlat.max(amount * boundaries.maxFeeProportional)
     }
   }
+
+  case class MessageRouteParams(maxRouteLength: Int, ratios: MessagePath.WeightRatios)
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off

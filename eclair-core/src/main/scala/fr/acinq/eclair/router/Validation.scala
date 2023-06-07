@@ -179,7 +179,7 @@ object Validation {
         // mutable variable is simpler here
         var graph = d.graphWithBalances
         // remove previous private edges
-        graph.removeChannel(ChannelDesc(privateChannel.shortIds.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
+        graph = graph.removeChannel(ChannelDesc(privateChannel.shortIds.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
         // add new public edges
         pubChan.update_1_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
         pubChan.update_2_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
@@ -280,13 +280,13 @@ object Validation {
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(n)))
       ctx.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode), graphWithBalances = d.graphWithBalances.addVertex(n))
     } else if (d.channels.values.exists(c => isRelatedTo(c.ann, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Accepted(n)))
       ctx.system.eventStream.publish(NodesDiscovered(n :: Nil))
       db.addNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes ++ rebroadcastNode), graphWithBalances = d.graphWithBalances.addVertex(n))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("stashing {}", n)
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
