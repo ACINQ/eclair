@@ -65,10 +65,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
       "desc" -> JString(f.desc),
       "internal" -> JBool(f.internal),
       "active" -> JBool(f.active),
-      f.timestamp match {
-        case Right(t) => "timestamp" -> JInt(t)
-        case Left(t) => "timestamp" -> JString(t)
-      }
+      "timestamp" -> JInt(f.timestamp)
     ))
     rpcClient.invoke("importdescriptors", json).collect {
       case JArray(results) => results.forall(item => {
@@ -87,7 +84,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
         val JBool(internal) = d \ "internal"
         val JBool(active) = d \ "active"
         val JInt(timestamp) = d \ "timestamp"
-        Descriptor(desc, internal, Right(timestamp.toLong), active)
+        Descriptor(desc, internal, timestamp.toLong, active)
       })
     }
 
@@ -816,7 +813,7 @@ object BitcoinCoreClient {
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
-  case class Descriptor(desc: String, internal: Boolean = false, timestamp: Either[String, Long] = Left("now"), active: Boolean = true)
+  case class Descriptor(desc: String, internal: Boolean = false, timestamp: Long, active: Boolean = true)
 
   case class Descriptors(wallet_name: String, descriptors: Seq[Descriptor])
 }

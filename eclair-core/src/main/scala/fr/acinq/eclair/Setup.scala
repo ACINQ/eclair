@@ -278,10 +278,15 @@ class Setup(val datadir: File,
       _ <- if (bitcoinClient.useEclairSigner) {
         logger.info("using eclair to sign bitcoin core transactions")
         val descriptors = onchainKeyManager.getDescriptors(0, hSuffix = false).descriptors
-        if (!descriptors.forall(currentDescriptors.contains(_))) {
-          logger.info(s"current descriptors:\n$currentDescriptors")
-          logger.info(s"importing computed descriptors:\n$descriptors")
-          bitcoinClient.importDescriptors(descriptors)
+        if (currentDescriptors.isEmpty) {
+          // we only import descriptors that are less than 2 hours old
+          if (descriptors.forall(d => d.timestamp >= System.currentTimeMillis() / 1000 - 3600 * 2)) {
+            logger.info(s"importing new descriptors:\n$descriptors")
+            bitcoinClient.importDescriptors(descriptors)
+          } else {
+            logger.warn(s"descriptors are too old, you will need to manually import them and select how far back to rescan:\n$descriptors")
+            Future.failed(new RuntimeException("Could not import descriptors, please check logs for details"))
+          }
         } else {
           logger.info(s"using current descriptors:\n$currentDescriptors")
           Future.successful(Done)
