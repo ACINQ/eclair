@@ -21,11 +21,11 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.protocol.Color
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, ShortChannelId, randomKey}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -389,5 +389,100 @@ class GraphSpec extends AnyFunSuite {
       Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.head.path == Seq(edgeAB))
+  }
+
+  test("route for messages") {
+    /*
+       A -- B -- C -- D
+        \____ E _____/
+    */
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, a, b, 0 msat, 0, capacity = 100000000 sat, minHtlc = 0 msat, maxHtlc = Some(100 msat)),
+      makeEdge(1L, b, a, 1 msat, 1, capacity = 100000000 sat, minHtlc = 100 msat, maxHtlc = Some(200 msat)),
+      makeEdge(2L, b, c, 2 msat, 2, capacity = 100000000 sat, minHtlc = 200 msat, maxHtlc = Some(300 msat)),
+      makeEdge(2L, c, b, 3 msat, 3, capacity = 100000000 sat, minHtlc = 300 msat, maxHtlc = Some(400 msat)),
+      makeEdge(3L, c, d, 4 msat, 4, capacity = 100000000 sat, minHtlc = 400 msat, maxHtlc = Some(500 msat)),
+      makeEdge(3L, d, c, 5 msat, 5, capacity = 100000000 sat, minHtlc = 500 msat, maxHtlc = Some(600 msat)),
+      makeEdge(4L, a, e, 6 msat, 6, capacity = 1000 sat, minHtlc = 600 msat, maxHtlc = Some(700 msat)),
+      makeEdge(4L, e, a, 7 msat, 7, capacity = 1000 sat, minHtlc = 700 msat, maxHtlc = Some(800 msat)),
+      makeEdge(5L, d, e, 8 msat, 8, capacity = 1000 sat, minHtlc = 800 msat, maxHtlc = Some(900 msat)),
+      makeEdge(5L, e, d, 9 msat, 9, capacity = 1000 sat, minHtlc = 900 msat, maxHtlc = Some(1000 msat)),
+    )).addVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+
+    {
+      // All nodes can relay messages, same weight for each channel.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+    }
+    {
+      // Source and target don't relay messages but they can still emit and receive.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val g = graph.addVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
+        .addVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
+      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+    }
+    {
+      // E doesn't relay messages.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val g = graph.addVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
+      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+    }
+    {
+      // Message can take disabled edges.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
+        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
+      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+    }
+    {
+      // Disabled edges are penalized.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 2.0)
+      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
+        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
+      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+    }
+    {
+      // Disabled edges are penalized but we limit the maximum length of the path.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 2
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 2.0)
+      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
+        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
+      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+    }
+    {
+      // Prefer high-capacity channels.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(0.0, 0.0, 1.0, 1.0)
+      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+    }
+    {
+      // We ignore E.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set(e), boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+    }
+    {
+      // Target not in graph.
+      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      assert(MessagePath.dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
+    }
   }
 }
