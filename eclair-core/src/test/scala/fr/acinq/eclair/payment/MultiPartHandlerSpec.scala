@@ -558,7 +558,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
-    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(1), pathId)
+    // We test the case where the HTLC's cltv_expiry is lower than expected and doesn't meet the min_final_expiry_delta.
+    val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry - CltvExpiryDelta(1), defaultExpiry, pathId)
     sender.send(handlerWithRouteBlinding, packet)
     val receivePayment = offerManager.expectMsgType[OfferManager.ReceivePayment]
     assert(receivePayment.paymentHash == invoice.paymentHash)
