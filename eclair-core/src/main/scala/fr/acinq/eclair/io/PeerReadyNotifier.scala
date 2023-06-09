@@ -17,7 +17,6 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -38,7 +37,7 @@ object PeerReadyNotifier {
   private case object PeerNotConnected extends Command
   private case class SomePeerConnected(nodeId: PublicKey) extends Command
   private case class SomePeerDisconnected(nodeId: PublicKey) extends Command
-  private case class PeerChannels(channels: Set[akka.actor.ActorRef]) extends Command
+  private case class WrappedPeerInfo(peer: akka.actor.ActorRef, channelCount: Int) extends Command
   private case class NewBlockNotTimedOut(currentBlockHeight: BlockHeight) extends Command
   private case object CheckChannelsReady extends Command
   private case class ChannelStates(states: Seq[channel.ChannelState]) extends Command
@@ -81,7 +80,7 @@ object PeerReadyNotifier {
       // In that case we still want to wait for a connection, because we may want to open a channel to them.
       case _: Peer.PeerNotFound => PeerNotConnected
       case info: Peer.PeerInfo if info.state != Peer.CONNECTED => PeerNotConnected
-      case info: Peer.PeerInfo => PeerChannels(info.channels)
+      case info: Peer.PeerInfo => WrappedPeerInfo(info.peer, info.channels.size)
     }
     // We check whether the peer is already connected.
     switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
@@ -96,14 +95,14 @@ object PeerReadyNotifier {
         Behaviors.same
       case SomePeerDisconnected(_) =>
         Behaviors.same
-      case PeerChannels(channels) =>
-        if (channels.isEmpty) {
+      case WrappedPeerInfo(peer, channelCount) =>
+        if (channelCount == 0) {
           context.log.info("peer is ready with no channels")
-          replyTo ! PeerReady(remoteNodeId, 0)
+          replyTo ! PeerReady(remoteNodeId, channelCount)
           Behaviors.stopped
         } else {
-          context.log.debug("peer is connected with {} channels", channels.size)
-          waitForChannelsReady(replyTo, remoteNodeId, channels, switchboard, context, timers)
+          context.log.debug("peer is connected with {} channels", channelCount)
+          waitForChannelsReady(replyTo, remoteNodeId, peer, switchboard, context, timers)
         }
       case NewBlockNotTimedOut(currentBlockHeight) =>
         context.log.debug("waiting for peer to connect at block {}", currentBlockHeight)
@@ -115,17 +114,15 @@ object PeerReadyNotifier {
     }
   }
 
-  private def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, channels: Set[akka.actor.ActorRef], switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
-    var channelCollector_opt = Option.empty[ActorRef[ChannelStatesCollector.Command]]
+  private def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, peer: akka.actor.ActorRef, switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
     timers.startTimerWithFixedDelay(ChannelsReadyTimerKey, CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
     Behaviors.receiveMessagePartial {
       case CheckChannelsReady =>
-        channelCollector_opt.foreach(ref => context.stop(ref))
-        channelCollector_opt = Some(context.spawnAnonymous(ChannelStatesCollector(context.self, channels)))
+        peer ! Peer.GetPeerChannels(context.messageAdapter[Peer.PeerChannels](c => ChannelStates(c.channels.map(_.state))))
         Behaviors.same
       case ChannelStates(states) =>
         if (states.forall(isChannelReady)) {
-          replyTo ! PeerReady(remoteNodeId, channels.size)
+          replyTo ! PeerReady(remoteNodeId, states.size)
           Behaviors.stopped
         } else {
           context.log.debug("peer has {} channels that are not ready", states.count(s => !isChannelReady(s)))
@@ -180,35 +177,6 @@ object PeerReadyNotifier {
     case channel.CLOSED => true
     case channel.WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
     case channel.ERR_INFORMATION_LEAK => true
-  }
-
-  private object ChannelStatesCollector {
-
-    // @formatter:off
-    sealed trait Command
-    private final case class WrappedChannelState(wrapped: channel.RES_GET_CHANNEL_STATE) extends Command
-    // @formatter:on
-
-    def apply(replyTo: ActorRef[ChannelStates], channels: Set[akka.actor.ActorRef]): Behavior[Command] = {
-      Behaviors.setup { context =>
-        val channelStateAdapter = context.messageAdapter[channel.RES_GET_CHANNEL_STATE](WrappedChannelState)
-        channels.foreach(c => c ! channel.CMD_GET_CHANNEL_STATE(channelStateAdapter.toClassic))
-        collect(replyTo, Nil, channels.size)
-      }
-    }
-
-    private def collect(replyTo: ActorRef[ChannelStates], received: Seq[channel.ChannelState], remaining: Int): Behavior[Command] = {
-      Behaviors.receiveMessage {
-        case WrappedChannelState(wrapped) => remaining match {
-          case 1 =>
-            replyTo ! ChannelStates(received :+ wrapped.state)
-            Behaviors.stopped
-          case _ =>
-            collect(replyTo, received :+ wrapped.state, remaining - 1)
-        }
-      }
-    }
-
   }
 
 }
