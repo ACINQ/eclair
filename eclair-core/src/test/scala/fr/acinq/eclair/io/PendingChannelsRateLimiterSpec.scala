@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.PendingChannelsRateLimiter.filterPendingChannels
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo, CommitTx}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, CommitTx, InputInfo}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.Outcome
@@ -346,6 +346,62 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     restoredLimiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomKey().publicKey, randomBytes32())
     router.expectMessageType[GetNode].replyTo ! UnknownNode(randomKey().publicKey)
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+  }
+
+  test("track requests from peers that change from private to public") { f =>
+    import f._
+
+    // start a new/empty limiter actor
+    val router1 = TestProbe[Router.GetNode]()
+    val limiter1 = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router1.ref, Seq()))
+    val peer = randomKey().publicKey
+    val (channelId1, channelId2, channelId3) = (randomBytes32(), randomBytes32(), randomBytes32())
+
+    // peer makes first pending channel open requests
+    limiter1 ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, peer, channelId1)
+    router1.expectMessageType[GetNode].replyTo ! UnknownNode(peer)
+    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+
+    // peer makes second pending channel open requests
+    limiter1 ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, peer, channelId2)
+    router1.expectMessageType[GetNode].replyTo ! UnknownNode(peer)
+    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+
+    // private channels are now at the limit
+    limiter1 ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomKey().publicKey, randomBytes32())
+    router1.expectMessageType[GetNode].replyTo ! UnknownNode(randomKey().publicKey)
+    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+
+    // when the first pending channel request is confirmed, the first tracked private channel is removed
+    // AND the peer becomes public, but still has a tracked channel request as a private node
+    system.eventStream ! Publish(ChannelOpened(null, peer, channelId1))
+    eventually {
+      limiter1 ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
+      requests.expectMessage(1)
+    }
+
+    // the third pending channel request from peer is accepted as a public peer
+    limiter1 ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, peer, channelId3)
+    router1.expectMessageType[GetNode].replyTo ! PublicNode(announcement(peer), 1, 1 sat)
+    probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
+
+    // the private pending channel request from peer receives a new channel id
+    system.eventStream ! Publish(ChannelIdAssigned(null, peer, channelId1, randomBytes32()))
+
+    // the private channel request from peer is aborted and removed from the tracker
+    system.eventStream ! Publish(ChannelAborted(null, peer, channelId2))
+
+    // the first two private pending channel open requests are now removed from the tracker
+    eventually {
+      limiter1 ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
+      requests.expectMessage(0)
+    }
+
+    // the third pending channel request from peer is still tracked as a public peer
+    eventually {
+      limiter1 ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
+      requests.expectMessage(1)
+    }
   }
 
 }

@@ -91,6 +91,25 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
   }
 
   private def registering(pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
+    def replaceChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
+      pendingNodeChannels.get(remoteNodeId) match {
+        case Some(channels) if channels.contains(temporaryChannelId) =>
+          context.log.debug(s"replaced pending channel $temporaryChannelId with $channelId for node $remoteNodeId")
+          pendingNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId))
+        case _ => pendingNodeChannels
+      }
+    def removeChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
+      pendingNodeChannels.get(remoteNodeId) match {
+        case Some(pendingChannels) =>
+          context.log.debug(s"removed pending channel $channelId for node $remoteNodeId")
+          val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
+          if (pendingChannels1.isEmpty) {
+            pendingNodeChannels - remoteNodeId
+          } else {
+            pendingNodeChannels + (remoteNodeId -> pendingChannels1)
+          }
+        case _ => pendingNodeChannels
+      }
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPublicNodeChannels.map(_._2.length).sum)
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.map(_._2.length).sum)
     Behaviors.receiveMessagePartial {
@@ -130,39 +149,13 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
           }
         }
       case ReplaceChannelId(remoteNodeId, temporaryChannelId, channelId) =>
-        pendingPublicNodeChannels.get(remoteNodeId) match {
-          case Some(channels) if channels.contains(temporaryChannelId) =>
-            registering(pendingPublicNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId)), pendingPrivateNodeChannels)
-          case Some(_) => Behaviors.same
-          case None =>
-            pendingPrivateNodeChannels.get(remoteNodeId) match {
-              case Some(channels) if channels.contains(temporaryChannelId) =>
-                registering(pendingPublicNodeChannels, pendingPrivateNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId)))
-              case Some(_) => Behaviors.same
-              case None => Behaviors.same
-            }
-        }
+        val pendingPublicNodeChannels1 = replaceChannel(pendingPublicNodeChannels, remoteNodeId, temporaryChannelId, channelId)
+        val pendingPrivateNodeChannels1 = replaceChannel(pendingPrivateNodeChannels, remoteNodeId, temporaryChannelId, channelId)
+        registering(pendingPublicNodeChannels1, pendingPrivateNodeChannels1)
       case RemoveChannelId(remoteNodeId, channelId) =>
-        pendingPublicNodeChannels.get(remoteNodeId) match {
-          case Some(pendingChannels) =>
-            val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
-            if (pendingChannels1.isEmpty) {
-              registering(pendingPublicNodeChannels - remoteNodeId, pendingPrivateNodeChannels)
-            } else {
-              registering(pendingPublicNodeChannels + (remoteNodeId -> pendingChannels1), pendingPrivateNodeChannels)
-            }
-          case None =>
-            pendingPrivateNodeChannels.get(remoteNodeId) match {
-              case Some(pendingChannels) =>
-                val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
-                if (pendingChannels1.isEmpty) {
-                  registering(pendingPublicNodeChannels, pendingPrivateNodeChannels - remoteNodeId)
-                } else {
-                  registering(pendingPublicNodeChannels, pendingPrivateNodeChannels + (remoteNodeId -> pendingChannels1))
-                }
-              case None => Behaviors.same
-            }
-        }
+        val pendingPublicNodeChannels1 = removeChannel(pendingPublicNodeChannels, remoteNodeId, channelId)
+        val pendingPrivateNodeChannels1 = removeChannel(pendingPrivateNodeChannels, remoteNodeId, channelId)
+        registering(pendingPublicNodeChannels1, pendingPrivateNodeChannels1)
       case CountOpenChannelRequests(replyTo, publicPeers) =>
         val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
         replyTo ! pendingChannels.map(_._2.length).sum
