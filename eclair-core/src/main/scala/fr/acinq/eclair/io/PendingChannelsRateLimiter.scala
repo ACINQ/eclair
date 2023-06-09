@@ -82,6 +82,10 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelClosed](c => RemoveChannelId(c.commitments.remoteNodeId, c.channelId)))
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
+        context.log.info(s"restored ${pendingPublicNodeChannels.size} public peers with pending channel opens.")
+        pendingPublicNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
+        context.log.info(s"restored ${pendingPrivateNodeChannels.size} private peers with pending channel opens.")
+        pendingPrivateNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
         registering(pendingPublicNodeChannels, pendingPrivateNodeChannels)
     }
   }
@@ -103,9 +107,11 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             replyTo ! ChannelRateLimited
             Behaviors.same
           case Some(peerChannels) =>
+            context.log.debug(s"tracking public channel $temporaryChannelId of node: $announcement.nodeId")
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> (temporaryChannelId +: peerChannels)), pendingPrivateNodeChannels)
           case None =>
+            context.log.debug(s"tracking public channel $temporaryChannelId of node: $announcement.nodeId")
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
@@ -114,6 +120,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
           replyTo ! ChannelRateLimited
           Behaviors.same
         } else {
+          context.log.debug(s"tracking private channel $temporaryChannelId of node: $nodeId")
           replyTo ! AcceptOpenChannel
           pendingPrivateNodeChannels.get(nodeId) match {
             case Some(peerChannels) =>
