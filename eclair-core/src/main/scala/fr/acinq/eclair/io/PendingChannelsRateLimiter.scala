@@ -39,12 +39,17 @@ object PendingChannelsRateLimiter {
 
   def apply(nodeParams: NodeParams, router: ActorRef[Router.GetNode], channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
-      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(channels), Map(), Map())
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelClosed](c => RemoveChannelId(c.commitments.remoteNodeId, c.channelId)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
+      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(nodeParams: NodeParams, channels), Map(), Map(), Seq())
     }
   }
 
-  private[io] def filterPendingChannels(channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
+  private[io] def filterPendingChannels(nodeParams: NodeParams, channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
     channels.filter {
+      case p: PersistentChannelData if nodeParams.channelConf.channelOpenerWhitelist.contains(p.remoteNodeId) => false
       case DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, _) if !commitments.params.localParams.isInitiator => true
       case DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams, _, _, _, _, _) if !channelParams.localParams.isInitiator => true
       case DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, _, _, _, _, _, _) if !commitments.params.localParams.isInitiator => true
@@ -59,33 +64,35 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
 
   import PendingChannelsRateLimiter._
 
-  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
+  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]], cachedCommands: Seq[Command], sendGetNode: Boolean = true): Behavior[Command] = {
     channels.headOption match {
       case Some((remoteNodeId, pendingChannels)) =>
         val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(pendingChannels.head.channelId, r, None))
-        router ! GetNode(adapter, remoteNodeId)
+        if (sendGetNode) router ! GetNode(adapter, remoteNodeId)
         Behaviors.receiveMessagePartial[Command] {
           case AddOrRejectChannel(replyTo, _, _) =>
             replyTo ! ChannelRateLimited
             Behaviors.same
           case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
-            restoring(channels.tail, pendingPublicNodeChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels)
+            restoring(channels.tail, pendingPublicNodeChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels, cachedCommands)
           case WrappedGetNodeResponse(_, UnknownNode(nodeId), _) =>
-            restoring(channels.tail, pendingPublicNodeChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)))
+            restoring(channels.tail, pendingPublicNodeChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)), cachedCommands)
+          case r: ReplaceChannelId =>
+            restoring(channels, pendingPublicNodeChannels, pendingPrivateNodeChannels, cachedCommands :+ r, sendGetNode = false)
+          case r: RemoveChannelId =>
+            restoring(channels, pendingPublicNodeChannels, pendingPrivateNodeChannels, cachedCommands :+ r, sendGetNode = false)
           case CountOpenChannelRequests(replyTo, publicPeers) =>
             val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
             replyTo ! pendingChannels.map(_._2.length).sum
             Behaviors.same
         }
       case None =>
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](c => ReplaceChannelId(c.remoteNodeId, c.temporaryChannelId, c.channelId)))
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelClosed](c => RemoveChannelId(c.commitments.remoteNodeId, c.channelId)))
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
         context.log.info(s"restored ${pendingPublicNodeChannels.size} public peers with pending channel opens.")
         pendingPublicNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
         context.log.info(s"restored ${pendingPrivateNodeChannels.size} private peers with pending channel opens.")
         pendingPrivateNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
+        context.log.debug(s"cached commands: $cachedCommands")
+        cachedCommands.foreach(context.self ! _)
         registering(pendingPublicNodeChannels, pendingPrivateNodeChannels)
     }
   }
@@ -126,11 +133,11 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             replyTo ! ChannelRateLimited
             Behaviors.same
           case Some(peerChannels) =>
-            context.log.debug(s"tracking public channel $temporaryChannelId of node: $announcement.nodeId")
+            context.log.debug(s"tracking public channel $temporaryChannelId of node: ${announcement.nodeId}")
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> (temporaryChannelId +: peerChannels)), pendingPrivateNodeChannels)
           case None =>
-            context.log.debug(s"tracking public channel $temporaryChannelId of node: $announcement.nodeId")
+            context.log.debug(s"tracking public channel $temporaryChannelId of node: ${announcement.nodeId}")
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
