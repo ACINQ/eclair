@@ -17,6 +17,7 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.actor.ActorRef
+import akka.actor.typed
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
@@ -31,6 +32,8 @@ import fr.acinq.eclair.io.{Peer, PeerReadyNotifier}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
+import fr.acinq.eclair.reputation.ReputationRecorder
+import fr.acinq.eclair.reputation.ReputationRecorder.{CancelRelay, GetConfidence, RecordResult}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
@@ -47,6 +50,7 @@ object ChannelRelay {
   sealed trait Command
   private case object DoRelay extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
+  private case class WrappedConfidence(confidence: Double) extends Command
   private case class WrappedForwardFailure(failure: Register.ForwardFailure[CMD_ADD_HTLC]) extends Command
   private case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
   private case class WrappedOnTheFlyFundingResponse(result: Peer.ProposeOnTheFlyFundingResponse) extends Command
@@ -61,6 +65,7 @@ object ChannelRelay {
 
   def apply(nodeParams: NodeParams,
             register: ActorRef,
+            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.ChannelRelayCommand]],
             channels: Map[ByteVector32, Relayer.OutgoingChannel],
             originNode: PublicKey,
             relayId: UUID,
@@ -72,8 +77,17 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode)
-        val confidence = (r.add.endorsement + 0.5) / 8
-        new ChannelRelay(nodeParams, register, channels, r, upstream, confidence, context).start()
+        reputationRecorder_opt match {
+          case Some(reputationRecorder) =>
+            reputationRecorder ! GetConfidence(context.messageAdapter[ReputationRecorder.Confidence](confidence => WrappedConfidence(confidence.value)), originNode, r.add.endorsement, relayId, r.relayFeeMsat)
+          case None =>
+            val confidence = (r.add.endorsement + 0.5) / 8
+            context.self ! WrappedConfidence(confidence)
+        }
+        Behaviors.receiveMessagePartial {
+          case WrappedConfidence(confidence) =>
+            new ChannelRelay(nodeParams, register, reputationRecorder_opt, channels, r, upstream, confidence, context, relayId).start()
+        }
       }
     }
 
@@ -115,11 +129,13 @@ object ChannelRelay {
  */
 class ChannelRelay private(nodeParams: NodeParams,
                            register: ActorRef,
+                           reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.ChannelRelayCommand]],
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
                            confidence: Double,
-                           context: ActorContext[ChannelRelay.Command]) {
+                           context: ActorContext[ChannelRelay.Command],
+                           relayId: UUID) {
 
   import ChannelRelay._
 
@@ -186,6 +202,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
+            reputationRecorder_opt.foreach(_ ! CancelRelay(upstream.receivedFrom, r.add.endorsement, relayId))
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelayNeedsFunding(nextNodeId, cmdFail) =>
             // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
@@ -206,6 +223,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
         val cmdFail = makeCmdFailHtlc(upstream.add.id, UnknownNextPeer())
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
+        reputationRecorder_opt.foreach(_ ! CancelRelay(upstream.receivedFrom, r.add.endorsement, relayId))
         safeSendAndStop(upstream.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
@@ -440,9 +458,11 @@ class ChannelRelay private(nodeParams: NodeParams,
     CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(attribution), delay_opt, commit = true)
   }
 
-  private def recordRelayDuration(isSuccess: Boolean): Unit =
+  private def recordRelayDuration(isSuccess: Boolean): Unit = {
+    reputationRecorder_opt.foreach(_ ! RecordResult(upstream.receivedFrom, r.add.endorsement, relayId, isSuccess))
     Metrics.RelayedPaymentDuration
       .withTag(Tags.Relay, Tags.RelayType.Channel)
       .withTag(Tags.Success, isSuccess)
       .record((TimestampMilli.now() - upstream.receivedAt).toMillis, TimeUnit.MILLISECONDS)
+  }
 }
