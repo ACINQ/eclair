@@ -1,7 +1,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -43,18 +43,22 @@ object PendingChannelsRateLimiter {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelClosed](c => RemoveChannelId(c.commitments.remoteNodeId, c.channelId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](c => RemoveChannelId(c.remoteNodeId, c.channelId)))
-      new PendingChannelsRateLimiter(nodeParams, router, context).restoring(filterPendingChannels(nodeParams: NodeParams, channels), Map(), Map(), Seq())
+      val pendingChannels = filterPendingChannels(nodeParams, channels)
+      // stash up to 3 commands for each pending channel; the worst case scenario is ChannelIdAssigned followed by ChannelOpened and ChannelClosed.
+      Behaviors.withStash(3 * pendingChannels.size) { stash =>
+        new PendingChannelsRateLimiter(nodeParams, router, context).restoring(pendingChannels, Map(), Map(), stash)
+      }
     }
   }
 
   private[io] def filterPendingChannels(nodeParams: NodeParams, channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
     channels.filter {
       case p: PersistentChannelData if nodeParams.channelConf.channelOpenerWhitelist.contains(p.remoteNodeId) => false
-      case DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _, _) if !commitments.params.localParams.isInitiator => true
-      case DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams, _, _, _, _, _) if !channelParams.localParams.isInitiator => true
-      case DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, _, _, _, _, _, _) if !commitments.params.localParams.isInitiator => true
-      case DATA_WAIT_FOR_CHANNEL_READY(commitments, _) if !commitments.params.localParams.isInitiator => true
-      case DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments, _) if !commitments.params.localParams.isInitiator => true
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if !d.commitments.params.localParams.isInitiator => true
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED if !d.channelParams.localParams.isInitiator => true
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED if !d.commitments.params.localParams.isInitiator => true
+      case d: DATA_WAIT_FOR_CHANNEL_READY if !d.commitments.params.localParams.isInitiator => true
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY if !d.commitments.params.localParams.isInitiator => true
       case _ => false
     }.groupBy(_.remoteNodeId)
   }
@@ -64,59 +68,66 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
 
   import PendingChannelsRateLimiter._
 
-  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]], cachedCommands: Seq[Command], sendGetNode: Boolean = true): Behavior[Command] = {
+  private def restoring(channels: Map[PublicKey, Seq[PersistentChannelData]], pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]], stash: StashBuffer[Command]): Behavior[Command] = {
+    def stashEvent(remoteNodeId: PublicKey): Boolean = {
+      val hasPendingChannels = channels.contains(remoteNodeId) || pendingPublicNodeChannels.contains(remoteNodeId) || pendingPrivateNodeChannels.contains(remoteNodeId)
+      hasPendingChannels && !stash.isFull
+    }
     channels.headOption match {
       case Some((remoteNodeId, pendingChannels)) =>
         val adapter = context.messageAdapter[Router.GetNodeResponse](r => WrappedGetNodeResponse(pendingChannels.head.channelId, r, None))
-        if (sendGetNode) router ! GetNode(adapter, remoteNodeId)
+        router ! GetNode(adapter, remoteNodeId)
         Behaviors.receiveMessagePartial[Command] {
           case AddOrRejectChannel(replyTo, _, _) =>
             replyTo ! ChannelRateLimited
             Behaviors.same
           case WrappedGetNodeResponse(_, PublicNode(announcement, _, _), _) =>
-            restoring(channels.tail, pendingPublicNodeChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels, cachedCommands)
+            restoring(channels.tail, pendingPublicNodeChannels + (announcement.nodeId -> pendingChannels.map(_.channelId)), pendingPrivateNodeChannels, stash)
           case WrappedGetNodeResponse(_, UnknownNode(nodeId), _) =>
-            restoring(channels.tail, pendingPublicNodeChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)), cachedCommands)
+            restoring(channels.tail, pendingPublicNodeChannels, pendingPrivateNodeChannels + (nodeId -> pendingChannels.map(_.channelId)), stash)
           case r: ReplaceChannelId =>
-            restoring(channels, pendingPublicNodeChannels, pendingPrivateNodeChannels, cachedCommands :+ r, sendGetNode = false)
+            if (stashEvent(r.remoteNodeId)) stash.stash(r)
+            Behaviors.same
           case r: RemoveChannelId =>
-            restoring(channels, pendingPublicNodeChannels, pendingPrivateNodeChannels, cachedCommands :+ r, sendGetNode = false)
+            if (stashEvent(r.remoteNodeId)) stash.stash(r)
+            Behaviors.same
           case CountOpenChannelRequests(replyTo, publicPeers) =>
             val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
             replyTo ! pendingChannels.map(_._2.length).sum
             Behaviors.same
         }
       case None =>
-        context.log.info(s"restored ${pendingPublicNodeChannels.size} public peers with pending channel opens.")
-        pendingPublicNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
-        context.log.info(s"restored ${pendingPrivateNodeChannels.size} private peers with pending channel opens.")
-        pendingPrivateNodeChannels.foreach { p => context.log.debug(s" ${p._1} -> ${p._2}")}
-        context.log.debug(s"cached commands: $cachedCommands")
-        cachedCommands.foreach(context.self ! _)
-        registering(pendingPublicNodeChannels, pendingPrivateNodeChannels)
+        context.log.info("restored {} public peers with pending channel opens.", pendingPublicNodeChannels.size)
+        pendingPublicNodeChannels.foreach(p => context.log.debug(" {} -> {}", p._1, p._2))
+        context.log.info("restored {} private peers with pending channel opens.", pendingPrivateNodeChannels.size)
+        pendingPrivateNodeChannels.foreach(p => context.log.debug(" {} -> {}", p._1, p._2))
+        context.log.debug("stashed commands: {}", stash.size)
+        stash.unstashAll(registering(pendingPublicNodeChannels, pendingPrivateNodeChannels))
     }
   }
 
+  private def replaceChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
+    pendingNodeChannels.get(remoteNodeId) match {
+      case Some(channels) if channels.contains(temporaryChannelId) =>
+        context.log.debug("replaced pending channel {} with {} for node {}", temporaryChannelId, channelId, remoteNodeId)
+        pendingNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId))
+      case _ => pendingNodeChannels
+    }
+
+  private def removeChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
+    pendingNodeChannels.get(remoteNodeId) match {
+      case Some(pendingChannels) =>
+        context.log.debug("removed pending channel {} for node {}", channelId, remoteNodeId)
+        val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
+        if (pendingChannels1.isEmpty) {
+          pendingNodeChannels - remoteNodeId
+        } else {
+          pendingNodeChannels + (remoteNodeId -> pendingChannels1)
+        }
+      case _ => pendingNodeChannels
+    }
+
   private def registering(pendingPublicNodeChannels: Map[PublicKey, Seq[ByteVector32]], pendingPrivateNodeChannels: Map[PublicKey, Seq[ByteVector32]]): Behavior[Command] = {
-    def replaceChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
-      pendingNodeChannels.get(remoteNodeId) match {
-        case Some(channels) if channels.contains(temporaryChannelId) =>
-          context.log.debug(s"replaced pending channel $temporaryChannelId with $channelId for node $remoteNodeId")
-          pendingNodeChannels + (remoteNodeId -> (channels.filterNot(_ == temporaryChannelId) :+ channelId))
-        case _ => pendingNodeChannels
-      }
-    def removeChannel(pendingNodeChannels: Map[PublicKey, Seq[ByteVector32]], remoteNodeId: PublicKey, channelId: ByteVector32): Map[PublicKey, Seq[ByteVector32]] =
-      pendingNodeChannels.get(remoteNodeId) match {
-        case Some(pendingChannels) =>
-          context.log.debug(s"removed pending channel $channelId for node $remoteNodeId")
-          val pendingChannels1 = pendingChannels.filterNot(_ == channelId)
-          if (pendingChannels1.isEmpty) {
-            pendingNodeChannels - remoteNodeId
-          } else {
-            pendingNodeChannels + (remoteNodeId -> pendingChannels1)
-          }
-        case _ => pendingNodeChannels
-      }
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = true).update(pendingPublicNodeChannels.map(_._2.length).sum)
     Metrics.OpenChannelRequestsPending.withTag(Tags.PublicPeers, value = false).update(pendingPrivateNodeChannels.map(_._2.length).sum)
     Behaviors.receiveMessagePartial {
@@ -133,11 +144,11 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             replyTo ! ChannelRateLimited
             Behaviors.same
           case Some(peerChannels) =>
-            context.log.debug(s"tracking public channel $temporaryChannelId of node: ${announcement.nodeId}")
+            context.log.debug("tracking public channel {} of node: {}", temporaryChannelId, announcement.nodeId)
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> (temporaryChannelId +: peerChannels)), pendingPrivateNodeChannels)
           case None =>
-            context.log.debug(s"tracking public channel $temporaryChannelId of node: ${announcement.nodeId}")
+            context.log.debug("tracking public channel {} of node: {}", temporaryChannelId, announcement.nodeId)
             replyTo ! AcceptOpenChannel
             registering(pendingPublicNodeChannels + (announcement.nodeId -> Seq(temporaryChannelId)), pendingPrivateNodeChannels)
         }
@@ -146,7 +157,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
           replyTo ! ChannelRateLimited
           Behaviors.same
         } else {
-          context.log.debug(s"tracking private channel $temporaryChannelId of node: $nodeId")
+          context.log.debug("tracking private channel {} of node: {}", temporaryChannelId, nodeId)
           replyTo ! AcceptOpenChannel
           pendingPrivateNodeChannels.get(nodeId) match {
             case Some(peerChannels) =>

@@ -49,18 +49,6 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   val newChannelIdPrivate1: ByteVector32 = ByteVector32(hex"077777770000000000000000000000000000000000000000000000000000000")
   val channelIdAtLimit1: ByteVector32 = ByteVector32(hex"0888888880000000000000000000000000000000000000000000000000000000")
   val channelIdAtLimit2: ByteVector32 = ByteVector32(hex"0999999990000000000000000000000000000000000000000000000000000000")
-  val waitingForSigs: InteractiveTxSigningSession.WaitingForSigs = {
-    val fundingTx = SharedTransaction(sharedInput_opt = None, sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat), localInputs = Nil, remoteInputs = Nil, localOutputs = Nil, remoteOutputs = Nil, lockTime = 0)
-    val fundingInput = InputInfo(OutPoint(randomBytes32(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
-    val commitTx = CommitTx(fundingInput, Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0))
-    InteractiveTxSigningSession.WaitingForSigs(
-      InteractiveTxParams(randomBytes32(), isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false)),
-      fundingTxIndex = 0,
-      PartiallySignedSharedTransaction(fundingTx, TxSignatures(randomBytes32(), randomBytes32(), Nil)),
-      Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomBytes32(), randomKey().publicKey)
-    )
-  }
 
   override protected def withFixture(test: OneArgTest): Outcome = {
     val router = TestProbe[Router.GetNode]()
@@ -86,7 +74,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     )
     val peerBelowLimit1 = randomKey().publicKey
     val channelsBelowLimit1: Seq[PersistentChannelData] = Seq(
-      DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(commitments(peerBelowLimit1, channelIdBelowLimit1).params, randomKey().publicKey, 0 msat, 0 msat,  waitingForSigs, None)
+      DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, channelIdBelowLimit1), BlockHeight(0), None, Left(FundingCreated(channelIdBelowLimit1, ByteVector32.Zeroes, 3, randomBytes64()))),
     )
     val peerBelowLimit2 = randomKey().publicKey
     val channelsBelowLimit2: Seq[PersistentChannelData] = Seq(
@@ -103,7 +91,6 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     )
     val initiatorChannels: Seq[PersistentChannelData] = Seq(
       DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(TestConstants.Alice.nodeParams.nodeId, randomBytes32(), isInitiator = true), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, ByteVector32.Zeroes, 3, randomBytes64()))),
-      DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(commitments(TestConstants.Alice.nodeParams.nodeId, randomBytes32(), isInitiator = true).params, randomKey().publicKey, 0 msat, 0 msat, waitingForSigs, None),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(TestConstants.Alice.nodeParams.nodeId, randomBytes32(), isInitiator = true), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None)),
       DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments(TestConstants.Alice.nodeParams.nodeId, randomBytes32(), isInitiator = true), 0 msat, 0 msat, BlockHeight(0), BlockHeight(0), RbfStatus.NoRbf, None),
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(TestConstants.Alice.nodeParams.nodeId, randomBytes32(), isInitiator = true), ShortIds(RealScidStatus.Unknown, ShortChannelId.generateLocalAlias(), None)),
