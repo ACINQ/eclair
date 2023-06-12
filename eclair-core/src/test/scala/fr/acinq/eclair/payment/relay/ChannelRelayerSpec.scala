@@ -35,6 +35,7 @@ import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -56,7 +57,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   val wakeUpTimeout = "wake_up_timeout"
   val onTheFlyFunding = "on_the_fly_funding"
 
-  case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any]) {
+  case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any], reputationRecorder: TestProbe[ReputationRecorder.Command]) {
     def createWakeUpActors(): (TestProbe[PeerReadyManager.Register], TestProbe[Switchboard.GetPeerInfo]) = {
       val peerReadyManager = TestProbe[PeerReadyManager.Register]()
       system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
@@ -78,18 +79,20 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
       .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
     val register = TestProbe[Any]("register")
-    val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
+    val reputationRecorder = TestProbe[ReputationRecorder.Command]("reputation-recorder")
+    val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic, Some(reputationRecorder.ref)))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register, reputationRecorder)))
     } finally {
       testKit.stop(channelRelayer)
     }
   }
 
-  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: channel.Command): Register.Forward[channel.Command] = {
+  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: channel.Command, reputationRecorder: TestProbe[ReputationRecorder.Command]): Register.Forward[channel.Command] = {
     val fwd = register.expectMessageType[Register.Forward[channel.Command]]
     assert(fwd.message == cmd)
     assert(fwd.channelId == channelId)
+    reputationRecorder.expectMessageType[ReputationRecorder.CancelRelay]
     fwd
   }
 
@@ -104,6 +107,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd
   }
 
+  def setConfidence(f: FixtureParam)(value: Double): Unit = {
+    import f._
+
+    val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
+    assert(getConfidence.originNode == TestConstants.Alice.nodeParams.nodeId)
+    getConfidence.replyTo ! ReputationRecorder.Confidence(value)
+  }
+
   def basicRelayTest(f: FixtureParam)(relayPayloadScid: ShortChannelId, lcu: LocalChannelUpdate, success: Boolean): Unit = {
     import f._
 
@@ -112,11 +123,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(lcu)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     if (success) {
       expectFwdAdd(register, lcu.channelId, outgoingAmount, outgoingExpiry, 7)
     } else {
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true), reputationRecorder)
     }
   }
 
@@ -161,6 +173,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r1 = createValidIncomingPacket(payload1)
     channelRelayer ! WrappedLocalChannelUpdate(lcu1)
     channelRelayer ! Relay(r1, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
     expectFwdAdd(register, lcu1.channelId, outgoingAmount, outgoingExpiry, 7)
 
     // reorg happens
@@ -172,9 +185,11 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // both old and new real scids work
     channelRelayer ! Relay(r1, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
     expectFwdAdd(register, lcu1.channelId, outgoingAmount, outgoingExpiry, 7)
     // new real scid works
     channelRelayer ! Relay(r2, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
     expectFwdAdd(register, lcu2.channelId, outgoingAmount, outgoingExpiry, 7)
   }
 
@@ -187,6 +202,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
   }
@@ -202,6 +218,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(1.0)
 
       // We try to wake-up the next node.
       peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
@@ -266,7 +283,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     // We fail without attempting on-the-fly funding.
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true), reputationRecorder)
   }
 
   test("relay blinded payment (on-the-fly funding failed)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
@@ -291,7 +308,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwdNodeId.nodeId == outgoingNodeId)
     fwdNodeId.replyTo ! Register.ForwardNodeIdFailure(fwdNodeId)
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true), reputationRecorder)
   }
 
   test("relay blinded payment (on-the-fly funding not attempted)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
@@ -318,7 +335,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, TooManyAcceptedHtlcs(channelIds(realScid1), 10), Some(u.channelUpdate))
 
     // We fail without attempting on-the-fly funding.
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true), reputationRecorder)
   }
 
   test("relay with retries") { f =>
@@ -336,6 +353,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u2)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     // first try
     val fwd1 = expectFwdAdd(register, channelIds(realScid2), outgoingAmount, outgoingExpiry, 7)
@@ -348,7 +366,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd1.message.replyTo ! RES_ADD_FAILED(fwd2.message, HtlcValueTooHighInFlight(channelIds(realScid1), 1000000000 msat, 1516977616 msat), Some(u1.channelUpdate))
 
     // the relayer should give up
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(Some(u1.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(Some(u1.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("fail to relay when we have no channel_update for the next channel") { f =>
@@ -358,8 +376,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(payload)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true), reputationRecorder)
   }
 
   test("fail to relay when register returns an error") { f =>
@@ -371,11 +390,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     fwd.replyTo ! Register.ForwardFailure(fwd)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true), reputationRecorder)
   }
 
   test("fail to relay when the channel is advertised as unusable (down)") { f =>
@@ -389,8 +409,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! WrappedLocalChannelDown(d)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true), reputationRecorder)
   }
 
   test("fail to relay when channel is disabled") { f =>
@@ -402,8 +423,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, Some(u.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("fail to relay when amount is below minimum") { f =>
@@ -415,8 +437,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(outgoingAmount, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(outgoingAmount, Some(u.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("fail to relay blinded payment") { f =>
@@ -429,6 +452,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(1.0)
 
       val cmd = register.expectMessageType[Register.Forward[channel.Command]]
       assert(cmd.channelId == r.add.channelId)
@@ -445,6 +469,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
         assert(fail.onionHash == Sphinx.hash(r.add.onionRoutingPacket))
         assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
       }
+
+      reputationRecorder.expectMessageType[ReputationRecorder.CancelRelay]
     }
   }
 
@@ -459,6 +485,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     // We try to wake-up the next node, but we timeout before they connect.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
@@ -478,6 +505,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     expectFwdAdd(register, channelIds(realScid1), r.amountToForward, r.outgoingCltv, 7).message
   }
@@ -491,8 +519,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(r.outgoingCltv, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(r.outgoingCltv, Some(u.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("fail to relay when fee is insufficient") { f =>
@@ -504,8 +533,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("relay that would fail (fee insufficient) with a recent channel update but succeed with the previous update") { f =>
@@ -517,6 +547,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u1)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     // relay succeeds with current channel update (u1) with lower fees
     expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
@@ -525,6 +556,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! WrappedLocalChannelUpdate(u2)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     // relay succeeds because the current update (u2) with higher fees occurred less than 10 minutes ago
     expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
@@ -534,9 +566,10 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u1)
     channelRelayer ! WrappedLocalChannelUpdate(u3)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    setConfidence(f)(1.0)
 
     // relay fails because the current update (u3) with higher fees occurred more than 10 minutes ago
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), commit = true), reputationRecorder)
   }
 
   test("fail to relay when there is a local error") { f =>
@@ -563,9 +596,10 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     testCases.foreach { testCase =>
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(1.0)
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
       fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, testCase.exc, Some(testCase.update))
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(testCase.failure), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(testCase.failure), commit = true), reputationRecorder)
     }
   }
 
@@ -598,6 +632,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70), endorsementIn = 5)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(5.5 / 8)
       // select the channel to the same node, with the lowest capacity and balance but still high enough to handle the payment
       val cmd1 = expectFwdAdd(register, channelUpdates(ShortChannelId(22223)).channelId, r.amountToForward, r.outgoingCltv, 5).message
       cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32()), None)
@@ -611,13 +646,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val cmd4 = expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, r.amountToForward, r.outgoingCltv, 5).message
       cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), 100000000 msat, 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
       // all the suitable channels have been tried
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true), reputationRecorder)
     }
     {
       // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 50000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(payload, 60000000 msat, CltvExpiry(70), endorsementIn = 0)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(0)
       expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, r.amountToForward, r.outgoingCltv, 0).message
     }
     {
@@ -625,6 +661,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 1000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(payload, 60000000 msat, CltvExpiry(70), endorsementIn = 6)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(6.5 / 8)
       expectFwdAdd(register, channelUpdates(ShortChannelId(33333)).channelId, r.amountToForward, r.outgoingCltv, 6).message
     }
     {
@@ -632,6 +669,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60))
       val r = createValidIncomingPacket(payload, 1010000000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(7.5 / 8)
       expectFwdAdd(register, channelUpdates(ShortChannelId(12345)).channelId, r.amountToForward, r.outgoingCltv, 7).message
     }
     {
@@ -639,6 +677,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(50))
       val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(7.5 / 8)
       expectFwdAdd(register, channelUpdates(ShortChannelId(22223)).channelId, r.amountToForward, r.outgoingCltv, 7).message
     }
     {
@@ -646,7 +685,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(61))
       val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(61), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true))
+      setConfidence(f)(0.2)
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(61), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true), reputationRecorder)
     }
   }
 
@@ -672,10 +712,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     testCases.foreach { testCase =>
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(1.0)
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
       fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
-      expectFwdFail(register, r.add.channelId, testCase.cmd)
+      val fwdFail = register.expectMessageType[Register.Forward[channel.Command]]
+      assert(fwdFail.message == testCase.cmd)
+      assert(fwdFail.channelId == r.add.channelId)
+      assert(!reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
     }
   }
 
@@ -698,6 +742,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
         val r = createValidIncomingPacket(createBlindedPayload(Right(u.channelUpdate.shortChannelId), u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta, endorsementIn = 0)
         channelRelayer ! WrappedLocalChannelUpdate(u)
         channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+        setConfidence(f)(0)
         val fwd = expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, 0)
         fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
         fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream, htlcResult)
@@ -716,6 +761,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
           assert(fail.onionHash == Sphinx.hash(r.add.onionRoutingPacket))
           assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
         }
+        assert(!reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
       }
     }
   }
@@ -741,6 +787,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     testCases.foreach { testCase =>
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+      setConfidence(f)(3.5 / 8)
 
       val fwd1 = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 3)
       fwd1.message.replyTo ! RES_SUCCESS(fwd1.message, channelId1)
@@ -753,6 +800,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
       assert(paymentRelayed.copy(startedAt = 0 unixms, settledAt = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, startedAt = 0 unixms, settledAt = 0 unixms))
+
+      assert(reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
     }
   }
 
