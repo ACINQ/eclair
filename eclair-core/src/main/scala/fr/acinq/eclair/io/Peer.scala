@@ -332,7 +332,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       if (d.channels.isEmpty) {
         r.replyTo ! PeerChannels(remoteNodeId, Nil)
       } else {
-        val actor = context.spawnAnonymous(PeerChannelsCollector(remoteNodeId, 15 seconds))
+        val actor = context.spawnAnonymous(PeerChannelsCollector(remoteNodeId))
         actor ! PeerChannelsCollector.GetChannels(r.replyTo, d.channels.values.map(_.toTyped).toSet)
       }
       stay()

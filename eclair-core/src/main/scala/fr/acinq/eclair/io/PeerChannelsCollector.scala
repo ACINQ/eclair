@@ -19,37 +19,40 @@ package fr.acinq.eclair.io
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.Logs
 import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_INFO, ChannelData, ChannelState, RES_GET_CHANNEL_INFO}
+import fr.acinq.eclair.{Logs, randomBytes32}
 
-import scala.concurrent.duration.FiniteDuration
-
+/**
+ * Collect the current states of a peer's channels.
+ * If one of the channel actors dies (e.g. because it has been closed), it will be ignored: callers may thus receive
+ * fewer responses than expected.
+ * Since channels are constantly being updated concurrently, the channel data is just a recent snapshot: callers should
+ * never expect this data to be fully up-to-date.
+ */
 object PeerChannelsCollector {
 
   // @formatter:off
   sealed trait Command
   case class GetChannels(replyTo: ActorRef[Peer.PeerChannels], channels: Set[ActorRef[CMD_GET_CHANNEL_INFO]]) extends Command
-  private case class WrappedChannelInfo(state: ChannelState, data: ChannelData) extends Command
-  private object Timeout extends Command
+  private case class WrappedChannelInfo(requestId: ByteVector32, state: ChannelState, data: ChannelData) extends Command
+  private case class IgnoreRequest(requestId: ByteVector32) extends Command
   // @formatter:on
 
-  /**
-   * @param timeout channel actors should respond immediately, so this actor should be very short-lived. However, if one
-   *                of the channel actors dies (because the channel is closed), we won't get a response: we will wait
-   *                until the given timeout, and then return the subset of channels we were able to collect.
-   */
-  def apply(remoteNodeId: PublicKey, timeout: FiniteDuration): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withTimers { timers =>
-        Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
-          Behaviors.receiveMessagePartial {
-            case GetChannels(replyTo, channels) =>
-              timers.startSingleTimer(Timeout, timeout)
-              val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.state, r.data))
-              channels.foreach(c => c ! CMD_GET_CHANNEL_INFO(adapter.toClassic))
-              new PeerChannelsCollector(replyTo, remoteNodeId, context).collect(Nil, channels.size)
-          }
+      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+        Behaviors.receiveMessagePartial {
+          case GetChannels(replyTo, channels) =>
+            val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.requestId, r.state, r.data))
+            val pending = channels.map { c =>
+              val requestId = randomBytes32()
+              context.watchWith(c, IgnoreRequest(requestId))
+              c ! CMD_GET_CHANNEL_INFO(adapter.toClassic, requestId)
+              requestId
+            }
+            new PeerChannelsCollector(replyTo, remoteNodeId, context).collect(pending, Nil)
         }
       }
     }
@@ -63,17 +66,26 @@ private class PeerChannelsCollector(replyTo: ActorRef[Peer.PeerChannels], remote
 
   private val log = context.log
 
-  def collect(received: Seq[Peer.ChannelInfo], remaining: Int): Behavior[Command] = {
+  def collect(pending: Set[ByteVector32], received: Seq[Peer.ChannelInfo]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedChannelInfo(state, data) if remaining == 1 =>
-        replyTo ! Peer.PeerChannels(remoteNodeId, received :+ Peer.ChannelInfo(state, data))
-        Behaviors.stopped
-      case WrappedChannelInfo(state, data) =>
-        collect(received :+ Peer.ChannelInfo(state, data), remaining - 1)
-      case Timeout =>
-        log.warn("timed out fetching peer channel information (remaining={})", remaining)
-        replyTo ! Peer.PeerChannels(remoteNodeId, received)
-        Behaviors.stopped
+      case WrappedChannelInfo(requestId, state, data) =>
+        val pending1 = pending - requestId
+        val received1 = received :+ Peer.ChannelInfo(state, data)
+        if (pending1.isEmpty) {
+          replyTo ! Peer.PeerChannels(remoteNodeId, received1)
+          Behaviors.stopped
+        } else {
+          collect(pending1, received1)
+        }
+      case IgnoreRequest(requestId) =>
+        log.debug("could not fetch peer channel information, channel actor died")
+        val pending1 = pending - requestId
+        if (pending1.isEmpty) {
+          replyTo ! Peer.PeerChannels(remoteNodeId, received)
+          Behaviors.stopped
+        } else {
+          collect(pending1, received)
+        }
     }
   }
 
