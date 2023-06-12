@@ -285,7 +285,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 }
 
 case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
-  def addVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addVertex(ann), balances)
+  def addOrUpdateVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addOrUpdateVertex(ann), balances)
 
   def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
 

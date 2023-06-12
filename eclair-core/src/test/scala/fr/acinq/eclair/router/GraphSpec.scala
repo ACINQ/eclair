@@ -61,15 +61,15 @@ class GraphSpec extends AnyFunSuite {
 
   test("instantiate a graph, with vertices and then add edges") {
     val graph = DirectedGraph(a)
-      .addVertex(annB)
-      .addVertex(annC)
-      .addVertex(annD)
-      .addVertex(annE)
+      .addOrUpdateVertex(annB)
+      .addOrUpdateVertex(annC)
+      .addOrUpdateVertex(annD)
+      .addOrUpdateVertex(annE)
 
     assert(graph.containsVertex(a) && graph.containsVertex(e))
     assert(graph.vertexSet().size == 5)
 
-    val otherGraph = graph.addVertex(annA) // adding the same vertex twice!
+    val otherGraph = graph.addOrUpdateVertex(annA) // adding the same vertex twice!
     assert(otherGraph.vertexSet().size == 5)
 
     // add some edges to the graph
@@ -407,11 +407,11 @@ class GraphSpec extends AnyFunSuite {
       makeEdge(4L, e, a, 7 msat, 7, capacity = 1000 sat, minHtlc = 700 msat, maxHtlc = Some(800 msat)),
       makeEdge(5L, d, e, 8 msat, 8, capacity = 1000 sat, minHtlc = 800 msat, maxHtlc = Some(900 msat)),
       makeEdge(5L, e, d, 9 msat, 9, capacity = 1000 sat, minHtlc = 900 msat, maxHtlc = Some(1000 msat)),
-    )).addVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
-      .addVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+    )).addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.OnionMessages -> FeatureSupport.Optional)))
 
     {
       // All nodes can relay messages, same weight for each channel.
@@ -424,8 +424,8 @@ class GraphSpec extends AnyFunSuite {
       // Source and target don't relay messages but they can still emit and receive.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
       val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
-      val g = graph.addVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
-        .addVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
+      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
+        .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
     }
@@ -433,7 +433,7 @@ class GraphSpec extends AnyFunSuite {
       // E doesn't relay messages.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
       val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
-      val g = graph.addVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
+      val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
     }

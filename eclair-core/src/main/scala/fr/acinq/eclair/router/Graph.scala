@@ -738,7 +738,8 @@ object Graph {
        * Removes a vertex and all its associated edges (both incoming and outgoing)
        */
       def removeVertex(key: PublicKey): DirectedGraph = {
-        DirectedGraph(removeChannels(getIncomingEdgesOf(key).map(_.desc)).removeChannels(getIncomingDisabledEdgesOf(key).keys).vertices - key)
+        val channels = getIncomingEdgesOf(key).map(_.desc) ++ getIncomingDisabledEdgesOf(key).keys
+        DirectedGraph(removeChannels(channels).vertices - key)
       }
 
       def removeVertices(nodeIds: Iterable[PublicKey]): DirectedGraph = nodeIds.foldLeft(this)((acc, nodeId) => acc.removeVertex(nodeId))
@@ -747,14 +748,14 @@ object Graph {
        * Adds a new vertex to the graph, starting with no edges.
        * Or update the node features if the vertex is already present.
        */
-      def addVertex(ann: NodeAnnouncement): DirectedGraph = {
+      def addOrUpdateVertex(ann: NodeAnnouncement): DirectedGraph = {
         DirectedGraph(vertices.updatedWith(ann.nodeId) {
           case Some(vertex) => Some(vertex.copy(features = ann.features.nodeAnnouncementFeatures()))
           case None => Some(Vertex(ann.features.nodeAnnouncementFeatures(), Map.empty, Map.empty))
         })
       }
 
-      def addVertices(announcements: Iterable[NodeAnnouncement]): DirectedGraph = announcements.foldLeft(this)((acc, ann) => acc.addVertex(ann))
+      def addVertices(announcements: Iterable[NodeAnnouncement]): DirectedGraph = announcements.foldLeft(this)((acc, ann) => acc.addOrUpdateVertex(ann))
 
       /**
        * Note this operation will traverse all edges in the graph (expensive)
@@ -787,12 +788,6 @@ object Graph {
         vertices.get(desc.b) match {
           case None => false
           case Some(vertex) => vertex.edges.contains(desc)
-        }
-      }
-
-      def prettyPrint(): String = {
-        vertices.foldLeft("") { case (acc, (key, vertex)) =>
-          acc + s"[${key.toString().take(5)}]: ${vertex.edges.values.map("-> " + _.desc.b.toString().take(5))} \n"
         }
       }
     }

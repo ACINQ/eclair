@@ -326,7 +326,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val g = DirectedGraph(List(
       makeEdge(2L, b, c, 0 msat, 0),
       makeEdge(4L, c, d, 0 msat, 0)
-    )).addVertex(annA).addVertex(annE)
+    )).addOrUpdateVertex(annA).addOrUpdateVertex(annE)
 
     assert(findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000)) == Failure(RouteNotFound))
     assert(findRoute(g, b, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000)) == Failure(RouteNotFound))

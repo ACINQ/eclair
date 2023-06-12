@@ -21,6 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.io.{MessageRelay, Switchboard}
 import fr.acinq.eclair.message.OnionMessages.{Destination, RoutingStrategy}
 import fr.acinq.eclair.payment.offer.OfferManager
@@ -147,45 +148,53 @@ private class SendingMessage(nodeParams: NodeParams,
           case OnionMessages.Recipient(nodeId, _, _, _) => nodeId
         }
         routingStrategy match {
-          case RoutingStrategy.UseRoute(intermediateNodes) => context.self ! WrappedMessageRouteResponse(MessageRoute(intermediateNodes, targetNodeId))
-          case RoutingStrategy.FindRoute if targetNodeId == nodeParams.nodeId => context.self ! WrappedMessageRouteResponse(MessageRoute(Nil, targetNodeId))
-          case RoutingStrategy.FindRoute => router ! Router.MessageRouteRequest(context.messageAdapter(WrappedMessageRouteResponse), nodeParams.nodeId, targetNodeId, Set.empty)
+          case RoutingStrategy.UseRoute(intermediateNodes) => sendToRoute(intermediateNodes, targetNodeId)
+          case RoutingStrategy.FindRoute if targetNodeId == nodeParams.nodeId =>
+            context.self ! WrappedMessageRouteResponse(MessageRoute(Nil, targetNodeId))
+            waitForRouteFromRouter()
+          case RoutingStrategy.FindRoute =>
+            router ! Router.MessageRouteRequest(context.messageAdapter(WrappedMessageRouteResponse), nodeParams.nodeId, targetNodeId, Set.empty)
+            waitForRouteFromRouter()
         }
-        waitForRoute()
     }
   }
 
-  private def waitForRoute(): Behavior[Command] = {
+  private def waitForRouteFromRouter(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedMessageRouteResponse(MessageRoute(intermediateNodes, targetNodeId)) =>
-        val messageId = randomBytes32()
-        val replyRoute =
-          if (expectsReply) {
-            val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
-            val intermediateHops = (Seq(targetNodeId) ++ intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
-            val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
-            Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
-          } else {
-            None
-          }
-        OnionMessages.buildMessage(
-          nodeParams.privateKey,
-          randomKey(),
-          randomKey(),
-          intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-          destination,
-          TlvStream(replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet ++ message.records, message.unknown)) match {
-          case Left(failure) =>
-            replyTo ! Postman.MessageFailed(failure.toString)
-            Behaviors.stopped
-          case Right((nextNodeId, message)) =>
-            switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
-            waitForSent()
-        }
+        context.log.debug("Found route: {}", (intermediateNodes :+ targetNodeId).mkString(" -> "))
+        sendToRoute(intermediateNodes, targetNodeId)
       case WrappedMessageRouteResponse(MessageRouteNotFound(targetNodeId)) =>
-        context.log.debug("no route found to {}", targetNodeId)
+        context.log.debug("No route found to {}", targetNodeId)
         replyTo ! Postman.MessageFailed("No route found")
         Behaviors.stopped
+    }
+  }
+
+  private def sendToRoute(intermediateNodes: Seq[PublicKey], targetNodeId: PublicKey): Behavior[Command] = {
+    val messageId = randomBytes32()
+    val replyRoute =
+      if (expectsReply) {
+        val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
+        val intermediateHops = (Seq(targetNodeId) ++ intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
+        val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
+        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
+      } else {
+        None
+      }
+    OnionMessages.buildMessage(
+      nodeParams.privateKey,
+      randomKey(),
+      randomKey(),
+      intermediateNodes.map(OnionMessages.IntermediateNode(_)),
+      destination,
+      TlvStream(message.records ++ replyRoute.map(OnionMessagePayloadTlv.ReplyPath).toSet, message.unknown)) match {
+      case Left(failure) =>
+        replyTo ! Postman.MessageFailed(failure.toString)
+        Behaviors.stopped
+      case Right((nextNodeId, message)) =>
+        switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
+        waitForSent()
     }
   }
 
