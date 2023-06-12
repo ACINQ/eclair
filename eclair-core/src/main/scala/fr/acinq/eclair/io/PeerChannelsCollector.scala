@@ -29,7 +29,7 @@ object PeerChannelsCollector {
 
   // @formatter:off
   sealed trait Command
-  case class GetChannels(replyTo: ActorRef[Peer.PeerChannels], channels: Set[akka.actor.ActorRef]) extends Command
+  case class GetChannels(replyTo: ActorRef[Peer.PeerChannels], channels: Set[ActorRef[CMD_GET_CHANNEL_INFO]]) extends Command
   private case class WrappedChannelInfo(state: ChannelState, data: ChannelData) extends Command
   private object Timeout extends Command
   // @formatter:on

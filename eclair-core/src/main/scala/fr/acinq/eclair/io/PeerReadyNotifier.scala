@@ -17,6 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -37,7 +38,7 @@ object PeerReadyNotifier {
   private case object PeerNotConnected extends Command
   private case class SomePeerConnected(nodeId: PublicKey) extends Command
   private case class SomePeerDisconnected(nodeId: PublicKey) extends Command
-  private case class WrappedPeerInfo(peer: akka.actor.ActorRef, channelCount: Int) extends Command
+  private case class WrappedPeerInfo(peer: ActorRef[Peer.GetPeerChannels], channelCount: Int) extends Command
   private case class NewBlockNotTimedOut(currentBlockHeight: BlockHeight) extends Command
   private case object CheckChannelsReady extends Command
   private case class ChannelStates(states: Seq[channel.ChannelState]) extends Command
@@ -80,7 +81,7 @@ object PeerReadyNotifier {
       // In that case we still want to wait for a connection, because we may want to open a channel to them.
       case _: Peer.PeerNotFound => PeerNotConnected
       case info: Peer.PeerInfo if info.state != Peer.CONNECTED => PeerNotConnected
-      case info: Peer.PeerInfo => WrappedPeerInfo(info.peer, info.channels.size)
+      case info: Peer.PeerInfo => WrappedPeerInfo(info.peer.toTyped, info.channels.size)
     }
     // We check whether the peer is already connected.
     switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
@@ -114,7 +115,7 @@ object PeerReadyNotifier {
     }
   }
 
-  private def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, peer: akka.actor.ActorRef, switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
+  private def waitForChannelsReady(replyTo: ActorRef[Result], remoteNodeId: PublicKey, peer: ActorRef[Peer.GetPeerChannels], switchboard: ActorRef[Switchboard.GetPeerInfo], context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
     timers.startTimerWithFixedDelay(ChannelsReadyTimerKey, CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
     Behaviors.receiveMessagePartial {
       case CheckChannelsReady =>
