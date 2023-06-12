@@ -16,15 +16,16 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket
-import fr.acinq.eclair.{SubscriptionsComplete, Logs, NodeParams, ShortChannelId}
+import fr.acinq.eclair.reputation.ReputationRecorder
+import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, SubscriptionsComplete}
 
 import java.util.UUID
 import scala.collection.mutable
@@ -58,6 +59,7 @@ object ChannelRelayer {
 
   def apply(nodeParams: NodeParams,
             register: ActorRef,
+            reputationRecorder: typed.ActorRef[ReputationRecorder.StandardCommand],
             channels: Map[ByteVector32, Relayer.OutgoingChannel] = Map.empty,
             scid2channels: Map[ShortChannelId, ByteVector32] = Map.empty,
             node2channels: mutable.MultiDict[PublicKey, ByteVector32] = mutable.MultiDict.empty): Behavior[Command] =
@@ -79,7 +81,7 @@ object ChannelRelayer {
               case None => Map.empty
             }
             context.log.debug(s"spawning a new handler with relayId=$relayId to nextNodeId={} with channels={}", nextNodeId_opt.getOrElse(""), nextChannels.keys.mkString(","))
-            context.spawn(ChannelRelay.apply(nodeParams, register, nextChannels, originNode, relayId, channelRelayPacket), name = relayId.toString)
+            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder, nextChannels, originNode, relayId, channelRelayPacket), name = relayId.toString)
             Behaviors.same
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
@@ -100,14 +102,14 @@ object ChannelRelayer {
             context.log.debug("adding mappings={} to channelId={}", mappings.keys.mkString(","), channelId)
             val scid2channels1 = scid2channels ++ mappings
             val node2channels1 = node2channels.addOne(remoteNodeId, channelId)
-            apply(nodeParams, register, channels1, scid2channels1, node2channels1)
+            apply(nodeParams, register, reputationRecorder, channels1, scid2channels1, node2channels1)
 
           case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortIds, remoteNodeId)) =>
             context.log.debug(s"removed local channel info for channelId=$channelId localAlias=${shortIds.localAlias}")
             val channels1 = channels - channelId
             val scid2Channels1 = scid2channels - shortIds.localAlias -- shortIds.real.toOption
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
-            apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
+            apply(nodeParams, register, reputationRecorder, channels1, scid2Channels1, node2channels1)
 
           case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortIds, commitments)) =>
             val channels1 = channels.get(channelId) match {
@@ -116,7 +118,7 @@ object ChannelRelayer {
                 channels + (channelId -> c.copy(commitments = commitments))
               case None => channels // we only consider the balance if we have the channel_update
             }
-            apply(nodeParams, register, channels1, scid2channels, node2channels)
+            apply(nodeParams, register, reputationRecorder, channels1, scid2channels, node2channels)
 
         }
       }

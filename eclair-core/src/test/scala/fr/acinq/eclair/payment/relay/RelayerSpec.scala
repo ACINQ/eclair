@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, buildOnion, b
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.{ClearRecipient, TrampolineRecipient}
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
@@ -46,7 +47,7 @@ import scala.concurrent.duration.DurationInt
 
 class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, relayer: akka.actor.ActorRef, router: TestProbe[Any], register: TestProbe[Any], childActors: ChildActors, paymentHandler: TestProbe[Any])
+  case class FixtureParam(nodeParams: NodeParams, relayer: akka.actor.ActorRef, router: TestProbe[Any], register: TestProbe[Any], childActors: ChildActors, paymentHandler: TestProbe[Any], reputationRecorder: TestProbe[ReputationRecorder.Command])
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
@@ -56,17 +57,26 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val register = TestProbe[Any]("register")
     val paymentHandler = TestProbe[Any]("payment-handler")
     val triggerer = TestProbe[AsyncPaymentTriggerer.Command]("payment-triggerer")
+    val reputationRecorder = TestProbe[ReputationRecorder.Command]("reputation-recorder")
     val probe = TestProbe[Any]()
     // we can't spawn top-level actors with akka typed
     testKit.spawn(Behaviors.setup[Any] { context =>
-      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic, triggerer.ref))
+      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic, triggerer.ref, reputationRecorder.ref))
       probe.ref ! relayer
       Behaviors.empty[Any]
     })
     val relayer = probe.expectMessageType[akka.actor.ActorRef]
     relayer ! GetChildActors(probe.ref.toClassic)
     val childActors = probe.expectMessageType[ChildActors]
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, childActors, paymentHandler)))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, childActors, paymentHandler, reputationRecorder)))
+  }
+
+  def setConfidence(f: FixtureParam)(value: Double): Unit = {
+    import f._
+
+    val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
+    assert(getConfidence.originNode == TestConstants.Alice.nodeParams.nodeId)
+    getConfidence.replyTo ! ReputationRecorder.Confidence(value)
   }
 
   val channelId_ab = randomBytes32()
@@ -94,6 +104,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(randomBytes32(), 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
+    setConfidence(f)(1.0)
     register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
   }
 

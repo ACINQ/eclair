@@ -29,6 +29,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.reputation.Reputation.ReputationConfig
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
@@ -231,7 +232,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      localReputationConfig = ReputationConfig(1 day, 10 seconds, 100),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -401,7 +403,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      localReputationConfig = ReputationConfig(2 days, 20 seconds, 200),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

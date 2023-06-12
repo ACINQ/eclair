@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.ClearRecipient
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -66,8 +67,10 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val bobRegister = system.actorOf(Props(new TestRegister()))
     val alicePaymentHandler = system.actorOf(Props(new PaymentHandler(aliceParams, aliceRegister, TestProbe().ref)))
     val bobPaymentHandler = system.actorOf(Props(new PaymentHandler(bobParams, bobRegister, TestProbe().ref)))
-    val aliceRelayer = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, aliceRegister, alicePaymentHandler, TestProbe().ref))
-    val bobRelayer = system.actorOf(Relayer.props(bobParams, TestProbe().ref, bobRegister, bobPaymentHandler, TestProbe().ref))
+    val aliceReputationRecorder = system.spawnAnonymous(ReputationRecorder(aliceParams.localReputationConfig, Map.empty))
+    val bobReputationRecorder = system.spawnAnonymous(ReputationRecorder(bobParams.localReputationConfig, Map.empty))
+    val aliceRelayer = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, aliceRegister, alicePaymentHandler, TestProbe().ref, aliceReputationRecorder))
+    val bobRelayer = system.actorOf(Relayer.props(bobParams, TestProbe().ref, bobRegister, bobPaymentHandler, TestProbe().ref, bobReputationRecorder))
     val wallet = new DummyOnChainWallet()
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, aliceRelayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, bobRelayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)

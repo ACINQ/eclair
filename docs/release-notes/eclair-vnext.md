@@ -24,6 +24,25 @@ Existing `static_remote_key` channels will continue to work. You can override th
 
 Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
 
+### Local reputation and HTLC endorsement
+
+To protect against jamming attacks, eclair gives a reputation to its neighbors and uses to decide if a HTLC should be relayed given how congested is the outgoing channel.
+The reputation is basically how much this node paid us in fees divided by how much they should have paid us for the liquidity and slots that they blocked. 
+The reputation is per incoming node and endorsement level.
+The confidence that the HTLC will be fulfilled is transmitted to the next node using the endorsement TLV of the `update_add_htlc` message.
+
+To configure, edit `eclair.conf`:
+```eclair.conf
+eclair.local-reputation {
+    # Reputation decays with the following half life to emphasize recent behavior.
+    half-life = 7 days
+    # HTLCs that stay pending for longer than this get penalized
+    good-htlc-duration = 12 seconds
+    # How much to penalize pending HLTCs. A pending HTLC is considered equivalent to this many fast-failing HTLCs.
+    pending-multiplier = 1000
+}
+```
+
 ### API changes
 
 <insert changes>

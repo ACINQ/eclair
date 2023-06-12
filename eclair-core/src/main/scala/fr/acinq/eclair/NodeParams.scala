@@ -31,6 +31,7 @@ import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.reputation.Reputation.ReputationConfig
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Router._
@@ -87,7 +88,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      localReputationConfig: ReputationConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -611,7 +613,12 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      localReputationConfig = ReputationConfig(
+        FiniteDuration(config.getDuration("local-reputation.half-life").getSeconds, TimeUnit.SECONDS),
+        FiniteDuration(config.getDuration("local-reputation.good-htlc-duration").getSeconds, TimeUnit.SECONDS),
+        config.getDouble("local-reputation.pending-multiplier"),
+      ),
     )
   }
 }
