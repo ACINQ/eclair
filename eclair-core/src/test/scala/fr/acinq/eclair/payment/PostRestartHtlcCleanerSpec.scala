@@ -56,7 +56,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(nodeParams1: NodeParams): (ActorRef, ActorRef) = {
-      val relayer = system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref))
+      val relayer = system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref, None))
       // we need ensure the post-htlc-restart child actor is initialized
       sender.send(relayer, Relayer.GetChildActors(sender.ref))
       (relayer, sender.expectMsgType[Relayer.ChildActors].postRestartCleaner)
