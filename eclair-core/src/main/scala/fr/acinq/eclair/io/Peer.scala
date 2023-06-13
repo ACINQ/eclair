@@ -42,6 +42,8 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 
+import scala.concurrent.duration.DurationInt
+
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
  *
@@ -326,6 +328,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       }, d.channels.values.toSet)
       stay()
 
+    case Event(r: GetPeerChannels, d) =>
+      if (d.channels.isEmpty) {
+        r.replyTo ! PeerChannels(remoteNodeId, Nil)
+      } else {
+        val actor = context.spawnAnonymous(PeerChannelsCollector(remoteNodeId))
+        actor ! PeerChannelsCollector.GetChannels(r.replyTo, d.channels.values.map(_.toTyped).toSet)
+      }
+      stay()
+
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
 
     case Event(RelayOnionMessage(messageId, _, replyTo_opt), _) =>
@@ -528,13 +539,15 @@ object Peer {
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
-
-  sealed trait PeerInfoResponse {
-    def nodeId: PublicKey
-  }
-
+  sealed trait PeerInfoResponse { def nodeId: PublicKey }
   case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
+
+  /** Return the peer's current channels: note that the data may change concurrently, never assume it is fully up-to-date. */
+  case class GetPeerChannels(replyTo: typed.ActorRef[PeerChannels])
+  case class ChannelInfo(state: ChannelState, data: ChannelData)
+  case class PeerChannels(nodeId: PublicKey, channels: Seq[ChannelInfo])
+
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 

@@ -293,7 +293,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     Future {
       appKit.nodeParams.db.channels.listClosedChannels(nodeId_opt, paginated_opt).map { data =>
-        RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, state = CLOSED, data = data)
+        RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, channel = ActorRef.noSender, state = CLOSED, data = data)
       }
     }
   }

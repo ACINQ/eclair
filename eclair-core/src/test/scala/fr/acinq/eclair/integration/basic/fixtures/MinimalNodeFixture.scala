@@ -7,6 +7,7 @@ import akka.actor.{ActorRef, ActorSystem, typed}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
@@ -250,6 +251,14 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val sender = TestProbe("sender")
     node.register ! Register.Forward(sender.ref.toTyped, channelId, CMD_GET_CHANNEL_DATA(sender.ref))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data
+  }
+
+  def getPeerChannels(node: MinimalNodeFixture, remoteNodeId: PublicKey)(implicit system: ActorSystem): Seq[Peer.ChannelInfo] = {
+    val sender = TestProbe("sender")
+    node.switchboard ! Switchboard.GetPeerInfo(sender.ref.toTyped, remoteNodeId)
+    val peer = sender.expectMsgType[Peer.PeerInfo].peer
+    peer ! Peer.GetPeerChannels(sender.ref.toTyped)
+    sender.expectMsgType[Peer.PeerChannels].channels
   }
 
   def getRouterData(node: MinimalNodeFixture)(implicit system: ActorSystem): Router.Data = {
