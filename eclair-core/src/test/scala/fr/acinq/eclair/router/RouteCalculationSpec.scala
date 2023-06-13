@@ -23,7 +23,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
@@ -436,14 +436,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, DEFAULT_CAPACITY.toMilliSatoshi)
 
     val edges = Seq(
-      GraphEdge(ChannelDesc(ShortChannelId(1L), a, b), HopRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(1L), b, a), HopRelayParams.FromAnnouncement(uba), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(2L), b, c), HopRelayParams.FromAnnouncement(ubc), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(2L), c, b), HopRelayParams.FromAnnouncement(ucb), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(3L), c, d), HopRelayParams.FromAnnouncement(ucd), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(3L), d, c), HopRelayParams.FromAnnouncement(udc), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(4L), d, e), HopRelayParams.FromAnnouncement(ude), DEFAULT_CAPACITY, None),
-      GraphEdge(ChannelDesc(ShortChannelId(4L), e, d), HopRelayParams.FromAnnouncement(ued), DEFAULT_CAPACITY, None)
+      ActiveEdge(ChannelDesc(ShortChannelId(1L), a, b), HopRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(1L), b, a), HopRelayParams.FromAnnouncement(uba), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(2L), b, c), HopRelayParams.FromAnnouncement(ubc), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(2L), c, b), HopRelayParams.FromAnnouncement(ucb), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(3L), c, d), HopRelayParams.FromAnnouncement(ucd), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(3L), d, c), HopRelayParams.FromAnnouncement(udc), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(4L), d, e), HopRelayParams.FromAnnouncement(ude), DEFAULT_CAPACITY, None),
+      ActiveEdge(ChannelDesc(ShortChannelId(4L), e, d), HopRelayParams.FromAnnouncement(ued), DEFAULT_CAPACITY, None)
     )
 
     val g = DirectedGraph(edges)
@@ -1656,12 +1656,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //  \        /    \           /    \        /
     //   +----> N ---> N         N ---> N ----+
 
-    def makeEdges(n: Int): Seq[GraphEdge] = {
+    def makeEdges(n: Int): Seq[ActiveEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
         nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
-      val q = new mutable.Queue[GraphEdge]
+      val q = new mutable.Queue[ActiveEdge]
       // One path is shorter to maximise the overlap between the n-shortest paths, they will all be like the shortest path with a single hop changed.
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 90))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
@@ -1689,12 +1689,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //  \        /    \           /    \        /
     //   +----> N ---> N         N ---> N ----+
 
-    def makeEdges(n: Int): Seq[GraphEdge] = {
+    def makeEdges(n: Int): Seq[ActiveEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
         nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
-      val q = new mutable.Queue[GraphEdge]
+      val q = new mutable.Queue[ActiveEdge]
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 100))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
       for (i <- 0 until (n - 1)) {
@@ -1947,9 +1947,9 @@ object RouteCalculationSpec {
                maxHtlc: Option[MilliSatoshi] = None,
                cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0),
                capacity: Satoshi = DEFAULT_CAPACITY,
-               balance_opt: Option[MilliSatoshi] = None): GraphEdge = {
+               balance_opt: Option[MilliSatoshi] = None): ActiveEdge = {
     val update = makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
-    GraphEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
+    ActiveEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
   }
 
   def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): ChannelUpdate =
@@ -1973,7 +1973,7 @@ object RouteCalculationSpec {
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 
-  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
+  def route2Edges(route: Route): Seq[ActiveEdge] = route.hops.map(hop => ActiveEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
 
   def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.hops.map(hop => (hop.nodeId, hop.nextNodeId))
 

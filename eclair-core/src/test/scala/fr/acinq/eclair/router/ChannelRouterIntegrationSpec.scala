@@ -6,7 +6,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchExternalChannelSpent
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.{CMD_CLOSE, DATA_NORMAL}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
+import fr.acinq.eclair.router.Graph.GraphStructure.ActiveEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, Shutdown}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
@@ -82,7 +82,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     // router graph contains a single channel
     assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(ActiveEdge(aliceInitialChannelUpdate, privateChannel), ActiveEdge(bobChannelUpdate1, privateChannel)))
 
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
       // this is a public channel
@@ -151,7 +151,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       // router graph contains a single channel
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
       assert(router.stateData.graphWithBalances.graph.edgeSet().size == 2)
-      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate2, publicChannel), GraphEdge(bobChannelUpdate2, publicChannel)))
+      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(ActiveEdge(aliceChannelUpdate2, publicChannel), ActiveEdge(bobChannelUpdate2, publicChannel)))
     } else {
       // this is a private channel
       // funding tx reaches 6 blocks, no announcements are exchanged because the channel is private
@@ -166,7 +166,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
       // router graph contains a single channel
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(ActiveEdge(aliceInitialChannelUpdate, privateChannel), ActiveEdge(bobChannelUpdate1, privateChannel)))
     }
     // channel closes
     channels.alice ! CMD_CLOSE(TestProbe().ref, scriptPubKey = None, feerates = None)

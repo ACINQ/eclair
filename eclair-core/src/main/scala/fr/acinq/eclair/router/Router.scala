@@ -37,7 +37,7 @@ import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
+import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
@@ -205,7 +205,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       d.nodes.get(nodeId) match {
         case Some(announcement) =>
           // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
-          val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId)
+          val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId).collect{case e: ActiveEdge => e}
           val totalCapacity = activeChannels.map(_.capacity).sum
           replyTo ! PublicNode(announcement, activeChannels.size, totalCapacity)
         case None =>

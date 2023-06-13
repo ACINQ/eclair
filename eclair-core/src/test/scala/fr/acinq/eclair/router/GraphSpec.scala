@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
@@ -113,7 +113,7 @@ class GraphSpec extends AnyFunSuite {
 
     assert(graph.vertexSet().size == 5)
     assert(graph.edgesOf(c).size == 1)
-    assert(graph.getIncomingEdgesOf(c).size == 2)
+    assert(graph.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.size == 2)
     assert(graph.edgeSet().size == 6)
   }
 
@@ -170,7 +170,7 @@ class GraphSpec extends AnyFunSuite {
     assert(edgesAB.head.desc.a == a)
     assert(edgesAB.head.desc.b == b)
 
-    val bIncoming = graph.getIncomingEdgesOf(b)
+    val bIncoming = graph.getIncomingEdgesOf(b).collect{case e: ActiveEdge => e}
     assert(bIncoming.size == 1)
     assert(bIncoming.exists(_.desc.a == a)) // there should be an edge a --> b
     assert(bIncoming.exists(_.desc.b == b))
@@ -225,23 +225,23 @@ class GraphSpec extends AnyFunSuite {
     val graph = DirectedGraph(Seq(edgeAB, edgeAD, edgeBC, edgeDC))
 
     assert(graph.edgesOf(a).toSet == Set(edgeAB, edgeAD))
-    assert(graph.getIncomingEdgesOf(a).toSeq == Nil)
+    assert(graph.getIncomingEdgesOf(a).collect{case e: ActiveEdge => e}.toSeq == Nil)
     assert(graph.edgesOf(c) == Nil)
-    assert(graph.getIncomingEdgesOf(c).toSet == Set(edgeBC, edgeDC))
+    assert(graph.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.toSet == Set(edgeBC, edgeDC))
 
     val edgeAB1 = edgeAB.copy(balance_opt = Some(200000 msat))
     val edgeBC1 = edgeBC.copy(balance_opt = Some(150000 msat))
     val graph1 = graph.addEdge(edgeAB1).addEdge(edgeBC1)
 
     assert(graph1.edgesOf(a).toSet == Set(edgeAB1, edgeAD))
-    assert(graph1.getIncomingEdgesOf(a).toSeq == Nil)
+    assert(graph1.getIncomingEdgesOf(a).collect{case e: ActiveEdge => e}.toSeq == Nil)
     assert(graph1.edgesOf(c) == Nil)
-    assert(graph1.getIncomingEdgesOf(c).toSet == Set(edgeBC1, edgeDC))
+    assert(graph1.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.toSet == Set(edgeBC1, edgeDC))
   }
 
   def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = makeEdge(shortChannelId, a, b, 0 msat, 0).desc
 
-  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
+  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ActiveEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
   test("amount with fees larger than channel capacity for C->D") {
     /*
