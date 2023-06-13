@@ -20,19 +20,14 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream.Publish
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
-import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.filterPendingChannels
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
-import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{ClosingTx, CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TimestampSecondLong, UInt64, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -410,14 +405,14 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
       ChannelOpened(null, peersAtLimit.head, newChannelId1))
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, allChannels))
 
-    // trigger the limiter to start the restore
-    limiter ! PendingChannelsRateLimiter.AddOrRejectChannel(probe.ref, randomKey().publicKey, randomBytes32())
-    probe.expectMessage(PendingChannelsRateLimiter.ChannelRateLimited)
+    // process the first GetNode request
+    val firstPubkey = filterPendingChannels(nodeParams, allChannels).head._1
+    router.expectMessageType[GetNode].replyTo ! PublicNode(announcement(firstPubkey), 1, 1 sat)
 
     // publish events that close restored pending channel opens
     events.foreach(system.eventStream ! Publish(_))
 
-    processRestoredChannnels(f, allChannels)
+    processRestoredChannnels(f, allChannels.filter(c => c.remoteNodeId != firstPubkey))
     eventually {
       limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
       requests.expectMessage(4)
