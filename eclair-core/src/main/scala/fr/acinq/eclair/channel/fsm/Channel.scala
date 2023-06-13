@@ -1996,7 +1996,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_GET_CHANNEL_INFO, _) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_GET_CHANNEL_INFO(c.requestId, remoteNodeId, stateData.channelId, stateName, stateData)
+      replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, stateData.channelId, self, stateName, stateData)
       stay()
 
     case Event(c: CMD_ADD_HTLC, d: PersistentChannelData) =>

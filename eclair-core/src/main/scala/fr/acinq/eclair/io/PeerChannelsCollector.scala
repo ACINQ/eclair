@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.Logs
 import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_INFO, ChannelData, ChannelState, RES_GET_CHANNEL_INFO}
-import fr.acinq.eclair.{Logs, randomBytes32}
 
 /**
  * Collect the current states of a peer's channels.
@@ -36,8 +35,8 @@ object PeerChannelsCollector {
   // @formatter:off
   sealed trait Command
   case class GetChannels(replyTo: ActorRef[Peer.PeerChannels], channels: Set[ActorRef[CMD_GET_CHANNEL_INFO]]) extends Command
-  private case class WrappedChannelInfo(requestId: ByteVector32, state: ChannelState, data: ChannelData) extends Command
-  private case class IgnoreRequest(requestId: ByteVector32) extends Command
+  private case class WrappedChannelInfo(channel: ActorRef[CMD_GET_CHANNEL_INFO], state: ChannelState, data: ChannelData) extends Command
+  private case class IgnoreRequest(channel: ActorRef[CMD_GET_CHANNEL_INFO]) extends Command
   // @formatter:on
 
   def apply(remoteNodeId: PublicKey): Behavior[Command] = {
@@ -45,14 +44,12 @@ object PeerChannelsCollector {
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         Behaviors.receiveMessagePartial {
           case GetChannels(replyTo, channels) =>
-            val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.requestId, r.state, r.data))
-            val pending = channels.map { c =>
-              val requestId = randomBytes32()
-              context.watchWith(c, IgnoreRequest(requestId))
-              c ! CMD_GET_CHANNEL_INFO(adapter.toClassic, requestId)
-              requestId
+            val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.channel.toTyped, r.state, r.data))
+            channels.foreach { c =>
+              context.watchWith(c, IgnoreRequest(c))
+              c ! CMD_GET_CHANNEL_INFO(adapter.toClassic)
             }
-            new PeerChannelsCollector(replyTo, remoteNodeId, context).collect(pending, Nil)
+            new PeerChannelsCollector(replyTo, remoteNodeId, context).collect(channels, Nil)
         }
       }
     }
@@ -66,10 +63,10 @@ private class PeerChannelsCollector(replyTo: ActorRef[Peer.PeerChannels], remote
 
   private val log = context.log
 
-  def collect(pending: Set[ByteVector32], received: Seq[Peer.ChannelInfo]): Behavior[Command] = {
+  def collect(pending: Set[ActorRef[CMD_GET_CHANNEL_INFO]], received: Seq[Peer.ChannelInfo]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedChannelInfo(requestId, state, data) =>
-        val pending1 = pending - requestId
+      case WrappedChannelInfo(channel, state, data) =>
+        val pending1 = pending - channel
         val received1 = received :+ Peer.ChannelInfo(state, data)
         if (pending1.isEmpty) {
           replyTo ! Peer.PeerChannels(remoteNodeId, received1)
@@ -77,9 +74,9 @@ private class PeerChannelsCollector(replyTo: ActorRef[Peer.PeerChannels], remote
         } else {
           collect(pending1, received1)
         }
-      case IgnoreRequest(requestId) =>
+      case IgnoreRequest(channel) =>
         log.debug("could not fetch peer channel information, channel actor died")
-        val pending1 = pending - requestId
+        val pending1 = pending - channel
         if (pending1.isEmpty) {
           replyTo ! Peer.PeerChannels(remoteNodeId, received)
           Behaviors.stopped

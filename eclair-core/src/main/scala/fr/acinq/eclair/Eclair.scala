@@ -280,20 +280,20 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
     for {
       channelIds <- futureResponse
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](Left(channelId), CMD_GET_CHANNEL_INFO(ActorRef.noSender, ByteVector32.Zeroes))))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](Left(channelId), CMD_GET_CHANNEL_INFO(ActorRef.noSender))))
     } yield channels.collect {
       case properResponse: RES_GET_CHANNEL_INFO => properResponse
     }
   }
 
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]] = {
-    sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender, ByteVector32.Zeroes))
+    sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
   }
 
   override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     Future {
       appKit.nodeParams.db.channels.listClosedChannels(nodeId_opt, paginated_opt).map { data =>
-        RES_GET_CHANNEL_INFO(requestId = ByteVector32.Zeroes, nodeId = data.remoteNodeId, channelId = data.channelId, state = CLOSED, data = data)
+        RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, channel = ActorRef.noSender, state = CLOSED, data = data)
       }
     }
   }
