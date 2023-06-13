@@ -381,10 +381,11 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     probe.expectMessage(PendingChannelsRateLimiter.AcceptOpenChannel)
 
     // the private pending channel request from peer receives a new channel id
-    system.eventStream ! Publish(ChannelIdAssigned(null, peer, channelId1, randomBytes32()))
+    val finalChannelId2 = randomBytes32()
+    system.eventStream ! Publish(ChannelIdAssigned(null, peer, channelId2, finalChannelId2))
 
     // the private channel request from peer is aborted and removed from the tracker
-    system.eventStream ! Publish(ChannelAborted(null, peer, channelId2))
+    system.eventStream ! Publish(ChannelAborted(null, peer, finalChannelId2))
 
     // the first two private pending channel open requests are now removed from the tracker
     eventually {
