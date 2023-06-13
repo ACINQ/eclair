@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -36,16 +37,21 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
   override def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = randomKey().publicKey
-    val peer = TestProbe[Peer.GetPeerChannels]("peer")
     val switchboard = TestProbe[Switchboard.GetPeerInfo]("switchboard")
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    val peer = TestProbe[Peer.GetPeerChannels]("peer")
     val probe = TestProbe[PeerReadyNotifier.Result]()
-    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe)))
+    try {
+      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe)))
+    } finally {
+      system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    }
   }
 
   test("peer not connected (duration timeout)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Left(10 millis))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(10 millis))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == remoteNodeId)
     probe.expectMessage(PeerUnavailable(remoteNodeId))
@@ -54,7 +60,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer not connected (block timeout)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(100)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(100)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == remoteNodeId)
 
@@ -70,7 +76,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connected (without channels)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(500)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set.empty)
@@ -80,7 +86,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connected (with channels)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(500)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
@@ -107,7 +113,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connects after initial request") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(500)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
@@ -129,7 +135,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connects then disconnects") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = None))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = None))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerNotFound(remoteNodeId)
@@ -153,7 +159,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connects then disconnects (while waiting for channel states)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(500)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set.empty)
@@ -177,7 +183,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connected (duration timeout)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Left(100 millis))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(100 millis))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
@@ -188,7 +194,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
   test("peer connected (block timeout)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, switchboard.ref, timeout_opt = Some(Right(BlockHeight(100)))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(100)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))

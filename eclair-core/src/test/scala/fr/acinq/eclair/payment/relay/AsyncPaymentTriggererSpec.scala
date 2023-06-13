@@ -3,6 +3,7 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.ByteVector32
@@ -25,11 +26,15 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
   override def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = TestConstants.Alice.nodeParams.nodeId
     val switchboard = TestProbe[Switchboard.GetPeerInfo]("switchboard")
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
     val peer = TestProbe[Peer.GetPeerChannels]("peer")
     val probe = TestProbe[Result]()
     val triggerer = testKit.spawn(AsyncPaymentTriggerer())
-    triggerer ! Start(switchboard.ref)
-    withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe, triggerer)))
+    try {
+      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe, triggerer)))
+    } finally {
+      system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    }
   }
 
   test("remote node does not connect before timeout") { f =>

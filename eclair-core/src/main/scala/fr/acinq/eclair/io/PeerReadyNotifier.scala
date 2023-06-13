@@ -17,6 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
@@ -35,6 +36,7 @@ object PeerReadyNotifier {
   // @formatter:off
   sealed trait Command
   case class NotifyWhenPeerReady(replyTo: ActorRef[Result]) extends Command
+  private final case class WrappedListing(wrapped: Receptionist.Listing) extends Command
   private case object PeerNotConnected extends Command
   private case class SomePeerConnected(nodeId: PublicKey) extends Command
   private case class SomePeerDisconnected(nodeId: PublicKey) extends Command
@@ -51,7 +53,7 @@ object PeerReadyNotifier {
   private case object ChannelsReadyTimerKey
   // @formatter:on
 
-  def apply(remoteNodeId: PublicKey, switchboard: ActorRef[Switchboard.GetPeerInfo], timeout_opt: Option[Either[FiniteDuration, BlockHeight]]): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey, timeout_opt: Option[Either[FiniteDuration, BlockHeight]]): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
@@ -68,9 +70,24 @@ object PeerReadyNotifier {
               // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
               context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => SomePeerConnected(e.nodeId)))
               context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => SomePeerDisconnected(e.nodeId)))
-              waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
+              findSwitchboard(replyTo, remoteNodeId, context, timers)
           }
         }
+      }
+    }
+  }
+
+  private def findSwitchboard(replyTo: ActorRef[Result], remoteNodeId: PublicKey, context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
+    context.system.receptionist ! Receptionist.Find(Switchboard.SwitchboardServiceKey, context.messageAdapter[Receptionist.Listing](WrappedListing))
+    Behaviors.receiveMessagePartial {
+      case WrappedListing(Switchboard.SwitchboardServiceKey.Listing(listings)) =>
+        listings.headOption match {
+          case Some(switchboard) =>
+              waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
+          case None =>
+            context.log.error("no switchboard found")
+            replyTo ! PeerUnavailable(remoteNodeId)
+            Behaviors.stopped
       }
     }
   }
