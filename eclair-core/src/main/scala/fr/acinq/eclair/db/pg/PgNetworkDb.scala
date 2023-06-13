@@ -43,7 +43,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   import PgUtils._
   import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
 
-  inTransaction { pg =>
+  /*inTransaction { pg =>
     using(pg.createStatement()) { statement =>
 
       def migration23(statement: Statement): Unit = {
@@ -94,7 +94,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
       }
       setVersion(statement, DB_NAME, CURRENT_VERSION)
     }
-  }
+  }*/
 
   /** Sometimes we may want to do a full reset when we update the json format */
   def resetJsonColumns(connection: Connection, oldTableName: Boolean = false): Unit = {
