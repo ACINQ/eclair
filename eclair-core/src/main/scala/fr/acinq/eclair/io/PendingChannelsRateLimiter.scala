@@ -28,8 +28,8 @@ object PendingChannelsRateLimiter {
   sealed trait Command
   case class AddOrRejectChannel(replyTo: ActorRef[Response], remoteNodeId: PublicKey, temporaryChannelId: ByteVector32) extends Command
   private case class WrappedGetNodeResponse(temporaryChannelId: ByteVector32, response: Router.GetNodeResponse, replyTo: Option[ActorRef[Response]]) extends Command
-  private case class ReplaceChannelId(remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends Command
-  private case class RemoveChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
+  private[io] case class ReplaceChannelId(remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends Command
+  private[io] case class RemoveChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
   private[io] case class CountOpenChannelRequests(replyTo: ActorRef[Int], publicPeers: Boolean) extends Command
 
   sealed trait Response
@@ -91,9 +91,8 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
           case r: RemoveChannelId =>
             if (stashEvent(r.remoteNodeId)) stash.stash(r)
             Behaviors.same
-          case CountOpenChannelRequests(replyTo, publicPeers) =>
-            val pendingChannels = if (publicPeers) pendingPublicNodeChannels else pendingPrivateNodeChannels
-            replyTo ! pendingChannels.map(_._2.length).sum
+          case c: CountOpenChannelRequests =>
+            stash.stash(c)
             Behaviors.same
         }
       case None =>
@@ -102,6 +101,7 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
         context.log.info("restored {} private peers with pending channel opens.", pendingPrivateNodeChannels.size)
         pendingPrivateNodeChannels.foreach(p => context.log.debug(" {} -> {}", p._1, p._2))
         context.log.debug("stashed commands: {}", stash.size)
+        stash.foreach(p => context.log.debug(" {}", p.toString))
         stash.unstashAll(registering(pendingPublicNodeChannels, pendingPrivateNodeChannels))
     }
   }

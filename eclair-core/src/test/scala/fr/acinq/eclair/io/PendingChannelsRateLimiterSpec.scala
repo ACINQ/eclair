@@ -403,33 +403,16 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   test("receive events during the restore") { f =>
     import f._
 
-    val events = Seq[ChannelEvent](
-      ChannelIdAssigned(null, peerAtLimit1, channelIdAtLimit1, newChannelId1),
-      ChannelAborted(null, peerBelowLimit2, channelIdBelowLimit2),
-      ChannelOpened(null, privatePeer1, channelIdPrivate1),
-      ChannelOpened(null, peerAtLimit1, newChannelId1))
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, allChannels))
-    val restoredChannels = filterPendingChannels(nodeParams, allChannels)
-
-    processRestoredChannels(f, allChannels.filter(c => c.remoteNodeId != restoredChannels.last._1))
-
-    // publish events that close restored pending channel opens
-    events.foreach(system.eventStream ! Publish(_))
-
-    // query before last pubkey processed
     limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
     limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
-
-    router.expectMessageType[GetNode].replyTo ! (restoredChannels.last match {
-      case (nodeId, channels) if publicPeers.contains(nodeId) =>
-        requests.expectMessage(6 - channels.size)
-        requests.expectMessage(1)
-        PublicNode(announcement(nodeId), 1, 1 sat)
-      case (nodeId, channels) =>
-        requests.expectMessage(6)
-        requests.expectMessage(1 - channels.size)
-        UnknownNode(nodeId)
-    })
+    limiter ! PendingChannelsRateLimiter.ReplaceChannelId(peerAtLimit1, channelIdAtLimit1, newChannelId1)
+    limiter ! PendingChannelsRateLimiter.RemoveChannelId(peerBelowLimit2, channelIdBelowLimit2)
+    limiter ! PendingChannelsRateLimiter.RemoveChannelId(privatePeer1, channelIdPrivate1)
+    limiter ! PendingChannelsRateLimiter.RemoveChannelId(peerAtLimit1, newChannelId1)
+    processRestoredChannels(f, allChannels)
+    requests.expectMessage(6)
+    requests.expectMessage(1)
     router.expectNoMessage(100 millis)
 
     eventually {
