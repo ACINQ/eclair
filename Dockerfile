@@ -7,7 +7,7 @@ RUN apk add --no-cache curl tar bash
 
 ARG MAVEN_VERSION=3.9.2
 ARG USER_HOME_DIR="/root"
-ARG SHA=c35a1803a6e70a126e80b2b3ae33eed961f83ed74d18fcd16909b2d44d7dada3203f1ffe726c17ef8dcca2dcaa9fca676987befeadc9b9f759967a8cb77181c0
+ARG SHA=900bdeeeae550d2d2b3920fe0e00e41b0069f32c019d566465015bdd1b3866395cbe016e22d95d25d51d3a5e614af2c83ec9b282d73309f644859bbad08b63db
 ARG BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
