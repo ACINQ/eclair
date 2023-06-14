@@ -1,7 +1,7 @@
 # Eclair v0.9.0
 
 This release contains a lot of preparatory work for important (and complex) lightning features: dual-funding, splicing and Bolt 12 offers.
-Those features are now fully implemented in `eclair`, but we're waiting for the specification work to be finalized and other implementations to be ready for cross-compatibility tests.
+These features are now fully implemented in `eclair`, but we're waiting for the specification work to be finalized and other implementations to be ready for cross-compatibility tests.
 You should only activate them if you know what you're doing, and are ready to handle potential backwards-incompatible changes!
 We also make plugins more powerful, introduce mitigations against various types of DoS, and improve performance in many areas of the codebase.
 
@@ -310,3 +310,4 @@ This release is fully compatible with previous eclair versions. You don't need t
 - [303c1d4](https://github.com/ACINQ/eclair/commit/303c1d45e153ec086eab53dc6b3779305cabb41e) Fix failing test `PendingChannelsRateLimiter` and clarify other tests (#2691)
 - [878eb27](https://github.com/ACINQ/eclair/commit/878eb276b031705e48cddf3f01f81707fd5f73cc) Update maven version (#2690)
 - [1105a0a](https://github.com/ACINQ/eclair/commit/1105a0a7bed69d814190072bf8b419240d55fd85) Update docker gradle checksum (#2692)
+- [fe9f32b](https://github.com/ACINQ/eclair/commit/fe9f32bdf13bb103cf944f31e9b0e89e287b8b00) Minor updates on `PeerReadyNotifier` (#2695)
