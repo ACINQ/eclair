@@ -280,14 +280,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
     for {
       channelIds <- futureResponse
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](Left(channelId), CMD_GET_CHANNEL_INFO(ActorRef.noSender))))
-    } yield channels.collect {
-      case properResponse: RES_GET_CHANNEL_INFO => properResponse
-    }
+      channels <- Future.sequence(channelIds.map(channelId => channelInfo(Left(channelId))))
+    } yield channels
   }
 
-  override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]] = {
-    sendToChannel[CMD_GET_CHANNEL_INFO, CommandResponse[CMD_GET_CHANNEL_INFO]](channel, CMD_GET_CHANNEL_INFO(ActorRef.noSender))
+  override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GET_CHANNEL_INFO] = {
+    sendToChannelTyped(channel = channel, cmdBuilder = CMD_GET_CHANNEL_INFO(_))
   }
 
   override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {

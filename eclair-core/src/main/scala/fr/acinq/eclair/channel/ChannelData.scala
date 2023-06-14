@@ -217,7 +217,7 @@ final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[C
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
-final case class CMD_GET_CHANNEL_INFO(replyTo: ActorRef) extends HasReplyToCommand
+final case class CMD_GET_CHANNEL_INFO(replyTo: akka.actor.typed.ActorRef[RES_GET_CHANNEL_INFO]) extends Command
 
 /*
        88888888b.  8888888888  .d8888b.  88888888b.    ,ad8888ba,   888b      88  .d8888b.  8888888888  .d8888b.

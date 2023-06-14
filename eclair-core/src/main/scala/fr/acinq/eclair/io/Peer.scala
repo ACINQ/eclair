@@ -545,7 +545,7 @@ object Peer {
 
   /** Return the peer's current channels: note that the data may change concurrently, never assume it is fully up-to-date. */
   case class GetPeerChannels(replyTo: typed.ActorRef[PeerChannels])
-  case class ChannelInfo(state: ChannelState, data: ChannelData)
+  case class ChannelInfo(channel: typed.ActorRef[Command], state: ChannelState, data: ChannelData)
   case class PeerChannels(nodeId: PublicKey, channels: Seq[ChannelInfo])
 
 

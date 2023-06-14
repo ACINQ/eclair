@@ -498,9 +498,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val a = randomKey().publicKey
     val b = randomKey().publicKey
     val a1 = randomBytes32()
-    val a2 = randomBytes32()
     val b1 = randomBytes32()
-    val map = Map(a1 -> a, a2 -> a, b1 -> b)
+    val map = Map(a1 -> a, b1 -> b)
 
     eclair.channelsInfo(toRemoteNode_opt = None).pipeTo(sender.ref)
 
@@ -508,11 +507,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(map)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_GET_CHANNEL_INFO(map(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
-    register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_FAILURE(CMD_GET_CHANNEL_INFO(ActorRef.noSender), new IllegalArgumentException("Non-standard channel")))
-    val c3 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_GET_CHANNEL_INFO(map(c3.channelId), c3.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
+    c1.message.replyTo ! RES_GET_CHANNEL_INFO(map(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal)
+    val c2 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    c2.message.replyTo ! RES_GET_CHANNEL_INFO(map(c2.channelId), c2.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal)
     register.expectNoMessage()
 
     assert(sender.expectMsgType[Iterable[RES_GET_CHANNEL_INFO]].toSet == Set(
@@ -539,9 +536,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(channels2Nodes)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_GET_CHANNEL_INFO(channels2Nodes(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
+    c1.message.replyTo ! RES_GET_CHANNEL_INFO(channels2Nodes(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal)
     val c2 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_GET_CHANNEL_INFO(channels2Nodes(c2.channelId), c2.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
+    c2.message.replyTo ! RES_GET_CHANNEL_INFO(channels2Nodes(c2.channelId), c2.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal)
     register.expectNoMessage()
 
     assert(sender.expectMsgType[Iterable[RES_GET_CHANNEL_INFO]].toSet == Set(
@@ -565,7 +562,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.channelInfo(Left(a2)).pipeTo(sender.ref)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
-    register.reply(RES_GET_CHANNEL_INFO(channels2Nodes(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
+    c1.message.replyTo ! RES_GET_CHANNEL_INFO(channels2Nodes(c1.channelId), c1.channelId, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal)
     register.expectNoMessage()
 
     sender.expectMsg(RES_GET_CHANNEL_INFO(a, a2, ActorRef.noSender, NORMAL, ChannelCodecsSpec.normal))
