@@ -119,10 +119,10 @@ private class AsyncPaymentTriggerer(context: ActorContext[Command]) {
         }
         watching(peers1)
       case WrappedPeerReadyResult(result) => result match {
-        case PeerReadyNotifier.PeerReady(remoteNodeId, _) =>
+        case ready: PeerReadyNotifier.PeerReady =>
           // notify watcher that destination peer is ready to receive async payments; PeerReadyNotifier will stop itself
-          peers.get(remoteNodeId).foreach(_.trigger())
-          watching(peers - remoteNodeId)
+          peers.get(ready.remoteNodeId).foreach(_.trigger())
+          watching(peers - ready.remoteNodeId)
         case PeerUnavailable(_) =>
           // only use PeerReadyNotifier to signal when the peer connects, not for timeouts
           Behaviors.same

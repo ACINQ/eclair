@@ -24,7 +24,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.PeerReadyNotifier.{NotifyWhenPeerReady, PeerReady, PeerUnavailable}
+import fr.acinq.eclair.io.PeerReadyNotifier.{NotifyWhenPeerReady, PeerUnavailable}
 import fr.acinq.eclair.{BlockHeight, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -80,7 +80,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set.empty)
-    probe.expectMessage(PeerReady(remoteNodeId, 0))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, Seq.empty))
   }
 
   test("peer connected (with channels)") { f =>
@@ -107,7 +107,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     val channels4 = Seq(Peer.ChannelInfo(null, NORMAL, null), Peer.ChannelInfo(null, SHUTDOWN, null))
     val request4 = peer.expectMessageType[Peer.GetPeerChannels]
     request4.replyTo ! Peer.PeerChannels(remoteNodeId, channels4)
-    probe.expectMessage(PeerReady(remoteNodeId, 2))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels4))
   }
 
   test("peer connects after initial request") { f =>
@@ -129,7 +129,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, NEGOTIATING, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReady(remoteNodeId, 1))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
   }
 
   test("peer connects then disconnects") { f =>
@@ -153,7 +153,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, CLOSING, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReady(remoteNodeId, 1))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
   }
 
   test("peer connects then disconnects (while waiting for channel states)") { f =>
@@ -177,13 +177,13 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, NORMAL, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReady(remoteNodeId, 1))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
   }
 
   test("peer connected (duration timeout)") { f =>
     import f._
 
-    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(100 millis))))
+    val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(1 second))))
     notifier ! NotifyWhenPeerReady(probe.ref)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
