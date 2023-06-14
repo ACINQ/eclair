@@ -28,8 +28,8 @@ object PendingChannelsRateLimiter {
   sealed trait Command
   case class AddOrRejectChannel(replyTo: ActorRef[Response], remoteNodeId: PublicKey, temporaryChannelId: ByteVector32) extends Command
   private case class WrappedGetNodeResponse(temporaryChannelId: ByteVector32, response: Router.GetNodeResponse, replyTo: Option[ActorRef[Response]]) extends Command
-  private case class ReplaceChannelId(remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends Command
-  private case class RemoveChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
+  private[io] case class ReplaceChannelId(remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends Command
+  private[io] case class RemoveChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
   private[io] case class CountOpenChannelRequests(replyTo: ActorRef[Int], publicPeers: Boolean) extends Command
 
   sealed trait Response
@@ -97,10 +97,8 @@ private class PendingChannelsRateLimiter(nodeParams: NodeParams, router: ActorRe
             Behaviors.same
         }
       case None =>
-        context.log.info("restored {} public peers with pending channel opens.", pendingPublicNodeChannels.size)
-        pendingPublicNodeChannels.foreach(p => context.log.debug(" {} -> {}", p._1, p._2))
-        context.log.info("restored {} private peers with pending channel opens.", pendingPrivateNodeChannels.size)
-        pendingPrivateNodeChannels.foreach(p => context.log.debug(" {} -> {}", p._1, p._2))
+        context.log.info("restored {} public peers with pending channel opens", pendingPublicNodeChannels.size)
+        context.log.info("restored {} private peers with pending channel opens", pendingPrivateNodeChannels.size)
         context.log.debug("stashed commands: {}", stash.size)
         stash.unstashAll(registering(pendingPublicNodeChannels, pendingPrivateNodeChannels))
     }
