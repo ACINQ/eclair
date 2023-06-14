@@ -35,7 +35,7 @@ object PeerChannelsCollector {
   // @formatter:off
   sealed trait Command
   case class GetChannels(replyTo: ActorRef[Peer.PeerChannels], channels: Set[ActorRef[CMD_GET_CHANNEL_INFO]]) extends Command
-  private case class WrappedChannelInfo(channel: ActorRef[CMD_GET_CHANNEL_INFO], state: ChannelState, data: ChannelData) extends Command
+  private case class WrappedChannelInfo(channelInfo: Peer.ChannelInfo) extends Command
   private case class IgnoreRequest(channel: ActorRef[CMD_GET_CHANNEL_INFO]) extends Command
   // @formatter:on
 
@@ -44,7 +44,7 @@ object PeerChannelsCollector {
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         Behaviors.receiveMessagePartial {
           case GetChannels(replyTo, channels) =>
-            val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.channel.toTyped, r.state, r.data))
+            val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(Peer.ChannelInfo(r.channel.toTyped, r.state, r.data)))
             channels.foreach { c =>
               context.watchWith(c, IgnoreRequest(c))
               c ! CMD_GET_CHANNEL_INFO(adapter)
@@ -65,9 +65,9 @@ private class PeerChannelsCollector(replyTo: ActorRef[Peer.PeerChannels], remote
 
   def collect(pending: Set[ActorRef[CMD_GET_CHANNEL_INFO]], received: Seq[Peer.ChannelInfo]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedChannelInfo(channel, state, data) =>
-        val pending1 = pending - channel
-        val received1 = received :+ Peer.ChannelInfo(state, data)
+      case WrappedChannelInfo(channelInfo) =>
+        val pending1 = pending - channelInfo.channel
+        val received1 = received :+ channelInfo
         if (pending1.isEmpty) {
           replyTo ! Peer.PeerChannels(remoteNodeId, received1)
           Behaviors.stopped
