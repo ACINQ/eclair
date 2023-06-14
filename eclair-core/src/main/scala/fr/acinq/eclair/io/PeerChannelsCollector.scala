@@ -16,12 +16,12 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs
-import fr.acinq.eclair.channel.{CMD_GET_CHANNEL_INFO, ChannelData, ChannelState, RES_GET_CHANNEL_INFO}
+import fr.acinq.eclair.channel._
 
 /**
  * Collect the current states of a peer's channels.
@@ -47,7 +47,7 @@ object PeerChannelsCollector {
             val adapter = context.messageAdapter[RES_GET_CHANNEL_INFO](r => WrappedChannelInfo(r.channel.toTyped, r.state, r.data))
             channels.foreach { c =>
               context.watchWith(c, IgnoreRequest(c))
-              c ! CMD_GET_CHANNEL_INFO(adapter.toClassic)
+              c ! CMD_GET_CHANNEL_INFO(adapter)
             }
             new PeerChannelsCollector(replyTo, remoteNodeId, context).collect(channels, Nil)
         }
