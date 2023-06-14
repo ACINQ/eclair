@@ -22,6 +22,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
@@ -161,6 +162,16 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
+      _ <- if (config.getBoolean("bitcoind.use-eclair-signer")) {
+        val file = new File(datadir, "eclair-signer.conf")
+        if (file.exists()) {
+          val eclairSignerWallet = ConfigFactory.parseFile(file).getString("eclair.signer.wallet")
+          if (!wallets.contains(eclairSignerWallet)) {
+            logger.info(s"Creating a new on-chain eclair-signer wallet in bitcoind: $eclairSignerWallet")
+            bitcoinClient.invoke("createwallet", eclairSignerWallet, true, true, "", false, true, true).recover { case e => throw BitcoinWalletNotCreatedException(eclairSignerWallet) }
+          } else { Future.successful(Done) }
+        } else { Future.successful(Done) }
+      } else { Future.successful(Done) }
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
@@ -264,7 +275,9 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      onchainKeyManager = onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash)).get
+      onchainKeyManager = onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash)).getOrElse(
+        throw MissingEclairSignerConf
+      )
       bitcoinClient = new BitcoinCoreClient(bitcoin, Some(onchainKeyManager)) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
@@ -500,7 +513,6 @@ case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException
 case class BitcoinDefaultWalletException(loaded: List[String]) extends RuntimeException(s"no bitcoind wallet configured, but multiple wallets loaded: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
 
 case class BitcoinWalletNotLoadedException(wallet: String, loaded: List[String]) extends RuntimeException(s"configured wallet \"$wallet\" not in the set of loaded bitcoind wallets: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
-
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
@@ -508,3 +520,7 @@ case object IncompatibleDBException extends RuntimeException("database is not co
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
 
 case class InvalidChannelSeedException(channelId: ByteVector32) extends RuntimeException(s"channel seed has been modified for channel $channelId")
+
+case class BitcoinWalletNotCreatedException(wallet: String) extends RuntimeException(s"configured wallet \"$wallet\" does not exist and could not be created.")
+
+case object MissingEclairSignerConf extends RuntimeException(s"missing eclair-signer.conf file")
