@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
@@ -75,27 +75,26 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
+  def getFeerate(onChainFeeConf: OnChainFeeConf, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
     val remainingBlocks = confirmBefore - currentBlockHeight
     if (hasEnoughSafeUtxos) {
-      val blockTarget = remainingBlocks match {
+      remainingBlocks match {
         // If our target is still very far in the future, no need to rush
-        case t if t >= 144 => 144
-        case t if t >= 72 => 72
-        case t if t >= 36 => 36
+        case t if t >= 144 => onChainFeeConf.currentFeerates.blocks_144
+        case t if t >= 72 => onChainFeeConf.currentFeerates.blocks_72
+        case t if t >= 36 => onChainFeeConf.currentFeerates.blocks_36
         // However, if we get closer to the target, we start being more aggressive
-        case t if t >= 18 => 12
-        case t if t >= 12 => 6
-        case t if t >= 2 => 2
-        case _ => 1
+        case t if t >= 18 => onChainFeeConf.currentFeerates.blocks_12
+        case t if t >= 12 => onChainFeeConf.currentFeerates.blocks_6
+        case t if t >= 2 => onChainFeeConf.currentFeerates.blocks_2
+        case _ => onChainFeeConf.currentFeerates.block_1
       }
-      feeEstimator.getFeeratePerKw(blockTarget)
     } else {
       // We don't have many safe utxos so we want the transaction to confirm quickly.
       if (remainingBlocks <= 1) {
-        feeEstimator.getFeeratePerKw(1)
+        onChainFeeConf.currentFeerates.block_1
       } else {
-        feeEstimator.getFeeratePerKw(2)
+        onChainFeeConf.currentFeerates.blocks_2
       }
     }
   }
@@ -151,13 +150,13 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def chooseFeerate(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
+    context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
       case Success(isSafe) => CheckUtxosResult(isSafe, nodeParams.currentBlockHeight)
       case Failure(_) => CheckUtxosResult(isSafe = false, nodeParams.currentBlockHeight) // if we can't check our utxos, we assume the worst
     }
     Behaviors.receiveMessagePartial {
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
-        val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight, isSafe)
+        val targetFeerate = getFeerate(nodeParams.onChainFeeConf, confirmBefore, currentBlockHeight, isSafe)
         fund(txWithWitnessData, targetFeerate)
       case UpdateConfirmationTarget(target) =>
         confirmBefore = target
@@ -203,7 +202,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case _ => true
             }
             if (shouldRbf) {
-              context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
+              context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
                 case Success(isSafe) => CheckUtxosResult(isSafe, currentBlockHeight)
                 case Failure(_) => CheckUtxosResult(isSafe = false, currentBlockHeight) // if we can't check our utxos, we assume the worst
               }
@@ -216,7 +215,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
         // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
         val bumpRatio = 1.2
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight, isSafe)
+        val currentFeerate = getFeerate(nodeParams.onChainFeeConf, confirmBefore, currentBlockHeight, isSafe)
         val targetFeerate_opt = if (confirmBefore <= currentBlockHeight + 6) {
           log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
           Some(currentFeerate.max(tx.feerate * bumpRatio))

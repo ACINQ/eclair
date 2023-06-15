@@ -45,7 +45,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -206,7 +206,7 @@ object NodeParams extends Logging {
   }
 
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -265,7 +265,8 @@ object NodeParams extends Logging {
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
-      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests"
+      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
+      "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -369,15 +370,6 @@ object NodeParams extends Logging {
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
 
     validateAddresses(addresses)
-
-    val feeTargets = FeeTargets(
-      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
-      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
-      commitmentWithoutHtlcsBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment-without-htlcs"),
-      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
-      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main"),
-      safeUtxosThreshold = config.getInt("on-chain-fees.target-blocks.safe-utxos-threshold"),
-    )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
       val feeBase = MilliSatoshi(relayFeesConfig.getInt("fee-base-msat"))
@@ -494,8 +486,8 @@ object NodeParams extends Logging {
         remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks"))
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = feeTargets,
-        feeEstimator = feeEstimator,
+        feerates = feerates,
+        safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),

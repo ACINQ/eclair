@@ -35,7 +35,7 @@ import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 
 /**
@@ -65,7 +65,7 @@ object TestConstants {
     // @formatter:on
   }
 
-  val blockchainWatchdogSources = Seq(
+  private val blockchainWatchdogSources = Seq(
     "bitcoinheaders.net",
     "blockcypher.com",
     "blockstream.info",
@@ -133,8 +133,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -289,8 +289,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
