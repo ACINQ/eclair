@@ -435,6 +435,7 @@ object LightningMessageCodecs {
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
+    .typecase(2, stfuCodec)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)
@@ -481,7 +482,6 @@ object LightningMessageCodecs {
     .typecase(37000, spliceInitCodec)
     .typecase(37002, spliceAckCodec)
     .typecase(37004, spliceLockedCodec)
-    .typecase(37006, stfuCodec)
   //
 
   //

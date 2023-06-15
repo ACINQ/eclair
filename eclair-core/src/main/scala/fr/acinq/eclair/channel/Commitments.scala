@@ -145,6 +145,7 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
+  def useQuiescence: Boolean = localParams.initFeatures.hasFeature(Features.QuiescePrototype) && remoteParams.initFeatures.hasFeature(Features.QuiescePrototype)
 }
 
 object ChannelParams {
@@ -797,7 +798,7 @@ case class Commitments(params: ChannelParams,
 
   // @formatter:off
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isIdle: Boolean = active.head.isIdle(changes, params.remoteParams.initFeatures.hasFeature(QuiescePrototype))
+  def isIdle: Boolean = active.head.isIdle(changes, params.localParams.initFeatures.hasFeature(QuiescePrototype) && params.remoteParams.initFeatures.hasFeature(QuiescePrototype))
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
