@@ -30,6 +30,7 @@ import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAd
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -40,8 +41,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   val feeConfNoMismatch = OnChainFeeConf(
-    FeeTargets(6, 2, 12, 2, 6, 1),
-    new TestFeeEstimator(),
+    feerates = new AtomicReference(FeeratesPerKw.single(TestConstants.feeratePerKw)),
+    safeUtxosThreshold = 0,
     spendAnchorWithoutHtlcs = true,
     closeOnOfflineMismatch = false,
     1.0,

@@ -169,7 +169,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
 
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    val feerate = TestConstants.Alice.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(TestConstants.Alice.nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget)
+    val feerate = TestConstants.Alice.nodeParams.onChainFeeConf.getFundingFeerate()
     val expectedMiningFee = Transactions.weight2fee(feerate, fundingTx1.weight())
     val actualMiningFee = 1_400_000.sat - alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity
     // fee computation is approximate

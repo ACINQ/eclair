@@ -39,7 +39,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestFeeEstimator, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -82,14 +82,25 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     /** Set uniform feerate for all block targets. */
     def setFeerate(feerate: FeeratePerKw): Unit = {
-      alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
-      bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
+      alice.underlyingActor.nodeParams.onChainFeeConf.feerates.set(FeeratesPerKw.single(feerate))
+      bob.underlyingActor.nodeParams.onChainFeeConf.feerates.set(FeeratesPerKw.single(feerate))
     }
 
     /** Set feerate for a specific block target. */
     def setFeerate(feerate: FeeratePerKw, blockTarget: Int): Unit = {
-      alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(blockTarget, feerate)
-      bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(blockTarget, feerate)
+      def updateFeerates(currentFeerates: FeeratesPerKw): FeeratesPerKw = blockTarget match {
+        case 1 => currentFeerates.copy(block_1 = feerate)
+        case 2 => currentFeerates.copy(blocks_2 = feerate)
+        case t if t <= 6 =>  currentFeerates.copy(blocks_6 = feerate)
+        case t if t <= 12 => currentFeerates.copy(blocks_12 = feerate)
+        case t if t <= 36 => currentFeerates.copy(blocks_36 = feerate)
+        case t if t <= 72 => currentFeerates.copy(blocks_72 = feerate)
+        case t if t <= 144 => currentFeerates.copy(blocks_144 = feerate)
+        case _ => currentFeerates.copy(blocks_1008 = feerate)
+      }
+
+      alice.underlyingActor.nodeParams.onChainFeeConf.feerates.set(updateFeerates(alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates))
+      bob.underlyingActor.nodeParams.onChainFeeConf.feerates.set(updateFeerates(alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates))
     }
 
     def getMempool(): Seq[Transaction] = {
@@ -1208,7 +1219,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight() + 144)
       // The HTLC confirmation target is far away, but we have less safe utxos than the configured threshold.
       // We will target a 1-block confirmation to get a safe utxo back as soon as possible.
-      val highSafeThresholdParams = alice.underlyingActor.nodeParams.modify(_.onChainFeeConf.feeTargets.safeUtxosThreshold).setTo(10)
+      val highSafeThresholdParams = alice.underlyingActor.nodeParams.modify(_.onChainFeeConf.safeUtxosThreshold).setTo(10)
       setFeerate(FeeratePerKw(2500 sat))
       val targetFeerate = FeeratePerKw(5000 sat)
       setFeerate(targetFeerate, blockTarget = 2)
@@ -1431,7 +1442,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val currentFeerate = alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(2)
+      val currentFeerate = alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates.blocks_2
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50, nextCommit = false)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, currentFeerate)
       assert(claimHtlcSuccess.txInfo.fee > 0.sat)

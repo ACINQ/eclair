@@ -114,21 +114,7 @@ class Setup(val datadir: File,
    * This holds the current feerates, in satoshi-per-kilobytes.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
-  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
-
-  /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
-
-  val feeEstimator = new FeeEstimator {
-    // @formatter:off
-    override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get().feePerBlock(target)
-    override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.get().feePerBlock(target)
-    override def getMempoolMinFeeratePerKw(): FeeratePerKw = feeratesPerKw.get().mempoolMinFee
-    // @formatter:on
-  }
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
 
@@ -198,7 +184,7 @@ class Setup(val datadir: File,
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
@@ -231,7 +217,6 @@ class Setup(val datadir: File,
           blocks_144 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.144"))),
           blocks_1008 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
         )
-        feeratesPerKB.set(confDefaultFeerates)
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
@@ -244,13 +229,12 @@ class Setup(val datadir: File,
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
-        case Success(feerates) =>
-          feeratesPerKB.set(feerates)
-          feeratesPerKw.set(FeeratesPerKw(feerates))
-          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
+        case Success(feeratesPerKB) =>
+          feeratesPerKw.set(FeeratesPerKw(feeratesPerKB))
+          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.blocks_2.toLong.toDouble)
           blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
