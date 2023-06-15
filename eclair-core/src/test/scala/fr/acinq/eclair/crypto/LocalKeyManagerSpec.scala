@@ -77,7 +77,7 @@ class LocalKeyManagerSpec extends AnyFunSuite {
   }
 
   def makefundingKeyPath(entropy: ByteVector, isFunder: Boolean) = {
-    val items = for(i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
+    val items = for (i <- 0 to 7) yield entropy.drop(i * 4).take(4).toInt(signed = false) & 0xFFFFFFFFL
     val last = DeterministicWallet.hardened(if (isFunder) 1L else 0L)
     KeyPath(items :+ last)
   }
@@ -151,14 +151,22 @@ class LocalKeyManagerSpec extends AnyFunSuite {
   }
 
   test("generate multisig swap-in address") {
-    val entropy = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
-    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
-    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
-
-    val serverPublicKey = PublicKey(ByteVector.fromValidHex("02cd0e2ed9c42af42e0b30e2a0b339c8335bbdc1f895fe552d8e224aedc82d6c88"))
+    val aliceKeyManager = {
+      val entropy = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
+      val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
+      new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    }
+    val bobKeyManager = {
+      val entropy = ByteVector32.fromValidHex("0202020202020202020202020202020202020202020202020202020202020202")
+      val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
+      new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    }
     val swapInRefundDelay = 144 * 30 * 6
-    val swapInAddress = keyManager.multisigSwapInAddress(serverPublicKey, swapInRefundDelay)
-
-    assert(swapInAddress == "bcrt1qvwc4zcelvlj3pcy97pj09dz2hgq0ptav25nrjm54dt3ch09plxnq6pmjje")
+    val bobSwapInServerXpub = "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41"
+    val swapInAddressAlice = aliceKeyManager.multisigSwapInAddress(aliceKeyManager.kmpNodeKey.publicKey, bobSwapInServerXpub, swapInRefundDelay)
+    assert(swapInAddressAlice == "bcrt1qw78cdcsn55vwsvmwe9qgwnx0fwffzqej7keuqfjnwj5xm0f5u6js2hp66f")
+    val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
+    val swapInAddressBob = bobKeyManager.multisigSwapInAddress(bobKeyManager.kmpNodeKey.publicKey, aliceSwapInServerXpub, swapInRefundDelay)
+    assert(swapInAddressBob == "bcrt1qjs2l2ey9rk742hvv25kjghqvqdyhvf7vshwesgflzch9kcq2c8lqh60h44")
   }
 }

@@ -25,6 +25,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.{Features, ShortChannelId, secureRandom}
 import scodec.bits.ByteVector
+import scodec.codecs.uint16
 
 object LocalKeyManager {
   def channelKeyBasePath(chainHash: ByteVector32) = (chainHash: @unchecked) match {
@@ -158,7 +159,8 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     Announcements.signChannelAnnouncement(chainHash, shortChannelId, localNodeSecret, remoteNodeId, localFundingPrivKey, remoteFundingKey, features)
   }
 
-  def multisigSwapInAddress(serverPublicKey: Crypto.PublicKey, refundDelay: Int): String = {
+  def multisigSwapInAddress(localNodeId: PublicKey, serverExtendedPublicKey: String, refundDelay: Int): String = {
+    val serverPublicKey = deriveSwapInServerPublicKey(localNodeId, serverExtendedPublicKey)
     val userKeyPath = chainHash match {
       case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash =>
         DeterministicWallet.hardened(51) :: DeterministicWallet.hardened(0) :: DeterministicWallet.hardened(0) :: Nil
@@ -178,5 +180,12 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
     val witnessScript = pubkeyScript(1).asInstanceOf[OP_PUSHDATA].data
     val address = Bech32.encodeWitnessAddress(hrp, 0, witnessScript)
     address
+  }
+
+  private def deriveSwapInServerPublicKey(localNodeId: PublicKey, serverExtendedPublicKey: String): PublicKey = {
+    val (_, xpub) = DeterministicWallet.ExtendedPublicKey.decode(serverExtendedPublicKey)
+    val h = Crypto.sha256(localNodeId.value)
+    val path = h.bits.grouped(16).toSeq.map(uint16.decode(_).require.value.toLong)
+    DeterministicWallet.derivePublicKey(xpub, path).publicKey
   }
 }
