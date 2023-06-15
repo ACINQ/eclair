@@ -236,6 +236,30 @@ case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
 
+object LocalCommit {
+  def fromCommitSig(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxId: ByteVector32,
+                    fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
+                    commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey): Either[ChannelException, LocalCommit] = {
+    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommitIndex, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
+    if (!checkSig(localCommitTx, commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
+      return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, fundingTxIndex, localCommitTx.tx))
+    }
+    val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
+    if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
+      return Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
+    }
+    val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint)
+    val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
+      case (htlcTx: HtlcTx, remoteSig) =>
+        if (!checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, params.commitmentFormat)) {
+          return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
+        }
+        HtlcTxAndRemoteSig(htlcTx, remoteSig)
+    }
+    Right(LocalCommit(localCommitIndex, spec, CommitTxAndRemoteSig(localCommitTx, commit.signature), htlcTxsAndRemoteSigs))
+  }
+}
+
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey) {
   def sign(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
@@ -619,27 +643,12 @@ case class Commitment(fundingTxIndex: Long,
     // ourCommit.index + 2 -> which is about to become our next revocation hash
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
+    val localCommitIndex = localCommit.index + 1
     val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
-    log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
-    if (!checkSig(localCommitTx, commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
-      return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, fundingTxIndex, localCommitTx.tx))
+    LocalCommit.fromCommitSig(keyManager, params, fundingTxId, fundingTxIndex, remoteFundingPubKey, commitInput, commit, localCommitIndex, spec, localPerCommitmentPoint).map { localCommit1 =>
+      log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommit1.commitTxAndRemoteSig.commitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
+      copy(localCommit = localCommit1)
     }
-    val sortedHtlcTxs: Seq[HtlcTx] = htlcTxs.sortBy(_.input.outPoint.index)
-    if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
-      return Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
-    }
-    val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint)
-    val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
-      case (htlcTx: HtlcTx, remoteSig) =>
-        if (!checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, params.commitmentFormat)) {
-          return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
-        }
-        HtlcTxAndRemoteSig(htlcTx, remoteSig)
-    }
-    // update our commitment data
-    val localCommit1 = LocalCommit(localCommit.index + 1, spec, CommitTxAndRemoteSig(localCommitTx, commit.signature), htlcTxsAndRemoteSigs)
-    Right(copy(localCommit = localCommit1))
   }
 
   /** Return a fully signed commit tx, that can be published as-is. */

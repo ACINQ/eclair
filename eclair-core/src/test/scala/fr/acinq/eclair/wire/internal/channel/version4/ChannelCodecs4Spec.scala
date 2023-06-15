@@ -123,7 +123,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val fundingInput = InputInfo(OutPoint(randomBytes32(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
     val fundingTx = SharedTransaction(
       sharedInput_opt = None,
-      sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat),
+      sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat, 0 msat),
       localInputs = Nil, remoteInputs = Nil,
       localOutputs = Nil, remoteOutputs = Nil,
       lockTime = 0
