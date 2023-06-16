@@ -43,14 +43,10 @@ object SmoothFeeProvider {
 
   def smooth(rates: Seq[FeeratesPerKB]): FeeratesPerKB =
     FeeratesPerKB(
-      mempoolMinFee = avg(rates.map(_.mempoolMinFee)),
-      block_1 = avg(rates.map(_.block_1)),
-      blocks_2 = avg(rates.map(_.blocks_2)),
-      blocks_6 = avg(rates.map(_.blocks_6)),
-      blocks_12 = avg(rates.map(_.blocks_12)),
-      blocks_36 = avg(rates.map(_.blocks_36)),
-      blocks_72 = avg(rates.map(_.blocks_72)),
-      blocks_144 = avg(rates.map(_.blocks_144)),
-      blocks_1008 = avg(rates.map(_.blocks_1008)))
+      minimum = avg(rates.map(_.minimum)),
+      fastest = avg(rates.map(_.fastest)),
+      fast = avg(rates.map(_.fast)),
+      medium = avg(rates.map(_.medium)),
+      slow = avg(rates.map(_.slow)))
 
 }

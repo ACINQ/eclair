@@ -829,7 +829,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           if (!d.commitments.isIdle) {
             log.info("rejecting splice request: channel not idle")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
-          } else if (msg.feerate < nodeParams.currentFeerates.mempoolMinFee) {
+          } else if (msg.feerate < nodeParams.currentFeerates.minimum) {
             log.info("rejecting splice request: feerate too low")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           } else {

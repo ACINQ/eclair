@@ -27,11 +27,11 @@ class SmoothFeeProviderSpec extends AnyFunSuite {
 
   test("smooth fee rates") {
     val rates = Array(
-      FeeratesPerKB(FeeratePerKB(50 sat), FeeratePerKB(100 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(650 sat), FeeratePerKB(700 sat)),
-      FeeratesPerKB(FeeratePerKB(60 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(750 sat), FeeratePerKB(800 sat)),
-      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat)),
-      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat)),
-      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat), FeeratePerKB(850 sat), FeeratePerKB(900 sat))
+      FeeratesPerKB(FeeratePerKB(50 sat), FeeratePerKB(700 sat), FeeratePerKB(650 sat), FeeratePerKB(500 sat), FeeratePerKB(400 sat)),
+      FeeratesPerKB(FeeratePerKB(60 sat), FeeratePerKB(800 sat), FeeratePerKB(750 sat), FeeratePerKB(600 sat), FeeratePerKB(500 sat)),
+      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(900 sat), FeeratePerKB(850 sat), FeeratePerKB(700 sat), FeeratePerKB(600 sat)),
+      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(900 sat), FeeratePerKB(850 sat), FeeratePerKB(700 sat), FeeratePerKB(600 sat)),
+      FeeratesPerKB(FeeratePerKB(70 sat), FeeratePerKB(900 sat), FeeratePerKB(850 sat), FeeratePerKB(700 sat), FeeratePerKB(600 sat))
     )
     val provider: FeeProvider = new FeeProvider {
       var index = 0
@@ -56,7 +56,7 @@ class SmoothFeeProviderSpec extends AnyFunSuite {
     assert(rate1 == rates(0))
     assert(rate2 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1))))
     assert(rate3 == SmoothFeeProvider.smooth(Seq(rates(0), rates(1), rates(2))))
-    assert(rate3 == FeeratesPerKB(FeeratePerKB(60 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(750 sat), FeeratePerKB(800 sat)))
+    assert(rate3 == FeeratesPerKB(FeeratePerKB(60 sat), FeeratePerKB(800 sat), FeeratePerKB(750 sat), FeeratePerKB(600 sat), FeeratePerKB(500 sat)))
     assert(rate4 == SmoothFeeProvider.smooth(Seq(rates(1), rates(2), rates(3))))
     assert(rate5 == rates(4)) // since the last 3 values are the same
   }

@@ -42,7 +42,7 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
 
   def dummyFeerate = FeeratePerKB(1000.sat + Random.nextInt(10000).sat)
 
-  def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
+  def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
 
   def await[T](f: Future[T]): T = Await.result(f, 3 seconds)
 
@@ -71,11 +71,11 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
   }
 
   test("ensure minimum feerate") {
-    val constantFeeProvider = ConstantFeeProvider(FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), FeeratePerKB(2000 sat), FeeratePerKB(1500 sat), FeeratePerKB(1000 sat), FeeratePerKB(1000 sat)))
+    val constantFeeProvider = ConstantFeeProvider(FeeratesPerKB(FeeratePerKB(1000 sat), FeeratePerKB(64_000 sat), FeeratePerKB(32_000 sat), FeeratePerKB(16_000 sat), FeeratePerKB(8_000 sat)))
     val minFeeratePerByte = FeeratePerByte(2 sat)
     val minFeeratePerKB = FeeratePerKB(minFeeratePerByte)
     val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, minFeeratePerByte)
-    assert(await(fallbackFeeProvider.getFeerates) == FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), minFeeratePerKB, minFeeratePerKB, minFeeratePerKB, minFeeratePerKB))
+    assert(await(fallbackFeeProvider.getFeerates) == FeeratesPerKB(minFeeratePerKB, FeeratePerKB(64_000 sat), FeeratePerKB(32_000 sat), FeeratePerKB(16_000 sat), FeeratePerKB(8_000 sat)))
   }
 
 }
