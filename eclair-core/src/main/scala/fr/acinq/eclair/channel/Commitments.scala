@@ -4,9 +4,9 @@ import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.Monitoring.Metrics
+import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
@@ -16,7 +16,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, channel, payment}
 import scodec.bits.ByteVector
 
 /** Static channel parameters shared by all commitments. */
@@ -942,7 +942,10 @@ case class Commitments(params: ChannelParams,
       val changes1 = changes.copy(localChanges = changes.localChanges.copy(proposed = changes.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
       active.map(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf))
         .collectFirst { case Left(f) => Left(f) }
-        .getOrElse(Right(copy(changes = changes1), fee))
+        .getOrElse {
+          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
+          Right(copy(changes = changes1), fee)
+        }
     }
   }
 
@@ -952,14 +955,16 @@ case class Commitments(params: ChannelParams,
     } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
       val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, active.head.capacity)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
       active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feerates, feeConf))
         .collectFirst { case Left(f) => Left(f) }
-        .getOrElse(Right(copy(changes = changes1)))
+        .getOrElse {
+          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
+          Right(copy(changes = changes1))
+        }
     }
   }
 
