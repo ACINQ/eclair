@@ -265,8 +265,11 @@ object NodeParams extends Logging {
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
+      // v0.8.0
       "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
-      "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold"
+      // vx.x.x
+      "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -370,6 +373,17 @@ object NodeParams extends Logging {
       .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
 
     validateAddresses(addresses)
+
+    def getConfirmationPriority(path: String): ConfirmationPriority = config.getString(path) match {
+      case "slow" => ConfirmationPriority.Slow
+      case "medium" => ConfirmationPriority.Medium
+      case "fast" => ConfirmationPriority.Fast
+    }
+
+    val feeTargets = FeeTargets(
+      funding = getConfirmationPriority("on-chain-fees.confirmation-priority.funding"),
+      closing = getConfirmationPriority("on-chain-fees.confirmation-priority.closing"),
+    )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
       val feeBase = MilliSatoshi(relayFeesConfig.getInt("fee-base-msat"))
@@ -487,6 +501,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feerates = feerates,
+        feeTargets = feeTargets,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),

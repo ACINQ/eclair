@@ -23,6 +23,23 @@ import fr.acinq.eclair.transactions.Transactions
 
 import java.util.concurrent.atomic.AtomicReference
 
+// @formatter:off
+sealed trait ConfirmationPriority {
+  def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
+    case ConfirmationPriority.Slow => feerates.blocks_1008
+    case ConfirmationPriority.Medium => feerates.blocks_12
+    case ConfirmationPriority.Fast => feerates.blocks_2
+  }
+}
+object ConfirmationPriority {
+  case object Slow extends ConfirmationPriority
+  case object Medium extends ConfirmationPriority
+  case object Fast extends ConfirmationPriority
+}
+// @formatter:on
+
+case class FeeTargets(funding: ConfirmationPriority, closing: ConfirmationPriority)
+
 /**
  * @param maxExposure              maximum exposure to pending dust htlcs we tolerate: we will automatically fail HTLCs when going above this threshold.
  * @param closeOnUpdateFeeOverflow force-close channels when an update_fee forces us to go above our max exposure.
@@ -47,7 +64,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
   }
 }
 
-case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def currentFeerates: FeeratesPerKw = feerates.get()
 
@@ -57,7 +74,7 @@ case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], safeUtxosThr
   def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw): Boolean =
     currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
 
-  def getFundingFeerate(): FeeratePerKw = currentFeerates.blocks_6
+  def getFundingFeerate(): FeeratePerKw = feeTargets.funding.getFeerate(currentFeerates)
 
   /**
    * Get the feerate that should apply to a channel commitment transaction:
@@ -81,5 +98,5 @@ case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], safeUtxosThr
     }
   }
 
-  def getClosingFeerate(): FeeratePerKw = currentFeerates.blocks_12
+  def getClosingFeerate(): FeeratePerKw = feeTargets.closing.getFeerate(currentFeerates)
 }
