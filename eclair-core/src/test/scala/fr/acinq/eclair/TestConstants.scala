@@ -134,6 +134,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
@@ -292,6 +293,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,

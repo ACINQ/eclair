@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -634,7 +634,7 @@ object Helpers {
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
-        val closingFeerates = ClosingFeerates(preferredFeerate, preferredFeerate.min(onChainFeeConf.currentFeerates.mempoolMinFee), preferredFeerate * 2)
+        val closingFeerates = ClosingFeerates(preferredFeerate, preferredFeerate.min(ConfirmationPriority.Slow.getFeerate(onChainFeeConf.currentFeerates)), preferredFeerate * 2)
         firstClosingFee(commitment, localScriptPubkey, remoteScriptPubkey, closingFeerates)
       }
 

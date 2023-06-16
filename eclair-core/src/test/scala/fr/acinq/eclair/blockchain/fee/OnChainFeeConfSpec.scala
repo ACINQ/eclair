@@ -25,11 +25,12 @@ import java.util.concurrent.atomic.AtomicReference
 
 class OnChainFeeConfSpec extends AnyFunSuite {
 
+  private val defaultFeeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium)
   private val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
     val feerates = new AtomicReference(FeeratesPerKw.single(TestConstants.feeratePerKw))
-    val feeConf = OnChainFeeConf(feerates, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(feerates, defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1000 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(900 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1100 sat)))
@@ -40,7 +41,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   test("get commitment feerate") {
     val channelType = ChannelTypes.Standard()
     val feerates = new AtomicReference(FeeratesPerKw.single(TestConstants.feeratePerKw))
-    val feeConf = OnChainFeeConf(feerates, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(feerates, defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
     feerates.set(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
     assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelType, 100000 sat) == FeeratePerKw(5000 sat))
@@ -55,7 +56,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val defaultMaxCommitFeerate = defaultFeerateTolerance.anchorOutputMaxCommitFeerate
     val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
-    val feeConf = OnChainFeeConf(feerates, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
+    val feeConf = OnChainFeeConf(feerates, defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     feerates.set(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat)))
     assert(feeConf.getCommitmentFeerate(defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == defaultMaxCommitFeerate / 2)
