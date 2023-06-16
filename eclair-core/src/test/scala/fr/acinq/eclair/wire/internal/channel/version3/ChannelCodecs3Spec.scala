@@ -15,7 +15,7 @@
  */
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs._
@@ -75,19 +75,6 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       assert(claimHtlcSuccessTx1.isInstanceOf[LegacyClaimHtlcSuccessTx])
       claimHtlcSuccessTx1.asInstanceOf[LegacyClaimHtlcSuccessTx]
     }
-
-    // We can encode data that contains a payment hash.
-    val claimHtlcSuccess = ClaimHtlcSuccessTx(legacyClaimHtlcSuccess.input, legacyClaimHtlcSuccess.tx, ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"), legacyClaimHtlcSuccess.htlcId, BlockHeight(0))
-    val txWithInputInfoCodecBin = txWithInputInfoCodec.encode(claimHtlcSuccess).require.bytes
-    assert(txWithInputInfoCodecBin !== oldTxWithInputInfoCodecBin)
-    val claimHtlcTxBin = claimHtlcTxCodec.encode(claimHtlcSuccess).require.bytes
-    assert(claimHtlcTxBin !== oldClaimHtlcTxBin)
-
-    // And decode new data that contains a payment hash.
-    val decoded1 = txWithInputInfoCodec.decode(txWithInputInfoCodecBin.bits).require.value
-    assert(claimHtlcSuccess == decoded1)
-    val decoded2 = claimHtlcTxCodec.decode(claimHtlcTxBin.bits).require.value
-    assert(claimHtlcSuccess == decoded2)
   }
 
   test("backwards compatibility with transactions missing a confirmation target") {
@@ -95,46 +82,31 @@ class ChannelCodecs3Spec extends AnyFunSuite {
       val oldAnchorTxBin = hex"0011 24bd0be30e31c748c7afdde7d2c527d711fadf88500971a4a1136bca375dba07b8000000002b4a0100000000000022002036c067df8952dbcd5db347e7c152ca3fa4514f2072d27867837b1c2d319a7e01282103cc89f1459b5201cda08e08c6fb7b1968c54e8172c555896da27c6fdc10522ceeac736460b268330200000001bd0be30e31c748c7afdde7d2c527d711fadf88500971a4a1136bca375dba07b80000000000000000000000000000"
       val oldAnchorTx = txWithInputInfoCodec.decode(oldAnchorTxBin.bits).require.value
       assert(oldAnchorTx.isInstanceOf[ClaimLocalAnchorOutputTx])
-      assert(oldAnchorTx.asInstanceOf[ClaimLocalAnchorOutputTx].confirmBefore == BlockHeight(0))
-      val anchorTx = oldAnchorTx.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmBefore = BlockHeight(1105))
-      val anchorTx2 = txWithInputInfoCodec.decode(txWithInputInfoCodec.encode(anchorTx).require).require.value
-      assert(anchorTx == anchorTx2)
+      assert(oldAnchorTx.asInstanceOf[ClaimLocalAnchorOutputTx].confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(0)))
     }
     {
       val oldHtlcSuccessTxBin = hex"0002 24f5580de0577271dce09d2de26e19ec58bf2373b0171473291a8f8be9b04fb289000000002bb0ad010000000000220020462cf8912ffc5f27764c109bed188950500011a2837ff8b9c8f9a39cffa395a58b76a91406b0950d9feded82239b3e6c9082308900f389de8763ac672102d65aa07658a7214ff129f91a1a22ade2ea4d1b07cc14b2f85a2842c34240836f7c8201208763a914c461c897e2165c7e44e14850dfcfd68f99127aed88527c21033c8d41cfbe1511a909b63fed68e75a29c3ce30418c39bbb8294c8b36c6a6c16a52ae677503101b06b175ac6868fd01a002000000000101f5580de0577271dce09d2de26e19ec58bf2373b0171473291a8f8be9b04fb289000000000000000000013a920100000000002200208742b16c9fd4e74854dcd84322dd1de06f7993fe627fd2ca0be4b996a936d56b050047304402201b4527c8f420852550af00bbd9149db9b31adcb7e1f127766e75e1e01746df0302202a57bb1e274ed7d3e8dbe5f205de721a23092c1e2ce2135f4750f18f6c0b51b001483045022100b6df309c8e5746a077b1f7c2f299528e164946bd514a5049475af7f5665805da0220392ae877112a3c52f74d190b354b4f5c020da9c1a71a7a08ced0a5363e795a27012017ea8f5afde8f708258d5669e1bbd454e82ddca8c6c480ec5302b4b1e8051d3d8b76a91406b0950d9feded82239b3e6c9082308900f389de8763ac672102d65aa07658a7214ff129f91a1a22ade2ea4d1b07cc14b2f85a2842c34240836f7c8201208763a914c461c897e2165c7e44e14850dfcfd68f99127aed88527c21033c8d41cfbe1511a909b63fed68e75a29c3ce30418c39bbb8294c8b36c6a6c16a52ae677503101b06b175ac686800000000dc7002a387673f17ebaf08545ccec712a9b6914813cdb83b4270932294f20f660000000000000000"
       val oldHtlcSuccessTx = txWithInputInfoCodec.decode(oldHtlcSuccessTxBin.bits).require.value
       assert(oldHtlcSuccessTx.isInstanceOf[HtlcSuccessTx])
-      assert(oldHtlcSuccessTx.asInstanceOf[HtlcSuccessTx].confirmBefore == BlockHeight(0))
-      val htlcSuccessTx = oldHtlcSuccessTx.asInstanceOf[HtlcSuccessTx].copy(confirmBefore = BlockHeight(1105))
-      val htlcSuccessTx2 = txWithInputInfoCodec.decode(txWithInputInfoCodec.encode(htlcSuccessTx).require).require.value
-      assert(htlcSuccessTx == htlcSuccessTx2)
+      assert(oldHtlcSuccessTx.asInstanceOf[HtlcSuccessTx].confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(0)))
     }
     {
       val oldHtlcTimeoutTxBin = hex"0003 248f0619a4b2a351977b3e5b0ddd700482e1d697d40deea2dd7356df99345d51d0000000002b50c300000000000022002005ff644937d7f5f32ec194424f551371e8d4bcf2cda3e1096cdd2fe88687fc408576a914c98707b6420ef3454f3bd10d663adcc04452baea8763ac672102fb20469287c8ade948011bd001440d74633d5e1a98574e4783dd38b76509d8f67c820120876475527c210279d3a1c2086a0968404a0160c8f8c6f88c0ce7184022bb7406f98fdb503ea51452ae67a9140550b2b1621e788d795fe3ae308e7dec06a6a1e088ac6868fd0179020000000001018f0619a4b2a351977b3e5b0ddd700482e1d697d40deea2dd7356df99345d51d0000000000000000000016aa9000000000000220020c980a1573ce6dc6a1bb8a1d60ecffdf2f0a7aa983c49786a2ab1ba8f0cd74a76050047304402200d2b631fb0e5a7f406f3de2b36fe3c0ab3337fe98f114dadf38de8f5548e87eb02203ad7c385c7cf62ac17ec15329dee071ee2c479aceb34a14d700dfeba80008574014730440220653b4ff490b03de06a9053aa7ab0b30e85c484c76900c586db65f7308f38ad86022019ac12ffb127e4a17a01dc6db730d3eccea837d2dc85a0275bdea8b393a2f11d01008576a914c98707b6420ef3454f3bd10d663adcc04452baea8763ac672102fb20469287c8ade948011bd001440d74633d5e1a98574e4783dd38b76509d8f67c820120876475527c210279d3a1c2086a0968404a0160c8f8c6f88c0ce7184022bb7406f98fdb503ea51452ae67a9140550b2b1621e788d795fe3ae308e7dec06a6a1e088ac6868101b06000000000000000003"
       val oldHtlcTimeoutTx = txWithInputInfoCodec.decode(oldHtlcTimeoutTxBin.bits).require.value
       assert(oldHtlcTimeoutTx.isInstanceOf[HtlcTimeoutTx])
-      assert(oldHtlcTimeoutTx.asInstanceOf[HtlcTimeoutTx].confirmBefore == BlockHeight(0))
-      val htlcTimeoutTx = oldHtlcTimeoutTx.asInstanceOf[HtlcTimeoutTx].copy(confirmBefore = BlockHeight(1105))
-      val htlcTimeoutTx2 = txWithInputInfoCodec.decode(txWithInputInfoCodec.encode(htlcTimeoutTx).require).require.value
-      assert(htlcTimeoutTx == htlcTimeoutTx2)
+      assert(oldHtlcTimeoutTx.asInstanceOf[HtlcTimeoutTx].confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(0)))
     }
     {
       val oldClaimHtlcSuccessTxBin = hex"0016 24e75b5236d1cdd482a6f540d5f08b9aa27b74a9ecae6e2622a67110b3ee1b3d89000000002bb0ad01000000000022002063e22369052a2bad9eb124737742690b8d1aba7693869d041da16443e2973e638576a91494957f4639ebc6f8a30e126552aff8429174dfb18763ac672102e1aa04ff55771238012edb958e6e0525af0415a01d52dd8d5f69fb391e586adc7c820120876475527c2102384e785d34b3b1fe35d3c093a750b234fbc79d8316c149e7845929f628a5baa052ae67a9145e3be49c9ace2d9eab11dc5fc29e40cd4148262e88ac6868fd014502000000000101e75b5236d1cdd482a6f540d5f08b9aa27b74a9ecae6e2622a67110b3ee1b3d890000000000000000000162970100000000001600140262586eef1a2c8f47ebc139a2733123d09e315603483045022100898f6b51361f044c8c54468dcb1b9decd75edcc1b69b62e584059b512eb075900220675f8b23aa402bb7d5bfdefbac4074088f82bd34d09b34c651c0dff48e6967930120efb38d645311af59c028cd8a9bf8ee21ff9e7c1a1cff1a0398a0315280247ac38576a91494957f4639ebc6f8a30e126552aff8429174dfb18763ac672102e1aa04ff55771238012edb958e6e0525af0415a01d52dd8d5f69fb391e586adc7c820120876475527c2102384e785d34b3b1fe35d3c093a750b234fbc79d8316c149e7845929f628a5baa052ae67a9145e3be49c9ace2d9eab11dc5fc29e40cd4148262e88ac686800000000ad02394dd18774f6f403f783afb518b6c69a89d531f718b29868ddca3e7905020000000000000000"
       val oldClaimHtlcSuccessTx = txWithInputInfoCodec.decode(oldClaimHtlcSuccessTxBin.bits).require.value
       assert(oldClaimHtlcSuccessTx.isInstanceOf[ClaimHtlcSuccessTx])
-      assert(oldClaimHtlcSuccessTx.asInstanceOf[ClaimHtlcSuccessTx].confirmBefore == BlockHeight(0))
-      val claimHtlcSuccessTx = oldClaimHtlcSuccessTx.asInstanceOf[ClaimHtlcSuccessTx].copy(confirmBefore = BlockHeight(1105))
-      val claimHtlcSuccessTx2 = txWithInputInfoCodec.decode(txWithInputInfoCodec.encode(claimHtlcSuccessTx).require).require.value
-      assert(claimHtlcSuccessTx == claimHtlcSuccessTx2)
+      assert(oldClaimHtlcSuccessTx.asInstanceOf[ClaimHtlcSuccessTx].confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(0)))
     }
     {
       val oldClaimHtlcTimeoutTxBin = hex"0005 24df6aa4cd4e8877e4b3a363d6180951036d6f18ef214dabd50a6c05a60077d4d8000000002b50c30000000000002200205db892d76fb358ed508ec09c77b5a184cd9de3aa3e74a025a5c5d3f7adc221f78b76a914e0c241e0656088953f84475cbe5c70ded12e05b58763ac6721028876f3e23b21e07f889f10fc2aa0875b96021359a06d0b7f52a79fc284f6b2837c8201208763a9144ae5c96e8b7495fd35a5ca5681aa7c8f4ab6bc9b88527c2102b4d398ee7a42e87012de5a76832d9ebfa8532ef267490a7f3fe75b2c2e18cc9152ae677503981a06b175ac6868fd012b02000000000101df6aa4cd4e8877e4b3a363d6180951036d6f18ef214dabd50a6c05a60077d4d80000000000000000000106ae0000000000001600142b8e221121004b248f6551a0c6fb8ce219f4997e03483045022100ecdb8179f92c097594844756ac2bd7948f1c44ae74b54dfda86971800e59bf980220125edbe563f24cde15fa1fa25f4eac7cb938a3ace6f9329eb487938005c7621501008b76a914e0c241e0656088953f84475cbe5c70ded12e05b58763ac6721028876f3e23b21e07f889f10fc2aa0875b96021359a06d0b7f52a79fc284f6b2837c8201208763a9144ae5c96e8b7495fd35a5ca5681aa7c8f4ab6bc9b88527c2102b4d398ee7a42e87012de5a76832d9ebfa8532ef267490a7f3fe75b2c2e18cc9152ae677503981a06b175ac6868981a06000000000000000003"
       val oldClaimHtlcTimeoutTx = txWithInputInfoCodec.decode(oldClaimHtlcTimeoutTxBin.bits).require.value
       assert(oldClaimHtlcTimeoutTx.isInstanceOf[ClaimHtlcTimeoutTx])
-      assert(oldClaimHtlcTimeoutTx.asInstanceOf[ClaimHtlcTimeoutTx].confirmBefore == BlockHeight(0))
-      val claimHtlcTimeoutTx = oldClaimHtlcTimeoutTx.asInstanceOf[ClaimHtlcTimeoutTx].copy(confirmBefore = BlockHeight(1105))
-      val claimHtlcTimeoutTx2 = txWithInputInfoCodec.decode(txWithInputInfoCodec.encode(claimHtlcTimeoutTx).require).require.value
-      assert(claimHtlcTimeoutTx == claimHtlcTimeoutTx2)
+      assert(oldClaimHtlcTimeoutTx.asInstanceOf[ClaimHtlcTimeoutTx].confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(0)))
     }
   }
 

@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -726,7 +726,7 @@ object Helpers {
        * @param commitment our commitment data, which includes payment preimages
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): LocalCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, tx: Transaction, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): LocalCommitPublished = {
         require(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
         val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index.toInt)
@@ -748,7 +748,7 @@ object Helpers {
         val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
           // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + 1008) // TODO: setting a block target may not make sense when there is no urgency
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
           List(
             withTxGenerationLog("local-anchor") {
               Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
@@ -852,15 +852,15 @@ object Helpers {
        * @param tx           the remote commitment transaction that has just been published
        * @return a list of transactions (one per output of the commit tx that we can claim)
        */
-      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, tx: Transaction, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
         val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitment, remoteCommit, onChainFeeConf, finalScriptPubKey)
 
         val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
-          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + 1008) // TODO: setting a block target may not make sense when there is no urgency
+          // If we don't have pending HTLCs, we don't have funds at risk, so we use the normal closing priority.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
           val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
           List(
             withTxGenerationLog("local-anchor") {

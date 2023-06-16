@@ -197,7 +197,7 @@ trait ErrorHandlers extends CommonHandlers {
       val commitment = d.commitments.latest
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       val commitTx = commitment.fullySignedLocalCommitTx(keyManager).tx
-      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitment, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
+      val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(keyManager, commitment, commitTx, nodeParams.onChainFeeConf, finalScriptPubKey)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
@@ -241,7 +241,7 @@ trait ErrorHandlers extends CommonHandlers {
     require(commitTx.txid == commitments.remoteCommit.txid, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, d.commitments.params.localParams.isInitiator), "remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitments, commitments.remoteCommit, commitTx, nodeParams.onChainFeeConf, finalScriptPubKey)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
@@ -259,7 +259,7 @@ trait ErrorHandlers extends CommonHandlers {
 
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput, commitTx, d.commitments.params.localParams.isInitiator), "next-remote-commit"))
-    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitment, remoteCommit, commitTx, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf, finalScriptPubKey)
+    val remoteCommitPublished = Closing.RemoteClose.claimCommitTxOutputs(keyManager, commitment, remoteCommit, commitTx, nodeParams.onChainFeeConf, finalScriptPubKey)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
