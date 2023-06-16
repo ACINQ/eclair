@@ -227,8 +227,11 @@ class Setup(val datadir: File,
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
         case Success(feeratesPerKB) =>
           feeratesPerKw.set(FeeratesPerKw(feeratesPerKB))
-          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.fast.toLong.toDouble)
-          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.minimum.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Minimum).update(feeratesPerKw.get.minimum.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Slow).update(feeratesPerKw.get.slow.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Medium).update(feeratesPerKw.get.medium.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)

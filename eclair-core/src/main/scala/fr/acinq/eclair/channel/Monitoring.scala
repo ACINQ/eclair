@@ -29,8 +29,8 @@ object Monitoring {
     val HtlcsInFlightGlobal = Kamon.gauge("channels.htlc-in-flight-global", "Global HTLCs in flight across all channels")
     val HtlcValueInFlight = Kamon.histogram("channels.htlc-value-in-flight", "Per-channel HTLC value in flight")
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
-    val LocalFeeratePerKw = Kamon.gauge("channels.local-feerate-per-kw")
-    val RemoteFeeratePerKw = Kamon.histogram("channels.remote-feerate-per-kw")
+    val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
+    val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
@@ -55,6 +55,7 @@ object Monitoring {
     val Fatal = "fatal"
     val Origin = "origin"
     val State = "state"
+    val CommitmentFormat = "commitment-format"
 
     object Events {
       val Created = "created"
@@ -71,7 +72,6 @@ object Monitoring {
       val Incoming = "incoming"
       val Outgoing = "outgoing"
     }
-
   }
 
 }
