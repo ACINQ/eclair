@@ -18,18 +18,20 @@ package fr.acinq.eclair.json
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -115,21 +117,126 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("RES_GET_CHANNEL_INFO serialization") {
     val probe = TestProbe()(system)
+    val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
+    val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
+    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, None, None, Features.empty)
+    val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
+    val commitmentInput = Funding.makeFundingInputInfo(dummyBytes32, 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), dummyBytes32, dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
       ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"),
       probe.ref,
       NORMAL,
       DATA_NORMAL(
-        CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, true, randomize = false),
+        Commitments(
+          ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = true)),
+          CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
+          List(Commitment(0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+          inactive = Nil,
+          Right(dummyPublicKey),
+          ShaChain.init,
+          Map.empty,
+        ),
         ShortIds(RealScidStatus.Unknown, Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
         None, None, None, SpliceStatus.NoSplice
       )
     )
-    val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","state":"NORMAL","data":{"type":"DATA_NORMAL","commitments":{"params":{"channelId":"0101010101010101010101010101010101010101010101010101010101010101","channelConfig":["funding_pubkey_based_channel_keypath"],"channelFeatures":[],"localParams":{"nodeId":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","fundingKeyPath":[42],"dustLimit":546,"maxHtlcValueInFlightMsat":9223372036854775807,"requestedChannelReserve_opt":1500,"htlcMinimum":1,"toSelfDelay":144,"maxAcceptedHtlcs":50,"isInitiator":true,"initFeatures":{"activated":{},"unknown":[]}},"remoteParams":{"nodeId":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","dustLimit":546,"maxHtlcValueInFlightMsat":18446744073709551615,"requestedChannelReserve_opt":1500,"htlcMinimum":1,"toSelfDelay":144,"maxAcceptedHtlcs":50,"revocationBasepoint":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","paymentBasepoint":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","delayedPaymentBasepoint":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","htlcBasepoint":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","initFeatures":{"activated":{},"unknown":[]}},"channelFlags":{"announceChannel":true}},"changes":{"localChanges":{"proposed":[],"signed":[],"acked":[]},"remoteChanges":{"proposed":[],"acked":[],"signed":[]},"localNextHtlcId":1,"remoteNextHtlcId":1},"active":[{"fundingTxIndex":0,"fundingTx":{"outPoint":"0101010101010101010101010101010101010101010101010101010101010101:0","amountSatoshis":150000},"localFunding":{"status":"unconfirmed"},"remoteFunding":{"status":"locked"},"localCommit":{"index":0,"spec":{"htlcs":[],"commitTxFeerate":2500,"toLocal":100000000,"toRemote":50000000},"commitTxAndRemoteSig":{"commitTx":{"txid":"4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a","tx":"02000000000000000000"},"remoteSig":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"},"htlcTxsAndRemoteSigs":[]},"remoteCommit":{"index":0,"spec":{"htlcs":[],"commitTxFeerate":2500,"toLocal":50000000,"toRemote":100000000},"txid":"0101010101010101010101010101010101010101010101010101010101010101","remotePerCommitmentPoint":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"}}],"inactive":[],"remoteNextCommitInfo":"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f","remotePerCommitmentSecrets":null,"originChannels":{}},"shortIds":{"real":{"status":"unknown"},"localAlias":"0x2a"},"channelUpdate":{"signature":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","chainHash":"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f","shortChannelId":"0x0x0","timestamp":{"iso":"1970-01-01T00:00:00Z","unix":0},"messageFlags":{"dontForward":false},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":12,"htlcMinimumMsat":1,"feeBaseMsat":100,"feeProportionalMillionths":0,"htlcMaximumMsat":2000000,"tlvStream":{}}}}"""
-    JsonSerializers.serialization.write(channelInfo)(JsonSerializers.formats) shouldBe expected
+    val expected =
+      """{
+        | "nodeId": "0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b",
+        | "channelId": "345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f",
+        | "state": "NORMAL",
+        | "data": {
+        |   "type": "DATA_NORMAL",
+        |   "commitments": {
+        |     "params": {
+        |       "channelId": "0202020202020202020202020202020202020202020202020202020202020202",
+        |       "channelConfig": ["funding_pubkey_based_channel_keypath"],
+        |       "channelFeatures": [],
+        |       "localParams": {
+        |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "fundingKeyPath": [42],
+        |         "dustLimit": 546,
+        |         "maxHtlcValueInFlightMsat": 9223372036854775807,
+        |         "requestedChannelReserve_opt": 1000,
+        |         "htlcMinimum": 1,
+        |         "toSelfDelay": 144,
+        |         "maxAcceptedHtlcs": 50,
+        |         "isInitiator": true,
+        |         "initFeatures": { "activated": {}, "unknown": [] }
+        |       },
+        |       "remoteParams": {
+        |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "dustLimit": 546,
+        |         "maxHtlcValueInFlightMsat": 18446744073709551615,
+        |         "requestedChannelReserve_opt": 1000,
+        |         "htlcMinimum": 1,
+        |         "toSelfDelay": 144,
+        |         "maxAcceptedHtlcs": 50,
+        |         "revocationBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "paymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "delayedPaymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "htlcBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |         "initFeatures": { "activated": {}, "unknown": [] }
+        |       },
+        |       "channelFlags": {
+        |         "announceChannel": true
+        |       }
+        |     },
+        |     "changes": {
+        |       "localChanges": { "proposed": [], "signed": [], "acked": [] },
+        |       "remoteChanges": { "proposed": [], "acked": [], "signed": [] },
+        |       "localNextHtlcId": 1,
+        |       "remoteNextHtlcId": 1
+        |     },
+        |     "active": [
+        |       {
+        |         "fundingTxIndex": 0,
+        |         "fundingTx": { "outPoint": "0202020202020202020202020202020202020202020202020202020202020202:0", "amountSatoshis": 150000 },
+        |         "localFunding": { "status":"unconfirmed" },
+        |         "remoteFunding": { "status":"locked" },
+        |         "localCommit": {
+        |           "index": 0,
+        |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
+        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" },"remoteSig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
+        |           "htlcTxsAndRemoteSigs": []
+        |         },
+        |         "remoteCommit": {
+        |           "index": 0,
+        |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 50000000, "toRemote": 100000000 },
+        |           "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "remotePerCommitmentPoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+        |         }
+        |       }
+        |     ],
+        |     "inactive": [],
+        |     "remoteNextCommitInfo": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
+        |     "remotePerCommitmentSecrets": null,
+        |     "originChannels": {}
+        |   },
+        |   "shortIds": { "real": { "status": "unknown" }, "localAlias": "0x2a" },
+        |   "channelUpdate": {
+        |     "signature": "345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f",
+        |     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        |     "shortChannelId": "0x0x0",
+        |     "timestamp": { "iso": "1970-01-01T00:00:00Z", "unix": 0 },
+        |     "messageFlags": { "dontForward": false },
+        |     "channelFlags": { "isEnabled": true, "isNode1": true },
+        |     "cltvExpiryDelta": 12,
+        |     "htlcMinimumMsat": 1,
+        |     "feeBaseMsat": 100,
+        |     "feeProportionalMillionths": 0,
+        |     "htlcMaximumMsat": 2000000,
+        |     "tlvStream": {}
+        |   }
+        | }
+        |}""".stripMargin
+    val json = JsonSerializers.serialization.write(channelInfo)(JsonSerializers.formats)
+    assertJsonEquals(json, expected)
   }
 
   test("DirectedHtlc serialization") {
