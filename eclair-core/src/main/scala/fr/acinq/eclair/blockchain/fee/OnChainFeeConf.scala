@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions
 
@@ -30,11 +31,17 @@ sealed trait ConfirmationPriority {
     case ConfirmationPriority.Medium => feerates.blocks_12
     case ConfirmationPriority.Fast => feerates.blocks_2
   }
+override def toString: String = super.toString.toLowerCase
 }
 object ConfirmationPriority {
   case object Slow extends ConfirmationPriority
   case object Medium extends ConfirmationPriority
   case object Fast extends ConfirmationPriority
+}
+sealed trait ConfirmationTarget
+object ConfirmationTarget {
+  case class Absolute(confirmBefore: BlockHeight) extends ConfirmationTarget
+  case class Priority(priority: ConfirmationPriority) extends ConfirmationTarget
 }
 // @formatter:on
 

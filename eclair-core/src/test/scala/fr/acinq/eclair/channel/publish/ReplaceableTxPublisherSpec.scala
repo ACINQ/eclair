@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnchainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -182,7 +182,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.tx.txid)
     assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
-    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmBefore = overrideCommitTarget)
+    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
 
     (publishCommitTx, publishAnchor.copy(txInfo = anchorTx))
   }
@@ -679,7 +679,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // The confirmation target has changed (probably because we learnt a payment preimage).
       // We should now use the high feerate, which corresponds to that new target.
-      publisher ! UpdateConfirmationTarget(aliceBlockHeight() + 15)
+      publisher ! UpdateConfirmationTarget(ConfirmationTarget.Absolute(aliceBlockHeight() + 15))
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight()))
       val anchorTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
       awaitAssert(assert(!isInMempool(mempoolAnchorTx1.txid)), interval = 200 millis, max = 30 seconds)
@@ -870,10 +870,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
-    val htlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(confirmBefore = overrideHtlcTarget)
+    val htlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
-    val htlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(confirmBefore = overrideHtlcTarget)
+    val htlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
@@ -1375,10 +1375,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
-    val claimHtlcSuccessTx = claimHtlcSuccess.txInfo.asInstanceOf[ClaimHtlcSuccessTx].copy(confirmBefore = overrideHtlcTarget)
+    val claimHtlcSuccessTx = claimHtlcSuccess.txInfo.asInstanceOf[ClaimHtlcSuccessTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
-    val claimHtlcTimeoutTx = claimHtlcTimeout.txInfo.asInstanceOf[ClaimHtlcTimeoutTx].copy(confirmBefore = overrideHtlcTarget)
+    val claimHtlcTimeoutTx = claimHtlcTimeout.txInfo.asInstanceOf[ClaimHtlcTimeoutTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
