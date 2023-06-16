@@ -83,13 +83,13 @@ package object eclair {
    * with a conservative minimum weight of 400, we get a minimum feerate_per-kw of 253
    *
    * see https://github.com/ElementsProject/lightning/pull/1251
-   **/
+   * */
   val MinimumFeeratePerKw = 253
 
   /**
    * minimum relay fee rate, in satoshi per kilo
    * bitcoin core uses virtual size and not the actual size in bytes, see above
-   **/
+   * */
   val MinimumRelayFeeRate = 1000
 
   /**
@@ -149,6 +149,52 @@ package object eclair {
         }
     }
   }
+
+  def addressFromPublicKeyScript(chainHash: ByteVector32, pubkeyScript: List[ScriptElt]): String = {
+    val p2pkhPrefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => Base58.Prefix.PubkeyAddress
+      case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.PubkeyAddressTestnet
+    }
+    val p2shPrefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => Base58.Prefix.ScriptAddress
+      case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.ScriptAddressTestnet
+    }
+    val hrp = chainHash match {
+      case Block.TestnetGenesisBlock.hash => "tb"
+      case Block.RegtestGenesisBlock.hash => "bcrt"
+      case Block.LivenetGenesisBlock.hash => "bc"
+    }
+    pubkeyScript match {
+      case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil if pubkeyHash.size == 20 =>
+        Base58Check.encode(p2pkhPrefix, pubkeyHash)
+      case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil if scriptHash.size == 20 =>
+        Base58Check.encode(p2shPrefix, scriptHash)
+      case op :: OP_PUSHDATA(witnessProgram, _) :: Nil if witnessProgram.length >= 2 && witnessProgram.length <= 40 =>
+        op match {
+          case OP_0 =>
+            require(witnessProgram.length == 20 || witnessProgram.length == 32, "witness v0 program length must be 20 or 32")
+            Bech32.encodeWitnessAddress(hrp, 0, witnessProgram)
+          case OP_1 => Bech32.encodeWitnessAddress(hrp, 1, witnessProgram)
+          case OP_2 => Bech32.encodeWitnessAddress(hrp, 2, witnessProgram)
+          case OP_3 => Bech32.encodeWitnessAddress(hrp, 3, witnessProgram)
+          case OP_4 => Bech32.encodeWitnessAddress(hrp, 4, witnessProgram)
+          case OP_5 => Bech32.encodeWitnessAddress(hrp, 5, witnessProgram)
+          case OP_6 => Bech32.encodeWitnessAddress(hrp, 6, witnessProgram)
+          case OP_7 => Bech32.encodeWitnessAddress(hrp, 7, witnessProgram)
+          case OP_8 => Bech32.encodeWitnessAddress(hrp, 8, witnessProgram)
+          case OP_9 => Bech32.encodeWitnessAddress(hrp, 9, witnessProgram)
+          case OP_10 => Bech32.encodeWitnessAddress(hrp, 10, witnessProgram)
+          case OP_11 => Bech32.encodeWitnessAddress(hrp, 11, witnessProgram)
+          case OP_12 => Bech32.encodeWitnessAddress(hrp, 12, witnessProgram)
+          case OP_13 => Bech32.encodeWitnessAddress(hrp, 13, witnessProgram)
+          case OP_14 => Bech32.encodeWitnessAddress(hrp, 14, witnessProgram)
+          case OP_15 => Bech32.encodeWitnessAddress(hrp, 15, witnessProgram)
+          case OP_16 => Bech32.encodeWitnessAddress(hrp, 16, witnessProgram)
+        }
+    }
+  }
+
+  def addressFromPublicKeyScript(chainHash: ByteVector32, pubkeyScript: ByteVector): String = addressFromPublicKeyScript(chainHash, Script.parse(pubkeyScript))
 
   implicit class LongToBtcAmount(l: Long) {
     // @formatter:off

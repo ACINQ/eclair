@@ -114,4 +114,20 @@ class PackageSpec extends AnyFunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
+  test("compute addresses from pubkey scripts") {
+    Seq(
+      ("0014d0b19277b0f76c9512f26d77573fd31a8fd15fc7", Block.TestnetGenesisBlock.hash, "tb1q6zceyaas7akf2yhjd4m4w07nr28azh78gw79kk"),
+      ("00203287047df2aa7aade3f394790a9c9d6f9235943f48a012e8a9f2c3300ca4f2d1", Block.TestnetGenesisBlock.hash, "tb1qx2rsgl0j4fa2mclnj3us48yad7frt9plfzsp969f7tpnqr9y7tgsyprxej"),
+      ("76a914b17deefe2feab87fef7221cf806bb8ca61f00fa188ac", Block.TestnetGenesisBlock.hash, "mwhSm2SHhRhd19KZyaQLgJyAtCLnkbzWbf"),
+      ("a914d3cf9d04f4ecc36df8207b300e46bc6775fc84c087", Block.TestnetGenesisBlock.hash, "2NCZBGzKadAnLv1ijAqhrKavMuqvxqu18yY"),
+      ("00145cb882efd643b7d63ae133e4d5e88e10bd5a20d7", Block.LivenetGenesisBlock.hash, "bc1qtjug9m7kgwmavwhpx0jdt6ywzz745gxhxwyn8u"),
+      ("00208c2865c87ffd33fc5d698c7df9cf2d0fb39d93103c637a06dea32c848ebc3e1d", Block.LivenetGenesisBlock.hash, "bc1q3s5xtjrll5elchtf337lnnedp7eemycs833h5pk75vkgfr4u8cws3ytg02"),
+      ("76a914536ffa992491508dca0354e52f32a3a7a679a53a88ac", Block.LivenetGenesisBlock.hash, "18cBEMRxXHqzWWCxZNtU91F5sbUNKhL5PX"),
+      ("a91481b9ac6a59b53927da7277b5ad5460d781b365d987", Block.LivenetGenesisBlock.hash, "3DWwX7NYjnav66qygrm4mBCpiByjammaWy"),
+      ("5120eceb3f3cdbad5bda395a32910ff6195a89cc5ec7fbf34705512da6f81963b156", Block.RegtestGenesisBlock.hash, "bcrt1pan4n70xm44da5w26x2gslaset2yuchk8l0e5wp239kn0sxtrk9tql9wc8z"),
+      ("00144cae0f71665150b3ac0e0f2990222e99a0e470df", Block.RegtestGenesisBlock.hash, "bcrt1qfjhq7utx29gt8tqwpu5eqg3wnxswguxl57xpge")
+    ).foreach { case (script, blockHash, address) =>
+      assert(addressFromPublicKeyScript(blockHash, ByteVector.fromValidHex(script)) == address)
+    }
+  }
 }
