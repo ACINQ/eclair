@@ -25,9 +25,9 @@ import fr.acinq.eclair.transactions.Transactions
 // @formatter:off
 sealed trait ConfirmationPriority {
   def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
-    case ConfirmationPriority.Slow => feerates.blocks_1008
-    case ConfirmationPriority.Medium => feerates.blocks_12
-    case ConfirmationPriority.Fast => feerates.blocks_2
+    case ConfirmationPriority.Slow => feerates.slow
+    case ConfirmationPriority.Medium => feerates.medium
+    case ConfirmationPriority.Fast => feerates.fast
   }
 override def toString: String = super.toString.toLowerCase
 }
@@ -89,8 +89,8 @@ case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spend
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
   def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi): FeeratePerKw = {
-    val networkFeerate = feerates.blocks_2
-    val networkMinFee = feerates.mempoolMinFee
+    val networkFeerate = feerates.fast
+    val networkMinFee = feerates.minimum
 
     channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate

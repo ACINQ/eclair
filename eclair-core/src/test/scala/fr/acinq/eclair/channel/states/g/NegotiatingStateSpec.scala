@@ -87,7 +87,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   }
 
   def buildFeerates(feerate: FeeratePerKw, minFeerate: FeeratePerKw = FeeratePerKw(250 sat)): FeeratesPerKw =
-    FeeratesPerKw.single(feerate).copy(mempoolMinFee = minFeerate, blocks_1008 = minFeerate)
+    FeeratesPerKw.single(feerate).copy(minimum = minFeerate, slow = minFeerate)
 
   test("recv CMD_ADD_HTLC") { f =>
     import f._
@@ -105,8 +105,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // alice and bob see different on-chain feerates
-    alice.setFeerates(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(10_000 sat), FeeratePerKw(8000 sat), FeeratePerKw(7500 sat), FeeratePerKw(5000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat)))
-    bob.setFeerates(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(15_000 sat), FeeratePerKw(12_500 sat), FeeratePerKw(10_000 sat), FeeratePerKw(7500 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat)))
+    alice.setFeerates(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(10_000 sat), FeeratePerKw(8000 sat), FeeratePerKw(5000 sat), FeeratePerKw(2000 sat)))
+    bob.setFeerates(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(15_000 sat), FeeratePerKw(12_500 sat), FeeratePerKw(7500 sat), FeeratePerKw(3000 sat)))
 
     if (bobInitiates) {
       bobClose(f)

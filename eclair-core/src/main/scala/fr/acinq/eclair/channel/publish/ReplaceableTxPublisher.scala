@@ -83,21 +83,18 @@ object ReplaceableTxPublisher {
         if (hasEnoughSafeUtxos) {
           remainingBlocks match {
             // If our target is still very far in the future, no need to rush
-            case t if t >= 144 => feerates.blocks_144
-            case t if t >= 72 => feerates.blocks_72
-            case t if t >= 36 => feerates.blocks_36
+            case t if t >= 36 => feerates.slow
             // However, if we get closer to the target, we start being more aggressive
-            case t if t >= 18 => feerates.blocks_12
-            case t if t >= 12 => feerates.blocks_6
-            case t if t >= 2 => feerates.blocks_2
-            case _ => feerates.block_1
+            case t if t >= 12 => feerates.medium
+            case t if t >= 2 => feerates.fast
+            case _ => feerates.fastest
           }
         } else {
           // We don't have many safe utxos so we want the transaction to confirm quickly.
           if (remainingBlocks <= 1) {
-            feerates.block_1
+            feerates.fastest
           } else {
-            feerates.blocks_2
+            feerates.fast
           }
         }
       case ConfirmationTarget.Priority(priority) =>

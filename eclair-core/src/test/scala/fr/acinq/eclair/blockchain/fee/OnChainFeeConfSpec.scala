@@ -41,10 +41,10 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val channelType = ChannelTypes.Standard()
     val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
-    val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat))
+    val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(5000 sat))
     assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, channelType, 100000 sat) == FeeratePerKw(5000 sat))
 
-    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(4000 sat))
+    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(4000 sat))
     assert(feeConf.getCommitmentFeerate(feerates2, randomKey().publicKey, channelType, 100000 sat) == FeeratePerKw(4000 sat))
   }
 
@@ -55,31 +55,31 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
     val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
-    val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat))
+    val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == defaultMaxCommitFeerate / 2)
     assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == defaultMaxCommitFeerate / 2)
 
-    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 2, mempoolMinFee = FeeratePerKw(250 sat))
+    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate * 2, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == defaultMaxCommitFeerate)
     assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == defaultMaxCommitFeerate)
     assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == overrideMaxCommitFeerate)
     assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == overrideMaxCommitFeerate)
 
-    val feerates3 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2, mempoolMinFee = FeeratePerKw(250 sat))
+    val feerates3 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == defaultMaxCommitFeerate / 2)
     assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == defaultMaxCommitFeerate / 2)
 
-    val feerates4 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 1.5, mempoolMinFee = FeeratePerKw(250 sat))
+    val feerates4 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate * 1.5, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == defaultMaxCommitFeerate)
     assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == defaultMaxCommitFeerate)
 
-    val feerates5 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(mempoolMinFee = FeeratePerKw(10000 sat))
+    val feerates5 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(minimum = FeeratePerKw(10000 sat))
     assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
     assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
     assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
     assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
 
-    val feerates6 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(mempoolMinFee = FeeratePerKw(10000 sat))
+    val feerates6 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(minimum = FeeratePerKw(10000 sat))
     assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
     assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
     assert(feeConf.getCommitmentFeerate(feerates6, overrideNodeId, ChannelTypes.AnchorOutputs(), 100000 sat) == FeeratePerKw(10000 sat) * 1.25)

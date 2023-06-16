@@ -932,7 +932,7 @@ object Helpers {
         val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
         val outputs = makeCommitTxOutputs(!commitment.localParams.isInitiator, commitment.remoteParams.dustLimit, remoteRevocationPubkey, commitment.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitment.remoteFundingPubKey, localFundingPubkey, remoteCommit.spec, commitment.params.commitmentFormat)
         // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-        val feeratePerKwHtlc = feerates.blocks_2
+        val feeratePerKwHtlc = feerates.fast
 
         // those are the preimages to existing received htlcs
         val hash2Preimage: Map[ByteVector32, ByteVector32] = commitment.changes.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
@@ -1028,7 +1028,7 @@ object Helpers {
 
         val feerateMain = onChainFeeConf.getClosingFeerate(feerates)
         // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
-        val feeratePenalty = feerates.blocks_2
+        val feeratePenalty = feerates.fast
 
         // first we will claim our main output right away
         val mainTx = channelFeatures match {
@@ -1125,7 +1125,7 @@ object Helpers {
               val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
 
               // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
-              val feeratePerKwPenalty = feerates.block_1
+              val feeratePerKwPenalty = feerates.fastest
 
               val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, finalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
                 withTxGenerationLog("htlc-delayed-penalty") {

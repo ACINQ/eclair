@@ -89,14 +89,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     /** Set feerate for a specific block target. */
     def setFeerate(feerate: FeeratePerKw, blockTarget: Int): Unit = {
       def updateFeerates(currentFeerates: FeeratesPerKw): FeeratesPerKw = blockTarget match {
-        case 1 => currentFeerates.copy(block_1 = feerate)
-        case 2 => currentFeerates.copy(blocks_2 = feerate)
-        case t if t <= 6 =>  currentFeerates.copy(blocks_6 = feerate)
-        case t if t <= 12 => currentFeerates.copy(blocks_12 = feerate)
-        case t if t <= 36 => currentFeerates.copy(blocks_36 = feerate)
-        case t if t <= 72 => currentFeerates.copy(blocks_72 = feerate)
-        case t if t <= 144 => currentFeerates.copy(blocks_144 = feerate)
-        case _ => currentFeerates.copy(blocks_1008 = feerate)
+        case 1 => currentFeerates.copy(fastest = feerate)
+        case 2 => currentFeerates.copy(fast = feerate)
+        case t if t <= 12 => currentFeerates.copy(medium = feerate)
+        case _ => currentFeerates.copy(slow = feerate)
       }
 
       alice.underlyingActor.nodeParams.setFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentFeerates))
@@ -551,7 +547,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(10.4 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 40)
       wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(commitTx.tx.txid)
 
@@ -590,7 +586,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 40)
       wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(commitTx.tx.txid)
 
@@ -624,7 +620,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(10.2 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 40)
       wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(commitTx.tx.txid)
 
@@ -655,7 +651,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 40)
       wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(commitTx.tx.txid)
 
@@ -1442,7 +1438,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val currentFeerate = alice.underlyingActor.nodeParams.currentFeerates.blocks_2
+      val currentFeerate = alice.underlyingActor.nodeParams.currentFeerates.fast
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50, nextCommit = false)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, currentFeerate)
       assert(claimHtlcSuccess.txInfo.fee > 0.sat)
