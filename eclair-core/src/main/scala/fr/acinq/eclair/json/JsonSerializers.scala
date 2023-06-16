@@ -94,6 +94,14 @@ class ConvertClassSerializer[T: Manifest](f: T => Any) extends Serializer[Nothin
   }
 }
 
+object ActorRefSerializer extends MinimalSerializer({
+  case _: akka.actor.ActorRef => JNothing
+})
+
+object TypedActorRefSerializer extends MinimalSerializer({
+  case _: akka.actor.typed.ActorRef[_] => JNothing
+})
+
 object ByteVectorSerializer extends MinimalSerializer({
   case x: ByteVector => JString(x.toHex)
 })
@@ -610,6 +618,8 @@ object JsonSerializers {
     CustomTypeHints.channelStates +
     CustomTypeHints.realScidStatuses +
     CustomTypeHints.remoteFundingStatuses +
+    ActorRefSerializer +
+    TypedActorRefSerializer +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
