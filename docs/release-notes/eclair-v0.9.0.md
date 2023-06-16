@@ -311,3 +311,4 @@ This release is fully compatible with previous eclair versions. You don't need t
 - [878eb27](https://github.com/ACINQ/eclair/commit/878eb276b031705e48cddf3f01f81707fd5f73cc) Update maven version (#2690)
 - [1105a0a](https://github.com/ACINQ/eclair/commit/1105a0a7bed69d814190072bf8b419240d55fd85) Update docker gradle checksum (#2692)
 - [fe9f32b](https://github.com/ACINQ/eclair/commit/fe9f32bdf13bb103cf944f31e9b0e89e287b8b00) Minor updates on `PeerReadyNotifier` (#2695)
+- [3a351f4](https://github.com/ACINQ/eclair/commit/3a351f4d5dce3fca3d4656d6369031a5d3a65afc) Never serialize ActorRef (#2697)
