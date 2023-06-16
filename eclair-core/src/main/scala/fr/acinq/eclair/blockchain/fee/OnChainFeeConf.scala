@@ -22,8 +22,6 @@ import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions
 
-import java.util.concurrent.atomic.AtomicReference
-
 // @formatter:off
 sealed trait ConfirmationPriority {
   def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
@@ -71,9 +69,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
   }
 }
 
-case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
-
-  def currentFeerates: FeeratesPerKw = feerates.get()
+case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
@@ -81,7 +77,7 @@ case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], feeTargets: 
   def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw): Boolean =
     currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
 
-  def getFundingFeerate(): FeeratePerKw = feeTargets.funding.getFeerate(currentFeerates)
+  def getFundingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.funding.getFeerate(feerates)
 
   /**
    * Get the feerate that should apply to a channel commitment transaction:
@@ -92,9 +88,9 @@ case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], feeTargets: 
    * @param channelType         channel type
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
-  def getCommitmentFeerate(remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi): FeeratePerKw = {
-    val networkFeerate = currentFeerates.blocks_2
-    val networkMinFee = currentFeerates.mempoolMinFee
+  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi): FeeratePerKw = {
+    val networkFeerate = feerates.blocks_2
+    val networkMinFee = feerates.mempoolMinFee
 
     channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
@@ -105,5 +101,5 @@ case class OnChainFeeConf(feerates: AtomicReference[FeeratesPerKw], feeTargets: 
     }
   }
 
-  def getClosingFeerate(): FeeratePerKw = feeTargets.closing.getFeerate(currentFeerates)
+  def getClosingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.closing.getFeerate(feerates)
 }

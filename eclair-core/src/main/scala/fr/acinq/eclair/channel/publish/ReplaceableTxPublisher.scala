@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
@@ -75,7 +75,7 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(onChainFeeConf: OnChainFeeConf, confirmationTarget: ConfirmationTarget, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
+  def getFeerate(feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, confirmationTarget: ConfirmationTarget, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
     confirmationTarget match {
       case ConfirmationTarget.Absolute(confirmBefore) =>
         // If we have an absolute block height target, we take into account what the current height is and adjust the feerate
@@ -83,26 +83,26 @@ object ReplaceableTxPublisher {
         if (hasEnoughSafeUtxos) {
           remainingBlocks match {
             // If our target is still very far in the future, no need to rush
-            case t if t >= 144 => onChainFeeConf.currentFeerates.blocks_144
-            case t if t >= 72 => onChainFeeConf.currentFeerates.blocks_72
-            case t if t >= 36 => onChainFeeConf.currentFeerates.blocks_36
+            case t if t >= 144 => feerates.blocks_144
+            case t if t >= 72 => feerates.blocks_72
+            case t if t >= 36 => feerates.blocks_36
             // However, if we get closer to the target, we start being more aggressive
-            case t if t >= 18 => onChainFeeConf.currentFeerates.blocks_12
-            case t if t >= 12 => onChainFeeConf.currentFeerates.blocks_6
-            case t if t >= 2 => onChainFeeConf.currentFeerates.blocks_2
-            case _ => onChainFeeConf.currentFeerates.block_1
+            case t if t >= 18 => feerates.blocks_12
+            case t if t >= 12 => feerates.blocks_6
+            case t if t >= 2 => feerates.blocks_2
+            case _ => feerates.block_1
           }
         } else {
           // We don't have many safe utxos so we want the transaction to confirm quickly.
           if (remainingBlocks <= 1) {
-            onChainFeeConf.currentFeerates.block_1
+            feerates.block_1
           } else {
-            onChainFeeConf.currentFeerates.blocks_2
+            feerates.blocks_2
           }
         }
       case ConfirmationTarget.Priority(priority) =>
         // If we have a priority target, then the current block height doesn't matter
-        priority.getFeerate(onChainFeeConf.currentFeerates)
+        priority.getFeerate(feerates)
     }
   }
 
@@ -164,7 +164,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
-        val targetFeerate = getFeerate(nodeParams.onChainFeeConf, confirmationTarget, currentBlockHeight, isSafe)
+        val targetFeerate = getFeerate(nodeParams.currentFeerates, nodeParams.onChainFeeConf, confirmationTarget, currentBlockHeight, isSafe)
         fund(txWithWitnessData, targetFeerate)
       case UpdateConfirmationTarget(target) =>
         confirmationTarget = target
@@ -226,7 +226,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
         // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
         val bumpRatio = 1.2
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf, confirmationTarget, currentBlockHeight, isSafe)
+        val currentFeerate = getFeerate(nodeParams.currentFeerates, nodeParams.onChainFeeConf, confirmationTarget, currentBlockHeight, isSafe)
         val targetFeerate_opt = confirmationTarget match {
           case ConfirmationTarget.Absolute(confirmBefore) =>
             if (confirmBefore <= currentBlockHeight + 6) {

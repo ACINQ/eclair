@@ -82,8 +82,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     /** Set uniform feerate for all block targets. */
     def setFeerate(feerate: FeeratePerKw): Unit = {
-      alice.underlyingActor.nodeParams.onChainFeeConf.feerates.set(FeeratesPerKw.single(feerate))
-      bob.underlyingActor.nodeParams.onChainFeeConf.feerates.set(FeeratesPerKw.single(feerate))
+      alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate))
+      bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate))
     }
 
     /** Set feerate for a specific block target. */
@@ -99,8 +99,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         case _ => currentFeerates.copy(blocks_1008 = feerate)
       }
 
-      alice.underlyingActor.nodeParams.onChainFeeConf.feerates.set(updateFeerates(alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates))
-      bob.underlyingActor.nodeParams.onChainFeeConf.feerates.set(updateFeerates(alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates))
+      alice.underlyingActor.nodeParams.setFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentFeerates))
+      bob.underlyingActor.nodeParams.setFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentFeerates))
     }
 
     def getMempool(): Seq[Transaction] = {
@@ -1442,7 +1442,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val currentFeerate = alice.underlyingActor.nodeParams.onChainFeeConf.currentFeerates.blocks_2
+      val currentFeerate = alice.underlyingActor.nodeParams.currentFeerates.blocks_2
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50, nextCommit = false)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, currentFeerate)
       assert(claimHtlcSuccess.txInfo.fee > 0.sat)

@@ -615,7 +615,10 @@ object ChannelStateTestsBase {
   }
 
   implicit class PimpTestFSM(private val channel: TestFSMRef[ChannelState, ChannelData, Channel]) {
-    def setFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.onChainFeeConf.feerates.set(feerates)
+
+    val nodeParams: NodeParams = channel.underlyingActor.nodeParams
+
+    def setFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setFeerates(feerates)
 
     def setFeerate(feerate: FeeratePerKw): Unit = setFeerates(FeeratesPerKw.single(feerate))
   }

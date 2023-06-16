@@ -56,6 +56,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
+                      private val feerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -96,6 +97,11 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
+
+  def currentFeerates: FeeratesPerKw = feerates.get()
+
+  /** Only to be used in tests. */
+  def setFeerates(value: FeeratesPerKw) = feerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -471,6 +477,7 @@ object NodeParams extends Logging {
       channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
+      feerates = feerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -509,7 +516,6 @@ object NodeParams extends Logging {
         remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks"))
       ),
       onChainFeeConf = OnChainFeeConf(
-        feerates = feerates,
         feeTargets = feeTargets,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
