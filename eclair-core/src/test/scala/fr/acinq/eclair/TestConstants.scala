@@ -82,6 +82,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -133,7 +134,6 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
@@ -242,6 +242,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
@@ -290,7 +291,6 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,

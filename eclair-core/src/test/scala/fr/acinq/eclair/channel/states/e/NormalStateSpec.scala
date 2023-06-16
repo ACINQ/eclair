@@ -2214,7 +2214,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val tx = bobCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.remoteNodeId, bobCommitments.params.channelType, bobCommitments.latest.capacity)
+    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.remoteNodeId, bobCommitments.params.channelType, bobCommitments.latest.capacity)
     assert(bobCommitments.latest.localCommit.spec.commitTxFeerate == expectedFeeratePerKw)
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat))
     val error = bob2alice.expectMsgType[Error]
@@ -2879,7 +2879,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(50 sat), FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
     alice.setFeerates(event.feeratesPerKw)
     alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.remoteNodeId, initialState.commitments.params.channelType, initialState.commitments.latest.capacity)))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.channelType, initialState.commitments.latest.capacity)))
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -3040,7 +3040,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(getClaimHtlcTimeoutTxs(rcp).length == 2)
 
     // assert the feerate of the claim main is what we expect
-    val expectedFeeRate = alice.underlyingActor.nodeParams.onChainFeeConf.getClosingFeerate()
+    val expectedFeeRate = alice.underlyingActor.nodeParams.onChainFeeConf.getClosingFeerate(alice.underlyingActor.nodeParams.currentFeerates)
     val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount).sum - claimMain.txOut.map(_.amount).sum
     assert(claimFee == expectedFee)
