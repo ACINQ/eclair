@@ -18,8 +18,9 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Route}
+import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -178,7 +179,7 @@ case class BalanceEstimate private(low: MilliSatoshi,
   def didReceive(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
     otherSide.didSend(amount, timestamp).otherSide
 
-  def addEdge(edge: GraphEdge): BalanceEstimate = copy(
+  def addEdge(edge: ActiveEdge): BalanceEstimate = copy(
     high = high.max(edge.capacity.toMilliSatoshi),
     capacities = capacities.updated(edge.desc.shortChannelId, edge.capacity)
   )
@@ -234,7 +235,7 @@ object BalanceEstimate {
 case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstimate], defaultHalfLife: FiniteDuration) {
   private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] = balances.get((a, b))
 
-  def addEdge(edge: GraphEdge): BalancesEstimates = BalancesEstimates(
+  def addEdge(edge: ActiveEdge): BalancesEstimates = BalancesEstimates(
     balances.updatedWith((edge.desc.a, edge.desc.b))(balance =>
       Some(balance.getOrElse(BalanceEstimate.empty(defaultHalfLife)).addEdge(edge))
     ),
@@ -284,13 +285,17 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 }
 
 case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
-  def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
+  def addOrUpdateVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addOrUpdateVertex(ann), balances)
 
-  def removeEdge(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.removeEdge(desc), balances.removeEdge(desc))
+  def addEdge(edge: ActiveEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
 
-  def removeEdges(descList: Iterable[ChannelDesc]): GraphWithBalanceEstimates = GraphWithBalanceEstimates(
-    graph.removeEdges(descList),
-    descList.foldLeft(balances)((acc, edge) => acc.removeEdge(edge)),
+  def disableEdge(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.disableEdge(desc), balances.removeEdge(desc))
+
+  def removeChannel(desc: ChannelDesc): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.removeChannel(desc), balances.removeEdge(desc).removeEdge(desc.reversed))
+
+  def removeChannels(descList: Iterable[ChannelDesc]): GraphWithBalanceEstimates = GraphWithBalanceEstimates(
+    graph.removeChannels(descList),
+    descList.foldLeft(balances)((acc, edge) => acc.removeEdge(edge).removeEdge(edge.reversed)),
   )
 
   def routeCouldRelay(route: Route): GraphWithBalanceEstimates = {
@@ -313,7 +318,7 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
     GraphWithBalanceEstimates(graph, balances.channelCouldNotSend(hop, amount))
   }
 
-  def canSend(amount: MilliSatoshi, edge: GraphEdge): Double = {
+  def canSend(amount: MilliSatoshi, edge: ActiveEdge): Double = {
     balances.balances.get((edge.desc.a, edge.desc.b)) match {
       case Some(estimate) => estimate.canSend(amount)
       case None => BalanceEstimate.empty(1 hour).addEdge(edge).canSend(amount)

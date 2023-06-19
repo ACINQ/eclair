@@ -103,7 +103,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
-    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
