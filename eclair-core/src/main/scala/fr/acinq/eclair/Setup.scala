@@ -121,7 +121,7 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  val (bitcoin, bitcoinChainHash) = {
+  val (bitcoin, bitcoinChainHash, medianFeerate) = {
     val wallet = {
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
@@ -164,9 +164,19 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+      recentMedianFeerates <- Future.sequence {
+        for (i <- 0 until 3)
+          yield bitcoinClient.invoke("getblockstats", s"'${blocks - i}'")
+          .map { json =>
+            val JArray(percentiles) = json \ "feerate_percentiles"
+            // Feerates at the 10th, 25th, 50th, 75th, and 90th percentile weight unit (in satoshis per virtual byte)
+            percentiles(2).extract[Int]
+          }
+      }.map(_.filterNot(_ == 0))
+      recentMedianFeerate = FeeratePerByte((recentMedianFeerates.sum / recentMedianFeerates.size).sat)// we throw if all recent blocks were empty, that's okay
+    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, recentMedianFeerate)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers, medianFeerate) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
     logger.info(s"bitcoind version=$bitcoinVersion")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
@@ -177,7 +187,7 @@ class Setup(val datadir: File,
     }
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
-    (bitcoinClient, chainHash)
+    (bitcoinClient, chainHash, medianFeerate)
   }
 
   val instanceId = UUID.randomUUID()
@@ -209,11 +219,11 @@ class Setup(val datadir: File,
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>
           val constantFeerates = FeeratesPerKw(
-            minimum = FeeratePerKw(FeeratePerByte(1 sat)),
-            slow = FeeratePerKw(FeeratePerByte(2 sat)),
-            medium = FeeratePerKw(FeeratePerByte(5 sat)),
-            fast = FeeratePerKw(FeeratePerByte(10 sat)),
-            fastest = FeeratePerKw(FeeratePerByte(20 sat)),
+            minimum = FeeratePerKw(medianFeerate) / 4,
+            slow = FeeratePerKw(medianFeerate) / 2,
+            medium = FeeratePerKw(medianFeerate),
+            fast = FeeratePerKw(medianFeerate) * 2,
+            fastest = FeeratePerKw(medianFeerate) * 4,
           )
           FallbackFeeProvider(ConstantFeeProvider(constantFeerates) :: Nil, minFeeratePerByte)
         case _ =>
