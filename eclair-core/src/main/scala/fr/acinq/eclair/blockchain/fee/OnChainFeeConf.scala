@@ -29,7 +29,7 @@ sealed trait ConfirmationPriority {
     case ConfirmationPriority.Medium => feerates.medium
     case ConfirmationPriority.Fast => feerates.fast
   }
-override def toString: String = super.toString.toLowerCase
+  override def toString: String = super.toString.toLowerCase
 }
 object ConfirmationPriority {
   case object Slow extends ConfirmationPriority
