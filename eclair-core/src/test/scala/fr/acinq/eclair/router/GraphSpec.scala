@@ -17,17 +17,20 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph, DisabledEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.ChannelDesc
-import fr.acinq.eclair.wire.protocol.Color
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, randomKey}
+import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecondLong, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.HexStringSyntax
+
+import scala.collection.immutable.SortedMap
 
 class GraphSpec extends AnyFunSuite {
 
@@ -484,5 +487,53 @@ class GraphSpec extends AnyFunSuite {
       val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
       assert(MessagePath.dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
     }
+  }
+
+  test("makeGraph with disabled channels") {
+    val scid1 = RealShortChannelId(BlockHeight(565643), 1216, 0)
+    val scid2 = RealShortChannelId(BlockHeight(542280), 2156, 0)
+    val scid3 = RealShortChannelId(BlockHeight(565779), 2711, 0)
+    val a = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
+    val b = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
+    val c = PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")
+    val updates = SortedMap(
+      scid1 -> PublicChannel(
+        ann = makeChannel(scid1.toLong, a, b),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = DEFAULT_CAPACITY,
+        // Both directions are enabled.
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid1, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = true), CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid1, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
+        meta_opt = None
+      ),
+      scid2 -> PublicChannel(
+        ann = makeChannel(scid2.toLong, b, c),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = DEFAULT_CAPACITY,
+        // Only one direction is enabled.
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid2, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true), CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid2, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
+        meta_opt = None
+      ),
+      scid3 -> PublicChannel(
+        ann = makeChannel(scid3.toLong, a, c),
+        fundingTxid = ByteVector32.Zeroes,
+        capacity = DEFAULT_CAPACITY,
+        // Both directions are disabled.
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid3, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid3, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        meta_opt = None
+      )
+    )
+    val g = DirectedGraph.makeGraph(updates, Seq.empty)
+    val edgesOfA = g.getIncomingEdgesOf(a).toSeq
+    assert(edgesOfA.size == 1)
+    assert(edgesOfA.head.isInstanceOf[ActiveEdge])
+    val edgesOfB = g.getIncomingEdgesOf(b).toSeq
+    assert(edgesOfB.size == 2)
+    assert(edgesOfB.forall(_.isInstanceOf[ActiveEdge]))
+    val edgesOfC = g.getIncomingEdgesOf(c).toSeq
+    assert(edgesOfC.size == 1)
+    assert(edgesOfC.head.isInstanceOf[DisabledEdge])
   }
 }

@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph, DisabledEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
@@ -808,11 +808,13 @@ object Graph {
        *
        * @param channels map of all known public channels in the network.
        */
-      def makeGraph(channels: Map[RealShortChannelId, PublicChannel], nodes: Map[PublicKey, NodeAnnouncement]): DirectedGraph = {
-        val edges = channels.values.flatMap(channel =>
-          Seq(channel.update_1_opt.map(ActiveEdge(_, channel)), channel.update_2_opt.map(ActiveEdge(_, channel))).flatten)
+      def makeGraph(channels: Map[RealShortChannelId, PublicChannel], nodes: Seq[NodeAnnouncement]): DirectedGraph = {
+        val edges = channels.values.flatMap(channel => Seq(
+          channel.update_1_opt.collect { case u1 if u1.channelFlags.isEnabled => ActiveEdge(u1, channel) },
+          channel.update_2_opt.collect { case u2 if u2.channelFlags.isEnabled => ActiveEdge(u2, channel) },
+        ).flatten)
 
-        DirectedGraph().addVertices(nodes.values).addEdges(edges)
+        DirectedGraph().addVertices(nodes).addEdges(edges)
       }
 
       def graphEdgeToHop(graphEdge: ActiveEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)

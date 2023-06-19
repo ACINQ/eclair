@@ -74,7 +74,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   {
     log.info("loading network announcements from db...")
     val (pruned, channels) = db.listChannels().partition { case (_, pc) => pc.isStale(nodeParams.currentBlockHeight) }
-    val nodes = db.listNodes().map(n => n.nodeId -> n).toMap
+    val nodes = db.listNodes()
     Metrics.Nodes.withoutTags().update(nodes.size)
     Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
@@ -84,7 +84,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     // send events for remaining channels/nodes
     context.system.eventStream.publish(ChannelsDiscovered(channels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
     context.system.eventStream.publish(ChannelUpdatesReceived(channels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
-    context.system.eventStream.publish(NodesDiscovered(nodes.values))
+    context.system.eventStream.publish(NodesDiscovered(nodes))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
@@ -105,7 +105,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     val data = Data(
-      nodes, channels, pruned,
+      nodes.map(n => n.nodeId -> n).toMap, channels, pruned,
       Stash(Map.empty, Map.empty),
       rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
       awaiting = Map.empty,

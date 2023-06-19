@@ -927,7 +927,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       )
     )
 
-    val g = DirectedGraph.makeGraph(updates, Map.empty)
+    val g = DirectedGraph.makeGraph(updates, Seq.empty)
     val params = DEFAULT_ROUTE_PARAMS
       .modify(_.boundaries.maxCltv).setTo(CltvExpiryDelta(1008))
       .modify(_.heuristics).setTo(Left(WeightRatios(baseFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCost = RelayFees(0 msat, 0))))
