@@ -26,7 +26,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * Created by PM on 09/07/2017.
  */
-case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
+case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends FeeProvider {
 
   implicit val formats = DefaultFormats.withBigDecimal
 
@@ -46,18 +46,19 @@ case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerat
       case other => throw new RuntimeException(s"mempoolminfee failed: $other")
     })
 
-  override def getFeerates: Future[FeeratesPerKB] = for {
+  def getFeerates: Future[FeeratesPerKw] = for {
     mempoolMinFee <- mempoolMinFee()
     block_1 <- estimateSmartFee(1)
     blocks_2 <- estimateSmartFee(2)
     blocks_12 <- estimateSmartFee(12)
     blocks_1008 <- estimateSmartFee(1008)
-  } yield FeeratesPerKB(
-    minimum = if (mempoolMinFee.feerate > 0.sat) mempoolMinFee else defaultFeerates.minimum,
-    fastest = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.fastest,
-    fast = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.fast,
-    medium = if (blocks_12.feerate > 0.sat) blocks_12 else defaultFeerates.medium,
-    slow = if (blocks_1008.feerate > 0.sat) blocks_1008 else defaultFeerates.slow)
+  } yield FeeratesPerKw(
+    minimum = FeeratePerKw(mempoolMinFee),
+    fastest = FeeratePerKw(block_1),
+    fast = FeeratePerKw(blocks_2),
+    medium = FeeratePerKw(blocks_12),
+    slow = FeeratePerKw(blocks_1008)
+  )
 }
 
 object BitcoinCoreFeeProvider {

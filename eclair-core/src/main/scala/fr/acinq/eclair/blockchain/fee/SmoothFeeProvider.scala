@@ -21,14 +21,14 @@ import scala.concurrent.{ExecutionContext, Future}
 case class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: ExecutionContext) extends FeeProvider {
   require(windowSize > 0)
 
-  var queue = List.empty[FeeratesPerKB]
+  var queue = List.empty[FeeratesPerKw]
 
-  def append(rate: FeeratesPerKB): Unit = synchronized {
+  def append(rate: FeeratesPerKw): Unit = synchronized {
     queue = queue :+ rate
     if (queue.length > windowSize) queue = queue.drop(1)
   }
 
-  override def getFeerates: Future[FeeratesPerKB] = {
+  override def getFeerates: Future[FeeratesPerKw] = {
     for {
       rate <- provider.getFeerates
       _ = append(rate)
@@ -39,10 +39,10 @@ case class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec
 
 object SmoothFeeProvider {
 
-  def avg(i: Seq[FeeratePerKB]): FeeratePerKB = FeeratePerKB(i.map(_.feerate).sum / i.size)
+  def avg(i: Seq[FeeratePerKw]): FeeratePerKw = FeeratePerKw(i.map(_.feerate).sum / i.size)
 
-  def smooth(rates: Seq[FeeratesPerKB]): FeeratesPerKB =
-    FeeratesPerKB(
+  def smooth(rates: Seq[FeeratesPerKw]): FeeratesPerKw =
+    FeeratesPerKw(
       minimum = avg(rates.map(_.minimum)),
       fastest = avg(rates.map(_.fastest)),
       fast = avg(rates.map(_.fast)),

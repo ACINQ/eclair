@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
@@ -205,35 +205,31 @@ class Setup(val datadir: File,
       channels = DBChecker.checkChannelsDB(nodeParams)
       _ = DBChecker.checkNetworkDB(nodeParams)
 
-      defaultFeerates = {
-        val confDefaultFeerates = FeeratesPerKB(
-          minimum = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
-          fastest = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
-          fast = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
-          medium = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.12"))),
-          slow = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
-        )
-        feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
-        confDefaultFeerates
-      }
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
-      smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>
-          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+          val constantFeerates = FeeratesPerKw(
+            minimum = FeeratePerKw(FeeratePerByte(1 sat)),
+            slow = FeeratePerKw(FeeratePerByte(2 sat)),
+            medium = FeeratePerKw(FeeratePerByte(5 sat)),
+            fast = FeeratePerKw(FeeratePerByte(10 sat)),
+            fastest = FeeratePerKw(FeeratePerByte(20 sat)),
+          )
+          FallbackFeeProvider(ConstantFeeProvider(constantFeerates) :: Nil, minFeeratePerByte)
         case _ =>
-          FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
+          val smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
+          FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
-        case Success(feeratesPerKB) =>
-          feeratesPerKw.set(FeeratesPerKw(feeratesPerKB))
+        case Success(feerates) =>
+          feeratesPerKw.set(feerates)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Minimum).update(feeratesPerKw.get.minimum.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Slow).update(feeratesPerKw.get.slow.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Medium).update(feeratesPerKw.get.medium.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current feerates min=${feerates.minimum.perByte} slow=${feerates.slow.perByte} medium=${feerates.medium.perByte} fast=${feerates.fast.perByte} fastest=${feerates.fastest.perByte}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")

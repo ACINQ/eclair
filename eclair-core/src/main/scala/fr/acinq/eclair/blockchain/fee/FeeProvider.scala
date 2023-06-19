@@ -25,7 +25,7 @@ import scala.concurrent.Future
  * Created by PM on 09/07/2017.
  */
 trait FeeProvider {
-  def getFeerates: Future[FeeratesPerKB]
+  def getFeerates: Future[FeeratesPerKw]
 }
 
 case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates, channels may be at risk: ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
@@ -60,6 +60,7 @@ object FeeratePerKB {
 /** Fee rate in satoshi-per-kilo-weight. */
 case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
   // @formatter:off
+  def perByte: FeeratePerByte = FeeratePerByte(this)
   override def compare(that: FeeratePerKw): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKw): FeeratePerKw = if (this > other) this else other
   def min(other: FeeratePerKw): FeeratePerKw = if (this < other) this else other
@@ -106,19 +107,10 @@ object FeeratePerKw {
 }
 
 /**
- * Fee rates in satoshis-per-kilo-bytes (1 kb = 1000 bytes).
+ * Fee rates in satoshi-per-kilo-weight (1 kw = 1000 weight units).
  * The mempoolMinFee is the minimal fee required for a tx to enter the mempool (and then be relayed to other nodes and eventually get confirmed).
  * If our fee provider doesn't expose this data, using its biggest block target should be a good enough estimation.
  */
-case class FeeratesPerKB(minimum: FeeratePerKB,
-                         fastest: FeeratePerKB,
-                         fast: FeeratePerKB,
-                         medium: FeeratePerKB,
-                         slow: FeeratePerKB) {
-  require(minimum.feerate > 0.sat && fastest.feerate > 0.sat && fast.feerate > 0.sat && medium.feerate > 0.sat && slow.feerate > 0.sat, "all feerates must be strictly greater than 0")
-}
-
-/** Fee rates in satoshi-per-kilo-weight (1 kw = 1000 weight units). */
 case class FeeratesPerKw(minimum: FeeratePerKw,
                          fastest: FeeratePerKw,
                          fast: FeeratePerKw,
@@ -128,12 +120,6 @@ case class FeeratesPerKw(minimum: FeeratePerKw,
 }
 
 object FeeratesPerKw {
-  def apply(feerates: FeeratesPerKB): FeeratesPerKw = FeeratesPerKw(
-    minimum = FeeratePerKw(feerates.minimum),
-    fastest = FeeratePerKw(feerates.fastest),
-    fast = FeeratePerKw(feerates.fast),
-    medium = FeeratePerKw(feerates.medium),
-    slow = FeeratePerKw(feerates.slow))
 
   /** Used in tests */
   def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
