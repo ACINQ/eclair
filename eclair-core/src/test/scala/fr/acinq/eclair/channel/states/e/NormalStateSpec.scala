@@ -26,7 +26,7 @@ import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel.RealScidStatus.Final
 import fr.acinq.eclair.channel._
@@ -3439,7 +3439,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     } else {
       val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
       // When there are no pending HTLCs, there is no absolute deadline to get the commit tx confirmed, we use priority
-      assert(localAnchor.txInfo.confirmationTarget.isInstanceOf[ConfirmationTarget.Priority])
+      assert(localAnchor.txInfo.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Medium))
       val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)
