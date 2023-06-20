@@ -110,64 +110,36 @@ object FeeratePerKw {
  * The mempoolMinFee is the minimal fee required for a tx to enter the mempool (and then be relayed to other nodes and eventually get confirmed).
  * If our fee provider doesn't expose this data, using its biggest block target should be a good enough estimation.
  */
-case class FeeratesPerKB(mempoolMinFee: FeeratePerKB, block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
-  require(mempoolMinFee.feerate > 0.sat && block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
-
-  def feePerBlock(target: Int): FeeratePerKB = {
-    require(target > 0)
-    target match {
-      case 1 => block_1
-      case 2 => blocks_2
-      case t if t <= 6 => blocks_6
-      case t if t <= 12 => blocks_12
-      case t if t <= 36 => blocks_36
-      case t if t <= 72 => blocks_72
-      case t if t <= 144 => blocks_144
-      case _ => blocks_1008
-    }
-  }
+case class FeeratesPerKB(minimum: FeeratePerKB,
+                         slow: FeeratePerKB,
+                         medium: FeeratePerKB,
+                         fast: FeeratePerKB,
+                         fastest: FeeratePerKB) {
+  require(minimum.feerate > 0.sat && slow.feerate > 0.sat && medium.feerate > 0.sat && fast.feerate > 0.sat && fastest.feerate > 0.sat, "all feerates must be strictly greater than 0")
 }
 
 /** Fee rates in satoshi-per-kilo-weight (1 kw = 1000 weight units). */
-case class FeeratesPerKw(mempoolMinFee: FeeratePerKw, block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw, blocks_1008: FeeratePerKw) {
-  require(mempoolMinFee.feerate > 0.sat && block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
-
-  def feePerBlock(target: Int): FeeratePerKw = {
-    require(target > 0)
-    target match {
-      case 1 => block_1
-      case 2 => blocks_2
-      case t if t <= 6 => blocks_6
-      case t if t <= 12 => blocks_12
-      case t if t <= 36 => blocks_36
-      case t if t <= 72 => blocks_72
-      case t if t <= 144 => blocks_144
-      case _ => blocks_1008
-    }
-  }
+case class FeeratesPerKw(minimum: FeeratePerKw,
+                         slow: FeeratePerKw,
+                         medium: FeeratePerKw,
+                         fast: FeeratePerKw,
+                         fastest: FeeratePerKw) {
+  require(minimum.feerate > 0.sat && slow.feerate > 0.sat && medium.feerate > 0.sat && fast.feerate > 0.sat && fastest.feerate > 0.sat, "all feerates must be strictly greater than 0")
 }
 
 object FeeratesPerKw {
   def apply(feerates: FeeratesPerKB): FeeratesPerKw = FeeratesPerKw(
-    mempoolMinFee = FeeratePerKw(feerates.mempoolMinFee),
-    block_1 = FeeratePerKw(feerates.block_1),
-    blocks_2 = FeeratePerKw(feerates.blocks_2),
-    blocks_6 = FeeratePerKw(feerates.blocks_6),
-    blocks_12 = FeeratePerKw(feerates.blocks_12),
-    blocks_36 = FeeratePerKw(feerates.blocks_36),
-    blocks_72 = FeeratePerKw(feerates.blocks_72),
-    blocks_144 = FeeratePerKw(feerates.blocks_144),
-    blocks_1008 = FeeratePerKw(feerates.blocks_1008))
+    minimum = FeeratePerKw(feerates.minimum),
+    slow = FeeratePerKw(feerates.slow),
+    medium = FeeratePerKw(feerates.medium),
+    fast = FeeratePerKw(feerates.fast),
+    fastest = FeeratePerKw(feerates.fastest))
 
   /** Used in tests */
   def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
-    mempoolMinFee = feeratePerKw,
-    block_1 = feeratePerKw,
-    blocks_2 = feeratePerKw,
-    blocks_6 = feeratePerKw,
-    blocks_12 = feeratePerKw,
-    blocks_36 = feeratePerKw,
-    blocks_72 = feeratePerKw,
-    blocks_144 = feeratePerKw,
-    blocks_1008 = feeratePerKw)
+    minimum = feeratePerKw,
+    slow = feeratePerKw,
+    medium = feeratePerKw,
+    fast = feeratePerKw,
+    fastest = feeratePerKw)
 }

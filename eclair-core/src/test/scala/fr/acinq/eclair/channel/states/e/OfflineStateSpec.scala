@@ -30,9 +30,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestFeeEstimator, TestKitBaseClass, TestUtils, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -609,10 +610,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
-    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
-    alice ! CurrentFeerates(networkFeerate)
+    alice.setFeerates(networkFeerates)
+    alice ! CurrentFeerates(networkFeerates)
     if (shouldClose) {
       assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     } else {
@@ -635,10 +637,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
-    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
-    alice ! CurrentFeerates(networkFeerate)
+    alice.setFeerates(networkFeerates)
+    alice ! CurrentFeerates(networkFeerates)
     alice2blockchain.expectNoMessage()
     alice2bob.expectNoMessage()
   }
@@ -651,11 +654,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
     val networkFeeratePerKw = localFeeratePerKw * 2
-    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // Alice ignores feerate changes while offline
-    alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(networkFeerate)
-    alice ! CurrentFeerates(networkFeerate)
+    alice.setFeerates(networkFeerates)
+    alice ! CurrentFeerates(networkFeerates)
     alice2blockchain.expectNoMessage()
     alice2bob.expectNoMessage()
 
@@ -718,10 +721,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
-    val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee
-    bob ! CurrentFeerates(networkFeerate)
+    bob.setFeerates(networkFeerates)
+    bob ! CurrentFeerates(networkFeerates)
     if (shouldClose) {
       assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
     } else {

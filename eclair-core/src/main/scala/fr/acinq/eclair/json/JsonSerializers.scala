@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
@@ -232,26 +232,26 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: HtlcTimeoutTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClaimHtlcSuccessTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
@@ -271,7 +271,11 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
   case x: ReplaceableTransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
-    JField("confirmBeforeBlock", JLong(x.confirmBefore.toLong))
+    x.confirmationTarget match {
+      case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
+      case ConfirmationTarget.Priority(priority) => JField("confirmPriority", JString(priority.toString))
+    }
+
   ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),

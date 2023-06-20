@@ -45,7 +45,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -56,6 +56,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
+                      private val feerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -96,6 +97,11 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
+
+  def currentFeerates: FeeratesPerKw = feerates.get()
+
+  /** Only to be used in tests. */
+  def setFeerates(value: FeeratesPerKw) = feerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -206,7 +212,7 @@ object NodeParams extends Logging {
   }
 
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -265,7 +271,11 @@ object NodeParams extends Logging {
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
-      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests"
+      // v0.8.0
+      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
+      // vx.x.x
+      "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -370,13 +380,15 @@ object NodeParams extends Logging {
 
     validateAddresses(addresses)
 
+    def getConfirmationPriority(path: String): ConfirmationPriority = config.getString(path) match {
+      case "slow" => ConfirmationPriority.Slow
+      case "medium" => ConfirmationPriority.Medium
+      case "fast" => ConfirmationPriority.Fast
+    }
+
     val feeTargets = FeeTargets(
-      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
-      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
-      commitmentWithoutHtlcsBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment-without-htlcs"),
-      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
-      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main"),
-      safeUtxosThreshold = config.getInt("on-chain-fees.target-blocks.safe-utxos-threshold"),
+      funding = getConfirmationPriority("on-chain-fees.confirmation-priority.funding"),
+      closing = getConfirmationPriority("on-chain-fees.confirmation-priority.closing"),
     )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
@@ -465,6 +477,7 @@ object NodeParams extends Logging {
       channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
+      feerates = feerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -504,7 +517,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
-        feeEstimator = feeEstimator,
+        safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),

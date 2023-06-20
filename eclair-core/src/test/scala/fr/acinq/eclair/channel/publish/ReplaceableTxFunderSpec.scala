@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.publish
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
@@ -48,7 +48,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val anchorTx = ClaimLocalAnchorOutputTx(
       InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, anchorScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Nil, 0),
-      BlockHeight(0)
+      ConfirmationTarget.Absolute(BlockHeight(0))
     )
     (CommitTx(commitInput, commitTx), anchorTx)
   }
@@ -69,13 +69,13 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       17,
-      BlockHeight(0)
+      ConfirmationTarget.Absolute(BlockHeight(0))
     ), PlaceHolderSig, preimage)
     val htlcTimeout = HtlcTimeoutWithWitnessData(HtlcTimeoutTx(
       InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
-      BlockHeight(0)
+      ConfirmationTarget.Absolute(BlockHeight(0))
     ), PlaceHolderSig)
     (htlcSuccess, htlcTimeout)
   }
@@ -90,13 +90,13 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       Transaction(2, Seq(TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       5,
-      BlockHeight(0)
+      ConfirmationTarget.Absolute(BlockHeight(0))
     ), preimage)
     val claimHtlcTimeout = ClaimHtlcTimeoutWithWitnessData(ClaimHtlcTimeoutTx(
       InputInfo(OutPoint(ByteVector32.Zeroes, 7), TxOut(5000 sat, Script.pay2wsh(htlcTimeoutScript)), htlcTimeoutScript),
       Transaction(2, Seq(TxIn(OutPoint(ByteVector32.Zeroes, 7), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
-      BlockHeight(0)
+      ConfirmationTarget.Absolute(BlockHeight(0))
     ))
     (claimHtlcSuccess, claimHtlcTimeout)
   }

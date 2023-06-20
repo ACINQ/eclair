@@ -26,9 +26,9 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, 
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{ChannelData, ChannelState, _}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
@@ -109,13 +109,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
-  }
-
-  implicit class ChannelWithTestFeeConf(a: TestFSMRef[ChannelState, ChannelData, Channel]) {
-    // @formatter:off
-    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
-    // @formatter:on
   }
 
   implicit val system: ActorSystem
@@ -619,6 +612,15 @@ object ChannelStateTestsBase {
 
   case class FakeTxPublisherFactory(txPublisher: TestProbe) extends Channel.TxPublisherFactory {
     override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = txPublisher.ref
+  }
+
+  implicit class PimpTestFSM(private val channel: TestFSMRef[ChannelState, ChannelData, Channel]) {
+
+    val nodeParams: NodeParams = channel.underlyingActor.nodeParams
+
+    def setFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setFeerates(feerates)
+
+    def setFeerate(feerate: FeeratePerKw): Unit = setFeerates(FeeratesPerKw.single(feerate))
   }
 
 }

@@ -35,7 +35,7 @@ import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 
 /**
@@ -65,7 +65,7 @@ object TestConstants {
     // @formatter:on
   }
 
-  val blockchainWatchdogSources = Seq(
+  private val blockchainWatchdogSources = Seq(
     "bitcoinheaders.net",
     "blockcypher.com",
     "blockstream.info",
@@ -82,6 +82,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -133,8 +134,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -243,6 +244,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
@@ -291,8 +293,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,

@@ -4,7 +4,23 @@
 
 ## Major changes
 
-<insert changes>
+### Use priority instead of block target for feerates
+
+Eclair now uses a `slow`/`medium`/`fast` notation for feerates (in the style of mempool.space),
+instead of block targets. Only the funding and closing priorities can be configured, the feerate
+for commitment transactions is managed by eclair, so is the fee bumping for htlcs in force close
+scenarii. Note that even in a force close scenario, when an output is only spendable by eclair, then
+the normal closing priority is used.
+
+Default setting is `medium` for both funding and closing. Node operators may configure their values like so:
+```eclair.conf
+eclair.on-chain-fees.confirmation-priority {
+    funding = fast
+    closing = slow
+}
+```
+
+This configuration section replaces the previous `eclair.on-chain-fees.target-blocks` section.
 
 ### API changes
 
