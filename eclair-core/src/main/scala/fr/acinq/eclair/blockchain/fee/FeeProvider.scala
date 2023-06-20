@@ -111,35 +111,35 @@ object FeeratePerKw {
  * If our fee provider doesn't expose this data, using its biggest block target should be a good enough estimation.
  */
 case class FeeratesPerKB(minimum: FeeratePerKB,
-                         fastest: FeeratePerKB,
-                         fast: FeeratePerKB,
+                         slow: FeeratePerKB,
                          medium: FeeratePerKB,
-                         slow: FeeratePerKB) {
-  require(minimum.feerate > 0.sat && fastest.feerate > 0.sat && fast.feerate > 0.sat && medium.feerate > 0.sat && slow.feerate > 0.sat, "all feerates must be strictly greater than 0")
+                         fast: FeeratePerKB,
+                         fastest: FeeratePerKB) {
+  require(minimum.feerate > 0.sat && slow.feerate > 0.sat && medium.feerate > 0.sat && fast.feerate > 0.sat && fastest.feerate > 0.sat, "all feerates must be strictly greater than 0")
 }
 
 /** Fee rates in satoshi-per-kilo-weight (1 kw = 1000 weight units). */
 case class FeeratesPerKw(minimum: FeeratePerKw,
-                         fastest: FeeratePerKw,
-                         fast: FeeratePerKw,
+                         slow: FeeratePerKw,
                          medium: FeeratePerKw,
-                         slow: FeeratePerKw) {
-  require(minimum.feerate > 0.sat && fastest.feerate > 0.sat && fast.feerate > 0.sat && medium.feerate > 0.sat && slow.feerate > 0.sat, "all feerates must be strictly greater than 0")
+                         fast: FeeratePerKw,
+                         fastest: FeeratePerKw) {
+  require(minimum.feerate > 0.sat && slow.feerate > 0.sat && medium.feerate > 0.sat && fast.feerate > 0.sat && fastest.feerate > 0.sat, "all feerates must be strictly greater than 0")
 }
 
 object FeeratesPerKw {
   def apply(feerates: FeeratesPerKB): FeeratesPerKw = FeeratesPerKw(
     minimum = FeeratePerKw(feerates.minimum),
-    fastest = FeeratePerKw(feerates.fastest),
-    fast = FeeratePerKw(feerates.fast),
+    slow = FeeratePerKw(feerates.slow),
     medium = FeeratePerKw(feerates.medium),
-    slow = FeeratePerKw(feerates.slow))
+    fast = FeeratePerKw(feerates.fast),
+    fastest = FeeratePerKw(feerates.fastest))
 
   /** Used in tests */
   def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
     minimum = feeratePerKw,
-    fastest = feeratePerKw,
-    fast = feeratePerKw,
+    slow = feeratePerKw,
     medium = feeratePerKw,
-    slow = feeratePerKw)
+    fast = feeratePerKw,
+    fastest = feeratePerKw)
 }
