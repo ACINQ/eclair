@@ -14,13 +14,13 @@ the normal closing priority is used.
 
 Default setting is `medium` for both funding and closing. Node operators may configure their values like so:
 ```eclair.conf
-on-chain-fees {
-    confirmation-priority {
-      funding = fast
-      closing = slow
-    }
+eclair.on-chain-fees.confirmation-priority {
+    funding = fast
+    closing = slow
 }
 ```
+
+This configuration section replaces the previous `eclair.on-chain-fees.target-blocks` section.
 
 ### API changes
 
