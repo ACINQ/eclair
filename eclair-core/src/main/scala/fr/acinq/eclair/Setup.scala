@@ -240,23 +240,19 @@ class Setup(val datadir: File,
         confDefaultFeerates
       }
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
-      smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash | Block.SignetGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
+          val smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
         case Success(feeratesPerKB) =>
           feeratesPerKw.set(FeeratesPerKw(feeratesPerKB))
-          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Minimum).update(feeratesPerKw.get.minimum.toLong.toDouble)
-          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Slow).update(feeratesPerKw.get.slow.toLong.toDouble)
-          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Medium).update(feeratesPerKw.get.medium.toLong.toDouble)
-          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
-          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
+          blockchain.Monitoring.recordFeerates(feeratesPerKw.get(), provider = blockchain.Monitoring.Tags.Providers.BitcoinCore)
           system.eventStream.publish(CurrentFeerates.BitcoinCore(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=$feeratesPerKB feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current bitcoin core feerates: min=${feeratesPerKB.minimum.perByte} slow=${feeratesPerKB.slow.perByte} medium=${feeratesPerKB.medium.perByte} fast=${feeratesPerKB.fast.perByte} fastest=${feeratesPerKB.fastest.perByte}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
@@ -381,6 +377,7 @@ class Setup(val datadir: File,
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams.keyPair, nodeParams.peerConnectionConf, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
+
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")

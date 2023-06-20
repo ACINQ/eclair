@@ -107,6 +107,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   def currentBitcoinCoreFeerates: FeeratesPerKw = bitcoinCoreFeerates.get()
 
+  def currentFeeratesForFundingClosing: FeeratesPerKw = currentBitcoinCoreFeerates
+
   /** Only to be used in tests. */
   def setBitcoinCoreFeerates(value: FeeratesPerKw): Unit = bitcoinCoreFeerates.set(value)
 
@@ -118,7 +120,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     // Independently of target and tolerance ratios, our transactions must be publishable in our local mempool
     val minimumFeerate = currentBitcoinCoreFeerates.minimum
     val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
-    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentBitcoinCoreFeerates)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeeratesForFundingClosing)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
       min = (fundingFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
       max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
@@ -159,7 +161,7 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
 /**
  * @param writeDelay       delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
  * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
- * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.                    
+ * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.
  */
 case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration)
 

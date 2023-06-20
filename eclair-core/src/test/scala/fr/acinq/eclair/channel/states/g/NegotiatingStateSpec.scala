@@ -134,8 +134,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // alice and bob see different on-chain feerates
-    alice.setFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(8000 sat), medium = FeeratePerKw(5000 sat), slow = FeeratePerKw(2000 sat)))
-    bob.setFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(15_000 sat), fast = FeeratePerKw(12_500 sat), medium = FeeratePerKw(7500 sat), slow = FeeratePerKw(3000 sat)))
+    alice.setBitcoinCoreFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(8000 sat), medium = FeeratePerKw(5000 sat), slow = FeeratePerKw(2000 sat)))
+    bob.setBitcoinCoreFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(15_000 sat), fast = FeeratePerKw(12_500 sat), medium = FeeratePerKw(7500 sat), slow = FeeratePerKw(3000 sat)))
 
     if (bobInitiates) {
       bobClose(f)
@@ -203,8 +203,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (theirMinCloseFee > ourCloseFee)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(2500 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(2500 sat)))
     aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.forward(bob)
@@ -214,8 +214,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (theirMaxCloseFee < ourCloseFee)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(5_000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(20_000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(5_000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(20_000 sat)))
     aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.forward(bob)
@@ -227,8 +227,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // alice and bob see the same on-chain feerates
-    alice.setFeerates(buildFeerates(FeeratePerKw(5000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(5000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(5000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(5000 sat)))
 
     if (bobInitiates) {
       bobClose(f)
@@ -270,8 +270,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("override on-chain fee estimator (funder)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
     aliceClose(f, Some(ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(2000 sat), FeeratePerKw(3000 sat))))
     // alice initiates the negotiation with a very low feerate
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
@@ -293,8 +293,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("override on-chain fee estimator (fundee)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
     bobClose(f, Some(ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(2000 sat), FeeratePerKw(3000 sat))))
     // alice is funder, so bob's override will simply be ignored
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
@@ -312,8 +312,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(5_000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(5_000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
     bobClose(f)
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
     alice2bob.forward(bob)
@@ -338,7 +338,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (other side ignores our fee range, funder)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(1000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(1000 sat)))
     aliceClose(f)
     val aliceClosing1 = alice2bob.expectMsgType[ClosingSigned]
     val Some(FeeRange(_, maxFee)) = aliceClosing1.feeRange_opt
@@ -377,7 +377,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (other side ignores our fee range, fundee)") { f =>
     import f._
-    bob.setFeerate(FeeratePerKw(10_000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(10_000 sat))
     bobClose(f)
     // alice starts with a very low proposal
     val (aliceClosing1, _) = makeLegacyClosingSigned(f, 500 sat)
@@ -416,7 +416,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (other side ignores our fee range, max iterations reached)") { f =>
     import f._
-    alice.setFeerate(FeeratePerKw(1000 sat))
+    alice.setBitcoinCoreFeerate(FeeratePerKw(1000 sat))
     aliceClose(f)
     for (_ <- 1 to Channel.MAX_NEGOTIATION_ITERATIONS) {
       val aliceClosing = alice2bob.expectMsgType[ClosingSigned]
@@ -432,8 +432,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (fee too low, fundee)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(250 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat), minFeerate = FeeratePerKw(750 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(250 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat), minFeerate = FeeratePerKw(750 sat)))
     bobClose(f)
     val aliceClosing = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing.feeRange_opt.get.max < 500.sat)
@@ -492,8 +492,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv WatchFundingSpentTriggered (an older mutual close)") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(1000 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(1000 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat)))
     aliceClose(f)
     val aliceClosing1 = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.forward(bob, aliceClosing1)
@@ -516,7 +516,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv WatchFundingSpentTriggered (self mutual close)") { f =>
     import f._
-    bob.setFeerate(FeeratePerKw(10_000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(10_000 sat))
     bobClose(f)
     // alice starts with a very low proposal
     val (aliceClosing1, _) = makeLegacyClosingSigned(f, 500 sat)
@@ -544,8 +544,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv CMD_CLOSE with updated feerates") { f =>
     import f._
-    alice.setFeerates(buildFeerates(FeeratePerKw(250 sat)))
-    bob.setFeerates(buildFeerates(FeeratePerKw(10_000 sat), minFeerate = FeeratePerKw(750 sat)))
+    alice.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(250 sat)))
+    bob.setBitcoinCoreFeerates(buildFeerates(FeeratePerKw(10_000 sat), minFeerate = FeeratePerKw(750 sat)))
     bobClose(f)
     val aliceClosing1 = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.send(bob, aliceClosing1)

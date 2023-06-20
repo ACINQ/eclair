@@ -559,7 +559,7 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -577,7 +577,7 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
