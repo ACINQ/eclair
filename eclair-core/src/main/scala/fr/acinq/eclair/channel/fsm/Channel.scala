@@ -22,7 +22,6 @@ import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, Possib
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.Features.{QuiescePrototype, SplicePrototype}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -811,7 +810,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      if (d.commitments.params.remoteParams.initFeatures.hasFeature(SplicePrototype)) {
+      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
         if (d.commitments.params.useQuiescence && d.spliceStatus == SpliceStatus.NoSplice) {
           startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.revocationTimeout)
           if (d.commitments.changes.localChanges.all.isEmpty) {

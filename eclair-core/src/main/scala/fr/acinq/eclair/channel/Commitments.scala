@@ -4,7 +4,6 @@ import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.Features.QuiescePrototype
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -118,7 +117,6 @@ case class ChannelParams(channelId: ByteVector32,
   }
 
   /**
-   *
    * @param localScriptPubKey local script pubkey (provided in CMD_CLOSE, as an upfront shutdown script, or set to the current final onchain script)
    * @return an exception if the provided script is not valid
    */
@@ -133,7 +131,6 @@ case class ChannelParams(channelId: ByteVector32,
   }
 
   /**
-   *
    * @param remoteScriptPubKey remote script included in a Shutdown message
    * @return an exception if the provided script is not valid
    */
@@ -145,7 +142,9 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
-  def useQuiescence: Boolean = localParams.initFeatures.hasFeature(Features.QuiescePrototype) && remoteParams.initFeatures.hasFeature(Features.QuiescePrototype)
+  /** If both peers support quiescence, we have to exchange stfu when splicing. */
+  def useQuiescence: Boolean = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.Quiescence)
+
 }
 
 object ChannelParams {
@@ -798,7 +797,7 @@ case class Commitments(params: ChannelParams,
 
   // @formatter:off
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isIdle: Boolean = active.head.isIdle(changes, params.localParams.initFeatures.hasFeature(QuiescePrototype) && params.remoteParams.initFeatures.hasFeature(QuiescePrototype))
+  def isIdle: Boolean = active.head.isIdle(changes, pendingHtlcsOk = Features.canUseFeature(params.localParams.initFeatures, params.remoteParams.initFeatures, Features.Quiescence))
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
