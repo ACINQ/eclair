@@ -304,7 +304,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     alice2bob.forward(bob)
     // send a second stfu to bob
-    bob ! Stfu(channelId(bob), 1)
+    bob ! Stfu(channelId(bob), initiator = true)
     bob2alice.expectMsgType[Warning]
     // we should disconnect after giving alice time to receive the warning
     bobPeer.fishForMessage(3 seconds) {

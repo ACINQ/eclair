@@ -423,7 +423,8 @@ object LightningMessageCodecs {
 
   val stfuCodec: Codec[Stfu] = (
     ("channelId" | bytes32) ::
-      ("initiator" | byte) ).as[Stfu]
+      ("initiator" | byte.xmap[Boolean](b => b != 0, b => if (b) 1 else 0))).as[Stfu]
+
   //
 
   //

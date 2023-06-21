@@ -814,7 +814,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         if (d.commitments.params.useQuiescence && d.spliceStatus == SpliceStatus.NoSplice) {
           startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.revocationTimeout)
           if (d.commitments.changes.localChanges.all.isEmpty) {
-            stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, 1)
+            stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, initiator = true)
           } else {
             stay() using d.copy(spliceStatus = SpliceStatus.QuiescenceRequested(cmd))
           }
@@ -833,7 +833,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case SpliceStatus.NoSplice =>
             startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
             if (d.commitments.latest.changes.localChanges.all.isEmpty) {
-              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, 0)
+              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
             } else {
               stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
             }
@@ -841,7 +841,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
           case SpliceStatus.InitiatorQuiescent(splice) =>
             // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
-            if (msg.initiator == 0 || d.commitments.params.localParams.isInitiator) {
+            if (!msg.initiator || d.commitments.params.localParams.isInitiator) {
               handleNewSplice(splice, d)
             } else {
               stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
@@ -2620,9 +2620,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def handleSendRevocation(revocation: RevokeAndAck, d: DATA_NORMAL): State = {
     d.spliceStatus match {
       case SpliceStatus.QuiescenceRequested(splice) if d.commitments.changes.localChanges.all.isEmpty =>
-        stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(splice)) storing() sending Seq(revocation, Stfu(d.channelId, 1))
+        stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(splice)) storing() sending Seq(revocation, Stfu(d.channelId, initiator = true))
       case SpliceStatus.ReceivedStfu(_) if d.commitments.changes.localChanges.all.isEmpty =>
-        stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) storing() sending Seq(revocation, Stfu(d.channelId, 0))
+        stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) storing() sending Seq(revocation, Stfu(d.channelId, initiator = false))
       case _ =>
         stay() using d storing() sending revocation
     }
