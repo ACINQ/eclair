@@ -216,10 +216,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Sqlite) {
     val payments = e match {
-      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
+      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, timestampBegin, timestampEnd) =>
         // non-trampoline relayed payments have one input and one output
-        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", ts), RelayedPart(toChannelId, amountOut, "OUT", "channel", ts))
-      case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, ts) =>
+        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", timestampBegin), RelayedPart(toChannelId, amountOut, "OUT", "channel", timestampEnd))
+      case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
         using(sqlite.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, e.paymentHash.toArray)
           statement.setLong(2, nextTrampolineAmount.toLong)
@@ -228,8 +228,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           statement.executeUpdate()
         }
         // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-        incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++
-          outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
+        incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.timestamp)) ++
+          outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.timestamp))
     }
     for (p <- payments) {
       using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -238,7 +238,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.setBytes(3, p.channelId.toArray)
         statement.setString(4, p.direction)
         statement.setString(5, p.relayType)
-        statement.setLong(6, e.timestamp.toLong)
+        statement.setLong(6, p.timestamp.toLong)
         statement.executeUpdate()
       }
     }
@@ -397,15 +397,15 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       case (paymentHash, parts) =>
         // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
         // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-        val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
-        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+        val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
+        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
         parts.headOption match {
-          case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
-            case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
+          case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
+            case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.timestamp, out.timestamp)
           }
-          case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
+          case Some(RelayedPart(_, _, _, "trampoline", _)) =>
             val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
-            TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
+            TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
           case _ => Nil
         }
     }.toSeq.sortBy(_.timestamp)

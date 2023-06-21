@@ -25,7 +25,7 @@ import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -241,9 +241,9 @@ object OutgoingPaymentPacket {
   sealed trait Upstream
   object Upstream {
     case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+    case class Trampoline(adds: Seq[(UpdateAddHtlc, TimestampMilli)]) extends Upstream {
+      val amountIn: MilliSatoshi = adds.map(_._1.amountMsat).sum
+      val expiryIn: CltvExpiry = adds.map(_._1.cltvExpiry).min
     }
   }
   // @formatter:on

@@ -176,7 +176,7 @@ object Origin {
   object Hot {
     def apply(replyTo: ActorRef, upstream: Upstream): Hot = upstream match {
       case u: Upstream.Local => Origin.LocalHot(replyTo, u.id)
-      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds)
+      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds.map(_._1))
     }
   }
 }

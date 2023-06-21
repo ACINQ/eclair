@@ -36,7 +36,7 @@ import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentI
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -314,7 +314,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to e through d.
     val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(trampolinePacket_e))
-    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
+    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq((add_c, TimestampMilli(1687345927000L)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     assert(payment_e.cmd.amount == amount_cd)
     assert(payment_e.cmd.cltvExpiry == expiry_cd)
@@ -365,7 +365,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards the trampoline payment to e through d.
     val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret.get, invoice.extraEdges, inner_c.paymentMetadata)
-    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
+    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq((add_c, TimestampMilli(1687345927000L)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     assert(payment_e.cmd.amount == amount_cd)
     assert(payment_e.cmd.cltvExpiry == expiry_cd)
@@ -443,7 +443,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // c forwards an invalid trampoline onion to e through d.
     val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(trampolinePacket_e.copy(payload = trampolinePacket_e.payload.reverse)))
-    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
+    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq((add_c, TimestampMilli(1687345927000L)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
     val Right(ChannelRelayPacket(_, _, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
@@ -589,7 +589,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     // c forwards an invalid amount to e through (the outer total amount doesn't match the inner amount).
     val invalidTotalAmount = inner_c.amountToForward - 1.msat
     val recipient_e = ClearRecipient(e, Features.empty, invalidTotalAmount, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(trampolinePacket_e))
-    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(invalidTotalAmount, afterTrampolineChannelHops, None), recipient_e)
+    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq((add_c, TimestampMilli(1687345927000L)))), paymentHash, Route(invalidTotalAmount, afterTrampolineChannelHops, None), recipient_e)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
     val Right(ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
 
@@ -605,7 +605,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     // c forwards an invalid amount to e through (the outer expiry doesn't match the inner expiry).
     val invalidExpiry = inner_c.outgoingCltv - CltvExpiryDelta(12)
     val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, invalidExpiry, randomBytes32(), nextTrampolineOnion_opt = Some(trampolinePacket_e))
-    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq(add_c)), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
+    val Right(payment_e) = buildOutgoingPayment(ActorRef.noSender, priv_c.privateKey, Upstream.Trampoline(Seq((add_c, TimestampMilli(1687345927000L)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e)
     val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None)
     val Right(ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
 

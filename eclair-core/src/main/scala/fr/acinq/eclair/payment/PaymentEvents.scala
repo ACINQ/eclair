@@ -89,16 +89,17 @@ sealed trait PaymentRelayed extends PaymentEvent {
   val timestamp: TimestampMilli
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentRelayed
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestampBegin: TimestampMilli, timestamp: TimestampMilli) extends PaymentRelayed
 
-case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentRelayed {
+case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
+  override val timestamp: TimestampMilli = outgoing.map(_.timestamp).min
 }
 
 object PaymentRelayed {
 
-  case class Part(amount: MilliSatoshi, channelId: ByteVector32)
+  case class Part(amount: MilliSatoshi, channelId: ByteVector32, timestamp: TimestampMilli)
 
   type Incoming = Seq[Part]
   type Outgoing = Seq[Part]
