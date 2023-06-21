@@ -305,7 +305,7 @@ object Sync {
     def loop(ids: List[RealShortChannelId], flags: List[Long], numca: Int = 0, numcu: Int = 0, nodesSent: Set[PublicKey] = Set.empty[PublicKey]): (Int, Int, Int) = ids match {
       case Nil => (numca, numcu, nodesSent.size)
       case head :: tail if !channels.contains(head) =>
-        log.warning("received query for shortChannelId={} that we don't have", head)
+        log.debug("received query for shortChannelId={} that we don't have", head)
         loop(tail, flags.drop(1), numca, numcu, nodesSent)
       case head :: tail =>
         val numca1 = numca
