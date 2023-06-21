@@ -451,17 +451,32 @@ object RbfStatus {
 }
 
 sealed trait SpliceStatus
+/** We're waiting for the channel to be quiescent. */
 sealed trait QuiescenceNegotiation extends SpliceStatus
+object QuiescenceNegotiation {
+  sealed trait Initiator extends QuiescenceNegotiation
+  sealed trait NonInitiator extends QuiescenceNegotiation
+}
+/** The channel is quiescent and a splice attempt was initiated. */
+sealed trait QuiescentSpliceStatus extends SpliceStatus
 object SpliceStatus {
   case object NoSplice extends SpliceStatus
-  case class QuiescenceRequested(splice: CMD_SPLICE) extends QuiescenceNegotiation
-  case class InitiatorQuiescent(splice: CMD_SPLICE) extends QuiescenceNegotiation
-  case class ReceivedStfu(stfu: Stfu) extends QuiescenceNegotiation
-  case object NonInitiatorQuiescent extends QuiescenceNegotiation
-  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends SpliceStatus
-  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends SpliceStatus
-  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends SpliceStatus
-  case object SpliceAborted extends SpliceStatus
+  /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+  case class QuiescenceRequested(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
+  /** Our updates to be added to the local and remote commitments, we wait for our peer to do the same. */
+  case class InitiatorQuiescent(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
+  /** Our peer is asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+  case class ReceivedStfu(stfu: Stfu) extends QuiescenceNegotiation.NonInitiator
+  /** Our updates to be added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
+  case object NonInitiatorQuiescent extends QuiescenceNegotiation.NonInitiator
+  /** We told our peer we want to splice funds in the channel. */
+  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
+  /** We both agreed to splice and are building the splice transaction. */
+  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
+  /** The splice transaction has been negotiated, we're exchanging signatures. */
+  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
+  /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
+  case object SpliceAborted extends QuiescentSpliceStatus
 }
 
 sealed trait ChannelData extends PossiblyHarmful {

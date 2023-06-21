@@ -370,37 +370,42 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
-        case _: HtlcSettlementCommand => stay() // htlc settlement commands will be ignored and replayed when not quiescent
+        // Htlc settlement commands are ignored and will be replayed when not quiescent.
+        // This could create issues if we're keeping htlcs that should be settled pending for too long, as they could timeout.
+        // That's why we have a timer to actively disconnect if we stay in quiescence for too long.
+        case _: HtlcSettlementCommand => stay()
         case _ => handleCommandError(error, c)
       }
 
-    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice  && !d.spliceStatus.isInstanceOf[QuiescenceNegotiation] =>
+    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
       val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
-        // NB: the command cannot be an htlc settlement (fail/fulfill), because if we are splicing without quiescence support it means the channel is idle and has no htlcs
+        // Htlc settlement commands are ignored and will be replayed when not quiescent.
+        // This could create issues if we're keeping htlcs that should be settled pending for too long, as they could timeout.
+        // That's why we have a timer to actively disconnect if we're splicing for too long.
+        case _: HtlcSettlementCommand => stay()
         case _ => handleCommandError(error, c)
       }
 
-    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.commitments.params.useQuiescence && d.spliceStatus != SpliceStatus.NoSplice && !d.spliceStatus.isInstanceOf[SpliceStatus.InitiatorQuiescent] =>
+    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
+      log.warning("received forbidden message {} during splicing with status {}", msg.getClass.getSimpleName, d.spliceStatus.getClass.getSimpleName)
       val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
+      // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
       msg match {
-        case fulfill: UpdateFulfillHtlc =>
-          d.commitments.receiveFulfill(fulfill) match {
-            case Right((commitments1, origin, htlc)) =>
-              // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-              relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
-              handleLocalError(error, d.copy(commitments = commitments1), Some(msg))
-            case Left(_) => handleLocalError(error, d, Some(fulfill))
-          }
-        case _ => handleLocalError(error, d, Some(msg))
+        case fulfill: UpdateFulfillHtlc => d.commitments.receiveFulfill(fulfill) match {
+          case Right((_, origin, htlc)) => relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          case _ => ()
+        }
+        case _ => ()
       }
-
-    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice && !d.spliceStatus.isInstanceOf[SpliceStatus.SpliceRequested] && !d.spliceStatus.isInstanceOf[QuiescenceNegotiation] =>
-      // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
-      // we know they are going to reject our splice attempt
-      val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
-      handleLocalError(error, d, Some(msg))
+      // Instead of force-closing (which would cost us on-chain fees), we try to resolve this issue by disconnecting.
+      // This will abort the splice attempt if it hasn't been signed yet, and restore the channel to a clean state.
+      // If the splice attempt was signed, it gives us an opportunity to re-exchange signatures on reconnection before
+      // the forbidden message. It also provides the opportunity for our peer to update their node to get rid of that
+      // bug and resume normal execution.
+      context.system.scheduler.scheduleOnce(1 second, peer, Peer.Disconnect(remoteNodeId))
+      stay() sending Warning(d.channelId, error.getMessage)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
