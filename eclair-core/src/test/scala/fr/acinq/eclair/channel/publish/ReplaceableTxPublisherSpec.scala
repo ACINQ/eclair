@@ -41,7 +41,6 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
-import org.json4s.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -1657,20 +1656,18 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     val entropy = ByteVector.fromValidHex("01" * 32)
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
     val keyManager = new LocalOnchainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
-    bitcoinrpcclient.invoke("createwallet", walletName, true, false, "", false, true, true, false).pipeTo(probe.ref)
-    probe.expectMsgType[JValue]
-
     val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
-    importEclairDescriptors(walletRpcClient, keyManager)
     val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
-      val pubkey = {
+      lazy val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
     }
-
+    walletClient.createDescriptorWallet().pipeTo(probe.ref)
+    probe.expectMsg(true)
+    
     (walletRpcClient, walletClient)
   }
 }

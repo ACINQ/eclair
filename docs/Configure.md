@@ -4,7 +4,7 @@
 
 * [Configuration file](#configuration-file)
   * [Changing the data directory](#changing-the-data-directory)
-  * [Splitting the configuration](#splitting-the-configuration)\
+  * [Splitting the configuration](#splitting-the-configuration)
 * [Options reference](#options-reference)
 * [Customize features](#customize-features)
 * [Customize feerate tolerance](#customize-feerate-tolerance)

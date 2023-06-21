@@ -131,7 +131,7 @@ trait Eclair {
 
   def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
-  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
+  def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[ByteVector32]
 
   def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[ByteVector32]
 
@@ -357,11 +357,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
-    val feeRate = if (confirmationTarget < 3) appKit.nodeParams.currentFeerates.fast
-    else if (confirmationTarget > 6) appKit.nodeParams.currentFeerates.slow
-    else appKit.nodeParams.currentFeerates.medium
-
+  override def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[ByteVector32] = {
+    val feeRate = confirmationTargetOrFeerate match {
+      case Left(blocks) =>
+        if (blocks < 3) appKit.nodeParams.currentFeerates.fast
+        else if (blocks > 6) appKit.nodeParams.currentFeerates.slow
+        else appKit.nodeParams.currentFeerates.medium
+      case Right(feeratePerByte) => FeeratePerKw(feeratePerByte)
+    }
     appKit.wallet match {
       case w: BitcoinCoreClient =>
         addressToPublicKeyScript(appKit.nodeParams.chainHash, address) match {

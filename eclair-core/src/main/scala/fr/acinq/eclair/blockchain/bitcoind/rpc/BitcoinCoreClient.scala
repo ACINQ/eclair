@@ -35,6 +35,7 @@ import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import java.util.Base64
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.ListHasAsScala
 import scala.util.{Failure, Success, Try}
@@ -57,6 +58,34 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onchainKeyManag
   implicit val formats: Formats = org.json4s.DefaultFormats
 
   val useEclairSigner = onchainKeyManager_opt.exists(m => rpcClient.wallet.contains(m.wallet))
+
+  //------------------------- WALLET  -------------------------//
+  def importDescriptors(descriptors: Seq[Descriptor])(implicit ec: ExecutionContext): Future[Boolean] = {
+    rpcClient.invoke("importdescriptors", descriptors).collect {
+      case JArray(results) => results.forall(item => {
+        val JBool(success) = item \ "success"
+        val JArray(_) = item \ "warnings"
+        success
+      })
+    }
+  }
+
+  def createDescriptorWallet()(implicit ec: ExecutionContext): Future[Boolean] = {
+    onchainKeyManager_opt match {
+      case None => Future.successful(true) // no eclair-backed wallet is configured
+      case Some(onchainKeyManager) if !rpcClient.wallet.contains(onchainKeyManager.wallet) => Future.successful(true) // configured wallet has a different name
+      case Some(onchainKeyManager) if !onchainKeyManager.getDescriptors(0).descriptors.forall(desc => TimestampSecond(desc.timestamp) >= TimestampSecond.now() - 2.hours) =>
+        logger.warn(s"descriptors are too old, you will need to manually import them and select how far back to rescan")
+        Future.failed(new RuntimeException("Could not import descriptors, please check logs for details"))
+      case Some(onchainKeyManager) =>
+        logger.info(s"Creating a new on-chain eclair-backed wallet in bitcoind: ${onchainKeyManager.wallet}")
+        for {
+          _ <- rpcClient.invoke("createwallet", onchainKeyManager.wallet, true, true, "", false, true, true)
+          _ = logger.info(s"importing new descriptors ${onchainKeyManager.getDescriptors(0).descriptors}")
+          result <- importDescriptors(onchainKeyManager.getDescriptors(0).descriptors)
+        } yield result
+    }
+  }
 
   //------------------------- TRANSACTIONS  -------------------------//
 
@@ -796,7 +825,7 @@ object BitcoinCoreClient {
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
-  case class Descriptor(desc: String, internal: Boolean = false, timestamp: Either[String, Long] = Left("now"), active: Boolean = true)
+  case class Descriptor(desc: String, internal: Boolean = false, timestamp: Long, active: Boolean = true)
 
   case class Descriptors(wallet_name: String, descriptors: Seq[Descriptor])
 }

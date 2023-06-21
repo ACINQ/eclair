@@ -82,8 +82,8 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
     val changeDesc = s"wpkh([${this.fingerPrintHex}/$keyPath]${encode(accountPub, prefix)}/1/*)"
 
     Descriptors(wallet_name = wallet, descriptors = List(
-      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = Right(timestamp.toLong)),
-      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = Right(timestamp.toLong)),
+      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = timestamp.toLong),
+      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = timestamp.toLong),
     ))
   }
 

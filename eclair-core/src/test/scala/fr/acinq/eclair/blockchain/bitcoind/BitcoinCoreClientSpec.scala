@@ -83,7 +83,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsgType[JValue]
   }
 
-
   test("fund transactions") {
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient
@@ -1441,10 +1440,10 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val master = DeterministicWallet.generate(seed)
 
     val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
-    bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
-    sender.expectMsgType[JValue]
     val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
-    importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+    val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
+    wallet1.createDescriptorWallet().pipeTo(sender.ref)
+    sender.expectMsg(true)
 
     // this account xpub can be used to create a watch-only wallet
     val accountXPub = DeterministicWallet.encode(
@@ -1452,7 +1451,6 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       DeterministicWallet.vpub)
     assert(onchainKeyManager.getOnchainMasterPubKey(0) == accountXPub)
 
-    val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
 
     def getBip32Path(address: String): DeterministicWallet.KeyPath = {
       wallet1.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
@@ -1482,18 +1480,15 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       val seed = randomBytes32()
       val hex = seed.toString()
       val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
-      bitcoinrpcclient.invoke("createwallet", s"eclair_$hex", true, false, "", false, true, true, false).pipeTo(sender.ref)
-      sender.expectMsgType[JValue]
-
       val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
-      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
       val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
+      wallet1.createDescriptorWallet().pipeTo(sender.ref)
+      sender.expectMsg(true)
       wallet1.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 
       // we can send to an onchain address if eclair signs the transactions
       sendToAddress(address, 100_0000.sat)
-
       generateBlocks(1)
 
       // but bitcoin core's sendtoaddress RPC call will fail because wallets uses an external signer
