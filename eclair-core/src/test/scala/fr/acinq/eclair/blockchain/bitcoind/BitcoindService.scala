@@ -21,17 +21,16 @@ import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, TxOut, addressToPublicKeyScript, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, MnemonicCode, Satoshi, Transaction, TxOut, addressToPublicKeyScript, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.PreviousTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
-import fr.acinq.eclair.crypto.keymanager.{LocalOnchainKeyManager, OnchainKeyManager}
+import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
 import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
-import scodec.bits.ByteVector
 import sttp.client3.okhttp.OkHttpFutureBackend
 
 import java.io.File
@@ -73,7 +72,25 @@ trait BitcoindService extends Logging {
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
-  val onchainKeyManager = new LocalOnchainKeyManager("eclair", ByteVector.fromValidHex("01" * 32), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
+  val mnemonics = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title"
+  val passphrase = ""
+  val eclairSignerConf =
+    s"""
+       |{
+       |    eclair {
+       |        signer {
+       |            wallet = "eclair"
+       |            mnemonics = $mnemonics
+       |            passphrase = "$passphrase"
+       |            timestamp = ${TimestampSecond.now().toLong}
+       |        }
+       |    }
+       |}
+       |""".stripMargin
+  val onchainKeyManager = {
+    new LocalOnchainKeyManager("eclair", MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
+  }
+
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
                     mempoolSize_opt: Option[Int] = None, // mempool size in MB
@@ -157,12 +174,8 @@ trait BitcoindService extends Logging {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
     if (useEclairSigner) {
-      // wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer
-      bitcoinrpcclient.invoke("createwallet", defaultWallet, true, false, "", false, true, true, false).pipeTo(sender.ref)
-      sender.expectMsgType[JValue]
-
-      val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
-      importEclairDescriptors(jsonRpcClient, onchainKeyManager)
+      makeBitcoinCoreClient.createDescriptorWallet().pipeTo(sender.ref)
+      sender.expectMsg(true)
     } else {
       sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
       sender.expectMsgType[JValue]
@@ -170,13 +183,6 @@ trait BitcoindService extends Logging {
     logger.info(s"generating initial blocks to wallet=$defaultWallet...")
     generateBlocks(150)
     awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
-  }
-
-
-  def importEclairDescriptors(jsonRpcClient: BitcoinJsonRPCClient, keyManager: OnchainKeyManager, probe: TestProbe = TestProbe()): Unit = {
-    val descriptors = keyManager.getDescriptors(0).descriptors
-    jsonRpcClient.invoke("importdescriptors", descriptors).pipeTo(probe.ref)
-    probe.expectMsgType[JValue]
   }
 
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {

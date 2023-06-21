@@ -75,8 +75,7 @@ import scala.util.{Failure, Success}
 class Setup(val datadir: File,
             pluginParams: Seq[PluginParams],
             seeds_opt: Option[Seeds] = None,
-            db: Option[Databases] = None,
-            onchainKeyManager_opt: Option[LocalOnchainKeyManager] = None)(implicit system: ActorSystem) extends Logging {
+            db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout: Timeout = Timeout(30 seconds)
   implicit val formats: org.json4s.Formats = org.json4s.DefaultFormats
@@ -122,6 +121,8 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
+  val onchainKeyManager_opt = LocalOnchainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
+
   val (bitcoin, bitcoinChainHash) = {
     val wallet = {
       val name = config.getString("bitcoind.wallet")
@@ -140,6 +141,19 @@ class Setup(val datadir: File,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)
+
+    def createDescriptorWallet(wallets: List[String]): Future[Boolean] = {
+      if (wallet.exists(name => wallets.contains(name))) {
+        // wallet already exists
+        Future.successful(true)
+      } else {
+        new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createDescriptorWallet().recover { case e =>
+          logger.error(s"cannot create descriptor wallet", e)
+          throw BitcoinWalletNotCreatedException(wallet.getOrElse(""))
+        }
+      }
+    }
+
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
@@ -147,6 +161,7 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
+      true <- createDescriptorWallet(wallets)
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
@@ -247,7 +262,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt.orElse(LocalOnchainKeyManager.load(datadir, nodeParams.chainHash))) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -462,6 +477,8 @@ case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException
 case class BitcoinDefaultWalletException(loaded: List[String]) extends RuntimeException(s"no bitcoind wallet configured, but multiple wallets loaded: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
 
 case class BitcoinWalletNotLoadedException(wallet: String, loaded: List[String]) extends RuntimeException(s"configured wallet \"$wallet\" not in the set of loaded bitcoind wallets: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
+
+case class BitcoinWalletNotCreatedException(wallet: String) extends RuntimeException(s"configured wallet \"$wallet\" does not exist and could not be created.")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 

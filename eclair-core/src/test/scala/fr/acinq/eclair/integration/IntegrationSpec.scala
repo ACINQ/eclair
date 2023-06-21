@@ -35,6 +35,7 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
+import java.nio.file.Files
 import java.util.Properties
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -146,8 +147,12 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
+    if (useEclairSigner) {
+      Files.writeString(datadir.toPath.resolve("eclair-signer.conf"), eclairSignerConf)
+    }
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
-    val setup = new Setup(datadir, pluginParams = Seq.empty, seeds_opt = Some(Setup.Seeds(randomBytes32(), randomBytes32())), onchainKeyManager_opt = Some(onchainKeyManager))
+
+    val setup = new Setup(datadir, pluginParams = Seq.empty, seeds_opt = Some(Setup.Seeds(randomBytes32(), randomBytes32())))
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }
