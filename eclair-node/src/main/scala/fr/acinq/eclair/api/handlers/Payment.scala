@@ -56,11 +56,11 @@ trait Payment {
   val sendToRoute: Route = postRequest("sendtoroute") { implicit t =>
     withRoute { hops =>
       formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?,
-        "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?) {
-        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt) => {
+        "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, maxFeeMsatFormParam.?) {
+        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, maxFee_opt) => {
           val route = hops match {
-            case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds)
-            case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds)
+            case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds, maxFee_opt)
+            case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds, maxFee_opt)
           }
           complete(eclairApi.sendToRoute(
             recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta))
@@ -104,11 +104,11 @@ trait Payment {
   }
 
   val payOffer: Route = postRequest("payoffer") { implicit t =>
-    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "blocking".as[Boolean].?) {
-      case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, blocking_opt) =>
+    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?, "connectDirectly".as[Boolean].?, "blocking".as[Boolean].?) {
+      case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt, connectDirectly, blocking_opt) =>
         blocking_opt match {
-          case Some(true) => complete(eclairApi.payOfferBlocking(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
-          case _ => complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+          case Some(true) => complete(eclairApi.payOfferBlocking(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly.getOrElse(false)))
+          case _ => complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly.getOrElse(false)))
         }
     }
   }

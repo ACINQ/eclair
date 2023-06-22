@@ -18,6 +18,8 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.channel.RealScidStatus
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
@@ -29,7 +31,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -89,9 +91,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
       assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
 
+      assert(db.listClosedChannels(None, None).isEmpty)
       db.removeChannel(channel1.channelId)
       assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() == List(channel2b))
+      assert(db.listClosedChannels(None, None) == List(channel1))
+      assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
+      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None) == Nil)
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)
@@ -126,11 +132,10 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel2)
 
-      // make sure initially all metadata are empty
-      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").isEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Created)
@@ -145,14 +150,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Connected)
       assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Closed(null))
+      db.removeChannel(channel1.channelId)
       assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").nonEmpty)
 
-      // make sure all metadata are still empty for channel 2
-      assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "closed_timestamp").isEmpty)
     }
   }
@@ -328,6 +332,12 @@ class ChannelsDbSpec extends AnyFunSuite {
           assert(getPgTimestamp(connection, testCase.channelId, "last_payment_received_timestamp") == testCase.lastPaymentReceivedTimestamp)
           assert(getPgTimestamp(connection, testCase.channelId, "last_connected_timestamp") == testCase.lastConnectedTimestamp)
           assert(getPgTimestamp(connection, testCase.channelId, "closed_timestamp") == testCase.closedTimestamp)
+          using(connection.prepareStatement(s"SELECT remote_node_id FROM local.channels WHERE channel_id=?")) { statement =>
+            statement.setString(1, testCase.channelId.toHex)
+            val rs = statement.executeQuery()
+            rs.next()
+            assert(rs.getString("remote_node_id") == testCase.remoteNodeId.toHex)
+          }
         }
       }
     )
@@ -351,6 +361,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 object ChannelsDbSpec {
 
   case class TestCase(channelId: ByteVector32,
+                      remoteNodeId: PublicKey,
                       data: ByteVector,
                       isClosed: Boolean,
                       createdTimestamp: Option[Long],
@@ -358,14 +369,18 @@ object ChannelsDbSpec {
                       lastPaymentReceivedTimestamp: Option[Long],
                       lastConnectedTimestamp: Option[Long],
                       closedTimestamp: Option[Long],
-                      commitmentNumbers: Seq[Int]
-                     )
+                      commitmentNumbers: Seq[Int])
 
   val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
     val channelId = randomBytes32()
-    val data = channelDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(channelId)).require.bytes
+    val remoteNodeId = randomKey().publicKey
+    val channel = ChannelCodecsSpec.normal
+      .modify(_.commitments.params.channelId).setTo(channelId)
+      .modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
+    val data = channelDataCodec.encode(channel).require.bytes
     TestCase(
       channelId = channelId,
+      remoteNodeId = remoteNodeId,
       data = data,
       isClosed = Random.nextBoolean(),
       createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,

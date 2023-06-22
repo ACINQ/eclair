@@ -18,25 +18,32 @@ package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
-import fr.acinq.eclair.blockchain.CurrentFeerates
+import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions
 
-trait FeeEstimator {
-  // @formatter:off
-  def getFeeratePerKb(target: Int): FeeratePerKB
-  def getFeeratePerKw(target: Int): FeeratePerKw
-  def getMempoolMinFeeratePerKw(): FeeratePerKw
-  // @formatter:on
+// @formatter:off
+sealed trait ConfirmationPriority {
+  def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
+    case ConfirmationPriority.Slow => feerates.slow
+    case ConfirmationPriority.Medium => feerates.medium
+    case ConfirmationPriority.Fast => feerates.fast
+  }
+  override def toString: String = super.toString.toLowerCase
 }
+object ConfirmationPriority {
+  case object Slow extends ConfirmationPriority
+  case object Medium extends ConfirmationPriority
+  case object Fast extends ConfirmationPriority
+}
+sealed trait ConfirmationTarget
+object ConfirmationTarget {
+  case class Absolute(confirmBefore: BlockHeight) extends ConfirmationTarget
+  case class Priority(priority: ConfirmationPriority) extends ConfirmationTarget
+}
+// @formatter:on
 
-case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, commitmentWithoutHtlcsBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int, safeUtxosThreshold: Int) {
-  require(fundingBlockTarget > 0)
-  require(commitmentBlockTarget > 0)
-  require(commitmentWithoutHtlcsBlockTarget > 0)
-  require(mutualCloseBlockTarget > 0)
-  require(claimMainBlockTarget > 0)
-}
+case class FeeTargets(funding: ConfirmationPriority, closing: ConfirmationPriority)
 
 /**
  * @param maxExposure              maximum exposure to pending dust htlcs we tolerate: we will automatically fail HTLCs when going above this threshold.
@@ -62,13 +69,15 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
   }
 }
 
-case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
   /** To avoid spamming our peers with fee updates every time there's a small variation, we only update the fee when the difference exceeds a given ratio. */
   def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw): Boolean =
     currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
+
+  def getFundingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.funding.getFeerate(feerates)
 
   /**
    * Get the feerate that should apply to a channel commitment transaction:
@@ -79,11 +88,10 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, sp
    * @param channelType         channel type
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
-  def getCommitmentFeerate(remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
-    val (networkFeerate, networkMinFee) = currentFeerates_opt match {
-      case Some(currentFeerates) => (currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget), currentFeerates.feeratesPerKw.mempoolMinFee)
-      case None => (feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget), feeEstimator.getMempoolMinFeeratePerKw())
-    }
+  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi): FeeratePerKw = {
+    val networkFeerate = feerates.fast
+    val networkMinFee = feerates.minimum
+
     channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
       case _: Transactions.AnchorOutputsCommitmentFormat =>
@@ -92,4 +100,6 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, sp
         targetFeerate.max(networkMinFee * 1.25)
     }
   }
+
+  def getClosingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.closing.getFeerate(feerates)
 }

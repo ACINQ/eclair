@@ -46,19 +46,21 @@ trait Message {
       "recipientNode".as[PublicKey](publicKeyUnmarshaller).?,
       "recipientBlindedRoute".as[Sphinx.RouteBlinding.BlindedRoute](blindedRouteUnmarshaller).?,
       "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?,
-      "replyPath".as[List[PublicKey]](pubkeyListUnmarshaller).?,
+      "expectsReply".as[Boolean],
       "content".as[ByteVector](bytesUnmarshaller)) {
-      case (Some(recipientNode), None, intermediateNodes, replyPath, userCustomContent) =>
+      case (Some(recipientNode), None, intermediateNodes_opt, expectsReply, userCustomContent) =>
         complete(
-          eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil),
+          eclairApi.sendOnionMessage(
+            intermediateNodes_opt,
             Left(recipientNode),
-            replyPath,
+            expectsReply,
             userCustomContent))
-      case (None, Some(recipientBlindedRoute), intermediateNodes, replyPath, userCustomContent) =>
+      case (None, Some(recipientBlindedRoute), intermediateNodes_opt, expectsReply, userCustomContent) =>
         complete(
-          eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil),
+          eclairApi.sendOnionMessage(
+            intermediateNodes_opt,
             Right(recipientBlindedRoute),
-            replyPath,
+            expectsReply,
             userCustomContent))
       case (None, None, _, _, _) =>
         reject(MalformedFormFieldRejection("recipientNode", "You must provide recipientNode or recipientBlindedRoute"))

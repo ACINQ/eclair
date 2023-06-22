@@ -37,8 +37,8 @@ import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -74,17 +74,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   private val dataHolder: VolatileRouterDataHolder = {
     log.info("loading network announcements from db...")
     val (pruned, channels) = db.listChannels().partition { case (_, pc) => pc.isStale(nodeParams.currentBlockHeight) }
-    val nodes = db.listNodes().map(n => n.nodeId -> n).toMap
+    val nodes = db.listNodes()
     Metrics.Nodes.withoutTags().update(nodes.size)
     Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
     log.info("{} pruned channels at blockHeight={}", pruned.size, nodeParams.currentBlockHeight)
     // this will be used to calculate routes
-    val graph = DirectedGraph.makeGraph(channels)
+    val graph = DirectedGraph.makeGraph(channels, nodes)
     // send events for remaining channels/nodes
     context.system.eventStream.publish(ChannelsDiscovered(channels.values.map(pc => SingleChannelDiscovered(pc.ann, pc.capacity, pc.update_1_opt, pc.update_2_opt))))
     context.system.eventStream.publish(ChannelUpdatesReceived(channels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
-    context.system.eventStream.publish(NodesDiscovered(nodes.values))
+    context.system.eventStream.publish(NodesDiscovered(nodes))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
@@ -105,7 +105,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     val data = Data(
-      nodes, channels, pruned,
+      nodes.map(n => n.nodeId -> n).toMap, channels, pruned,
       Stash(Map.empty, Map.empty),
       rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty),
       awaiting = Map.empty,
@@ -215,7 +215,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       d.nodes.get(nodeId) match {
         case Some(announcement) =>
           // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
-          val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId)
+          val activeChannels = d.graphWithBalances.graph.getIncomingEdgesOf(nodeId).collect{case e: ActiveEdge => e}
           val totalCapacity = activeChannels.map(_.capacity).sum
           replyTo ! PublicNode(announcement, activeChannels.size, totalCapacity)
         case None =>
@@ -251,6 +251,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: RouteRequest, _) =>
       worker ! Worker.FindRoutes(r, sender())
       stay()
+
+    case Event(r: MessageRouteRequest, d) =>
+      stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
@@ -411,6 +414,7 @@ object Router {
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
                         pathFindingExperimentConf: PathFindingExperimentConf,
+                        messageRouteParams: MessageRouteParams,
                         balanceEstimateHalfLife: FiniteDuration,
                         numberOfWorkers: Int) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
@@ -418,7 +422,9 @@ object Router {
   }
 
   // @formatter:off
-  case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
+  case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){
+    def reversed: ChannelDesc = ChannelDesc(shortChannelId, b, a)
+  }
   object ChannelDesc {
     def apply(u: ChannelUpdate, ann: ChannelAnnouncement): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
@@ -611,6 +617,8 @@ object Router {
     }
   }
 
+  case class MessageRouteParams(maxRouteLength: Int, ratios: MessagePath.WeightRatios)
+
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
@@ -636,6 +644,17 @@ object Router {
   case class FinalizeRoute(route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
+
+  case class MessageRouteRequest(replyTo: typed.ActorRef[MessageRouteResponse],
+                                 source: PublicKey,
+                                 target: PublicKey,
+                                 ignoredNodes: Set[PublicKey])
+
+  // @formatter:off
+  sealed trait MessageRouteResponse { def target: PublicKey }
+  case class MessageRoute(intermediateNodes: Seq[PublicKey], target: PublicKey) extends MessageRouteResponse
+  case class MessageRouteNotFound(target: PublicKey) extends MessageRouteResponse
+  // @formatter:on
 
   /**
    * Useful for having appropriate logging context at hand when finding routes
@@ -693,12 +712,13 @@ object Router {
     def isEmpty: Boolean
     def amount: MilliSatoshi
     def targetNodeId: PublicKey
+    def maxFee_opt: Option[MilliSatoshi]
   }
-  case class PredefinedNodeRoute(amount: MilliSatoshi, nodes: Seq[PublicKey]) extends PredefinedRoute {
+  case class PredefinedNodeRoute(amount: MilliSatoshi, nodes: Seq[PublicKey], maxFee_opt: Option[MilliSatoshi] = None) extends PredefinedRoute {
     override def isEmpty = nodes.isEmpty
     override def targetNodeId: PublicKey = nodes.last
   }
-  case class PredefinedChannelRoute(amount: MilliSatoshi, targetNodeId: PublicKey, channels: Seq[ShortChannelId]) extends PredefinedRoute {
+  case class PredefinedChannelRoute(amount: MilliSatoshi, targetNodeId: PublicKey, channels: Seq[ShortChannelId], maxFee_opt: Option[MilliSatoshi] = None) extends PredefinedRoute {
     override def isEmpty = channels.isEmpty
   }
   // @formatter:on

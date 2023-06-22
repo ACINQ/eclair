@@ -22,10 +22,11 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -36,7 +37,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
 
-  private def getEdgeRelayScid(d: Data, localNodeId: PublicKey, e: GraphEdge): ShortChannelId = {
+  private def getEdgeRelayScid(d: Data, localNodeId: PublicKey, e: ActiveEdge): ShortChannelId = {
     if (e.desc.b == localNodeId) {
       // We are the destination of that edge: local graph edges always use either the local alias or the real scid.
       // We want to use the remote alias when available, because our peer won't understand our local alias.
@@ -50,29 +51,40 @@ object RouteCalculation {
   }
 
   def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, sender: ActorRef)(implicit log: DiagnosticLoggingAdapter): Data = {
+    def validateMaxRouteFee(route: Route, maxFee_opt: Option[MilliSatoshi]): Try[Route] = {
+      val routeFee = route.channelFee(includeLocalChannelCost = false)
+      maxFee_opt match {
+        case Some(maxFee) if maxFee < routeFee => Failure(new IllegalArgumentException(s"Route fee ($routeFee) was above the maximum allowed fee ($maxFee) for route ${route.printChannels()}"))
+        case _ => Success(route)
+      }
+    }
+
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
       paymentId_opt = fr.paymentContext.map(_.id),
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
 
-      val extraEdges = fr.extraEdges.map(GraphEdge(_))
-      val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      val extraEdges = fr.extraEdges.map(ActiveEdge(_))
+      val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: ActiveEdge) => g.addEdge(e) }
 
       fr.route match {
-        case PredefinedNodeRoute(amount, hops) =>
+        case PredefinedNodeRoute(amount, hops, maxFee_opt) =>
           // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
           hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
             case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-              sender ! RouteResponse(Route(amount, hops, None) :: Nil)
+              validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+                case Success(route) => sender ! RouteResponse(route :: Nil)
+                case Failure(f) => sender ! Status.Failure(f)
+              }
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
               sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds) =>
+        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
               val channelDesc_opt = d.resolve(shortChannelId) match {
@@ -96,7 +108,10 @@ object RouteCalculation {
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             sender ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            sender ! RouteResponse(Route(amount, hops, None) :: Nil)
+            validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
+              case Success(route) => sender ! RouteResponse(route :: Nil)
+              case Failure(f) => sender ! Status.Failure(f)
+            }
           }
       }
 
@@ -113,7 +128,7 @@ object RouteCalculation {
    *
    * The routes found must then be post-processed by calling [[addFinalHop]].
    */
-  private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[GraphEdge]) = {
+  private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[ActiveEdge]) = {
     val pendingAmount = r.pendingPayments.map(_.amount).sum
     val totalMaxFee = r.routeParams.getMaxFee(r.target.totalAmount)
     val pendingChannelFee = r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
@@ -124,7 +139,7 @@ object RouteCalculation {
         val maxFee = totalMaxFee - pendingChannelFee
         val extraEdges = recipient.extraEdges
           .filter(_.sourceNodeId != r.source) // we ignore routing hints for our own channels, we have more accurate information
-          .map(GraphEdge(_))
+          .map(ActiveEdge(_))
           .filterNot(e => ignoredEdges.contains(e.desc))
           .toSet
         (targetNodeId, amountToSend, maxFee, extraEdges)
@@ -140,7 +155,7 @@ object RouteCalculation {
           .map(_.copy(targetNodeId = targetNodeId))
           .filterNot(e => ignoredEdges.exists(_.shortChannelId == e.shortChannelId))
           // For blinded routes, the maximum htlc field is used to indicate the maximum amount that can be sent through the route.
-          .map(e => GraphEdge(e).copy(balance_opt = e.htlcMaximum_opt))
+          .map(e => ActiveEdge(e).copy(balance_opt = e.htlcMaximum_opt))
           .toSet
         val amountToSend = recipient.totalAmount - pendingAmount
         // When we are the introduction node and includeLocalChannelCost is false, we cannot easily remove the fee for
@@ -222,6 +237,23 @@ object RouteCalculation {
     }
   }
 
+  def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    val boundaries: MessagePath.RichWeight => Boolean = { weight =>
+      weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
+    }
+    log.info("finding route for onion messages {} -> {}", r.source, r.target)
+    Graph.MessagePath.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
+      case Some(path) =>
+        val intermediateNodes = path.map(_.a).drop(1)
+        log.info("found route for onion messages {}", (r.source +: intermediateNodes :+ r.target).mkString(" -> "))
+        r.replyTo ! MessageRoute(intermediateNodes, r.target)
+      case None =>
+        log.info("no route found for onion messages {} -> {}", r.source, r.target)
+        r.replyTo ! MessageRouteNotFound(r.target)
+    }
+    d
+  }
+
   /** This method is used after a payment failed, and we want to exclude some nodes that we know are failing */
   def getIgnoredChannelDesc(channels: Map[ShortChannelId, PublicChannel], ignoreNodes: Set[PublicKey]): Iterable[ChannelDesc] = {
     val desc = if (ignoreNodes.isEmpty) {
@@ -238,8 +270,8 @@ object RouteCalculation {
   /** https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#clarifications */
   val ROUTE_MAX_LENGTH = 20
 
-  /** Max allowed CLTV for a route (one week) */
-  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(1008)
+  /** Max allowed CLTV for a route (two weeks) */
+  val DEFAULT_ROUTE_MAX_CLTV = CltvExpiryDelta(2016)
 
   /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
@@ -266,7 +298,7 @@ object RouteCalculation {
                 amount: MilliSatoshi,
                 maxFee: MilliSatoshi,
                 numRoutes: Int,
-                extraEdges: Set[GraphEdge] = Set.empty,
+                extraEdges: Set[ActiveEdge] = Set.empty,
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
@@ -284,7 +316,7 @@ object RouteCalculation {
                                 amount: MilliSatoshi,
                                 maxFee: MilliSatoshi,
                                 numRoutes: Int,
-                                extraEdges: Set[GraphEdge] = Set.empty,
+                                extraEdges: Set[ActiveEdge] = Set.empty,
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
@@ -341,7 +373,7 @@ object RouteCalculation {
                          targetNodeId: PublicKey,
                          amount: MilliSatoshi,
                          maxFee: MilliSatoshi,
-                         extraEdges: Set[GraphEdge] = Set.empty,
+                         extraEdges: Set[ActiveEdge] = Set.empty,
                          ignoredEdges: Set[ChannelDesc] = Set.empty,
                          ignoredVertices: Set[PublicKey] = Set.empty,
                          pendingHtlcs: Seq[Route] = Nil,
@@ -365,7 +397,7 @@ object RouteCalculation {
                                          targetNodeId: PublicKey,
                                          amount: MilliSatoshi,
                                          maxFee: MilliSatoshi,
-                                         extraEdges: Set[GraphEdge] = Set.empty,
+                                         extraEdges: Set[ActiveEdge] = Set.empty,
                                          ignoredEdges: Set[ChannelDesc] = Set.empty,
                                          ignoredVertices: Set[PublicKey] = Set.empty,
                                          pendingHtlcs: Seq[Route] = Nil,
@@ -378,8 +410,8 @@ object RouteCalculation {
       val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
-        case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
-      }
+        case ActiveEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
+      }.toSeq
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
@@ -431,7 +463,7 @@ object RouteCalculation {
   }
 
   /** Compute the maximum amount that we can send through the given route. */
-  private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
+  private def computeRouteMaxAmount(route: Seq[ActiveEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
     val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
     val amount = route.drop(1).foldLeft(firstHopMaxAmount) { case (amount, edge) =>
       // We compute fees going forward instead of backwards. That means we will slightly overestimate the fees of some

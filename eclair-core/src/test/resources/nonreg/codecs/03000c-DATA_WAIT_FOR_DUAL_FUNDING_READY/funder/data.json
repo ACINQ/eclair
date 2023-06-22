@@ -7,9 +7,7 @@
       "channelFeatures" : [ "option_static_remotekey", "option_anchors_zero_fee_htlc_tx", "option_dual_fund" ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "fundingKeyPath" : {
-          "path" : [ 3109590638, 2571039769, 2759029525, 192289746, 3879532998, 1343053922, 3645251601, 1767821717, 2147483649 ]
-        },
+        "fundingKeyPath" : [ 3109590638, 2571039769, 2759029525, 192289746, 3879532998, 1343053922, 3645251601, 1767821717, 2147483649 ],
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
         "htlcMinimum" : 0,

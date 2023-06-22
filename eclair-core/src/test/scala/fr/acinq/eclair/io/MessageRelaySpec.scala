@@ -148,16 +148,4 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
-
-  test("no relay") { f =>
-    import f._
-
-    val Right((_, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Recipient(bobId, None), TlvStream.empty)
-    val messageId = randomBytes32()
-    val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, NoRelay, Some(probe.ref))
-
-    switchboard.expectNoMessage(100 millis)
-    probe.expectMessage(AgainstPolicy(messageId, NoRelay))
-  }
 }

@@ -18,15 +18,14 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{RealShortChannelId, _}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 object Graph {
@@ -70,7 +69,7 @@ object Graph {
 
   case class WeightedNode(key: PublicKey, weight: RichWeight)
 
-  case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
+  case class WeightedPath(path: Seq[ActiveEdge], weight: RichWeight)
 
   /**
    * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
@@ -89,9 +88,9 @@ object Graph {
     override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight)
   }
 
-  case class InfiniteLoop(path: Seq[GraphEdge]) extends Exception
+  case class InfiniteLoop(path: Seq[ActiveEdge]) extends Exception
 
-  case class NegativeProbability(edge: GraphEdge, weight: RichWeight, heuristicsConstants: HeuristicsConstants) extends Exception
+  case class NegativeProbability(edge: ActiveEdge, weight: RichWeight, heuristicsConstants: HeuristicsConstants) extends Exception
 
   /**
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
@@ -116,7 +115,7 @@ object Graph {
                         amount: MilliSatoshi,
                         ignoredEdges: Set[ChannelDesc],
                         ignoredVertices: Set[PublicKey],
-                        extraEdges: Set[GraphEdge],
+                        extraEdges: Set[ActiveEdge],
                         pathsToFind: Int,
                         wr: Either[WeightRatios, HeuristicsConstants],
                         currentBlockHeight: BlockHeight,
@@ -206,12 +205,12 @@ object Graph {
                                    targetNode: PublicKey,
                                    ignoredEdges: Set[ChannelDesc],
                                    ignoredVertices: Set[PublicKey],
-                                   extraEdges: Set[GraphEdge],
+                                   extraEdges: Set[ActiveEdge],
                                    initialWeight: RichWeight,
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: BlockHeight,
                                    wr: Either[WeightRatios, HeuristicsConstants],
-                                   includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
+                                   includeLocalChannelCost: Boolean): Seq[ActiveEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -223,7 +222,7 @@ object Graph {
     // because in the worst case scenario we will insert all the vertices.
     val initialCapacity = 100
     val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
-    val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
+    val bestEdges = mutable.HashMap.newBuilder[PublicKey, ActiveEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     // NB: we want the elements with smallest weight first, hence the `reverse`.
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
     val visitedNodes = mutable.HashSet[PublicKey]()
@@ -243,7 +242,7 @@ object Graph {
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
           // the resulting set must have only one element per shortChannelId; we prioritize extra edges
-          g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
+          g.getIncomingEdgesOf(current.key).collect{case e: ActiveEdge if !extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId) => e} ++ extraNeighbors
         }
         neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a
@@ -274,7 +273,7 @@ object Graph {
     }
 
     if (targetFound) {
-      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
+      val edgePath = new mutable.ArrayBuffer[ActiveEdge](RouteCalculation.ROUTE_MAX_LENGTH)
       var current = bestEdges.get(sourceNode)
       while (current.isDefined) {
         edgePath += current.get
@@ -285,7 +284,7 @@ object Graph {
       }
       edgePath.toSeq
     } else {
-      Seq.empty[GraphEdge]
+      Seq.empty[ActiveEdge]
     }
   }
 
@@ -299,7 +298,7 @@ object Graph {
    * @param weightRatios            ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: BlockHeight, weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
+  private def addEdgeWeight(sender: PublicKey, edge: ActiveEdge, prev: RichWeight, currentBlockHeight: BlockHeight, weightRatios: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
     val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
     val fee = totalAmount - prev.amount
     val totalFees = prev.fees + fee
@@ -368,15 +367,15 @@ object Graph {
    * @param amountToForward the value that this edge will have to carry along
    * @return the new amount updated with the necessary fees for this edge
    */
-  private def addEdgeFees(edge: GraphEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
+  private def addEdgeFees(edge: ActiveEdge, amountToForward: MilliSatoshi): MilliSatoshi = {
     amountToForward + edge.params.fee(amountToForward)
   }
 
   /** Validate that all edges along the path can relay the amount with fees. */
-  def validatePath(path: Seq[GraphEdge], amount: MilliSatoshi): Boolean = validateReversePath(path.reverse, amount)
+  def validatePath(path: Seq[ActiveEdge], amount: MilliSatoshi): Boolean = validateReversePath(path.reverse, amount)
 
   @tailrec
-  private def validateReversePath(path: Seq[GraphEdge], amount: MilliSatoshi): Boolean = path.headOption match {
+  private def validateReversePath(path: Seq[ActiveEdge], amount: MilliSatoshi): Boolean = path.headOption match {
     case None => true
     case Some(edge) =>
       val canRelayAmount = amount <= edge.capacity &&
@@ -397,7 +396,7 @@ object Graph {
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
+  def pathWeight(sender: PublicKey, path: Seq[ActiveEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: Either[WeightRatios, HeuristicsConstants], includeLocalChannelCost: Boolean): RichWeight = {
     path.foldRight(RichWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)) { (edge, prev) =>
       addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, includeLocalChannelCost)
     }
@@ -429,7 +428,164 @@ object Graph {
 
   }
 
+  object MessagePath {
+    /**
+     * The cumulative weight of a set of edges (path in the graph).
+     *
+     * @param length number of edges in the path
+     * @param weight cost multiplied by a factor based on heuristics (see [[WeightRatios]]).
+     */
+    case class RichWeight(length: Int, weight: Double) extends Ordered[RichWeight] {
+      override def compare(that: RichWeight): Int = this.weight.compareTo(that.weight)
+    }
+
+    object RichWeight {
+      def zero: RichWeight = RichWeight(0, 0.0)
+    }
+
+    case class WeightRatios(baseFactor: Double, ageFactor: Double, capacityFactor: Double, disabledMultiplier: Double) {
+      require(baseFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
+      require(baseFactor >= 0.0, "ratio-base must be nonnegative")
+      require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
+      require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
+      require(disabledMultiplier >= 1.0, "disabled-multiplier must be at least 1")
+    }
+
+    case class WeightedNode(key: PublicKey, weight: RichWeight)
+
+    /**
+     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
+     * the same weight we distinguish them by their public key.
+     * See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
+     */
+    object NodeComparator extends Ordering[WeightedNode] {
+      override def compare(x: WeightedNode, y: WeightedNode): Int = {
+        val weightCmp = x.weight.compareTo(y.weight)
+        if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
+        else weightCmp
+      }
+    }
+
+    /**
+     * Add the given edge to the path and compute the new weight.
+     *
+     * @param desc               the edge we want to cross
+     * @param prev               weight of the rest of the path
+     * @param currentBlockHeight the height of the chain tip (latest block).
+     * @param weightRatios       ratios used to 'weight' edges when searching for the shortest path
+     */
+    private def addEdgeWeight(desc: ChannelDesc, capacity: Satoshi, isActive: Boolean, prev: RichWeight, currentBlockHeight: BlockHeight, weightRatios: WeightRatios): RichWeight = {
+      import RoutingHeuristics._
+
+      // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
+      val ageFactor = desc.shortChannelId match {
+        case real: RealShortChannelId => normalize(real.blockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+        // for local channels or route hints we don't easily have access to the channel block height, but we want to
+        // give them the best score anyway
+        case _: Alias => 1
+        case _: UnspecifiedShortChannelId => 1
+      }
+
+      // Every edge is weighted by channel capacity, larger channels add less weight
+      val capFactor = 1 - normalize(capacity.toMilliSatoshi.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
+
+      val multiplier = if (isActive) 1 else weightRatios.disabledMultiplier
+
+      val totalWeight = prev.weight + (weightRatios.baseFactor + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)) * multiplier
+      RichWeight(prev.length + 1, totalWeight)
+    }
+
+    /**
+     * Finds the shortest path in the graph, uses a modified version of Dijkstra's algorithm that computes the shortest
+     * path from the target to the source (this is because we want to calculate the weight of the edges correctly). The
+     * graph @param g is optimized for querying the incoming edges given a vertex.
+     *
+     * @param g                  the graph on which will be performed the search
+     * @param sourceNode         the starting node of the path we're looking for (payer)
+     * @param targetNode         the destination node of the path
+     * @param ignoredVertices    nodes that should be avoided
+     * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
+     * @param currentBlockHeight the height of the chain tip (latest block)
+     * @param wr                 ratios used to 'weight' edges when searching for the shortest path
+     */
+    def dijkstraMessagePath(g: DirectedGraph,
+                            sourceNode: PublicKey,
+                            targetNode: PublicKey,
+                            ignoredVertices: Set[PublicKey],
+                            boundaries: RichWeight => Boolean,
+                            currentBlockHeight: BlockHeight,
+                            wr: WeightRatios): Option[Seq[ChannelDesc]] = {
+      // the graph does not contain source/destination nodes
+      val sourceNotInGraph = !g.containsVertex(sourceNode)
+      val targetNotInGraph = !g.containsVertex(targetNode)
+      if (sourceNotInGraph || targetNotInGraph) {
+        return None
+      }
+
+      // conservative estimation to avoid over-allocating memory: this is not the actual optimal size for the maps,
+      // because in the worst case scenario we will insert all the vertices.
+      val initialCapacity = 100
+      val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
+      val bestEdges = mutable.HashMap.newBuilder[PublicKey, ChannelDesc](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
+      // NB: we want the elements with smallest weight first, hence the `reverse`.
+      val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
+      val visitedNodes = mutable.HashSet[PublicKey]()
+
+      // initialize the queue and cost array with the initial weight
+      bestWeights.put(targetNode, RichWeight.zero)
+      toExplore.enqueue(WeightedNode(targetNode, RichWeight.zero))
+
+      var targetFound = false
+      while (toExplore.nonEmpty && !targetFound) {
+        // node with the smallest distance from the target
+        val current = toExplore.dequeue() // O(log(n))
+        targetFound = current.key == sourceNode
+        if (!targetFound && !visitedNodes.contains(current.key)) {
+          visitedNodes += current.key
+          g.getIncomingEdgesOf(current.key).foreach { edge =>
+            val neighbor = edge.desc.a
+            if (neighbor == sourceNode || (g.getVertexFeatures(neighbor).hasFeature(Features.OnionMessages) && !ignoredVertices.contains(neighbor))) {
+              val neighborWeight = addEdgeWeight(edge.desc, edge.capacity, edge.isInstanceOf[ActiveEdge], current.weight, currentBlockHeight, wr)
+              if (boundaries(neighborWeight)) {
+                val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(Int.MaxValue, Double.MaxValue))
+                // if this path between neighbor and the target has a shorter distance than previously known, we select it
+                if (neighborWeight < previousNeighborWeight) {
+                  // update the best edge for this vertex
+                  bestEdges.put(neighbor, edge.desc)
+                  // add this updated node to the list for further exploration
+                  toExplore.enqueue(WeightedNode(neighbor, neighborWeight)) // O(1)
+                  // update the minimum known distance array
+                  bestWeights.put(neighbor, neighborWeight)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (targetFound) {
+        val edgePath = new mutable.ArrayBuffer[ChannelDesc](RouteCalculation.ROUTE_MAX_LENGTH)
+        var current = bestEdges.get(sourceNode)
+        while (current.isDefined) {
+          edgePath += current.get
+          current = bestEdges.get(current.get.b)
+          if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH) {
+            throw InfiniteLoop(Nil)
+          }
+        }
+        Some(edgePath.toSeq)
+      } else {
+        None
+      }
+    }
+  }
+
   object GraphStructure {
+
+    sealed trait GraphEdge {
+      val desc: ChannelDesc
+      val capacity: Satoshi
+    }
 
     /**
      * Representation of an edge of the graph
@@ -439,7 +595,7 @@ object Graph {
      * @param capacity    channel capacity
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
-    case class GraphEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
+    case class ActiveEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) extends GraphEdge {
 
       def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
         balance_opt.map(balance => balance - reservedCapacity),
@@ -450,37 +606,41 @@ object Graph {
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     }
 
-    object GraphEdge {
-      def apply(u: ChannelUpdate, pc: PublicChannel): GraphEdge = GraphEdge(
+    object ActiveEdge {
+      def apply(u: ChannelUpdate, pc: PublicChannel): ActiveEdge = ActiveEdge(
         desc = ChannelDesc(u, pc.ann),
         params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def apply(u: ChannelUpdate, pc: PrivateChannel): GraphEdge = GraphEdge(
+      def apply(u: ChannelUpdate, pc: PrivateChannel): ActiveEdge = ActiveEdge(
         desc = ChannelDesc(u, pc),
         params = HopRelayParams.FromAnnouncement(u),
         capacity = pc.capacity,
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def apply(e: Invoice.ExtraEdge): GraphEdge = {
-          val maxBtc = 21e6.btc
-          GraphEdge(
-            desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
-            params = HopRelayParams.FromHint(e),
-            // Routing hints don't include the channel's capacity, so we assume it's big enough.
-            capacity = maxBtc.toSatoshi,
-            balance_opt = None,
-          )
+      def apply(e: Invoice.ExtraEdge): ActiveEdge = {
+        val maxBtc = 21e6.btc
+        ActiveEdge(
+          desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
+          params = HopRelayParams.FromHint(e),
+          // Routing hints don't include the channel's capacity, so we assume it's big enough.
+          capacity = maxBtc.toSatoshi,
+          balance_opt = None,
+        )
       }
     }
 
-    /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
-    case class DirectedGraph(private val vertices: Map[PublicKey, List[GraphEdge]]) {
+    case class DisabledEdge(desc: ChannelDesc, capacity: Satoshi) extends GraphEdge
 
-      def addEdges(edges: Iterable[GraphEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
+    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge])
+
+    /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
+    case class DirectedGraph(private val vertices: Map[PublicKey, Vertex]) {
+
+      def addEdges(edges: Iterable[ActiveEdge]): DirectedGraph = edges.foldLeft(this)((acc, edge) => acc.addEdge(edge))
 
       /**
        * Adds an edge to the graph. If one of the two vertices is not found it will be created.
@@ -488,57 +648,75 @@ object Graph {
        * @param edge the edge that is going to be added to the graph
        * @return a new graph containing this edge
        */
-      def addEdge(edge: GraphEdge): DirectedGraph = {
-        val vertexIn = edge.desc.a
-        val vertexOut = edge.desc.b
-        // the graph is allowed to have multiple edges between the same vertices but only one per channel
-        if (containsEdge(edge.desc)) {
-          removeEdge(edge.desc).addEdge(edge) // the recursive call will have the original params
-        } else {
-          val withVertices = addVertex(vertexIn).addVertex(vertexOut)
-          DirectedGraph(withVertices.vertices.updated(vertexOut, edge +: withVertices.vertices(vertexOut)))
-        }
+      def addEdge(edge: ActiveEdge): DirectedGraph = {
+        val vertexA = vertices.getOrElse(edge.desc.a, Vertex(Features.empty, Map.empty))
+        val updatedVertexA =
+          if (vertexA.incomingEdges.contains(edge.desc.reversed)) {
+            vertexA
+          } else {
+            // If the reversed edge is not already in the graph, we add it disabled.
+            vertexA.copy(incomingEdges = vertexA.incomingEdges + (edge.desc.reversed -> DisabledEdge(edge.desc.reversed, edge.capacity)))
+          }
+        val vertexB = vertices.getOrElse(edge.desc.b, Vertex(Features.empty, Map.empty))
+        val updatedVertexB = vertexB.copy(incomingEdges = vertexB.incomingEdges + (edge.desc -> edge))
+        DirectedGraph(vertices.updated(edge.desc.a, updatedVertexA).updated(edge.desc.b, updatedVertexB))
       }
 
       /**
-       * Removes the edge corresponding to the given pair channel-desc/channel-update,
+       * Disables the edge corresponding to the given channel-desc.
        * NB: this operation does NOT remove any vertex
        *
-       * @param desc the channel description associated to the edge that will be removed
-       * @return a new graph without this edge
+       * @param desc the channel description associated to the edge that will be disabled
+       * @return a new graph with this edge disabled
        */
-      def removeEdge(desc: ChannelDesc): DirectedGraph = {
-        if (containsEdge(desc)) {
-          DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
-        } else {
-          this
-        }
+      def disableEdge(desc: ChannelDesc): DirectedGraph = {
+            val updatedVertices = vertices.updatedWith(desc.b)(_.map(vertex => {
+              val updatedEdges = vertex.incomingEdges.updatedWith(desc)(_.map(edge => DisabledEdge(desc, edge.capacity)))
+              vertex.copy(incomingEdges = updatedEdges)
+            }))
+            DirectedGraph(updatedVertices)
       }
 
-      def removeEdges(descList: Iterable[ChannelDesc]): DirectedGraph = {
-        descList.foldLeft(this)((acc, edge) => acc.removeEdge(edge))
+      /**
+       * Removes the edges corresponding to the given channel-desc,
+       * both edges (corresponding to both directions) are removed.
+       * NB: this operation does NOT remove any vertex
+       *
+       * @param desc the channel description for the channel to remove
+       * @return a new graph without this channel
+       */
+      def removeChannel(desc: ChannelDesc): DirectedGraph = {
+        val updatedVertices =
+          vertices
+            .updatedWith(desc.b)(_.map(vertexB => vertexB.copy(incomingEdges = vertexB.incomingEdges - desc)))
+            .updatedWith(desc.a)(_.map(vertexA => vertexA.copy(incomingEdges = vertexA.incomingEdges - desc.reversed)))
+        DirectedGraph(updatedVertices)
+      }
+
+      def removeChannels(descList: Iterable[ChannelDesc]): DirectedGraph = {
+        descList.foldLeft(this)((acc, edge) => acc.removeChannel(edge))
       }
 
       /**
        * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
        */
-      def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)
+      def getEdge(edge: ActiveEdge): Option[ActiveEdge] = getEdge(edge.desc)
 
-      def getEdge(desc: ChannelDesc): Option[GraphEdge] = {
-        vertices.get(desc.b).flatMap { adj =>
-          adj.find(e => e.desc.shortChannelId == desc.shortChannelId && e.desc.a == desc.a)
+      def getEdge(desc: ChannelDesc): Option[ActiveEdge] =
+        vertices.get(desc.b).flatMap(_.incomingEdges.get(desc)) match {
+          case Some(e: ActiveEdge) => Some(e)
+          case None | Some(_: DisabledEdge) => None
         }
-      }
 
       /**
        * @param keyA the key associated with the starting vertex
        * @param keyB the key associated with the ending vertex
        * @return all the edges going from keyA --> keyB (there might be more than one if there are multiple channels)
        */
-      def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Seq[GraphEdge] = {
+      def getEdgesBetween(keyA: PublicKey, keyB: PublicKey): Iterable[ActiveEdge] = {
         vertices.get(keyB) match {
-          case None => Seq.empty
-          case Some(adj) => adj.filter(e => e.desc.a == keyA)
+          case None => Iterable.empty
+          case Some(vertex) => vertex.incomingEdges.collect { case (desc, edge: ActiveEdge) if desc.a == keyA => edge }
         }
       }
 
@@ -546,33 +724,41 @@ object Graph {
        * @param keyB the key associated with the target vertex
        * @return all edges incoming to that vertex
        */
-      def getIncomingEdgesOf(keyB: PublicKey): Seq[GraphEdge] = {
-        vertices.getOrElse(keyB, List.empty)
+      def getIncomingEdgesOf(keyB: PublicKey): Iterable[GraphEdge] = {
+        vertices.get(keyB).map(_.incomingEdges.values).getOrElse(Iterable.empty)
       }
+
+      def getVertexFeatures(key: PublicKey): Features[NodeFeature] = vertices.get(key).map(_.features).getOrElse(Features.empty)
 
       /**
        * Removes a vertex and all its associated edges (both incoming and outgoing)
        */
       def removeVertex(key: PublicKey): DirectedGraph = {
-        DirectedGraph(removeEdges(getIncomingEdgesOf(key).map(_.desc)).vertices - key)
+        val channels = getIncomingEdgesOf(key).map(_.desc)
+        DirectedGraph(removeChannels(channels).vertices - key)
       }
 
+      def removeVertices(nodeIds: Iterable[PublicKey]): DirectedGraph = nodeIds.foldLeft(this)((acc, nodeId) => acc.removeVertex(nodeId))
+
       /**
-       * Adds a new vertex to the graph, starting with no edges
+       * Adds a new vertex to the graph, starting with no edges.
+       * Or update the node features if the vertex is already present.
        */
-      def addVertex(key: PublicKey): DirectedGraph = {
-        vertices.get(key) match {
-          case None => DirectedGraph(vertices + (key -> List.empty))
-          case _ => this
-        }
+      def addOrUpdateVertex(ann: NodeAnnouncement): DirectedGraph = {
+        DirectedGraph(vertices.updatedWith(ann.nodeId) {
+          case Some(vertex) => Some(vertex.copy(features = ann.features.nodeAnnouncementFeatures()))
+          case None => Some(Vertex(ann.features.nodeAnnouncementFeatures(), Map.empty))
+        })
       }
+
+      def addVertices(announcements: Iterable[NodeAnnouncement]): DirectedGraph = announcements.foldLeft(this)((acc, ann) => acc.addOrUpdateVertex(ann))
 
       /**
        * Note this operation will traverse all edges in the graph (expensive)
        *
        * @return a list of the outgoing edges of the given vertex. If the vertex doesn't exists an empty list is returned.
        */
-      def edgesOf(key: PublicKey): Seq[GraphEdge] = {
+      def edgesOf(key: PublicKey): Seq[ActiveEdge] = {
         edgeSet().filter(_.desc.a == key).toSeq
       }
 
@@ -584,7 +770,7 @@ object Graph {
       /**
        * @return an iterator of all the edges in this graph
        */
-      def edgeSet(): Iterable[GraphEdge] = vertices.values.flatten
+      def edgeSet(): Iterable[ActiveEdge] = vertices.values.flatMap(_.incomingEdges.collect { case (_, edge: ActiveEdge) => edge })
 
       /**
        * @return true if this graph contain a vertex with this key, false otherwise
@@ -592,18 +778,15 @@ object Graph {
       def containsVertex(key: PublicKey): Boolean = vertices.contains(key)
 
       /**
-       * @return true if this edge desc is in the graph. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
+       * @return true if this edge desc is in the graph and not disabled. For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
        */
       def containsEdge(desc: ChannelDesc): Boolean = {
         vertices.get(desc.b) match {
           case None => false
-          case Some(adj) => adj.exists(neighbor => neighbor.desc.shortChannelId == desc.shortChannelId && neighbor.desc.a == desc.a)
-        }
-      }
-
-      def prettyPrint(): String = {
-        vertices.foldLeft("") { case (acc, (vertex, adj)) =>
-          acc + s"[${vertex.toString().take(5)}]: ${adj.map("-> " + _.desc.b.toString().take(5))} \n"
+          case Some(vertex) => vertex.incomingEdges.get(desc) match {
+            case None | Some(_: DisabledEdge) => false
+            case Some(_: ActiveEdge) => true
+          }
         }
       }
     }
@@ -611,10 +794,10 @@ object Graph {
     object DirectedGraph {
 
       // @formatter:off
-      def apply(): DirectedGraph = new DirectedGraph(Map())
-      def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> List.empty))
-      def apply(edge: GraphEdge): DirectedGraph = DirectedGraph().addEdge(edge)
-      def apply(edges: Seq[GraphEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
+      def apply(): DirectedGraph = new DirectedGraph(Map.empty)
+      def apply(key: PublicKey): DirectedGraph = new DirectedGraph(Map(key -> Vertex(Features.empty, Map.empty)))
+      def apply(edge: ActiveEdge): DirectedGraph = DirectedGraph().addEdge(edge)
+      def apply(edges: Seq[ActiveEdge]): DirectedGraph = DirectedGraph().addEdges(edges)
       // @formatter:on
 
       /**
@@ -625,27 +808,16 @@ object Graph {
        *
        * @param channels map of all known public channels in the network.
        */
-      def makeGraph(channels: SortedMap[RealShortChannelId, PublicChannel]): DirectedGraph = {
-        // initialize the map with the appropriate size to avoid resizing during the graph initialization
-        val mutableMap = new mutable.HashMap[PublicKey, List[GraphEdge]](initialCapacity = channels.size + 1, mutable.HashMap.defaultLoadFactor)
+      def makeGraph(channels: Map[RealShortChannelId, PublicChannel], nodes: Seq[NodeAnnouncement]): DirectedGraph = {
+        val edges = channels.values.flatMap(channel => Seq(
+          channel.update_1_opt.collect { case u1 if u1.channelFlags.isEnabled => ActiveEdge(u1, channel) },
+          channel.update_2_opt.collect { case u2 if u2.channelFlags.isEnabled => ActiveEdge(u2, channel) },
+        ).flatten)
 
-        // add all the vertices and edges in one go
-        channels.values.foreach { channel =>
-          channel.update_1_opt.foreach(u1 => addToMap(GraphEdge(u1, channel)))
-          channel.update_2_opt.foreach(u2 => addToMap(GraphEdge(u2, channel)))
-        }
-
-        def addToMap(edge: GraphEdge): Unit = {
-          mutableMap.put(edge.desc.b, edge +: mutableMap.getOrElse(edge.desc.b, List.empty[GraphEdge]))
-          if (!mutableMap.contains(edge.desc.a)) {
-            mutableMap += edge.desc.a -> List.empty[GraphEdge]
-          }
-        }
-
-        new DirectedGraph(mutableMap.toMap)
+        DirectedGraph().addVertices(nodes).addEdges(edges)
       }
 
-      def graphEdgeToHop(graphEdge: GraphEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
+      def graphEdgeToHop(graphEdge: ActiveEdge): ChannelHop = ChannelHop(graphEdge.desc.shortChannelId, graphEdge.desc.a, graphEdge.desc.b, graphEdge.params)
     }
 
   }

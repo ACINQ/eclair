@@ -50,22 +50,14 @@ case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerat
     mempoolMinFee <- mempoolMinFee()
     block_1 <- estimateSmartFee(1)
     blocks_2 <- estimateSmartFee(2)
-    blocks_6 <- estimateSmartFee(6)
     blocks_12 <- estimateSmartFee(12)
-    blocks_36 <- estimateSmartFee(36)
-    blocks_72 <- estimateSmartFee(72)
-    blocks_144 <- estimateSmartFee(144)
     blocks_1008 <- estimateSmartFee(1008)
   } yield FeeratesPerKB(
-    mempoolMinFee = if (mempoolMinFee.feerate > 0.sat) mempoolMinFee else defaultFeerates.mempoolMinFee,
-    block_1 = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.block_1,
-    blocks_2 = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.blocks_2,
-    blocks_6 = if (blocks_6.feerate > 0.sat) blocks_6 else defaultFeerates.blocks_6,
-    blocks_12 = if (blocks_12.feerate > 0.sat) blocks_12 else defaultFeerates.blocks_12,
-    blocks_36 = if (blocks_36.feerate > 0.sat) blocks_36 else defaultFeerates.blocks_36,
-    blocks_72 = if (blocks_72.feerate > 0.sat) blocks_72 else defaultFeerates.blocks_72,
-    blocks_144 = if (blocks_144.feerate > 0.sat) blocks_144 else defaultFeerates.blocks_144,
-    blocks_1008 = if (blocks_1008.feerate > 0.sat) blocks_1008 else defaultFeerates.blocks_1008)
+    minimum = if (mempoolMinFee.feerate > 0.sat) mempoolMinFee else defaultFeerates.minimum,
+    fastest = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.fastest,
+    fast = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.fast,
+    medium = if (blocks_12.feerate > 0.sat) blocks_12 else defaultFeerates.medium,
+    slow = if (blocks_1008.feerate > 0.sat) blocks_1008 else defaultFeerates.slow)
 }
 
 object BitcoinCoreFeeProvider {

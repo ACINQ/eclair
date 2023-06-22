@@ -7,9 +7,7 @@
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134",
-        "fundingKeyPath" : {
-          "path" : [ 3561221353, 3653515793, 2711311691, 2863050005 ]
-        },
+        "fundingKeyPath" : [ 3561221353, 3653515793, 2711311691, 2863050005 ],
         "dustLimit" : 546,
         "maxHtlcValueInFlightMsat" : 1000000000,
         "requestedChannelReserve_opt" : 150000,

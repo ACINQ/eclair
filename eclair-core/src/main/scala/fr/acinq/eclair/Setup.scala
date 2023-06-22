@@ -38,7 +38,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
-import fr.acinq.eclair.io.{ClientSpawner, Peer, PendingChannelsRateLimiter, Server, Switchboard}
+import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -98,20 +98,10 @@ class Setup(val datadir: File,
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
 
-  if (chain != "regtest" && chain != "testnet") {
-    // TODO: database format is WIP, we want to be able to squash changes and not support intermediate unreleased versions
-    throw new RuntimeException("this unreleased version of Eclair only works on regtest")
-  }
-
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
   val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
-  val instanceId = UUID.randomUUID()
-
-  logger.info(s"instanceid=$instanceId")
-
-  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.
@@ -124,34 +114,14 @@ class Setup(val datadir: File,
    * This holds the current feerates, in satoshi-per-kilobytes.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
-  val feeratesPerKB = new AtomicReference[FeeratesPerKB](null)
-
-  /**
-   * This holds the current feerates, in satoshi-per-kw.
-   * The value is read by all actors, hence it needs to be thread-safe.
-   */
   val feeratesPerKw = new AtomicReference[FeeratesPerKw](null)
-
-  val feeEstimator = new FeeEstimator {
-    // @formatter:off
-    override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get().feePerBlock(target)
-    override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.get().feePerBlock(target)
-    override def getMempoolMinFeeratePerKw(): FeeratePerKw = feeratesPerKw.get().mempoolMinFee
-    // @formatter:on
-  }
-
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeEstimator, pluginParams)
-  pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
-  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
-
-  val bitcoin = {
+  val (bitcoin, bitcoinChainHash) = {
     val wallet = {
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
@@ -196,9 +166,9 @@ class Setup(val datadir: File,
       }
     } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
     // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
+    logger.info(s"bitcoind version=$bitcoinVersion")
     assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
-    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
     if (chainHash != Block.RegtestGenesisBlock.hash) {
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
@@ -207,8 +177,19 @@ class Setup(val datadir: File,
     }
     logger.info(s"current blockchain height=$blocks")
     blockHeight.set(blocks)
-    bitcoinClient
+    (bitcoinClient, chainHash)
   }
+
+  val instanceId = UUID.randomUUID()
+  logger.info(s"connecting to database with instanceId=$instanceId")
+  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
+
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
+
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
+  assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+  pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   def bootstrap: Future[Kit] = {
     for {
@@ -226,17 +207,12 @@ class Setup(val datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          mempoolMinFee = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
-          block_1 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
-          blocks_2 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
-          blocks_6 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.6"))),
-          blocks_12 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.12"))),
-          blocks_36 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.36"))),
-          blocks_72 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.72"))),
-          blocks_144 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.144"))),
-          blocks_1008 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
+          minimum = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.minimum")))),
+          slow = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.slow")))),
+          medium = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.medium")))),
+          fast = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fast")))),
+          fastest = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fastest")))),
         )
-        feeratesPerKB.set(confDefaultFeerates)
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
@@ -249,13 +225,15 @@ class Setup(val datadir: File,
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(() => feeProvider.getFeerates.onComplete {
-        case Success(feerates) =>
-          feeratesPerKB.set(feerates)
-          feeratesPerKw.set(FeeratesPerKw(feerates))
-          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
-          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
+        case Success(feeratesPerKB) =>
+          feeratesPerKw.set(FeeratesPerKw(feeratesPerKB))
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Minimum).update(feeratesPerKw.get.minimum.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Slow).update(feeratesPerKw.get.slow.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Medium).update(feeratesPerKw.get.medium.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
+          blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
@@ -371,10 +349,9 @@ class Setup(val datadir: File,
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
-      _ = triggerer ! AsyncPaymentTriggerer.Start(switchboard.toTyped)
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
-      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
       kit = Kit(
         nodeParams = nodeParams,

@@ -34,17 +34,19 @@ import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChann
 import fr.acinq.eclair.io.PeerSpec.createOpenChannelMessage
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.payment.Bolt11Invoice.defaultFeatures.initFeatures
-import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, OpenChannel, OpenChannelTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, IPAddress, NodeAddress, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import java.net.InetAddress
 import scala.concurrent.duration.DurationInt
 
 class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val remoteNodeId: Crypto.PublicKey = randomKey().publicKey
   val defaultParams: DefaultParams = DefaultParams(100 sat, 100000 msat, 100 msat, CltvExpiryDelta(288), 10)
   val openChannel: OpenChannel = createOpenChannelMessage()
+  val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val peer = TestProbe[Any]()
@@ -71,7 +73,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject channel open if timeout waiting for plugin to respond") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived]
@@ -82,7 +84,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("continue channel open if pending channels rate limiter and interceptor plugin accept it") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
@@ -100,7 +102,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // no open channel interceptor plugin registered
     val wallet = new DummyOnChainWallet()
     val openChannelInterceptor = testKit.spawn(OpenChannelInterceptor(peer.ref, TestConstants.Alice.nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter.ref, 10 millis))
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectNoMessage(10 millis)
@@ -110,7 +112,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if rejected by the plugin") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! RejectOpenChannel(randomBytes32(), Error(randomBytes32(), "rejected"))
@@ -121,7 +123,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if pending channels rate limit reached") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.ChannelRateLimited
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rate limit reached"))
@@ -131,7 +133,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject open channel request if concurrent request in progress") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
 
     // waiting for rate limiter to respond to the first request, do not accept any other requests
@@ -173,28 +175,28 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // They only support anchor outputs and we don't.
     {
       val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
       peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
     // They only support anchor outputs with zero fee htlc txs and we don't.
     {
       val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
       peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
     // They want to use a channel type that doesn't exist in the spec.
     {
       val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
       peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
     // They want to use a channel type we don't support yet.
     {
       val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref)
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
       peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
@@ -204,7 +206,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     import f._
 
     val open = createOpenChannelMessage()
-    openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), initFeatures().add(ChannelType, Optional), initFeatures().add(ChannelType, Optional), peerConnection.ref)
+    openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), initFeatures().add(ChannelType, Optional), initFeatures().add(ChannelType, Optional), peerConnection.ref, remoteAddress)
     peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"), peerConnection.ref.toClassic))
     eventListener.expectMessageType[ChannelAborted]
   }

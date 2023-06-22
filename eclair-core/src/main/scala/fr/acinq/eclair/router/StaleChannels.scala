@@ -44,8 +44,8 @@ object StaleChannels {
       ctx.system.eventStream.publish(ChannelLost(shortChannelId))
     }
 
-    val staleChannelsToRemove = staleChannels.flatMap(pc => Seq(ChannelDesc(pc.ann.shortChannelId, pc.ann.nodeId1, pc.ann.nodeId2), ChannelDesc(pc.ann.shortChannelId, pc.ann.nodeId2, pc.ann.nodeId1)))
-    val graphWithBalances1 = d.graphWithBalances.removeEdges(staleChannelsToRemove)
+    val staleChannelsToRemove = staleChannels.map(pc => ChannelDesc(pc.ann.shortChannelId, pc.ann.nodeId1, pc.ann.nodeId2))
+    val graphWithBalances1 = d.graphWithBalances.removeChannels(staleChannelsToRemove)
     staleNodes.foreach { nodeId =>
       log.info("pruning nodeId={} (stale)", nodeId)
       db.removeNode(nodeId)

@@ -20,7 +20,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.13</artifactId>
-    <version>0.8.1-SNAPSHOT</version>
+    <version>0.9.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -72,9 +72,9 @@
         <akka.version>2.6.20</akka.version>
         <akka.http.version>10.2.7</akka.http.version>
         <sttp.version>3.8.5</sttp.version>
-        <bitcoinlib.version>0.27</bitcoinlib.version>
+        <bitcoinlib.version>0.28</bitcoinlib.version>
         <guava.version>31.1-jre</guava.version>
-        <kamon.version>2.5.12</kamon.version>
+        <kamon.version>2.6.1</kamon.version>
     </properties>
 
     <build>

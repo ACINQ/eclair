@@ -4,17 +4,19 @@ import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.Monitoring.Metrics
+import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, channel, payment}
 import scodec.bits.ByteVector
 
 /** Static channel parameters shared by all commitments. */
@@ -66,28 +68,52 @@ case class ChannelParams(channelId: ByteVector32,
    * be able to steal the entire channel funding, but would likely miss block rewards during that process, making it
    * economically irrational for them.
    *
-   * @param fundingSatoshis funding amount of the channel
+   * @param fundingAmount funding amount of the channel
    * @return number of confirmations needed, if any
    */
-  def minDepthFundee(defaultMinDepth: Int, fundingSatoshis: Satoshi): Option[Long] = fundingSatoshis match {
-    case _ if localParams.initFeatures.hasFeature(Features.ZeroConf) => None // zero-conf stay zero-conf, whatever the funding amount is
-    case funding if funding <= Channel.MAX_FUNDING_WITHOUT_WUMBO => Some(defaultMinDepth)
-    case funding => Some(ChannelParams.minDepthScaled(defaultMinDepth, funding))
-  }
+  def minDepthFundee(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] =
+    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
+      None // zero-conf stay zero-conf, whatever the funding amount is
+    } else {
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
+    }
 
   /**
    * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
    *
-   * @param fundingAmount the total target channel funding amount, including local and remote contributions.
+   * @param fundingAmount         total funding amount of the channel.
+   * @param remoteContributes_opt true if the remote has the ability to double-spend the transaction (even if they're
+   *                              not contributing to the shared funding amount). Should be empty if we don't know yet
+   *                              if the remote will contribute to the shared transaction.
    */
-  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] = {
+  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, remoteContributes_opt: Option[Boolean] = None): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      minDepthFundee(defaultMinDepth, fundingAmount)
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
     }
+  }
+
+  /**
+   * When the shared transaction has been built and we know exactly how our peer is going to contribute, we can compute
+   * the real min_depth that we are going to actually use.
+   */
+  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
+
+  /** Channel reserve that applies to our funds. */
+  def localChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+    (capacity / 100).max(remoteParams.dustLimit)
+  } else {
+    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+  }
+
+  /** Channel reserve that applies to our peer's funds. */
+  def remoteChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+    (capacity / 100).max(localParams.dustLimit)
+  } else {
+    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /**
@@ -122,10 +148,15 @@ case class ChannelParams(channelId: ByteVector32,
 
 object ChannelParams {
   def minDepthScaled(defaultMinDepth: Int, amount: Satoshi): Int = {
-    val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-    val scalingFactor = 15
-    val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
-    defaultMinDepth.max(blocksToReachFunding)
+    if (amount <= Channel.MAX_FUNDING_WITHOUT_WUMBO) {
+      // small amount: not scaled
+      defaultMinDepth
+    } else {
+      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
+      val scalingFactor = 15
+      val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
+      defaultMinDepth.max(blocksToReachFunding)
+    }
   }
 }
 
@@ -232,18 +263,10 @@ case class Commitment(fundingTxIndex: Long,
   val capacity: Satoshi = commitInput.txOut.amount
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(params.remoteParams.dustLimit)
-  } else {
-    params.remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
-  }
+  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity)
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding)) {
-    (capacity / 100).max(params.localParams.dustLimit)
-  } else {
-    params.localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
-  }
+  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity)
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
   // top of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
@@ -388,11 +411,11 @@ case class Commitment(fundingTxIndex: Long,
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
@@ -452,11 +475,11 @@ case class Commitment(fundingTxIndex: Long,
     Right(())
   }
 
-  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
+  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
@@ -472,7 +495,10 @@ case class Commitment(fundingTxIndex: Long,
     // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
     // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
-    val missingForReceiver = reduced.toLocal - localChannelReserve(params) - (if (params.localParams.isInitiator) fees else 0.sat)
+    // Note that Bolt 2 requires to also meet our channel reserve requirement, but we're more lenient than that because
+    // as long as we're able to pay the commit tx fee, it's ok if we dip into our channel reserve: we're receiving an
+    // HTLC, which means our balance will increase and meet the channel reserve again.
+    val missingForReceiver = reduced.toLocal - (if (params.localParams.isInitiator) fees else 0.sat)
     if (missingForSender < 0.sat) {
       return Left(InsufficientFunds(params.channelId, amount = amount, missing = -missingForSender.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = if (params.localParams.isInitiator) 0.sat else fees))
     } else if (missingForReceiver < 0.sat) {
@@ -525,8 +551,8 @@ case class Commitment(fundingTxIndex: Long,
     Right(())
   }
 
-  def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, capacity, None)
+  def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
     if (feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
       return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = targetFeerate))
     } else {
@@ -783,7 +809,7 @@ case class Commitments(params: ChannelParams,
    * @param cmd add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right(new commitments, updateAddHtlc)
    */
-  def sendAdd(cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, channelConf: ChannelConf, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // we must ensure we're not relaying htlcs that are already expired, otherwise the downstream channel will instantly close
     // NB: we add a 3 blocks safety to reduce the probability of running into this when our bitcoin node is slightly outdated
     val minExpiry = CltvExpiry(currentHeight + 3)
@@ -791,7 +817,7 @@ case class Commitments(params: ChannelParams,
       return Left(ExpiryTooSmall(channelId, minimum = minExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
-    val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(currentHeight)
+    val maxExpiry = channelConf.maxExpiryDelta.toCltvExpiry(currentHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
       return Left(ExpiryTooBig(channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockHeight = currentHeight))
     }
@@ -807,12 +833,12 @@ case class Commitments(params: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    active.map(_.canSendAdd(add.amountMsat, params, changes1, feeConf))
+    active.map(_.canSendAdd(add.amountMsat, params, changes1, feerates, feeConf))
       .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
   }
 
-  def receiveAdd(add: UpdateAddHtlc, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
     }
@@ -825,7 +851,7 @@ case class Commitments(params: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feeConf))
+    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
       .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1)))
   }
@@ -916,24 +942,29 @@ case class Commitments(params: ChannelParams,
       val changes1 = changes.copy(localChanges = changes.localChanges.copy(proposed = changes.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
       active.map(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf))
         .collectFirst { case Left(f) => Left(f) }
-        .getOrElse(Right(copy(changes = changes1), fee))
+        .getOrElse {
+          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
+          Right(copy(changes = changes1), fee)
+        }
     }
   }
 
-  def receiveFee(fee: UpdateFee, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
+  def receiveFee(fee: UpdateFee, feerates: FeeratesPerKw, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
     if (params.localParams.isInitiator) {
       Left(NonInitiatorCannotSendUpdateFee(channelId))
     } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw.toLong)
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(params.remoteNodeId, params.channelType, active.head.capacity, None)
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, active.head.capacity)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feeConf))
+      active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feerates, feeConf))
         .collectFirst { case Left(f) => Left(f) }
-        .getOrElse(Right(copy(changes = changes1)))
+        .getOrElse {
+          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
+          Right(copy(changes = changes1))
+        }
     }
   }
 

@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.Error
+import fr.acinq.eclair.wire.protocol.{Error, NodeAddress}
 import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
@@ -52,7 +52,7 @@ object OpenChannelInterceptor {
   sealed trait Command
 
   sealed trait WaitForRequestCommands extends Command
-  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any]) extends WaitForRequestCommands {
+  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any], peerAddress: NodeAddress) extends WaitForRequestCommands {
     val temporaryChannelId: ByteVector32 = open.fold(_.temporaryChannelId, _.temporaryChannelId)
     val fundingAmount: Satoshi = open.fold(_.fundingSatoshis, _.fundingAmount)
     val channelFlags: ChannelFlags = open.fold(_.channelFlags, _.channelFlags)

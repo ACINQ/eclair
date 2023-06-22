@@ -281,6 +281,7 @@ object PaymentInitiator {
     def finalExpiry(nodeParams: NodeParams): CltvExpiry = {
       val minFinalCltvExpiryDelta = invoice match {
         case invoice: Bolt11Invoice => invoice.minFinalCltvExpiryDelta
+        // For blinded payments, the min-final-expiry-delta is included in the blinded path instead of being added explicitly by the sender.
         case _: Bolt12Invoice => CltvExpiryDelta(0)
       }
       nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, minFinalCltvExpiryDelta)

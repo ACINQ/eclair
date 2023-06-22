@@ -7,12 +7,13 @@ import akka.actor.{ActorRef, ActorSystem, typed}
 import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.TransportHandler
@@ -29,13 +30,13 @@ import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Re
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, TestFeeEstimator}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
 import java.net.InetAddress
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration.DurationInt
 import scala.util.Random
 
@@ -72,7 +73,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       torAddress_opt = None,
       database = TestDatabases.inMemoryDb(),
       blockHeight = new AtomicLong(400_000),
-      feeEstimator = new TestFeeEstimator(FeeratePerKw(253 sat))
+      feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
     ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
@@ -102,7 +103,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
-    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
@@ -250,6 +251,14 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val sender = TestProbe("sender")
     node.register ! Register.Forward(sender.ref.toTyped, channelId, CMD_GET_CHANNEL_DATA(sender.ref))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[ChannelData]].data
+  }
+
+  def getPeerChannels(node: MinimalNodeFixture, remoteNodeId: PublicKey)(implicit system: ActorSystem): Seq[Peer.ChannelInfo] = {
+    val sender = TestProbe("sender")
+    node.switchboard ! Switchboard.GetPeerInfo(sender.ref.toTyped, remoteNodeId)
+    val peer = sender.expectMsgType[Peer.PeerInfo].peer
+    peer ! Peer.GetPeerChannels(sender.ref.toTyped)
+    sender.expectMsgType[Peer.PeerChannels].channels
   }
 
   def getRouterData(node: MinimalNodeFixture)(implicit system: ActorSystem): Router.Data = {

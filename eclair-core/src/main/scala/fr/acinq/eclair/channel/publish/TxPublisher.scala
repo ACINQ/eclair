@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transactio
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
@@ -156,7 +157,7 @@ object TxPublisher {
     def cmd: PublishTx
   }
   case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
-  case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
+  case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmationTarget: ConfirmationTarget, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
   /**
@@ -220,22 +221,32 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
-        val proposedConfirmationTarget = cmd.txInfo.confirmBefore
+        val proposedConfirmationTarget = cmd.txInfo.confirmationTarget
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
         attempts.replaceableAttempt_opt match {
           case Some(currentAttempt) =>
             if (currentAttempt.cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript) != cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript)) {
               log.error("replaceable {} sends to a different address than the previous attempt, this should not happen: proposed={}, previous={}", currentAttempt.cmd.desc, cmd.txInfo, currentAttempt.cmd.txInfo)
             }
-            val currentConfirmationTarget = currentAttempt.confirmBefore
-            if (currentConfirmationTarget <= proposedConfirmationTarget) {
-              log.debug("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
-              Behaviors.same
-            } else {
+            val currentConfirmationTarget = currentAttempt.confirmationTarget
+
+            def updateConfirmationTarget() = {
               log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
               currentAttempt.actor ! ReplaceableTxPublisher.UpdateConfirmationTarget(proposedConfirmationTarget)
-              val attempts2 = attempts.copy(replaceableAttempt_opt = Some(currentAttempt.copy(confirmBefore = proposedConfirmationTarget)))
+              val attempts2 = attempts.copy(replaceableAttempt_opt = Some(currentAttempt.copy(confirmationTarget = proposedConfirmationTarget)))
               run(pending + (cmd.input -> attempts2), retryNextBlock, channelContext)
+            }
+
+            (currentConfirmationTarget, proposedConfirmationTarget) match {
+              case (ConfirmationTarget.Absolute(currentConfirmBefore), ConfirmationTarget.Absolute(proposedConfirmBefore)) if proposedConfirmBefore < currentConfirmBefore =>
+                // The proposed block target is closer than what it was
+                updateConfirmationTarget()
+              case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(proposedConfirmBefore)) =>
+                // Switch from relative priority mode to absolute blockheight mode
+                updateConfirmationTarget()
+              case _ =>
+                log.debug("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+                Behaviors.same
             }
           case None =>
             val publishId = UUID.randomUUID()

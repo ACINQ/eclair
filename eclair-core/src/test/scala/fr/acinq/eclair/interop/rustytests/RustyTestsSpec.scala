@@ -20,17 +20,16 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, feeratePerKw}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Init
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestFeeEstimator, TestKitBaseClass, TestUtils}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TestUtils}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterAll, Outcome}
@@ -64,9 +63,8 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     // we just bypass the relayer for this test
     val relayer = paymentHandler
     val wallet = new DummyOnChainWallet()
-    val feeEstimator = new TestFeeEstimator()
-    val aliceNodeParams = Alice.nodeParams.copy(blockHeight = blockHeight, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
-    val bobNodeParams = Bob.nodeParams.copy(blockHeight = blockHeight, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
+    val aliceNodeParams = Alice.nodeParams.copy(blockHeight = blockHeight)
+    val bobNodeParams = Bob.nodeParams.copy(blockHeight = blockHeight)
     val channelConfig = ChannelConfig.standard
     val channelType = ChannelTypes.Standard()
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceNodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
@@ -74,8 +72,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val aliceInit = Init(Alice.channelParams.initFeatures)
     val bobInit = Init(Bob.channelParams.initFeatures)
     // alice and bob will both have 1 000 000 sat
-    feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), Some(1000000000 msat), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType, replyTo = system.deadLetters)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, commitTxFeerate = feeratePerKw, fundingTxFeerate = feeratePerKw, Some(1000000000 msat), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, ChannelFlags.Private, channelConfig, channelType, replyTo = system.deadLetters)
     alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]

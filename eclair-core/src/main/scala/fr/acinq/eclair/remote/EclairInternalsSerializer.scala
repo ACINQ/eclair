@@ -86,6 +86,13 @@ object EclairInternalsSerializer {
     "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)
     ).as[PathFindingExperimentConf]
 
+  val messageRouteParamsCodec: Codec[MessageRouteParams] = (
+    ("maxRouteLength" | int32) ::
+      (("baseFactor" | double) ::
+      ("ageFactor" | double) ::
+      ("capacityFactor" | double) ::
+      ("disabledMultiplier" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
       ("channelExcludeDuration" | finiteDurationCodec) ::
@@ -97,6 +104,7 @@ object EclairInternalsSerializer {
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
+      ("messageRouteParams" | messageRouteParamsCodec) ::
       ("balanceEstimateHalfLife" | finiteDurationCodec) ::
       ("numberOfRouterWorkers" | int32)).as[RouterConf]
 

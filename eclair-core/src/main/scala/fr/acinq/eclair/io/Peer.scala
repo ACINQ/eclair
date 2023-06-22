@@ -42,6 +42,8 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 
+import scala.concurrent.duration.DurationInt
+
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
  *
@@ -162,8 +164,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         } else {
           randomBytes32()
         }
-        val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-        val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingAmount, None)
+        val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
+        val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
         channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
@@ -171,7 +173,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -181,7 +183,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
@@ -275,16 +277,16 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         gotoConnected(connectionReady, d.channels)
 
       case Event(msg: OnionMessage, _: ConnectedData) =>
-        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
-          OnionMessages.process(nodeParams.privateKey, msg) match {
-            case OnionMessages.DropMessage(reason) =>
-              log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case OnionMessages.SendMessage(nextNodeId, message) =>
-              switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
-            case received: OnionMessages.ReceiveMessage =>
-              log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
-              context.system.eventStream.publish(received)
-          }
+        OnionMessages.process(nodeParams.privateKey, msg) match {
+          case OnionMessages.DropMessage(reason) =>
+            log.debug("dropping message from {}: {}", remoteNodeId.value.toHex, reason.toString)
+          case OnionMessages.SendMessage(nextNodeId, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
+            switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
+          case OnionMessages.SendMessage(_, _) =>
+            log.debug("dropping message from {}: relaying onion messages is disabled", remoteNodeId.value.toHex)
+          case received: OnionMessages.ReceiveMessage =>
+            log.info("received message from {}: {}", remoteNodeId.value.toHex, received)
+            context.system.eventStream.publish(received)
         }
         stay()
 
@@ -324,6 +326,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         case c: ConnectedData => Some(c.address)
         case _ => None
       }, d.channels.values.toSet)
+      stay()
+
+    case Event(r: GetPeerChannels, d) =>
+      if (d.channels.isEmpty) {
+        r.replyTo ! PeerChannels(remoteNodeId, Nil)
+      } else {
+        val actor = context.spawnAnonymous(PeerChannelsCollector(remoteNodeId))
+        actor ! PeerChannelsCollector.GetChannels(r.replyTo, d.channels.values.map(_.toTyped).toSet)
+      }
       stay()
 
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
@@ -528,13 +539,15 @@ object Peer {
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
-
-  sealed trait PeerInfoResponse {
-    def nodeId: PublicKey
-  }
-
+  sealed trait PeerInfoResponse { def nodeId: PublicKey }
   case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
+
+  /** Return the peer's current channels: note that the data may change concurrently, never assume it is fully up-to-date. */
+  case class GetPeerChannels(replyTo: typed.ActorRef[PeerChannels])
+  case class ChannelInfo(channel: typed.ActorRef[Command], state: ChannelState, data: ChannelData)
+  case class PeerChannels(nodeId: PublicKey, channels: Seq[ChannelInfo])
+
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 

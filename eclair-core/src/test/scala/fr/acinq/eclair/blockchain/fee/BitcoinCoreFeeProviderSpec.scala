@@ -74,26 +74,22 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
     )
 
     val ref = FeeratesPerKB(
-      mempoolMinFee = FeeratePerKB(300 sat),
-      block_1 = fees(1),
-      blocks_2 = fees(2),
-      blocks_6 = fees(6),
-      blocks_12 = fees(12),
-      blocks_36 = fees(36),
-      blocks_72 = fees(72),
-      blocks_144 = fees(144),
-      blocks_1008 = fees(1008)
+      minimum = FeeratePerKB(300 sat),
+      fastest = fees(1),
+      fast = fees(2),
+      medium = fees(12),
+      slow = fees(1008)
     )
 
-    val mockBitcoinClient = createMockBitcoinClient(fees, ref.mempoolMinFee)
+    val mockBitcoinClient = createMockBitcoinClient(fees, ref.minimum)
 
-    val mockProvider = BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val mockProvider = BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(minimum = FeeratePerKB(1 sat), slow = FeeratePerKB(2 sat), medium = FeeratePerKB(3 sat), fast = FeeratePerKB(4 sat), fastest = FeeratePerKB(5 sat)))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
   }
 
   test("get mempool minimum fee") {
-    val regtestProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val regtestProvider = BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(minimum = FeeratePerKB(1 sat), slow = FeeratePerKB(2 sat), medium = FeeratePerKB(3 sat), fast = FeeratePerKB(4 sat), fastest = FeeratePerKB(5 sat)))
     val sender = TestProbe()
     regtestProvider.mempoolMinFee().pipeTo(sender.ref)
     val mempoolMinFee = sender.expectMsgType[FeeratePerKB]

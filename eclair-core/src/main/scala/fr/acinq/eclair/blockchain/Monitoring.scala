@@ -26,12 +26,21 @@ object Monitoring {
     val RpcBasicInvokeCount: Metric.Counter = Kamon.counter("bitcoin.rpc.basic.invoke.count")
     val RpcBasicInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
     val RpcBatchInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
-    val MempoolMinFeeratePerKw: Metric.Gauge = Kamon.gauge("bitcoin.mempool.min-feerate-per-kw", "Minimum feerate (sat/kw) for a tx to be accepted in our mempool")
+    val FeeratesPerByte: Metric.Gauge = Kamon.gauge("bitcoin.feerates-per-byte", "Current feerates in sat/byte")
     val CannotRetrieveFeeratesCount: Metric.Counter = Kamon.counter("bitcoin.rpc.feerates.error", "Number of failures to retrieve on-chain feerates")
   }
 
   object Tags {
     val Method = "method"
+    val Priority = "priority"
+
+    object Priorities {
+      val Minimum = "0-minimum"
+      val Slow = "1-slow"
+      val Medium = "2-medium"
+      val Fast = "3-fast"
+      val Fastest = "4-fastest"
+    }
   }
 
 }

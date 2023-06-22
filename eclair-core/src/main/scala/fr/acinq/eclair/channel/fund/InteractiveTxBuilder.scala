@@ -146,7 +146,6 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
-                                 minDepth_opt: Option[Long],
                                  requireConfirmedInputs: RequireConfirmedInputs) {
     /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = sharedInput_opt.map(_.info.txOut.amount).getOrElse(0 sat) + localContribution + remoteContribution
@@ -650,7 +649,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
-      val remoteReserve = (fundingParams.fundingAmount / 100).max(channelParams.localParams.dustLimit)
+      val remoteReserve = channelParams.remoteChannelReserveForCapacity(fundingParams.fundingAmount)
       // We ignore the reserve requirement if we are splicing funds into the channel, which increases the size of the reserve.
       if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty && localInputs.isEmpty) {
         log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)

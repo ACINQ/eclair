@@ -17,13 +17,14 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -106,9 +107,11 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       update.setBytes(1, encoded)
       update.setBytes(2, data.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, created_timestamp, last_connected_timestamp, is_closed) VALUES (?, ?, ?, ?, 0)")) { statement =>
           statement.setBytes(1, data.channelId.toArray)
           statement.setBytes(2, encoded)
+          statement.setLong(3, TimestampMilli.now().toLong)
+          statement.setLong(4, TimestampMilli.now().toLong)
           statement.executeUpdate()
         }
       }
@@ -135,11 +138,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
     val timestampColumn_opt = event match {
-      case ChannelEvent.EventType.Created => Some("created_timestamp")
       case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
       case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
       case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
-      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
       case _ => None
     }
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
@@ -156,8 +157,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+    using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1, closed_timestamp=? WHERE channel_id=?")) { statement =>
+      statement.setLong(1, TimestampMilli.now().toLong)
+      statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }
   }
@@ -167,6 +169,27 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
         .mapCodec(channelDataCodec).toSeq
     }
+  }
+
+
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
+    val sql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC"
+    remoteNodeId_opt match {
+        case None =>
+          using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>
+            statement.executeQuery().mapCodec(channelDataCodec).toSeq
+          }
+        case Some(nodeId) =>
+          using(sqlite.prepareStatement(sql)) { statement =>
+            val filtered = statement.executeQuery()
+              .mapCodec(channelDataCodec).filter(_.remoteNodeId == nodeId)
+            val limited = paginated_opt match {
+              case None => filtered
+              case Some(p) => filtered.slice(p.skip, p.skip + p.count)
+            }
+            limited.toSeq
+          }
+      }
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {

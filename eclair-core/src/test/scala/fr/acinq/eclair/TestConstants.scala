@@ -27,15 +27,15 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 
 /**
@@ -65,7 +65,7 @@ object TestConstants {
     // @formatter:on
   }
 
-  val blockchainWatchdogSources = Seq(
+  private val blockchainWatchdogSources = Seq(
     "bitcoinheaders.net",
     "blockcypher.com",
     "blockstream.info",
@@ -82,6 +82,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
@@ -110,6 +111,7 @@ object TestConstants {
         maxHtlcValueInFlightPercent = 100,
         maxAcceptedHtlcs = 100,
         expiryDelta = CltvExpiryDelta(144),
+        maxExpiryDelta = CltvExpiryDelta(2016),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
         minFinalExpiryDelta = CltvExpiryDelta(18),
         maxBlockProcessingDelay = 10 millis,
@@ -132,8 +134,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -199,6 +201,7 @@ object TestConstants {
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
+        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2, 1.5)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0,
       ),
@@ -212,7 +215,8 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute,
+        minIntermediateHops = 9,
+        timeout = 200 millis,
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None
@@ -241,6 +245,7 @@ object TestConstants {
       nodeKeyManager,
       channelKeyManager,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
@@ -266,6 +271,7 @@ object TestConstants {
         maxHtlcValueInFlightPercent = 100,
         maxAcceptedHtlcs = 30,
         expiryDelta = CltvExpiryDelta(144),
+        maxExpiryDelta = CltvExpiryDelta(2016),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
         minFinalExpiryDelta = CltvExpiryDelta(18),
         maxBlockProcessingDelay = 10 millis,
@@ -288,8 +294,8 @@ object TestConstants {
         remoteRbfLimits = RemoteRbfLimits(5, 0)
       ),
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 36, 12, 18, 0),
-        feeEstimator = new TestFeeEstimator,
+        feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -355,6 +361,7 @@ object TestConstants {
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
+        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3, 3.14)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0
       ),
@@ -368,7 +375,8 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute,
+        minIntermediateHops = 8,
+        timeout = 100 millis,
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None

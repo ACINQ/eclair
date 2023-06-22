@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
@@ -46,7 +46,7 @@ object ReplaceableTxPublisher {
   // @formatter:off
   sealed trait Command
   case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
-  case class UpdateConfirmationTarget(confirmBefore: BlockHeight) extends Command
+  case class UpdateConfirmationTarget(confirmationTarget: ConfirmationTarget) extends Command
   case object Stop extends Command
 
   private case class WrappedPreconditionsResult(result: ReplaceableTxPrePublisher.PreconditionsResult) extends Command
@@ -75,28 +75,31 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
-    val remainingBlocks = confirmBefore - currentBlockHeight
-    if (hasEnoughSafeUtxos) {
-      val blockTarget = remainingBlocks match {
-        // If our target is still very far in the future, no need to rush
-        case t if t >= 144 => 144
-        case t if t >= 72 => 72
-        case t if t >= 36 => 36
-        // However, if we get closer to the target, we start being more aggressive
-        case t if t >= 18 => 12
-        case t if t >= 12 => 6
-        case t if t >= 2 => 2
-        case _ => 1
-      }
-      feeEstimator.getFeeratePerKw(blockTarget)
-    } else {
-      // We don't have many safe utxos so we want the transaction to confirm quickly.
-      if (remainingBlocks <= 1) {
-        feeEstimator.getFeeratePerKw(1)
-      } else {
-        feeEstimator.getFeeratePerKw(2)
-      }
+  def getFeerate(feerates: FeeratesPerKw, confirmationTarget: ConfirmationTarget, currentBlockHeight: BlockHeight, hasEnoughSafeUtxos: Boolean): FeeratePerKw = {
+    confirmationTarget match {
+      case ConfirmationTarget.Absolute(confirmBefore) =>
+        // If we have an absolute block height target, we take into account what the current height is and adjust the feerate
+        val remainingBlocks = confirmBefore - currentBlockHeight
+        if (hasEnoughSafeUtxos) {
+          remainingBlocks match {
+            // If our target is still very far in the future, no need to rush
+            case t if t >= 36 => feerates.slow
+            // However, if we get closer to the target, we start being more aggressive
+            case t if t >= 12 => feerates.medium
+            case t if t >= 2 => feerates.fast
+            case _ => feerates.fastest
+          }
+        } else {
+          // We don't have many safe utxos so we want the transaction to confirm quickly.
+          if (remainingBlocks <= 1) {
+            feerates.fastest
+          } else {
+            feerates.fast
+          }
+        }
+      case ConfirmationTarget.Priority(priority) =>
+        // If we have a priority target, then the current block height doesn't matter
+        priority.getFeerate(feerates)
     }
   }
 
@@ -115,7 +118,8 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  private var confirmBefore: BlockHeight = cmd.txInfo.confirmBefore
+  /** The confirmation target may be updated in some corner cases (e.g. for a htlc if we learn a payment preimage). */
+  private var confirmationTarget: ConfirmationTarget = cmd.txInfo.confirmationTarget
 
   def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, txPublishContext), "pre-publisher")
@@ -127,7 +131,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop => Behaviors.stopped
     }
@@ -143,7 +147,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         Behaviors.receiveMessagePartial {
           case TimeLocksOk => chooseFeerate(txWithWitnessData)
           case UpdateConfirmationTarget(target) =>
-            confirmBefore = target
+            confirmationTarget = target
             Behaviors.same
           case Stop => Behaviors.stopped
         }
@@ -151,16 +155,16 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def chooseFeerate(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
+    context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
       case Success(isSafe) => CheckUtxosResult(isSafe, nodeParams.currentBlockHeight)
       case Failure(_) => CheckUtxosResult(isSafe = false, nodeParams.currentBlockHeight) // if we can't check our utxos, we assume the worst
     }
     Behaviors.receiveMessagePartial {
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
-        val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight, isSafe)
+        val targetFeerate = getFeerate(nodeParams.currentFeerates, confirmationTarget, currentBlockHeight, isSafe)
         fund(txWithWitnessData, targetFeerate)
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop => Behaviors.stopped
     }
@@ -173,14 +177,17 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case WrappedFundingResult(result) =>
         result match {
           case ReplaceableTxFunder.TransactionReady(tx) =>
-            log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore - nodeParams.currentBlockHeight)
+            confirmationTarget match {
+              case ConfirmationTarget.Absolute(confirmBefore) => log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore - nodeParams.currentBlockHeight)
+              case ConfirmationTarget.Priority(priority) => log.debug("publishing {} with priority {}", cmd.desc, priority)
+            }
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
             wait(tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop =>
         // We can't stop right now, the child actor is currently funding the transaction and will send its result soon.
@@ -203,7 +210,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case _ => true
             }
             if (shouldRbf) {
-              context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.feeTargets.safeUtxosThreshold)) {
+              context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
                 case Success(isSafe) => CheckUtxosResult(isSafe, currentBlockHeight)
                 case Failure(_) => CheckUtxosResult(isSafe = false, currentBlockHeight) // if we can't check our utxos, we assume the worst
               }
@@ -216,23 +223,34 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
         // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
         val bumpRatio = 1.2
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, currentBlockHeight, isSafe)
-        val targetFeerate_opt = if (confirmBefore <= currentBlockHeight + 6) {
-          log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
-          Some(currentFeerate.max(tx.feerate * bumpRatio))
-        } else if (tx.feerate * bumpRatio <= currentFeerate) {
-          log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
-          Some(currentFeerate)
-        } else {
-          log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore - currentBlockHeight)
-          None
+        val currentFeerate = getFeerate(nodeParams.currentFeerates, confirmationTarget, currentBlockHeight, isSafe)
+        val targetFeerate_opt = confirmationTarget match {
+          case ConfirmationTarget.Absolute(confirmBefore) =>
+            if (confirmBefore <= currentBlockHeight + 6) {
+              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
+              Some(currentFeerate.max(tx.feerate * bumpRatio))
+            } else if (tx.feerate * bumpRatio <= currentFeerate) {
+              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore - currentBlockHeight)
+              Some(currentFeerate)
+            } else {
+              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore - currentBlockHeight)
+              None
+            }
+          case ConfirmationTarget.Priority(priority) =>
+            if (tx.feerate * bumpRatio <= currentFeerate) {
+              log.debug("{} priority {}: bumping fees", cmd.desc, priority)
+              Some(currentFeerate)
+            } else {
+              log.debug("{} priority {}: no need to bump fees", cmd.desc, priority)
+              None
+            }
         }
         // We avoid a herd effect whenever we fee bump transactions.
         targetFeerate_opt.foreach(targetFeerate => timers.startSingleTimer(BumpFeeKey, BumpFee(targetFeerate), (1 + Random.nextLong(nodeParams.channelConf.maxTxPublishRetryDelay.toMillis)).millis))
         Behaviors.same
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop => unlockAndStop(cmd.input, Seq(tx.signedTx))
     }
@@ -257,7 +275,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         timers.startSingleTimer(txResult, 1 second)
         Behaviors.same
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop =>
         // We can't stop right away, because the child actor may need to unlock utxos first.
@@ -298,7 +316,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             Behaviors.same
         }
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop =>
         // We don't know yet which transaction won, so we try abandoning both and unlocking their utxos.
@@ -330,7 +348,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         timers.startSingleTimer(txResult, 1 second)
         Behaviors.same
       case UpdateConfirmationTarget(target) =>
-        confirmBefore = target
+        confirmationTarget = target
         Behaviors.same
       case Stop =>
         // We don't stop right away, because we're cleaning up the failed transaction.

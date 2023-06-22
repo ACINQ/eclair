@@ -27,14 +27,14 @@ import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrat
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
+import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -45,7 +45,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -56,6 +56,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
+                      private val feerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -96,6 +97,11 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
+
+  def currentFeerates: FeeratesPerKw = feerates.get()
+
+  /** Only to be used in tests. */
+  def setFeerates(value: FeeratesPerKw) = feerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -206,7 +212,7 @@ object NodeParams extends Logging {
   }
 
   def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feeEstimator: FeeEstimator,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -265,7 +271,11 @@ object NodeParams extends Logging {
       "payment-request-expiry" -> "invoice-expiry",
       "override-features" -> "override-init-features",
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
-      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests"
+      // v0.8.0
+      "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
+      // vx.x.x
+      "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -299,9 +309,10 @@ object NodeParams extends Logging {
 
     val maxToLocalCLTV = CltvExpiryDelta(config.getInt("channel.max-to-local-delay-blocks"))
     val offeredCLTV = CltvExpiryDelta(config.getInt("channel.to-remote-delay-blocks"))
-    require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
     val expiryDelta = CltvExpiryDelta(config.getInt("channel.expiry-delta-blocks"))
+    val maxExpiryDelta = CltvExpiryDelta(config.getInt("channel.max-expiry-delta-blocks"))
+    require(expiryDelta < maxExpiryDelta, "channel.max-expiry-delta-blocks must be at least a few times larger than channel.expiry-delta-blocks, otherwise you will fail to relay payments")
     val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("channel.fulfill-safety-before-timeout-blocks"))
     require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
     val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
@@ -369,13 +380,15 @@ object NodeParams extends Logging {
 
     validateAddresses(addresses)
 
+    def getConfirmationPriority(path: String): ConfirmationPriority = config.getString(path) match {
+      case "slow" => ConfirmationPriority.Slow
+      case "medium" => ConfirmationPriority.Medium
+      case "fast" => ConfirmationPriority.Fast
+    }
+
     val feeTargets = FeeTargets(
-      fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
-      commitmentBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment"),
-      commitmentWithoutHtlcsBlockTarget = config.getInt("on-chain-fees.target-blocks.commitment-without-htlcs"),
-      mutualCloseBlockTarget = config.getInt("on-chain-fees.target-blocks.mutual-close"),
-      claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main"),
-      safeUtxosThreshold = config.getInt("on-chain-fees.target-blocks.safe-utxos-threshold"),
+      funding = getConfirmationPriority("on-chain-fees.confirmation-priority.funding"),
+      closing = getConfirmationPriority("on-chain-fees.confirmation-priority.closing"),
     )
 
     def getRelayFees(relayFeesConfig: Config): RelayFees = {
@@ -421,13 +434,21 @@ object NodeParams extends Logging {
       PathFindingExperimentConf(experiments.toMap)
     }
 
+    def getMessageRouteParams(config: Config): MessageRouteParams = {
+      val maxRouteLength = config.getInt("max-route-length")
+      val ratioBase = config.getDouble("ratios.base")
+      val ratioAge = config.getDouble("ratios.channel-age")
+      val ratioCapacity = config.getDouble("ratios.channel-capacity")
+      val disabledMultiplier = config.getDouble("ratios.disabled-multiplier")
+      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity, disabledMultiplier))
+    }
+
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
       case "local-close" => UnhandledExceptionStrategy.LocalClose
       case "stop" => UnhandledExceptionStrategy.Stop
     }
 
     val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
-      case "no-relay" => NoRelay
       case "channels-only" => RelayChannelsOnly
       case "relay-all" => RelayAll
     }
@@ -456,6 +477,7 @@ object NodeParams extends Logging {
       channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockHeight = blockHeight,
+      feerates = feerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -480,6 +502,7 @@ object NodeParams extends Logging {
         maxToLocalDelay = maxToLocalCLTV,
         minDepthBlocks = config.getInt("channel.mindepth-blocks"),
         expiryDelta = expiryDelta,
+        maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
         minFinalExpiryDelta = minFinalExpiryDelta,
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
@@ -494,7 +517,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
-        feeEstimator = feeEstimator,
+        safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
@@ -556,6 +579,7 @@ object NodeParams extends Logging {
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
+        messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
         numberOfWorkers = config.getInt("router.number-of-workers")
       ),
@@ -568,6 +592,7 @@ object NodeParams extends Logging {
       blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = onionMessageRelayPolicy,
+        minIntermediateHops = config.getInt("onion-messages.min-intermediate-hops"),
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
         maxAttempts = config.getInt("onion-messages.max-attempts"),
       ),

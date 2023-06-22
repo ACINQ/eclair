@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, toLocalDelayed}
@@ -120,7 +120,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // ClaimP2WPKHOutputTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
       val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
       val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, PlaceHolderSig).tx)
@@ -131,7 +131,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // HtlcDelayedTx
       // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the 3rd-stage tx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
-      val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val htlcSuccessOrTimeoutTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
       val Right(htlcDelayedTx) = makeHtlcDelayedTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcDelayedTx, PlaceHolderSig).tx)
@@ -142,7 +142,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // MainPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
       val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(mainPenaltyTx, PlaceHolderSig).tx)
@@ -156,7 +156,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket, None)
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(redeemScript))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx, 0, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
@@ -171,7 +171,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(localIsInitiator = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), DefaultCommitmentFormat)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val Right(claimHtlcSuccessTx) = makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
@@ -186,7 +186,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(localIsInitiator = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry, DefaultCommitmentFormat)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
       val Right(claimClaimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
@@ -197,10 +197,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // ClaimAnchorOutputTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, BlockHeight(1105))
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)))
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
-      assert(claimAnchorOutputTx.confirmBefore == BlockHeight(1105))
+      assert(claimAnchorOutputTx.confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(1105)))
       // we will always add at least one input and one output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
       val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
@@ -304,7 +304,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(DefaultCommitmentFormat), outputs, DefaultCommitmentFormat)
     assert(htlcTxs.length == 4)
-    val confirmationTargets = htlcTxs.map(tx => tx.htlcId -> tx.confirmBefore.toLong).toMap
+    val confirmationTargets = htlcTxs.map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
     assert(confirmationTargets == Map(0 -> 300, 1 -> 310, 2 -> 295, 3 -> 300))
     val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
     val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
@@ -532,7 +532,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
       val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(UnsafeLegacyAnchorOutputsCommitmentFormat), outputs, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(htlcTxs.length == 5)
-      val confirmationTargets = htlcTxs.map(tx => tx.htlcId -> tx.confirmBefore.toLong).toMap
+      val confirmationTargets = htlcTxs.map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
       assert(confirmationTargets == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300))
       val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
       val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
@@ -545,7 +545,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val zeroFeeCommitTx = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsInitiator = true, zeroFeeOutputs)
       val zeroFeeHtlcTxs = makeHtlcTxs(zeroFeeCommitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat), zeroFeeOutputs, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       assert(zeroFeeHtlcTxs.length == 7)
-      val zeroFeeConfirmationTargets = zeroFeeHtlcTxs.map(tx => tx.htlcId -> tx.confirmBefore.toLong).toMap
+      val zeroFeeConfirmationTargets = zeroFeeHtlcTxs.map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
       assert(zeroFeeConfirmationTargets == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300, 7 -> 300, 8 -> 302))
       val zeroFeeHtlcSuccessTxs = zeroFeeHtlcTxs.collect { case tx: HtlcSuccessTx => tx }
       val zeroFeeHtlcTimeoutTxs = zeroFeeHtlcTxs.collect { case tx: HtlcTimeoutTx => tx }
@@ -580,7 +580,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends local anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, BlockHeight(0))
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
@@ -588,7 +588,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, BlockHeight(0))
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)

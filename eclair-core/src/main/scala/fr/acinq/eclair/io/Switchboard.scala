@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, TypedActorRefOps}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -45,6 +46,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
   context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
+
+  context.system.toTyped.receptionist ! Receptionist.Register(SwitchboardServiceKey, context.self.toTyped[GetPeerInfo])
 
   def receive: Receive = {
     case init: Init =>
@@ -156,6 +159,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 }
 
 object Switchboard {
+
+  val SwitchboardServiceKey: ServiceKey[GetPeerInfo] = ServiceKey[GetPeerInfo]("switchboard")
 
   trait PeerFactory {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef

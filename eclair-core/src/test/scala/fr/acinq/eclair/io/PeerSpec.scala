@@ -465,15 +465,14 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
-    val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
+    nodeParams.setFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputs())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -484,15 +483,14 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
-    val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(mempoolMinFee = FeeratePerKw(250 sat)))
+    nodeParams.setFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>

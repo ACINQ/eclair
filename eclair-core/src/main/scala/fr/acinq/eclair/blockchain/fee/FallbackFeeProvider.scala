@@ -44,15 +44,11 @@ case class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: F
 object FallbackFeeProvider {
 
   private def enforceMinimumFeerate(feeratesPerKB: FeeratesPerKB, minFeeratePerKB: FeeratePerKB): FeeratesPerKB = FeeratesPerKB(
-    mempoolMinFee = feeratesPerKB.mempoolMinFee.max(minFeeratePerKB),
-    block_1 = feeratesPerKB.block_1.max(minFeeratePerKB),
-    blocks_2 = feeratesPerKB.blocks_2.max(minFeeratePerKB),
-    blocks_6 = feeratesPerKB.blocks_6.max(minFeeratePerKB),
-    blocks_12 = feeratesPerKB.blocks_12.max(minFeeratePerKB),
-    blocks_36 = feeratesPerKB.blocks_36.max(minFeeratePerKB),
-    blocks_72 = feeratesPerKB.blocks_72.max(minFeeratePerKB),
-    blocks_144 = feeratesPerKB.blocks_144.max(minFeeratePerKB),
-    blocks_1008 = feeratesPerKB.blocks_1008.max(minFeeratePerKB)
+    minimum = feeratesPerKB.minimum.max(minFeeratePerKB),
+    fastest = feeratesPerKB.fastest.max(minFeeratePerKB),
+    fast = feeratesPerKB.fast.max(minFeeratePerKB),
+    medium = feeratesPerKB.medium.max(minFeeratePerKB),
+    slow = feeratesPerKB.slow.max(minFeeratePerKB)
   )
 
 }
