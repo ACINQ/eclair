@@ -85,6 +85,7 @@ case class InvalidRbfTxAbortNotAcked               (override val channelId: Byte
 case class InvalidRbfAttemptsExhausted             (override val channelId: ByteVector32, maxAttempts: Int) extends ChannelException(channelId, s"invalid rbf attempt: $maxAttempts/$maxAttempts attempts already published")
 case class InvalidRbfAttemptTooSoon                (override val channelId: ByteVector32, previousAttempt: BlockHeight, nextAttempt: BlockHeight) extends ChannelException(channelId, s"invalid rbf attempt: last attempt made at block=$previousAttempt, next attempt available after block=$nextAttempt")
 case class InvalidSpliceTxAbortNotAcked            (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
+case class InvalidSpliceNotQuiescent               (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: the channel is not quiescent")
 case class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32) extends ChannelException(channelId, "no need to rbf, transaction is already confirmed")
 case class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
 case class InvalidRbfZeroConf                      (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're using zero-conf for this interactive-tx attempt")

@@ -796,6 +796,7 @@ case class Commitments(params: ChannelParams,
   def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
 
   // @formatter:off
+  def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
   def isQuiescent: Boolean = active.head.isQuiescent(changes, pendingHtlcsOk = params.useQuiescence)
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
