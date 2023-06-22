@@ -71,6 +71,7 @@ case class InvalidCompleteInteractiveTx            (override val channelId: Byte
 case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
 case class RbfAttemptAborted                       (override val channelId: ByteVector32) extends ChannelException(channelId, "rbf attempt aborted")
 case class SpliceAttemptAborted                    (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt aborted")
+case class SpliceAttemptTimedOut                   (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt took too long, disconnecting")
 case class DualFundingAborted                      (override val channelId: ByteVector32) extends ChannelException(channelId, "dual funding aborted")
 case class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, msg: InteractiveTxMessage) extends ChannelException(channelId, s"unexpected interactive-tx message (${msg.getClass.getSimpleName})")
 case class UnexpectedFundingSignatures             (override val channelId: ByteVector32) extends ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
