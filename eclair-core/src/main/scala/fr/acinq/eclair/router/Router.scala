@@ -373,16 +373,19 @@ object Router {
    */
   private class Worker(data: VolatileRouterDataHolder, nodeParams: NodeParams)(implicit log: DiagnosticLoggingAdapter) extends Actor {
     override def receive: Receive = {
-      case Worker.FindRoutes(r, s) =>
-        RouteCalculation.handleRouteRequest(data.get, nodeParams.currentBlockHeight, r, s)
-      case Worker.FinalizeRoute(fr, s) =>
-        RouteCalculation.finalizeRoute(data.get, nodeParams.nodeId, fr, s)
+      case Worker.FindRoutes(r, replyTo) =>
+        RouteCalculation.handleRouteRequest(data.get, nodeParams.currentBlockHeight, r, replyTo)
+      case Worker.FindMessageRoutes(r, p) =>
+        RouteCalculation.handleMessageRouteRequest(data.get, nodeParams.currentBlockHeight, r, p)
+      case Worker.FinalizeRoute(fr, replyTo) =>
+        RouteCalculation.finalizeRoute(data.get, nodeParams.nodeId, fr, replyTo)
     }
   }
 
   private object Worker {
-    case class FindRoutes(routeRequest: RouteRequest, sender: ActorRef)
-    case class FinalizeRoute(finalizeRoute: Router.FinalizeRoute, sender: ActorRef)
+    case class FindRoutes(routeRequest: RouteRequest, replyTo: ActorRef)
+    case class FindMessageRoutes(routeRequest: MessageRouteRequest, routeParams: MessageRouteParams)
+    case class FinalizeRoute(finalizeRoute: Router.FinalizeRoute, replyTo: ActorRef)
   }
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
