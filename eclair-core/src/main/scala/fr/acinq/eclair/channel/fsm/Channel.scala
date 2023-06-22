@@ -850,14 +850,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             } else {
               stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
             }
-          case SpliceStatus.ReceivedStfu(_) | SpliceStatus.NonInitiatorQuiescent =>
-            val failure = new ChannelException(d.channelId, "received stfu twice")
-            log.info("quiesce attempt failed: {}", failure.getMessage)
-            // NB: we use a small delay to ensure we've sent our warning before disconnecting.
-            context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-            stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, failure.toString)
           case _ =>
-            log.warning("ignoring stfu received during splice")
+            log.warning("ignoring duplicate stfu")
             stay()
         }
       } else {
