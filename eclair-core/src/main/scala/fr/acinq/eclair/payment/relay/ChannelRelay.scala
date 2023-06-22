@@ -34,6 +34,7 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.DurationLong
 import scala.util.Random
 
@@ -187,6 +188,10 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, toSend)
+    Metrics.RelayedPaymentDuration
+      .withTag(Tags.RelayType.RelayType, Tags.RelayType.Channel)
+      .withTag(Tags.Success, cmd.isInstanceOf[CMD_FULFILL_HTLC])
+      .record((TimestampMilli.now() - timestampBegin).toMillis, TimeUnit.MILLISECONDS)
     Behaviors.stopped
   }
 
