@@ -94,15 +94,16 @@ case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val timestamp: TimestampMilli = outgoing.map(_.timestamp).min
+  override val timestamp: TimestampMilli = outgoing.map(_.settledAt).min
 }
 
 object PaymentRelayed {
 
-  case class Part(amount: MilliSatoshi, channelId: ByteVector32, timestamp: TimestampMilli)
+  case class IncomingPart(amount: MilliSatoshi, channelId: ByteVector32, receivedAt: TimestampMilli)
+  case class OutgoingPart(amount: MilliSatoshi, channelId: ByteVector32, settledAt: TimestampMilli)
 
-  type Incoming = Seq[Part]
-  type Outgoing = Seq[Part]
+  type Incoming = Seq[IncomingPart]
+  type Outgoing = Seq[OutgoingPart]
 
 }
 

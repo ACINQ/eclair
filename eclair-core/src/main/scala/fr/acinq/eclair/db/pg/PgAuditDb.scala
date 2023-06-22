@@ -240,7 +240,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.timestamp)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.timestamp))
+          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
       }
       for (p <- payments) {
         using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -425,11 +425,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         case (paymentHash, parts) =>
           // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
           // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
-          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
+          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.IncomingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
+          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.OutgoingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
           parts.headOption match {
             case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
-              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.timestamp, out.timestamp)
+              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.receivedAt, out.settledAt)
             }
             case Some(RelayedPart(_, _, _, "trampoline", _)) =>
               val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))

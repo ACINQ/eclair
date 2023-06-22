@@ -331,9 +331,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val htlc_upstream_1 = Seq(buildHtlcIn(0, channelId_ab_1, paymentHash1), buildHtlcIn(5, channelId_ab_1, paymentHash2))
     val htlc_upstream_2 = Seq(buildHtlcIn(7, channelId_ab_2, paymentHash1), buildHtlcIn(9, channelId_ab_2, paymentHash2))
     val htlc_upstream_3 = Seq(buildHtlcIn(11, randomBytes32(), paymentHash3))
-    val upstream_1 = Upstream.Trampoline((htlc_upstream_1.head.add, TimestampMilli(1687345927000L)) :: (htlc_upstream_2.head.add, TimestampMilli(1687345967000L)) :: Nil)
-    val upstream_2 = Upstream.Trampoline((htlc_upstream_1(1).add, TimestampMilli(1687345902000L)) :: (htlc_upstream_2(1).add, TimestampMilli(1687345999000L)) :: Nil)
-    val upstream_3 = Upstream.Trampoline((htlc_upstream_3.head.add, TimestampMilli(1687345980000L)) :: Nil)
+    val upstream_1 = Upstream.Trampoline(Upstream.ReceivedHtlc(htlc_upstream_1.head.add, TimestampMilli(1687345927000L)) :: Upstream.ReceivedHtlc(htlc_upstream_2.head.add, TimestampMilli(1687345967000L)) :: Nil)
+    val upstream_2 = Upstream.Trampoline(Upstream.ReceivedHtlc(htlc_upstream_1(1).add, TimestampMilli(1687345902000L)) :: Upstream.ReceivedHtlc(htlc_upstream_2(1).add, TimestampMilli(1687345999000L)) :: Nil)
+    val upstream_3 = Upstream.Trampoline(Upstream.ReceivedHtlc(htlc_upstream_3.head.add, TimestampMilli(1687345980000L)) :: Nil)
     val data_upstream_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_1, Map.empty)
     val data_upstream_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_2, Map.empty)
     val data_upstream_3 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_3, Map.empty)
@@ -410,7 +410,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel_upstream_2.expectNoMessage(100 millis)
 
     // Payment 2 should fulfill once we receive the preimage.
-    val origin_2 = Origin.TrampolineRelayedCold(upstream_2.adds.map { case (u, _) => (u.channelId, u.id) }.toList)
+    val origin_2 = Origin.TrampolineRelayedCold(upstream_2.adds.map(r => (r.add.channelId, r.add.id)).toList)
     sender.send(relayer, RES_ADD_SETTLED(origin_2, htlc_2_2, HtlcResult.OnChainFulfill(preimage2)))
     register.expectMsgAllOf(
       Register.Forward(replyTo = null, channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),

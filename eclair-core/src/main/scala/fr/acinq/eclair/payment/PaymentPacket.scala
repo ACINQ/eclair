@@ -241,10 +241,12 @@ object OutgoingPaymentPacket {
   sealed trait Upstream
   object Upstream {
     case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[(UpdateAddHtlc, TimestampMilli)]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_._1.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_._1.cltvExpiry).min
+    case class Trampoline(adds: Seq[ReceivedHtlc]) extends Upstream {
+      val amountIn: MilliSatoshi = adds.map(_.add.amountMsat).sum
+      val expiryIn: CltvExpiry = adds.map(_.add.cltvExpiry).min
     }
+
+    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli)
   }
   // @formatter:on
 
