@@ -360,7 +360,7 @@ case class Commitment(fundingTxIndex: Long,
     changes.localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     changes.remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
 
-  def isIdle(changes: CommitmentChanges, pendingHtlcsOk: Boolean): Boolean = (pendingHtlcsOk || hasNoPendingHtlcs) && changes.localChanges.all.isEmpty && changes.remoteChanges.all.isEmpty
+  def isQuiescent(changes: CommitmentChanges, pendingHtlcsOk: Boolean): Boolean = (pendingHtlcsOk || hasNoPendingHtlcs) && changes.localChanges.all.isEmpty && changes.remoteChanges.all.isEmpty
 
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
@@ -797,7 +797,7 @@ case class Commitments(params: ChannelParams,
 
   // @formatter:off
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isIdle: Boolean = active.head.isIdle(changes, pendingHtlcsOk = Features.canUseFeature(params.localParams.initFeatures, params.remoteParams.initFeatures, Features.Quiescence))
+  def isQuiescent: Boolean = active.head.isQuiescent(changes, pendingHtlcsOk = params.useQuiescence)
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)

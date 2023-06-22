@@ -196,7 +196,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.forward(bob)
     bob2alice.expectNoMessage(100 millis)
     crossSign(bob, alice, bob2alice, alice2bob)
-    eventually(assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.isIdle))
+    eventually(assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.isQuiescent))
     bob2alice.expectMsgType[Stfu]
     bob2alice.forward(alice)
     // when both nodes are quiescent, alice will start the splice

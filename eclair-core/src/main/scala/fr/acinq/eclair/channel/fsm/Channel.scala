@@ -592,7 +592,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
                   }
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-                  handleSendRevocation(revocation, d.copy(commitments = commitments1))
+                  // If we're now quiescent, we may send our stfu message.
+                  val (d1, toSend) = d.spliceStatus match {
+                    case SpliceStatus.QuiescenceRequested(cmd) if commitments1.changes.localChanges.all.isEmpty =>
+                      val stfu = Stfu(d.channelId, initiator = true)
+                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)), Seq(revocation, stfu))
+                    case _: SpliceStatus.ReceivedStfu if commitments1.changes.localChanges.all.isEmpty =>
+                      val stfu = Stfu(d.channelId, initiator = false)
+                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
+                    case _ =>
+                      (d.copy(commitments = commitments1), Seq(revocation))
+                  }
+                  stay() using d1 storing() sending toSend
                 case Left(cause) => handleLocalError(cause, d, Some(commit))
               }
           }
@@ -864,8 +875,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice | SpliceStatus.NonInitiatorQuiescent =>
-          if (!d.commitments.isIdle) {
-            log.info("rejecting splice request: channel not idle")
+          if (!d.commitments.isQuiescent) {
+            log.info("rejecting splice request: channel not quiescent")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           } else if (msg.feerate < nodeParams.currentFeerates.minimum) {
             log.info("rejecting splice request: feerate too low")
@@ -2572,7 +2583,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def handleNewSplice(cmd: CMD_SPLICE, d: DATA_NORMAL): State = {
     d.spliceStatus match {
       case SpliceStatus.NoSplice | _: SpliceStatus.InitiatorQuiescent =>
-        if (d.commitments.isIdle) {
+        if (d.commitments.isQuiescent) {
           val parentCommitment = d.commitments.latest.commitment
           val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates)
           val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
@@ -2610,17 +2621,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         log.warning("cannot initiate splice, another one is already in progress")
         cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceAlreadyInProgress(d.channelId))
         stay()
-    }
-  }
-
-  private def handleSendRevocation(revocation: RevokeAndAck, d: DATA_NORMAL): State = {
-    d.spliceStatus match {
-      case SpliceStatus.QuiescenceRequested(splice) if d.commitments.changes.localChanges.all.isEmpty =>
-        stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(splice)) storing() sending Seq(revocation, Stfu(d.channelId, initiator = true))
-      case SpliceStatus.ReceivedStfu(_) if d.commitments.changes.localChanges.all.isEmpty =>
-        stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) storing() sending Seq(revocation, Stfu(d.channelId, initiator = false))
-      case _ =>
-        stay() using d storing() sending revocation
     }
   }
 
