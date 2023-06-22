@@ -228,9 +228,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Postgres) {
     inTransaction { pg =>
       val payments = e match {
-        case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, timestampBegin, timestampEnd) =>
+        case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
           // non-trampoline relayed payments have one input and one output
-          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", timestampBegin), RelayedPart(toChannelId, amountOut, "OUT", "channel", timestampEnd))
+          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
         case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
           using(pg.prepareStatement("INSERT INTO audit.relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
             statement.setString(1, e.paymentHash.toHex)

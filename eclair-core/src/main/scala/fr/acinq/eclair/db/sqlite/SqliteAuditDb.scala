@@ -216,9 +216,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Sqlite) {
     val payments = e match {
-      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, timestampBegin, timestampEnd) =>
+      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
         // non-trampoline relayed payments have one input and one output
-        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", timestampBegin), RelayedPart(toChannelId, amountOut, "OUT", "channel", timestampEnd))
+        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
       case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
         using(sqlite.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, e.paymentHash.toArray)

@@ -86,16 +86,18 @@ case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[Paym
 sealed trait PaymentRelayed extends PaymentEvent {
   val amountIn: MilliSatoshi
   val amountOut: MilliSatoshi
-  val timestampBegin: TimestampMilli
+  val startedAt: TimestampMilli
+  val settledAt: TimestampMilli
+  override val timestamp: TimestampMilli = settledAt
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestampBegin: TimestampMilli, timestamp: TimestampMilli) extends PaymentRelayed
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, startedAt: TimestampMilli, settledAt: TimestampMilli) extends PaymentRelayed
 
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val timestampBegin: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
-  override val timestamp: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
+  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
 }
 
 object PaymentRelayed {
