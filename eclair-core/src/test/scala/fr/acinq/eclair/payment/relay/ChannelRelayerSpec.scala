@@ -577,7 +577,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       assert(fwd2.message.r == paymentPreimage)
 
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
-      assert(paymentRelayed.copy(timestamp = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, timestamp = 0 unixms))
+      assert(paymentRelayed.copy(startedAt = 0 unixms, settledAt = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, startedAt = 0 unixms, settledAt = 0 unixms))
     }
   }
 

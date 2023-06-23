@@ -15,7 +15,7 @@ import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck, TlvStream, UpdateAddHtlc, UpdateAddHtlcTlv}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.sqlite.SQLiteConfig
@@ -170,7 +170,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
     val (_, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
     // for this one we set a non-local upstream to simulate a relayed payment
-    val (_, htlca4) = addHtlc(30000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice, upstream = Upstream.Trampoline(UpdateAddHtlc(randomBytes32(), 42, 30003000 msat, randomBytes32(), CltvExpiry(144), TestConstants.emptyOnionPacket, TlvStream.empty[UpdateAddHtlcTlv]) :: Nil), replyTo = TestProbe().ref)
+    val (_, htlca4) = addHtlc(30000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice, upstream = Upstream.Trampoline(Upstream.ReceivedHtlc(UpdateAddHtlc(randomBytes32(), 42, 30003000 msat, randomBytes32(), CltvExpiry(144), TestConstants.emptyOnionPacket, TlvStream.empty[UpdateAddHtlcTlv]), TimestampMilli(1687345927000L)) :: Nil), replyTo = TestProbe().ref)
     val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
     val (_, _) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)

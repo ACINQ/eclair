@@ -76,12 +76,12 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         .withTag(PaymentTags.Relay, PaymentTags.RelayType(e))
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
       e match {
-        case TrampolinePaymentRelayed(_, incoming, outgoing, _, _, _) =>
+        case TrampolinePaymentRelayed(_, incoming, outgoing, _, _) =>
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(incoming.length)
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
           outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
-        case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _) =>
+        case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _, _) =>
           channelsDb.updateChannelMeta(fromChannelId, ChannelEvent.EventType.PaymentReceived)
           channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
       }

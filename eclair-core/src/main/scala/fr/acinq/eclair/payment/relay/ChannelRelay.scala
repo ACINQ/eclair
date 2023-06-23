@@ -31,9 +31,10 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, NodeParams, TimestampSecond, channel, nodeFee}
+import fr.acinq.eclair.{Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.DurationLong
 import scala.util.Random
 
@@ -103,7 +104,8 @@ class ChannelRelay private(nodeParams: NodeParams,
                            register: ActorRef,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
-                           context: ActorContext[ChannelRelay.Command]) {
+                           context: ActorContext[ChannelRelay.Command],
+                           startedAt: TimestampMilli = TimestampMilli.now()) {
 
   import ChannelRelay._
 
@@ -155,13 +157,15 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.debug("relaying fulfill to upstream")
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId))
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId, startedAt, TimestampMilli.now()))
+        recordRelayDuration(isSuccess = true)
         safeSendAndStop(o.originChannelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
         context.log.debug("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(o.originHtlcId, fail)
+        recordRelayDuration(isSuccess = false)
         safeSendAndStop(o.originChannelId, cmd)
     }
 
@@ -310,4 +314,9 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
+  private def recordRelayDuration(isSuccess: Boolean): Unit =
+    Metrics.RelayedPaymentDuration
+      .withTag(Tags.Relay, Tags.RelayType.Channel)
+      .withTag(Tags.Success, isSuccess)
+      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
 }
