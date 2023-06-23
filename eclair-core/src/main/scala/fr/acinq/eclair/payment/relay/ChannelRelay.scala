@@ -105,7 +105,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            context: ActorContext[ChannelRelay.Command],
-                           timestampBegin: TimestampMilli = TimestampMilli.now()) {
+                           startedAt: TimestampMilli = TimestampMilli.now()) {
 
   import ChannelRelay._
 
@@ -157,13 +157,15 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.debug("relaying fulfill to upstream")
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId, timestampBegin, TimestampMilli.now()))
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId, startedAt, TimestampMilli.now()))
+        recordRelayDuration(isSuccess = true)
         safeSendAndStop(o.originChannelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
         context.log.debug("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(o.originHtlcId, fail)
+        recordRelayDuration(isSuccess = false)
         safeSendAndStop(o.originChannelId, cmd)
     }
 
@@ -188,10 +190,6 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, toSend)
-    Metrics.RelayedPaymentDuration
-      .withTag(Tags.RelayType.RelayType, Tags.RelayType.Channel)
-      .withTag(Tags.Success, cmd.isInstanceOf[CMD_FULFILL_HTLC])
-      .record((TimestampMilli.now() - timestampBegin).toMillis, TimeUnit.MILLISECONDS)
     Behaviors.stopped
   }
 
@@ -316,4 +314,9 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
+  private def recordRelayDuration(isSuccess: Boolean): Unit =
+    Metrics.RelayedPaymentDuration
+      .withTag(Tags.Relay, Tags.RelayType.Channel)
+      .withTag(Tags.Success, isSuccess)
+      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
 }

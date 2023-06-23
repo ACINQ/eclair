@@ -194,7 +194,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
         parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
-        stopping(htlcs.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), isSucess = false)
+        stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
         val upstream = Upstream.Trampoline(htlcs)
@@ -202,7 +202,7 @@ class NodeRelay private(nodeParams: NodeParams,
           case Some(failure) =>
             context.log.warn(s"rejecting trampoline payment reason=$failure")
             rejectPayment(upstream, Some(failure))
-            stopping(htlcs.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), isSucess = false)
+            stopping()
           case None =>
             if (nextPayload.isAsyncPayment && nodeParams.features.hasFeature(Features.AsyncPaymentPrototype)) {
               waitForTrigger(upstream, nextPayload, nextPacket)
@@ -226,11 +226,11 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentTimeout) =>
         context.log.warn("rejecting async payment; was not triggered before block {}", notifierTimeout)
         rejectPayment(upstream, Some(TemporaryNodeFailure())) // TODO: replace failure type when async payment spec is finalized
-        stopping(upstream.adds.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), isSucess = false)
+        stopping()
       case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentCanceled) =>
         context.log.warn(s"payment sender canceled a waiting async payment")
         rejectPayment(upstream, Some(TemporaryNodeFailure())) // TODO: replace failure type when async payment spec is finalized
-        stopping(upstream.adds.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), isSucess = false)
+        stopping()
       case WrappedPeerReadyResult(AsyncPaymentTriggerer.AsyncPaymentTriggered) =>
         doSend(upstream, nextPayload, nextPacket)
     }
@@ -239,7 +239,7 @@ class NodeRelay private(nodeParams: NodeParams,
   private def doSend(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     relay(upstream, nextPayload, nextPacket)
-    sending(upstream, nextPayload, fulfilledUpstream = false)
+    sending(upstream, nextPayload, TimestampMilli.now(), fulfilledUpstream = false)
   }
 
   /**
@@ -249,7 +249,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, startedAt: TimestampMilli, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -258,7 +258,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage)
-            sending(upstream, nextPayload, fulfilledUpstream = true)
+            sending(upstream, nextPayload, startedAt, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -266,25 +266,23 @@ class NodeRelay private(nodeParams: NodeParams,
         case WrappedPaymentSent(paymentSent) =>
           context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
-          stopping(upstream.adds.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), isSucess = true)
+          recordRelayDuration(startedAt, isSuccess = true)
+          stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           context.log.debug(s"trampoline payment failed downstream")
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
-          stopping(upstream.adds.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now()), fulfilledUpstream)
+          recordRelayDuration(startedAt, isSuccess = fulfilledUpstream)
+          stopping()
       }
     }
 
   /**
    * Once the downstream payment is settled (fulfilled or failed), we reject new upstream payments while we wait for our parent to stop us.
    */
-  private def stopping(timestampBegin: TimestampMilli, isSucess: Boolean): Behavior[Command] = {
+  private def stopping(): Behavior[Command] = {
     parent ! NodeRelayer.RelayComplete(context.self, paymentHash, paymentSecret)
-    Metrics.RelayedPaymentDuration
-      .withTag(Tags.RelayType.RelayType, Tags.RelayType.Trampoline)
-      .withTag(Tags.Success, isSucess)
-      .record((TimestampMilli.now() - timestampBegin).toMillis, TimeUnit.MILLISECONDS)
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         case Stop => Behaviors.stopped
@@ -376,4 +374,9 @@ class NodeRelay private(nodeParams: NodeParams,
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 
+  private def recordRelayDuration(startedAt: TimestampMilli, isSuccess: Boolean): Unit =
+    Metrics.RelayedPaymentDuration
+      .withTag(Tags.Relay, Tags.RelayType.Trampoline)
+      .withTag(Tags.Success, isSuccess)
+      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
 }
