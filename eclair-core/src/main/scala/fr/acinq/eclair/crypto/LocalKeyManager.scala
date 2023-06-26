@@ -183,7 +183,12 @@ class LocalKeyManager(seed: ByteVector, chainHash: ByteVector32) extends KeyMana
   }
 
   private def deriveSwapInServerPublicKey(localNodeId: PublicKey, serverExtendedPublicKey: String): PublicKey = {
-    val (_, xpub) = DeterministicWallet.ExtendedPublicKey.decode(serverExtendedPublicKey)
+    val (prefix, xpub) = DeterministicWallet.ExtendedPublicKey.decode(serverExtendedPublicKey)
+    val expectedPrefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => DeterministicWallet.xpub
+      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.tpub
+    }
+    require(prefix == expectedPrefix, "server xpub chain is on the wrong chain")
     val h = Crypto.sha256(localNodeId.value)
     val path = h.bits.grouped(16).toSeq.map(uint16.decode(_).require.value.toLong)
     DeterministicWallet.derivePublicKey(xpub, path).publicKey

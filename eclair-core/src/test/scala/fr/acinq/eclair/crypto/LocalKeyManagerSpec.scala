@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scala.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scala.{Block, ByteVector32, DeterministicWallet, MnemonicCode}
-import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.{TestConstants, randomKey}
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -168,5 +168,24 @@ class LocalKeyManagerSpec extends AnyFunSuite {
     val aliceSwapInServerXpub = "tpubDCvYeHUZisCMVTSfWDa1yevTf89NeF6TWxXUQwqkcmFrNvNdNvZQh1j4m4uTA4QcmPEwcrKVF8bJih1v16zDZacRr4j9MCAFQoSydKKy66q"
     val swapInAddressBob = bobKeyManager.multisigSwapInAddress(bobKeyManager.kmpNodeKey.publicKey, aliceSwapInServerXpub, swapInRefundDelay)
     assert(swapInAddressBob == "bcrt1qjs2l2ey9rk742hvv25kjghqvqdyhvf7vshwesgflzch9kcq2c8lqh60h44")
+
+    // check that the provided server xpub matches our chain
+    val mainnetKeyManager = {
+      val entropy = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
+      val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
+      new LocalKeyManager(seed, Block.LivenetGenesisBlock.hash)
+    }
+    intercept[IllegalArgumentException] {
+      mainnetKeyManager.multisigSwapInAddress(randomKey.publicKey, "tpubDDt5vQap1awkyDXx1z1cP7QFKSZHDCCpbU8nSq9jy7X2grTjUVZDePexf6gc6AHtRRzkgfPW87K6EKUVV6t3Hu2hg7YkHkmMeLSfrP85x41", swapInRefundDelay)
+    }
+
+    val testnetKeyManager = {
+      val entropy = ByteVector32.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101")
+      val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "").take(32)
+      new LocalKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    }
+    intercept[IllegalArgumentException] {
+      testnetKeyManager.multisigSwapInAddress(randomKey.publicKey, "xpub6DWTQAm8JJzJhRM6Zo2XBC4szKTdDohm3qYV6H6bdCm8wZo2QGi8Vwz8R4bpZfLedXTr55sdb1V3Y8yt6F2oQTaQcWoScE784NrG6Jd5gAo", swapInRefundDelay)
+    }
   }
 }
