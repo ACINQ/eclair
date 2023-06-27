@@ -266,7 +266,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     for (nodeId <- nodes) {
       appKit.nodeParams.db.peers.addOrUpdateRelayFees(nodeId, RelayFees(feeBaseMsat, feeProportionalMillionths))
     }
-    sendToNodes(nodes, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta_opt = None))
+    sendToNodes(nodes, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths))
   }
 
   override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {

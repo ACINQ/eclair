@@ -325,26 +325,35 @@ object Helpers {
     AnnouncementSignatures(channelParams.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
-  /**
-   * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,
-   * this tells if we can use the channel to make a payment.
+  /** Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending payments that we can't relay.
    */
-  def aboveReserve(commitments: Commitments)(implicit log: LoggingAdapter): Boolean = {
-    commitments.active.forall(commitment => {
+  def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
+    if (!commitments.announceChannel) {
+      // The channel is private, let's not change the channel update needlessly.
+      return commitments.params.maxHtlcAmount
+    }
+    val availableToSend = commitments.active.map(commitment => {
       val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
-      val toRemoteSatoshis = remoteCommit.spec.toRemote.truncateToSatoshi
+      val localBalance = remoteCommit.spec.toRemote.truncateToSatoshi
       // NB: this is an approximation (we don't take network fees into account)
       val localReserve = commitment.localChannelReserve(commitments.params)
-      val result = toRemoteSatoshis > localReserve
-      log.debug("toRemoteSatoshis={} reserve={} aboveReserve={} for remoteCommitNumber={}", toRemoteSatoshis, localReserve, result, remoteCommit.index)
-      result
-    })
+      (localBalance - localReserve).toMilliSatoshi
+    }).min
+    for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
+      if (availableToSend <= balanceThreshold.available) {
+        return balanceThreshold.maxHtlcAmount.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
+      }
+    }
+    commitments.params.maxHtlcAmount
   }
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
     nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
   }
+
+  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
+    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
 
   object Funding {
 

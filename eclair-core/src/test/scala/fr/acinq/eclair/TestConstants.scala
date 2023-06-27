@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
@@ -135,7 +135,9 @@ object TestConstants {
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
         remoteRbfLimits = RemoteRbfLimits(5, 0),
-        quiescenceTimeout = 2 minutes
+        quiescenceTimeout = 2 minutes,
+        balanceThresholds = Nil,
+        minTimeBetweenUpdates = 2 hours,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -298,7 +300,9 @@ object TestConstants {
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
         remoteRbfLimits = RemoteRbfLimits(5, 0),
-        quiescenceTimeout = 2 minutes
+        quiescenceTimeout = 2 minutes,
+        balanceThresholds = Seq(BalanceThreshold(1 msat, 1 msat), BalanceThreshold(10 msat, 20 msat), BalanceThreshold(100 msat, 50 msat)),
+        minTimeBetweenUpdates = 0 hour,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),

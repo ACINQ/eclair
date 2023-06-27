@@ -882,11 +882,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo == Left(waitForRevocation))
   }
 
-  test("recv CMD_SIGN (going above reserve)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
+  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
-    // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
-    assert(!bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
-    // alice will send enough funds to bob to make it go above reserve
+    // channel starts with all funds on alice's side, so htlcMaximumMsat will be initially set to 1 on bob's side
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 1.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
+    // alice will send enough funds to bob to make it go above the threshold to increase htlcMaximumMsat
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FULFILL_HTLC(htlc.id, r)
@@ -896,11 +897,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob.underlying.system.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
 
     // actual test starts here
-    // when signing the fulfill, bob will have its main output go above reserve in alice's commitment tx
+    // when signing the fulfill, bob will have its main output go above the balance threshold in alice's commitment tx
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[CommitSig]
     // it should update its channel_update
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500000000.msat)
     // and broadcast it
     assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate == bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
   }
@@ -2338,14 +2339,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
-    val newCltvExpiryDelta = CltvExpiryDelta(145)
-    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = Some(newCltvExpiryDelta)))
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
-    assert(localUpdate.channelUpdate.cltvExpiryDelta == newCltvExpiryDelta)
     alice2relayer.expectNoMessage(1 seconds)
   }
 
