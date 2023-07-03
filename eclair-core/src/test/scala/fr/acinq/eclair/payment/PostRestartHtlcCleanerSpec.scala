@@ -98,7 +98,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       buildHtlcIn(1, channelId_ab_1, randomBytes32()), // not relayed
       buildHtlcOut(2, channelId_ab_1, randomBytes32()),
       buildHtlcOut(3, channelId_ab_1, randomBytes32()),
-      buildHtlcIn(4, channelId_ab_1, randomBytes32()), // not relayed
+      buildHtlcIn(4, channelId_ab_1, randomBytes32(), blinded = true), // not relayed
       buildHtlcIn(5, channelId_ab_1, relayedPaymentHash)
     )
     val htlc_ab_2 = Seq(
@@ -121,20 +121,26 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
-    val fails_ab_1 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_1.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
+    channel.expectMsgAllOf(
+      CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true),
+      CMD_FAIL_MALFORMED_HTLC(4, ByteVector32.Zeroes, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, commit = true)
+    )
     channel.expectNoMessage(100 millis)
 
     // channel 2 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
-    val fails_ab_2 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_2.toSet == Set(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
+    channel.expectMsgAllOf(
+      CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure()), commit = true),
+      CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)
+    )
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the fails, and gets connected again:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
-    val fails_ab_1_bis = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
-    assert(fails_ab_1_bis.toSet == Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure()), commit = true)))
+    channel.expectMsgAllOf(
+      CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure()), commit = true),
+      CMD_FAIL_MALFORMED_HTLC(4, ByteVector32.Zeroes, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, commit = true)
+    )
     channel.expectNoMessage(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
@@ -502,6 +508,25 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     eventListener.expectNoMessage(100 millis)
   }
 
+  test("handle a blinded channel relay htlc-fail") { f =>
+    import f._
+
+    val htlc_ab = buildHtlcIn(0, channelId_ab_1, paymentHash1, blinded = true)
+    val origin = Origin.ChannelRelayedCold(htlc_ab.add.channelId, htlc_ab.add.id, htlc_ab.add.amountMsat, htlc_ab.add.amountMsat - 100.msat)
+    val htlc_bc = buildHtlcOut(6, channelId_bc_1, paymentHash1, blinded = true)
+    val data_ab = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_ab), Map.empty)
+    val data_bc = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_bc), Map(6L -> origin))
+    val channels = List(data_ab, data_bc)
+
+    val (relayer, _) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(channels)
+    register.expectNoMessage(100 millis)
+
+    sender.send(relayer, buildForwardFail(htlc_bc.add, origin))
+    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]]
+    assert(cmd.message == CMD_FAIL_MALFORMED_HTLC(htlc_ab.add.id, ByteVector32.Zeroes, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, commit = true))
+  }
+
   test("handle a channel relay htlc-fulfill") { f =>
     import f._
 
@@ -670,14 +695,19 @@ object PostRestartHtlcCleanerSpec {
   val (preimage1, preimage2, preimage3) = (randomBytes32(), randomBytes32(), randomBytes32())
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
-  def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
-    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, hops, None), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
-    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
+  def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): UpdateAddHtlc = {
+    val (route, recipient) = if (blinded) {
+      singleBlindedHop()
+    } else {
+      (Route(finalAmount, hops, None), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
+    }
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
+    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
   }
 
-  def buildHtlcIn(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = IncomingHtlc(buildHtlc(htlcId, channelId, paymentHash))
+  def buildHtlcIn(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): DirectedHtlc = IncomingHtlc(buildHtlc(htlcId, channelId, paymentHash, blinded))
 
-  def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
+  def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash, blinded))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), None), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()))
