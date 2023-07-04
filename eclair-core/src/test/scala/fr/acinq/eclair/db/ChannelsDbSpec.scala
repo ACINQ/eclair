@@ -18,8 +18,7 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.channel.RealScidStatus
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
@@ -31,7 +30,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -65,15 +64,16 @@ class ChannelsDbSpec extends AnyFunSuite {
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
       val channel2b = channel2a.modify(_.shortIds.real).setTo(RealScidStatus.Final(RealShortChannelId(189371)))
 
-      val commitNumber = 42
+      val commitNumber1 = 42
+      val commitNumber2 = 43
       val paymentHash1 = ByteVector32.Zeroes
       val cltvExpiry1 = CltvExpiry(123)
       val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
       val cltvExpiry2 = CltvExpiry(656)
 
-      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
+      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash1, cltvExpiry1)) // no related channel
 
-      assert(db.listLocalChannels().toSet == Set.empty)
+      assert(db.listLocalChannels().isEmpty)
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel1)
       assert(db.listLocalChannels() == List(channel1))
@@ -85,11 +85,13 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() == List(channel1, channel2b))
       assert(db.getChannel(channel2b.channelId).contains(channel2b))
 
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
-      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)
-      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash2, cltvExpiry2)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-      assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).isEmpty)
+      db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash1, cltvExpiry1)
+      db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash2, cltvExpiry2)
+      db.addHtlcInfo(channel1.channelId, commitNumber2, paymentHash1, cltvExpiry1)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).toSet == Set((paymentHash1, cltvExpiry1)))
+      assert(db.listHtlcInfos(channel1.channelId, 44).isEmpty)
 
       assert(db.listClosedChannels(None, None).isEmpty)
       db.removeChannel(channel1.channelId)
@@ -97,11 +99,22 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() == List(channel2b))
       assert(db.listClosedChannels(None, None) == List(channel1))
       assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
-      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None) == Nil)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
+      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None).isEmpty)
+
+      // HTLC info is cleaned up asynchronously.
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).toSet == Set((paymentHash1, cltvExpiry1)))
+      db.removeHtlcInfos(1) // remove one of the commitment number (ordered not deterministic)
+      val remainingHtlcInfos = Seq(commitNumber1, commitNumber2).flatMap(commitNumber => db.listHtlcInfos(channel1.channelId, commitNumber))
+      assert(remainingHtlcInfos.nonEmpty)
+      db.removeHtlcInfos(1) // remove the remaining commitment number
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).isEmpty)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).isEmpty)
+      db.removeHtlcInfos(1) // noop
+
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)
-      assert(db.listLocalChannels() == Nil)
+      assert(db.listLocalChannels().isEmpty)
     }
   }
 

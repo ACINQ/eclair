@@ -32,6 +32,8 @@ trait ChannelsDb {
 
   def removeChannel(channelId: ByteVector32): Unit
 
+  def removeHtlcInfos(batchSize: Int): Unit
+
   def listLocalChannels(): Seq[PersistentChannelData]
 
   def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData]

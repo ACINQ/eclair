@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair.db
 
+import akka.actor.typed.SupervisorStrategy
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -33,8 +36,10 @@ import fr.acinq.eclair.{Logs, NodeParams}
  */
 class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
-  val auditDb: AuditDb = nodeParams.db.audit
-  val channelsDb: ChannelsDb = nodeParams.db.channels
+  private val auditDb: AuditDb = nodeParams.db.audit
+  private val channelsDb: ChannelsDb = nodeParams.db.channels
+
+  context.spawn(Behaviors.supervise(RevokedHtlcInfoCleaner(channelsDb, nodeParams.revokedHtlcInfoCleanerConfig)).onFailure(SupervisorStrategy.restart), name = "revoked-htlc-info-cleaner")
 
   context.system.eventStream.subscribe(self, classOf[PaymentSent])
   context.system.eventStream.subscribe(self, classOf[PaymentFailed])
