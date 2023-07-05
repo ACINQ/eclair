@@ -252,8 +252,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       worker ! Worker.FindRoutes(r, sender())
       stay()
 
-    case Event(r: MessageRouteRequest, d) =>
-      stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
+    case Event(r: MessageRouteRequest, _) =>
+      worker ! Worker.FindMessageRoutes(r, nodeParams.routerConf.messageRouteParams)
+      stay()
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
