@@ -64,27 +64,37 @@ class AuditDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.audit
 
+      val now = TimestampMilli.now()
       val e1 = PaymentSent(ZERO_UUID, randomBytes32(), randomBytes32(), 40000 msat, randomKey().publicKey, PaymentSent.PartialPayment(ZERO_UUID, 42000 msat, 1000 msat, randomBytes32(), None) :: Nil)
       val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32())
       val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32())
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
-      val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32(), TimestampMilli.now() - 3.seconds, TimestampMilli.now())
+      val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32(), now - 3.seconds, now)
       val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
       val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
       val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
       val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = 0 unixms)
       val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = 1 unixms)
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
-      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli.now() + 10.minutes)
+      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil)
       val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isInitiator = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e8 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
       val e9 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, RemoteError(Error(randomBytes32(), "remote oops")), isFatal = true)
-      val e10 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(20000 msat, randomBytes32(), TimestampMilli.now() - 7.seconds), PaymentRelayed.IncomingPart(22000 msat, randomBytes32(), TimestampMilli.now() - 5.seconds)), Seq(PaymentRelayed.OutgoingPart(10000 msat, randomBytes32(), TimestampMilli.now()), PaymentRelayed.OutgoingPart(12000 msat, randomBytes32(), TimestampMilli.now()), PaymentRelayed.OutgoingPart(15000 msat, randomBytes32(), TimestampMilli.now())), randomKey().publicKey, 30000 msat)
+      val e10 = TrampolinePaymentRelayed(randomBytes32(),
+        Seq(
+          PaymentRelayed.IncomingPart(20000 msat, randomBytes32(), now - 7.seconds),
+          PaymentRelayed.IncomingPart(22000 msat, randomBytes32(), now - 5.seconds)
+        ),
+        Seq(
+          PaymentRelayed.OutgoingPart(10000 msat, randomBytes32(), now + 1.milli),
+          PaymentRelayed.OutgoingPart(12000 msat, randomBytes32(), now + 2.milli),
+          PaymentRelayed.OutgoingPart(15000 msat, randomBytes32(), now + 3.milli)
+        ),
+        randomKey().publicKey, 30000 msat)
       val multiPartPaymentHash = randomBytes32()
-      val now = TimestampMilli.now()
-      val e11 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 5.seconds, now)
-      val e12 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 4.seconds, now)
+      val e11 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 5.seconds, now + 4.milli)
+      val e12 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 4.seconds, now + 5.milli)
 
       db.add(e1)
       db.add(e2)
@@ -101,24 +111,24 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(e11)
       db.add(e12)
 
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute).toList == List(e5, e1, e6))
-      assert(db.listSent(from = TimestampMilli(100000L), to = TimestampMilli.now() + 1.minute).toList == List(e1))
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e5, e1))
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e1, e6))
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 2))).toList == List(e6))
-      assert(db.listSent(from = TimestampMilli(0L), to = TimestampMilli.now() + 15.minute, Some(Paginated(count = 2, skip = 3))).toList == List())
-      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e2))
-      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
-      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e2))
-      assert(db.listReceived(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List())
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).toList == List(e3, e10, e11, e12))
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e10))
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e10, e11))
-      assert(db.listRelayed(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
-      assert(db.listNetworkFees(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).size == 1)
-      assert(db.listNetworkFees(from = TimestampMilli(0L), to = TimestampMilli.now() + 1.minute).head.txType == "mutual")
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute).toList == List(e5, e1, e6))
+      assert(db.listSent(from = TimestampMilli(100000L), to = now + 1.minute).toList == List(e1))
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e5, e1))
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e1, e6))
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute, Some(Paginated(count = 2, skip = 2))).toList == List(e6))
+      assert(db.listSent(from = TimestampMilli(0L), to = now + 15.minute, Some(Paginated(count = 2, skip = 3))).toList == List())
+      assert(db.listReceived(from = TimestampMilli(0L), to = now + 1.minute).toList == List(e2))
+      assert(db.listReceived(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listReceived(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e2))
+      assert(db.listReceived(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List())
+      assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute).toList == List(e3, e10, e11, e12))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
+      assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e10))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e10, e11))
+      assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
+      assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).size == 1)
+      assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).head.txType == "mutual")
     }
   }
 
