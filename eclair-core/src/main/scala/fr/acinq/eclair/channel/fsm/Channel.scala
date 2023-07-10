@@ -515,6 +515,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case s: SpliceStatus.SpliceInProgress =>
               log.debug("received their commit_sig, deferring message")
               stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(commit)))
+            case SpliceStatus.SpliceAborted =>
+              log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
+              stay()
             case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
               signingSession.receiveCommitSig(nodeParams, d.commitments.params, commit) match {
                 case Left(f) =>
