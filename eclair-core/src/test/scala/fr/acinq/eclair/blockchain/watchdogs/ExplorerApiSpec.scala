@@ -23,10 +23,13 @@ import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.LatestHeaders
 import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders, MempoolSpaceExplorer}
 import fr.acinq.eclair.{BlockHeight, TestTags}
 import org.scalatest.funsuite.AnyFunSuiteLike
+import sttp.client3.SttpBackend
+
+import scala.concurrent.Future
 
 class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  implicit val sttpBackend = ExplorerApi.createSttpBackend(None)
+  implicit val sttpBackend: SttpBackend[Future, _] = ExplorerApi.createSttpBackend(None)
 
   val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer(useTorEndpoints = false), MempoolSpaceExplorer(useTorEndpoints = false))
 

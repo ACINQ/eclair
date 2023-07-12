@@ -33,6 +33,7 @@ import sttp.client3.okhttp.OkHttpFutureBackend
 import java.io.File
 import java.nio.file.Files
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
 
@@ -44,7 +45,7 @@ trait BitcoindService extends Logging {
   import scala.sys.process._
 
   implicit val system: ActorSystem
-  implicit val sttpBackend = OkHttpFutureBackend()
+  implicit val sttpBackend: sttp.client3.SttpBackend[Future, sttp.capabilities.WebSockets] = OkHttpFutureBackend()
 
   val defaultWallet: String = "miner"
   val bitcoindPort: Int = TestUtils.availablePort
