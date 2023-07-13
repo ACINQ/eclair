@@ -67,14 +67,14 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
-        <scala.version>2.13.10</scala.version>
+        <scala.version>2.13.11</scala.version>
         <scala.version.short>2.13</scala.version.short>
         <akka.version>2.6.20</akka.version>
         <akka.http.version>10.2.7</akka.http.version>
-        <sttp.version>3.8.5</sttp.version>
+        <sttp.version>3.8.16</sttp.version>
         <bitcoinlib.version>0.28</bitcoinlib.version>
-        <guava.version>31.1-jre</guava.version>
-        <kamon.version>2.6.1</kamon.version>
+        <guava.version>32.1.1-jre</guava.version>
+        <kamon.version>2.6.3</kamon.version>
     </properties>
 
     <build>
@@ -83,7 +83,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-dependency-plugin</artifactId>
-                    <version>3.0.2</version>
+                    <version>3.6.0</version>
                     <executions>
                         <execution>
                             <phase>package</phase>
@@ -99,25 +99,25 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
-                    <version>3.2.0</version>
+                    <version>3.3.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.6.0</version>
                 <inherited>true</inherited>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>versions-maven-plugin</artifactId>
-                <version>2.3</version>
+                <version>2.7</version>
             </plugin>
             <plugin>
                 <groupId>pl.project13.maven</groupId>
                 <artifactId>git-commit-id-plugin</artifactId>
-                <version>2.2.3</version>
+                <version>4.9.10</version>
                 <executions>
                     <execution>
                         <goals>
@@ -132,7 +132,7 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>4.7.2</version>
+                <version>4.8.1</version>
                 <configuration>
                     <args combine.children="append">
                         <arg>-feature</arg>
@@ -174,7 +174,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.3.0</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -187,7 +187,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.0.0</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <id>add-source</id>
@@ -219,7 +219,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.20</version>
+                <version>3.1.2</version>
                 <configuration>
                     <skipTests>true</skipTests>
                 </configuration>
@@ -228,7 +228,7 @@
             <plugin>
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
-                <version>2.0.2</version>
+                <version>2.2.0</version>
                 <configuration>
                     <parallel>true</parallel>
                     <stdout>I</stdout>
@@ -274,7 +274,7 @@
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.version.short}</artifactId>
-            <version>3.2.12</version>
+            <version>3.2.16</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

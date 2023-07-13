@@ -39,7 +39,7 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
 
 class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
 
-  implicit val timeout = Timeout(30 seconds)
+  implicit val timeout: Timeout = Timeout(30 seconds)
   implicit val ec: ExecutionContext = system.dispatcher
 
   logger.info(s"hello!")

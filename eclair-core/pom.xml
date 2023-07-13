@@ -34,7 +34,7 @@
             <plugin>
                 <groupId>com.googlecode.maven-download-plugin</groupId>
                 <artifactId>download-maven-plugin</artifactId>
-                <version>1.3.0</version>
+                <version>1.6.8</version>
                 <executions>
                     <execution>
                         <id>download-bitcoind</id>
@@ -174,7 +174,7 @@
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>4.0.3</version>
+            <version>4.0.6</version>
         </dependency>
         <dependency>
             <groupId>com.softwaremill.sttp.client3</groupId>
@@ -185,7 +185,7 @@
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-all</artifactId>
-            <version>4.1.42.Final</version>
+            <version>4.1.94.Final</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
@@ -208,18 +208,18 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.11.9</version>
+            <version>1.11.10</version>
         </dependency>
         <dependency>
             <!-- needed to fix "No implicit Ordering defined for scodec.bits.ByteVector" -->
             <groupId>org.scodec</groupId>
             <artifactId>scodec-bits_${scala.version.short}</artifactId>
-            <version>1.1.30</version>
+            <version>1.1.37</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
-            <version>1.9</version>
+            <version>1.15</version>
         </dependency>
         <!-- LOGGING -->
         <dependency>
@@ -231,27 +231,27 @@
         <dependency>
             <groupId>org.jheaps</groupId>
             <artifactId>jheaps</artifactId>
-            <version>0.9</version>
+            <version>0.14</version>
         </dependency>
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.39.2.0</version>
+            <version>3.42.0.0</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.3.3</version>
+            <version>42.6.0</version>
         </dependency>
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
-            <version>3.4.2</version>
+            <version>4.0.3</version>
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk15on</artifactId>
-            <version>1.68</version>
+            <version>1.70</version>
         </dependency>
         <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
@@ -267,7 +267,7 @@
         <dependency>
             <groupId>com.softwaremill.quicklens</groupId>
             <artifactId>quicklens_${scala.version.short}</artifactId>
-            <version>1.5.0</version>
+            <version>1.9.4</version>
         </dependency>
         <!-- MONITORING -->
         <dependency>

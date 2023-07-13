@@ -19,9 +19,9 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.json.{ByteVector32KmpSerializer, ByteVector32Serializer}
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
-import org.json4s.jackson.Serialization
+import org.json4s.jackson.{JacksonSerialization, Serialization}
+import org.json4s.{DefaultFormats, Formats}
 import sttp.client3._
 import sttp.client3.json4s._
 import sttp.model.StatusCode
@@ -34,7 +34,7 @@ import scala.util.{Failure, Success, Try}
 
 class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
-  implicit val formats = DefaultFormats.withBigDecimal + ByteVector32Serializer + ByteVector32KmpSerializer
+  implicit val formats: Formats = DefaultFormats.withBigDecimal + ByteVector32Serializer + ByteVector32KmpSerializer
 
   private val scheme = if (ssl) "https" else "http"
   private val serviceUri = wallet match {
@@ -42,7 +42,7 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: S
     case None => uri"$scheme://$host:$port"
   }
   private val credentials = new AtomicReference[BitcoinJsonRPCCredentials](rpcAuthMethod.credentials)
-  implicit val serialization = Serialization
+  implicit val serialization: JacksonSerialization = Serialization
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)

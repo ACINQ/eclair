@@ -48,8 +48,8 @@ object UInt64 {
 
   object Conversions {
 
-    implicit def intToUint64(l: Int) = UInt64(l)
+    implicit def intToUint64(l: Int): UInt64 = UInt64(l)
 
-    implicit def longToUint64(l: Long) = UInt64(l)
+    implicit def longToUint64(l: Long): UInt64 = UInt64(l)
   }
 }

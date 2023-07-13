@@ -77,10 +77,10 @@ class Setup(val datadir: File,
             seeds_opt: Option[Seeds] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
+  implicit val timeout: Timeout = Timeout(30 seconds)
+  implicit val formats: org.json4s.Formats = org.json4s.DefaultFormats
+  implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
+  implicit val sttpBackend: sttp.client3.SttpBackend[Future, sttp.capabilities.WebSockets] = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${Kit.getVersion} commit=${Kit.getCommit}")

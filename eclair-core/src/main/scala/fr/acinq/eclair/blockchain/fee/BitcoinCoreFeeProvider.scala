@@ -18,8 +18,8 @@ package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
-import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
+import org.json4s.{DefaultFormats, Formats}
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -28,7 +28,7 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 case class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: FeeratesPerKB)(implicit ec: ExecutionContext) extends FeeProvider {
 
-  implicit val formats = DefaultFormats.withBigDecimal
+  implicit val formats: Formats = DefaultFormats.withBigDecimal
 
   /**
    * We need this to keep commitment tx fees in sync with the state of the network
