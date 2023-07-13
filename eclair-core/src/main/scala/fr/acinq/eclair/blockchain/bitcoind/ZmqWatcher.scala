@@ -380,29 +380,28 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
             // the output has been spent, let's find the spending tx
             // if we know some potential spending txs, we try to fetch them directly
             Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
-              .map(_
-                .flatten // filter out errors
-                .find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                case Some(spendingTx) =>
-                  // there can be only one spending tx for an utxo
-                  log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
-                  context.self ! ProcessNewTransaction(spendingTx)
-                case None =>
-                  // no luck, we have to do it the hard way...
-                  log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                      case Nil =>
+              .map(_.flatten) // filter out errors and hint transactions that can't be found
+              .map(hintTxs => {
+                hintTxs.find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                  case Some(spendingTx) =>
+                    log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
+                    context.self ! ProcessNewTransaction(spendingTx)
+                  case None =>
+                    // The hints didn't help us, let's search for the spending transaction.
+                    log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
+                    client.lookForMempoolSpendingTx(w.txId, w.outputIndex).map(Some(_)).recover { case _ => None }.map {
+                      case Some(spendingTx) =>
+                        log.info(s"found tx spending ${w.txId}:${w.outputIndex} in the mempool: txid=${spendingTx.txid}")
+                        context.self ! ProcessNewTransaction(spendingTx)
+                      case None =>
+                        // no luck, we have to do it the hard way...
                         log.warn(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, w.txId, w.outputIndex).map { tx =>
-                          log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
-                          context.self ! ProcessNewTransaction(tx)
+                        client.lookForSpendingTx(None, w.txId, w.outputIndex).map { spendingTx =>
+                          log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${spendingTx.txid}")
+                          context.self ! ProcessNewTransaction(spendingTx)
                         }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending ${w.txId}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => context.self ! ProcessNewTransaction(tx))
                     }
-                  }
+                }
               })
         }
     }

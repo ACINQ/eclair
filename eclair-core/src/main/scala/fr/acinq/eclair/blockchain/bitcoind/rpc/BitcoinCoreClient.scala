@@ -156,6 +156,18 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       }
     } yield doubleSpent
 
+  /** Search for mempool transaction spending a given output. */
+  def lookForMempoolSpendingTx(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
+    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(txid, outputIndex))).collect {
+      case JArray(results) => results.flatMap(result => (result \ "spendingtxid").extractOpt[String].map(ByteVector32.fromValidHex))
+    }.flatMap { spendingTxIds =>
+      spendingTxIds.headOption match {
+        case Some(spendingTxId) => getTransaction(spendingTxId)
+        case None => Future.failed(new RuntimeException(s"mempool doesn't contain any transaction spending $txid:$outputIndex"))
+      }
+    }
+  }
+
   /**
    * Iterate over blocks to find the transaction that has spent a given output.
    * NB: only call this method when you're sure the output has been spent, otherwise this will iterate over the whole
@@ -418,7 +430,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
     // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
     val futures = outPoints
-      .map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index))
+      .map(outPoint => OutpointArg(outPoint.txid, outPoint.index))
       .map(utxo => rpcClient
         .invoke("lockunspent", true, List(utxo))
         .mapTo[JBool]
@@ -619,7 +631,8 @@ object BitcoinCoreClient {
 
   case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
 
-  case class UnlockOutpoint(txid: ByteVector32, vout: Long)
+  /** Outpoint used as RPC argument. */
+  case class OutpointArg(txid: ByteVector32, vout: Long)
 
   case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
