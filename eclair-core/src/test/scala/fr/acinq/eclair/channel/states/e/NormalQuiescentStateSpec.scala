@@ -403,4 +403,21 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     }
   }
 
+  test("initiate quiescence concurrently") { f =>
+    import f._
+
+    val (sender1, sender2) = (TestProbe(), TestProbe())
+    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val cmd1 = CMD_SPLICE(sender1.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    val cmd2 = CMD_SPLICE(sender2.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    alice ! cmd1
+    alice2bob.expectMsgType[Stfu]
+    bob ! cmd2
+    bob2alice.expectMsgType[Stfu]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[SpliceInit]
+    eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent))
+  }
+
 }
