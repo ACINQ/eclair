@@ -855,33 +855,40 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: Stfu, d: DATA_NORMAL) =>
       if (d.commitments.params.useQuiescence) {
-        d.spliceStatus match {
-          case SpliceStatus.NoSplice =>
-            startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
-            if (d.commitments.localIsQuiescent) {
-              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
-            } else {
-              stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
-            }
-          case SpliceStatus.QuiescenceRequested(_) =>
-            stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
-          case SpliceStatus.InitiatorQuiescent(cmd) =>
-            // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
-            if (!msg.initiator || d.commitments.params.localParams.isInitiator) {
-              initiateSplice(cmd, d) match {
-                case Left(f) =>
-                  cmd.replyTo ! RES_FAILURE(cmd, f)
-                  context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-                  stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
-                case Right(spliceInit) =>
-                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+        if (d.commitments.remoteIsQuiescent) {
+          d.spliceStatus match {
+            case SpliceStatus.NoSplice =>
+              startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
+              if (d.commitments.localIsQuiescent) {
+                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
+              } else {
+                stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
               }
-            } else {
-              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
-            }
-          case _ =>
-            log.warning("ignoring duplicate stfu")
-            stay()
+            case SpliceStatus.QuiescenceRequested(_) =>
+              stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
+            case SpliceStatus.InitiatorQuiescent(cmd) =>
+              // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
+              if (!msg.initiator || d.commitments.params.localParams.isInitiator) {
+                initiateSplice(cmd, d) match {
+                  case Left(f) =>
+                    cmd.replyTo ! RES_FAILURE(cmd, f)
+                    context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+                    stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
+                  case Right(spliceInit) =>
+                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+                }
+              } else {
+                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
+              }
+            case _ =>
+              log.warning("ignoring duplicate stfu")
+              stay()
+          }
+        } else {
+          log.warning("our peer sent stfu but is not quiescent")
+          // NB: we use a small delay to ensure we've sent our warning before disconnecting.
+          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
         }
       } else {
         log.warning("ignoring stfu because both peers do not advertise quiescence")

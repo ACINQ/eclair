@@ -357,4 +357,50 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
   }
 
+  test("recv stfu from splice initiator that is not quiescent") { f =>
+    import f._
+    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+
+    // alice has a pending add htlc
+    val sender = TestProbe()
+    alice ! CMD_SIGN(Some(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
+    alice2bob.expectMsgType[CommitSig]
+
+    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    alice ! cmd
+    alice2bob.forward(bob, Stfu(channelId(bob), initiator = true))
+    bob2alice.expectMsg(Warning(channelId(bob), InvalidSpliceNotQuiescent(channelId(bob)).getMessage))
+    // we should disconnect after giving bob time to receive the warning
+    bobPeer.fishForMessage(3 seconds) {
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case _ => false
+    }
+  }
+
+  test("recv stfu from splice non-initiator that is not quiescent") { f =>
+    import f._
+    addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+
+    // bob has a pending add htlc
+    val sender = TestProbe()
+    bob ! CMD_SIGN(Some(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
+    bob2alice.expectMsgType[CommitSig]
+
+    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    alice ! cmd
+    alice2bob.expectMsgType[Stfu]
+    alice2bob.forward(bob)
+    bob2alice.forward(alice, Stfu(channelId(alice), initiator = false))
+    alice2bob.expectMsg(Warning(channelId(alice), InvalidSpliceNotQuiescent(channelId(alice)).getMessage))
+    // we should disconnect after giving bob time to receive the warning
+    alicePeer.fishForMessage(3 seconds) {
+      case Peer.Disconnect(nodeId, _) if nodeId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case _ => false
+    }
+  }
+
 }
