@@ -351,7 +351,7 @@ case class Commitment(fundingTxIndex: Long,
     }
   }
 
-  private def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
 
   def hasNoPendingHtlcsOrFeeUpdate(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs &&
     (changes.localChanges.signed ++ changes.localChanges.acked ++ changes.remoteChanges.signed ++ changes.remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
@@ -359,8 +359,6 @@ case class Commitment(fundingTxIndex: Long,
   def hasPendingOrProposedHtlcs(changes: CommitmentChanges): Boolean = !hasNoPendingHtlcs ||
     changes.localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     changes.remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
-
-  def isQuiescent(changes: CommitmentChanges, pendingHtlcsOk: Boolean): Boolean = (pendingHtlcsOk || hasNoPendingHtlcs) && changes.localChanges.all.isEmpty && changes.remoteChanges.all.isEmpty
 
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
@@ -797,8 +795,9 @@ case class Commitments(params: ChannelParams,
 
   // @formatter:off
   def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
+  def remoteIsQuiescent: Boolean = changes.remoteChanges.all.isEmpty
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isQuiescent: Boolean = active.head.isQuiescent(changes, pendingHtlcsOk = params.useQuiescence)
+  def isQuiescent: Boolean = (params.useQuiescence || active.head.hasNoPendingHtlcs) && localIsQuiescent && remoteIsQuiescent
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
