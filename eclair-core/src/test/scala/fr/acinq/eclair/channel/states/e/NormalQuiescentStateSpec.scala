@@ -208,13 +208,17 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv forbidden commands while quiescent") { f =>
     import f._
-    // alice should reject commands that change the commitment while quiescent
+    // both should reject commands that change the commitment while quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None))
     initiateQuiescence(f)
     safeSend(alice, cmds)
+    sender1.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
+    sender2.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, ForbiddenDuringSplice]]
+    sender3.expectMsgType[RES_FAILURE[CMD_CLOSE, ForbiddenDuringSplice]]
+    safeSend(bob, cmds)
     sender1.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
     sender2.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, ForbiddenDuringSplice]]
     sender3.expectMsgType[RES_FAILURE[CMD_CLOSE, ForbiddenDuringSplice]]
@@ -244,54 +248,39 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = false, resetConnection = true)
   }
 
-  test("recv fulfill htlc command after initiator receives stfu from remote") { f =>
+  test("recv fulfill htlc command while quiescent") { f =>
     receiveSettlementCommand(f, FulfillHtlc, sendInitialStfu = true)
   }
 
-  test("recv fail htlc command after initiator receives stfu from remote") { f =>
+  test("recv fail htlc command while quiescent") { f =>
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = true)
   }
 
-  test("recv fail malformed htlc command after initiator receives stfu from remote") { f =>
+  test("recv fail malformed htlc command while quiescent") { f =>
     receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = true)
   }
 
-  test("recv fulfill htlc command when initiator receives stfu from remote and channel disconnects") { f =>
+  test("recv fulfill htlc command while quiescent and channel disconnects") { f =>
     receiveSettlementCommand(f, FulfillHtlc, sendInitialStfu = true, resetConnection = true)
   }
 
-  test("recv fail htlc command after initiator receives stfu from remote and channel disconnects") { f =>
+  test("recv fail htlc command  while quiescent and channel disconnects") { f =>
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = true, resetConnection = true)
   }
 
-  test("recv fail malformed htlc command after initiator receives stfu from remote and channel disconnects") { f =>
+  test("recv fail malformed htlc command while quiescent and channel disconnects") { f =>
     receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = true, resetConnection = true)
   }
 
   test("recv settlement commands while initiator awaiting stfu from remote") { f =>
     import f._
 
-    // alice should reject commands that change the commitment until the splice is complete
+    // initiator should reject commands that change the commitment until the splice is complete
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None))
     initiateQuiescence(f, sendInitialStfu = false)
-    safeSend(alice, cmds)
-    sender1.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
-    sender2.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, ForbiddenDuringSplice]]
-    sender3.expectMsgType[RES_FAILURE[CMD_CLOSE, ForbiddenDuringSplice]]
-  }
-
-  test("recv settlement commands after initiator receives stfu from remote") { f =>
-    import f._
-
-    // alice should reject commands that change the commitment until the splice is complete
-    val sender1, sender2, sender3 = TestProbe()
-    val cmds = Seq(CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender1.ref)),
-      CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
-      CMD_CLOSE(sender3.ref, None, None))
-    initiateQuiescence(f)
     safeSend(alice, cmds)
     sender1.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
     sender2.expectMsgType[RES_FAILURE[CMD_UPDATE_FEE, ForbiddenDuringSplice]]
@@ -303,132 +292,85 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     initiateQuiescence(f, sendInitialStfu = false)
     val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     alice2bob.forward(bob)
-    // send a second stfu to bob
+    // second stfu to bob is ignored
     bob ! Stfu(channelId(bob), initiator = true)
-    bob2alice.expectMsgType[Warning]
-    // we should disconnect after giving alice time to receive the warning
-    bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
-      case _ => false
-    }
+    bob2alice.expectNoMessage(100 millis)
   }
 
   test("recv Shutdown message before initiator receives stfu from remote") { f =>
     import f._
     initiateQuiescence(f, sendInitialStfu = false)
     val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! Shutdown(channelId(bob), bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
+    val forbiddenMsg = Shutdown(channelId(bob), bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
+    bob2alice.forward(alice, forbiddenMsg)
+    // handle Shutdown normally
     alice2bob.expectMsgType[Shutdown]
   }
 
-  test("recv (forbidden) Shutdown message after initiator receives stfu from remote") { f =>
+  test("recv (forbidden) Shutdown message while quiescent") { f =>
     import f._
     initiateQuiescence(f)
     val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! Shutdown(channelId(bob), bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
+    val forbiddenMsg = Shutdown(channelId(bob), bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
+    // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
+    bob2alice.forward(alice, forbiddenMsg)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "Shutdown").getMessage))
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "Shutdown").getMessage))
   }
 
-  test("recv (forbidden) UpdateFulfillHtlc messages after initiator receives stfu from remote") { f =>
+  test("recv (forbidden) UpdateFulfillHtlc messages while quiescent") { f =>
     import f._
     val (preimage, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f)
-    alice ! UpdateFulfillHtlc(channelId(bob), add.id, preimage)
+    val forbiddenMsg = UpdateFulfillHtlc(channelId(bob), add.id, preimage)
+    // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
+    bob2alice.forward(alice, forbiddenMsg)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFulfillHtlc").getMessage))
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFulfillHtlc").getMessage))
+    // alice will forward the valid UpdateFulfilHtlc msg to their relayer
     alice2relayer.expectMsg(RelayForward(add))
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
   }
 
-  test("recv (forbidden) UpdateFailHtlc messages after initiator receives stfu from remote") { f =>
+  test("recv (forbidden) UpdateFailHtlc messages while quiescent") { f =>
     import f._
     val (_, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f)
-    alice ! UpdateFailHtlc(channelId(bob), add.id, randomBytes32())
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
+    val forbiddenMsg = UpdateFailHtlc(channelId(bob), add.id, randomBytes32())
+    // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
+    bob2alice.forward(alice, forbiddenMsg)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFailHtlc").getMessage))
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFailHtlc").getMessage))
   }
 
-  test("recv (forbidden) UpdateFailMalformedHtlc messages after initiator receives stfu from remote") { f =>
-    import f._
-    val (_, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
-    crossSign(bob, alice, bob2alice, alice2bob)
-    initiateQuiescence(f)
-    alice ! UpdateFailMalformedHtlc(channelId(bob), add.id, randomBytes32(), FailureMessageCodecs.BADONION)
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
-  }
-
-  test("recv (forbidden) UpdateFee messages after initiator receives stfu from remote") { f =>
+  test("recv (forbidden) UpdateFee messages while quiescent") { f =>
     import f._
     val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f)
-    alice ! UpdateFee(channelId(bob), FeeratePerKw(1 sat))
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
+    val forbiddenMsg = UpdateFee(channelId(bob), FeeratePerKw(1 sat))
+    // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
+    bob2alice.forward(alice, forbiddenMsg)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFee").getMessage))
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFee").getMessage))
   }
 
-  test("recv UpdateAddHtlc message after initiator receives stfu from remote") { f =>
+  test("recv (forbidden) UpdateAddHtlc message while quiescent") { f =>
     import f._
     initiateQuiescence(f)
 
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
-    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    bob2alice.forward(alice, fakeHtlc)
-    sendErrorAndClose(alice, alice2bob, alice2blockchain)
-  }
-
-  test("recv (forbidden) Shutdown message after non-initiator receives stfu from initiator") { f =>
-    import f._
-    initiateQuiescence(f)
-    val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    bob ! Shutdown(ByteVector32.Zeroes, bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
-  }
-
-  test("recv (forbidden) UpdateFulfillHtlc messages after non-initiator receives stfu from initiator") { f =>
-    import f._
-    val (preimage, add) = addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    initiateQuiescence(f)
-    bob ! UpdateFulfillHtlc(channelId(bob), add.id, preimage)
-    bob2relayer.expectMsg(RelayForward(add))
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
-  }
-
-  test("recv (forbidden) UpdateFailHtlc messages after non-initiator receives stfu from initiator") { f =>
-    import f._
-    val (_, add) = addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    initiateQuiescence(f)
-    bob ! UpdateFailHtlc(channelId(bob), add.id, randomBytes32())
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
-  }
-
-  test("recv (forbidden) UpdateFailMalformedHtlc messages after non-initiator receives stfu from initiator") { f =>
-    import f._
-    val (_, add) = addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    initiateQuiescence(f)
-    bob ! UpdateFailMalformedHtlc(channelId(bob), add.id, randomBytes32(), FailureMessageCodecs.BADONION)
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
-  }
-
-  test("recv (forbidden) UpdateFee messages after non-initiator receives stfu from initiator") { f =>
-    import f._
-    val (_, _) = addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    initiateQuiescence(f)
-    bob ! UpdateFee(channelId(bob), FeeratePerKw(1 sat))
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
-  }
-
-  test("recv UpdateAddHtlc message after non-initiator receives stfu from initiator") { f =>
-    import f._
-    val (_, _) = addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    initiateQuiescence(f)
-    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    alice2bob.forward(bob, fakeHtlc)
-    sendErrorAndClose(bob, bob2alice, bob2blockchain)
+    val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
+    // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
+    bob2alice.forward(alice, forbiddenMsg)
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
+    alice2bob.forward(bob, forbiddenMsg)
+    bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
   }
 
 }
