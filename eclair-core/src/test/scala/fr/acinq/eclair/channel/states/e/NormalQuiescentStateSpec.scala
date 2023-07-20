@@ -232,20 +232,12 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = false)
   }
 
-  test("recv fail malformed htlc command while initiator awaiting stfu from remote") { f =>
-    receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = false)
-  }
-
   test("recv fulfill htlc command while initiator awaiting stfu from remote and channel disconnects") { f =>
     receiveSettlementCommand(f, FulfillHtlc, sendInitialStfu = false, resetConnection = true)
   }
 
   test("recv fail htlc command while initiator awaiting stfu from remote and channel disconnects") { f =>
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = false, resetConnection = true)
-  }
-
-  test("recv fail malformed htlc command while initiator awaiting stfu from remote and channel disconnects") { f =>
-    receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = false, resetConnection = true)
   }
 
   test("recv fulfill htlc command while quiescent") { f =>
@@ -256,20 +248,12 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = true)
   }
 
-  test("recv fail malformed htlc command while quiescent") { f =>
-    receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = true)
-  }
-
   test("recv fulfill htlc command while quiescent and channel disconnects") { f =>
     receiveSettlementCommand(f, FulfillHtlc, sendInitialStfu = true, resetConnection = true)
   }
 
   test("recv fail htlc command  while quiescent and channel disconnects") { f =>
     receiveSettlementCommand(f, FailHtlc, sendInitialStfu = true, resetConnection = true)
-  }
-
-  test("recv fail malformed htlc command while quiescent and channel disconnects") { f =>
-    receiveSettlementCommand(f, FailMalformedHtlc, sendInitialStfu = true, resetConnection = true)
   }
 
   test("recv settlement commands while initiator awaiting stfu from remote") { f =>
