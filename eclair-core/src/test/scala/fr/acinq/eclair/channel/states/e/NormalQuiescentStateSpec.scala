@@ -18,15 +18,19 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction}
+import fr.acinq.eclair.TestConstants.Bob
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
+import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{channel, _}
 import org.scalatest.Outcome
@@ -418,6 +422,77 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.forward(bob)
     alice2bob.expectMsgType[SpliceInit]
     eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent))
+  }
+
+  test("htlc timeout during quiescence negotiation with pending preimage") { f =>
+    import f._
+    val (preimage, add) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    initiateQuiescence(f)
+
+    // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
+    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage)
+    safeSend(bob, Seq(fulfillHtlc))
+
+    // the HTLC timeout from alice/upstream is near, bob needs to close the channel to avoid an on-chain race condition
+    val listener = TestProbe()
+    bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
+    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
+    val ChannelErrorOccurred(_, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
+    assert(isFatal)
+    assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val initialCommitTx = initialState.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.latest.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+
+    // TODO: why is HtlcSuccessTx not published initially?
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
+    bob2blockchain.expectMsgType[PublishTx] // main delayed
+    //assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
+    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectMsgType[WatchOutputSpent]
+
+    // TODO: why is HtlcSuccessTx now published during closing?
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
+    bob2blockchain.expectMsgType[PublishTx] // main delayed
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
+
+    channelUpdateListener.expectMsgType[LocalChannelDown]
+    alice2blockchain.expectNoMessage(500 millis)
+  }
+
+  test("receive quiescence timeout while splice in progress") { f =>
+    import f._
+    initiateQuiescence(f)
+
+    // alice sends splice-init to bob, bob responds with splice-ack
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[SpliceAck]
+    eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress]))
+
+    // bob sends a warning and disconnects if the splice takes too long to complete
+    bob ! Channel.QuiescenceTimeout(bobPeer.ref)
+    bob2alice.expectMsg(Warning(channelId(bob), SpliceAttemptTimedOut(channelId(bob)).getMessage))
+  }
+
+  test("receive quiescence timeout while splice is waiting for tx_abort from peer") { f =>
+    import f._
+    initiateQuiescence(f)
+
+    // bob sends tx-abort to alice but does not receive a tx-abort back from alice
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[SpliceAck]
+    eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress]))
+    alice2bob.forward(bob, InteractiveTxBuilder.LocalFailure(new ChannelException(channelId(bob), "abort")))
+    bob2alice.expectMsgType[TxAbort]
+    eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.SpliceAborted))
+
+    // bob sends a warning and disconnects if the splice takes too long to complete
+    bob ! Channel.QuiescenceTimeout(bobPeer.ref)
+    bob2alice.expectMsg(Warning(channelId(bob), SpliceAttemptTimedOut(channelId(bob)).getMessage))
   }
 
 }
