@@ -864,7 +864,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               } else {
                 stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
               }
-            case SpliceStatus.QuiescenceRequested(_) =>
+            case SpliceStatus.QuiescenceRequested(cmd) =>
+              // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
+              // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
+              log.warning("our peer initiated quiescence before us, cancelling our splice attempt")
+              cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
               stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
             case SpliceStatus.InitiatorQuiescent(cmd) =>
               // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
@@ -878,6 +882,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
                 }
               } else {
+                log.warning("concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt")
+                cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
                 stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
               }
             case _ =>

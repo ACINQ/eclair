@@ -139,4 +139,5 @@ case class PleasePublishYourCommitment             (override val channelId: Byte
 case class CommandUnavailableInThisState           (override val channelId: ByteVector32, command: String, state: ChannelState) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 case class ForbiddenDuringSplice                   (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while splicing")
 case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
+case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
 // @formatter:on
