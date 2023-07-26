@@ -97,7 +97,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val sender = TestProbe()
     val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     if (!sendInitialStfu) {
@@ -113,6 +113,17 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     sender
   }
 
+  test("send stfu after pending local changes have been added") { f =>
+    import f._
+    // we have an unsigned htlc in our local changes
+    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None)
+    alice2bob.expectNoMessage(100 millis)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[Stfu]
+    assert(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.isQuiescent)
+  }
+
   test("recv stfu when there are pending local changes") { f =>
     import f._
     initiateQuiescence(f, sendInitialStfu = false)
@@ -122,8 +133,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.forward(bob)
     bob2alice.expectNoMessage(100 millis)
     crossSign(bob, alice, bob2alice, alice2bob)
-    eventually(assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.isQuiescent))
     bob2alice.expectMsgType[Stfu]
+    assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.isQuiescent)
     bob2alice.forward(alice)
     // when both nodes are quiescent, alice will start the splice
     alice2bob.expectMsgType[SpliceInit]
