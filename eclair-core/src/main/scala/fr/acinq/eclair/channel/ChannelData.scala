@@ -463,11 +463,11 @@ object SpliceStatus {
   case object NoSplice extends SpliceStatus
   /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
   case class QuiescenceRequested(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
-  /** Our updates to be added to the local and remote commitments, we wait for our peer to do the same. */
+  /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
   case class InitiatorQuiescent(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
-  /** Our peer is asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+  /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
   case class ReceivedStfu(stfu: Stfu) extends QuiescenceNegotiation.NonInitiator
-  /** Our updates to be added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
+  /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
   case object NonInitiatorQuiescent extends QuiescentSpliceStatus
   /** We told our peer we want to splice funds in the channel. */
   case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
