@@ -299,10 +299,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "Shutdown").getMessage))
   }
 
-  test("recv (forbidden) UpdateFulfillHtlc messages while quiescent") { f =>
+  test("recv (forbidden) UpdateFulfillHtlc message while quiescent") { f =>
     import f._
     val (preimage, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+    alice2relayer.expectMsg(RelayForward(add))
     initiateQuiescence(f, sendInitialStfu = true)
     val forbiddenMsg = UpdateFulfillHtlc(channelId(bob), add.id, preimage)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
@@ -310,11 +311,10 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFulfillHtlc").getMessage))
     alice2bob.forward(bob, forbiddenMsg)
     bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFulfillHtlc").getMessage))
-    // alice will forward the valid UpdateFulfilHtlc msg to their relayer
-    alice2relayer.expectMsg(RelayForward(add))
+    assert(bob2relayer.expectMsgType[RES_ADD_SETTLED[_, HtlcResult.RemoteFulfill]].result.paymentPreimage == preimage)
   }
 
-  test("recv (forbidden) UpdateFailHtlc messages while quiescent") { f =>
+  test("recv (forbidden) UpdateFailHtlc message while quiescent") { f =>
     import f._
     val (_, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
@@ -327,12 +327,12 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFailHtlc").getMessage))
   }
 
-  test("recv (forbidden) UpdateFee messages while quiescent") { f =>
+  test("recv (forbidden) UpdateFee message while quiescent") { f =>
     import f._
     val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f, sendInitialStfu = true)
-    val forbiddenMsg = UpdateFee(channelId(bob), FeeratePerKw(1 sat))
+    val forbiddenMsg = UpdateFee(channelId(bob), FeeratePerKw(500 sat))
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
     bob2alice.forward(alice, forbiddenMsg)
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateFee").getMessage))
@@ -343,7 +343,6 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("recv (forbidden) UpdateAddHtlc message while quiescent") { f =>
     import f._
     initiateQuiescence(f, sendInitialStfu = true)
-
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
     val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
