@@ -355,21 +355,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("recv stfu from splice initiator that is not quiescent") { f =>
     import f._
     addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-
-    // alice has a pending add htlc
-    val sender = TestProbe()
-    alice ! CMD_SIGN(Some(sender.ref))
-    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    alice2bob.expectMsgType[CommitSig]
-
-    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
-    alice ! cmd
-    alice2bob.forward(bob, Stfu(channelId(bob), initiator = true))
+    alice2bob.forward(bob, Stfu(channelId(alice), initiator = true))
     bob2alice.expectMsg(Warning(channelId(bob), InvalidSpliceNotQuiescent(channelId(bob)).getMessage))
-    // we should disconnect after giving bob time to receive the warning
+    // we should disconnect after giving alice time to receive the warning
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.underlyingActor.remoteNodeId => true
       case _ => false
     }
   }
@@ -377,42 +367,63 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("recv stfu from splice non-initiator that is not quiescent") { f =>
     import f._
     addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
-
-    // bob has a pending add htlc
-    val sender = TestProbe()
-    bob ! CMD_SIGN(Some(sender.ref))
-    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    bob2alice.expectMsgType[CommitSig]
-
-    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
-    alice ! cmd
-    alice2bob.expectMsgType[Stfu]
+    initiateQuiescence(f, sendInitialStfu = false)
     alice2bob.forward(bob)
-    bob2alice.forward(alice, Stfu(channelId(alice), initiator = false))
+    bob2alice.forward(alice, Stfu(channelId(bob), initiator = false))
     alice2bob.expectMsg(Warning(channelId(alice), InvalidSpliceNotQuiescent(channelId(alice)).getMessage))
     // we should disconnect after giving bob time to receive the warning
     alicePeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == alice.underlyingActor.remoteNodeId => true
       case _ => false
     }
   }
 
-  test("initiate quiescence concurrently") { f =>
+  test("initiate quiescence concurrently (no pending changes)") { f =>
     import f._
 
-    val (sender1, sender2) = (TestProbe(), TestProbe())
-    val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd1 = CMD_SPLICE(sender1.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
-    val cmd2 = CMD_SPLICE(sender2.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
-    alice ! cmd1
+    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    alice ! cmd
     alice2bob.expectMsgType[Stfu]
-    bob ! cmd2
+    bob ! cmd
     bob2alice.expectMsgType[Stfu]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
     alice2bob.expectMsgType[SpliceInit]
     eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent))
+  }
+
+  test("initiate quiescence concurrently (pending changes on initiator side)") { f =>
+    import f._
+
+    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    alice ! cmd
+    alice2bob.expectNoMessage(100 millis) // alice isn't quiescent yet
+    bob ! cmd
+    bob2alice.expectMsgType[Stfu]
+    bob2alice.forward(alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[Stfu]
+    alice2bob.forward(bob)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
+    bob2alice.expectMsgType[SpliceInit]
+  }
+
+  test("initiate quiescence concurrently (pending changes on non-initiator side)") { f =>
+    import f._
+
+    addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    alice ! cmd
+    alice2bob.expectMsgType[Stfu]
+    bob ! cmd
+    bob2alice.expectNoMessage(100 millis) // bob isn't quiescent yet
+    alice2bob.forward(bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    bob2alice.expectMsgType[Stfu]
+    bob2alice.forward(alice)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
+    alice2bob.expectMsgType[SpliceInit]
   }
 
   test("htlc timeout during quiescence negotiation with pending preimage") { f =>
