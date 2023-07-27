@@ -380,7 +380,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("initiate quiescence concurrently (no pending changes)") { f =>
     import f._
 
-    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -389,13 +390,15 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.forward(bob)
     alice2bob.expectMsgType[SpliceInit]
     eventually(assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent))
+    sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
   }
 
   test("initiate quiescence concurrently (pending changes on initiator side)") { f =>
     import f._
 
     addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectNoMessage(100 millis) // alice isn't quiescent yet
     bob ! cmd
@@ -405,6 +408,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.expectMsgType[Stfu]
     alice2bob.forward(bob)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
+    sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
     bob2alice.expectMsgType[SpliceInit]
   }
 
@@ -412,7 +416,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
 
     addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
-    val cmd = CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -422,6 +427,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsgType[Stfu]
     bob2alice.forward(alice)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
+    sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
     alice2bob.expectMsgType[SpliceInit]
   }
 
