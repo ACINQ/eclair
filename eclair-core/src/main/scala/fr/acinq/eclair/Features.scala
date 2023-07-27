@@ -247,6 +247,12 @@ object Features {
     val mandatory = 28
   }
 
+  // TODO: this should also extend NodeFeature once the spec is finalized
+  case object Quiescence extends Feature with InitFeature {
+    val rfcName = "option_quiesce"
+    val mandatory = 34
+  }
+
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
@@ -316,6 +322,7 @@ object Features {
     RouteBlinding,
     ShutdownAnySegwit,
     DualFunding,
+    Quiescence,
     OnionMessages,
     ChannelType,
     ScidAlias,

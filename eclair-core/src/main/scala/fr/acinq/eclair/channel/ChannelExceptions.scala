@@ -71,6 +71,7 @@ case class InvalidCompleteInteractiveTx            (override val channelId: Byte
 case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
 case class RbfAttemptAborted                       (override val channelId: ByteVector32) extends ChannelException(channelId, "rbf attempt aborted")
 case class SpliceAttemptAborted                    (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt aborted")
+case class SpliceAttemptTimedOut                   (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt took too long, disconnecting")
 case class DualFundingAborted                      (override val channelId: ByteVector32) extends ChannelException(channelId, "dual funding aborted")
 case class UnexpectedInteractiveTxMessage          (override val channelId: ByteVector32, msg: InteractiveTxMessage) extends ChannelException(channelId, s"unexpected interactive-tx message (${msg.getClass.getSimpleName})")
 case class UnexpectedFundingSignatures             (override val channelId: ByteVector32) extends ChannelException(channelId, "unexpected funding signatures (tx_signatures)")
@@ -84,6 +85,7 @@ case class InvalidRbfTxAbortNotAcked               (override val channelId: Byte
 case class InvalidRbfAttemptsExhausted             (override val channelId: ByteVector32, maxAttempts: Int) extends ChannelException(channelId, s"invalid rbf attempt: $maxAttempts/$maxAttempts attempts already published")
 case class InvalidRbfAttemptTooSoon                (override val channelId: ByteVector32, previousAttempt: BlockHeight, nextAttempt: BlockHeight) extends ChannelException(channelId, s"invalid rbf attempt: last attempt made at block=$previousAttempt, next attempt available after block=$nextAttempt")
 case class InvalidSpliceTxAbortNotAcked            (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
+case class InvalidSpliceNotQuiescent               (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: the channel is not quiescent")
 case class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32) extends ChannelException(channelId, "no need to rbf, transaction is already confirmed")
 case class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
 case class InvalidRbfZeroConf                      (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're using zero-conf for this interactive-tx attempt")
@@ -136,4 +138,6 @@ case class InvalidFailureCode                      (override val channelId: Byte
 case class PleasePublishYourCommitment             (override val channelId: ByteVector32) extends ChannelException(channelId, "please publish your local commitment")
 case class CommandUnavailableInThisState           (override val channelId: ByteVector32, command: String, state: ChannelState) extends ChannelException(channelId, s"cannot execute command=$command in state=$state")
 case class ForbiddenDuringSplice                   (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while splicing")
+case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
+case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
 // @formatter:on

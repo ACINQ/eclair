@@ -649,21 +649,21 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[SpliceInit]
     // we're holding the splice_init to create a race
 
-    val (preimage, cmdAdd: CMD_ADD_HTLC) = makeCmdAdd(5_000_000 msat, bob.underlyingActor.remoteNodeId, bob.underlyingActor.nodeParams.currentBlockHeight)
+    val (_, cmdAdd: CMD_ADD_HTLC) = makeCmdAdd(5_000_000 msat, bob.underlyingActor.remoteNodeId, bob.underlyingActor.nodeParams.currentBlockHeight)
     bob ! cmdAdd
-    val add = bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.expectMsgType[UpdateAddHtlc]
     bob2alice.forward(alice)
     // now we forward the splice_init
     alice2bob.forward(bob)
-    // this cancels the splice
+    // bob rejects the SpliceInit because they have a pending htlc
     bob2alice.expectMsgType[TxAbort]
     bob2alice.forward(alice)
+    // alice returns a warning and schedules a disconnect after receiving UpdateAddHtlc
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
+    // alice confirms the splice abort
     alice2bob.expectMsgType[TxAbort]
-    alice2bob.forward(bob)
-    // but the htlc goes through normally
-    crossSign(bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
+    // the htlc is not added
+    assert(!alice.stateData.asInstanceOf[DATA_NORMAL].commitments.hasPendingOrProposedHtlcs)
   }
 
   test("recv UpdateAddHtlc while a splice is in progress") { f =>
@@ -680,12 +680,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
     val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
     bob2alice.forward(alice, fakeHtlc)
-    alice2bob.expectMsgType[Error]
-    assertPublished(alice2blockchain, "commit-tx")
-    assertPublished(alice2blockchain, "local-main-delayed")
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
-    alice2blockchain.expectNoMessage(100 millis)
+    // alice returns a warning and schedules a disconnect after receiving UpdateAddHtlc
+    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
+    // the htlc is not added
+    assert(!alice.stateData.asInstanceOf[DATA_NORMAL].commitments.hasPendingOrProposedHtlcs)
   }
 
   test("recv UpdateAddHtlc before splice confirms (zero-conf)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>

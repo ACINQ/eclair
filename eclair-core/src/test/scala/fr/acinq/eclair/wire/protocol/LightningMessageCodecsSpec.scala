@@ -107,6 +107,17 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode stfu") {
+    val testCases = Seq(
+      Stfu(ByteVector32.One, initiator = true) -> hex"0002 0100000000000000000000000000000000000000000000000000000000000000 01",
+      Stfu(ByteVector32.One, initiator = false) -> hex"0002 0100000000000000000000000000000000000000000000000000000000000000 00",
+    )
+    testCases.foreach { case (expected, bin) =>
+      assert(lightningMessageCodec.encode(expected).require.bytes == bin)
+      assert(lightningMessageCodec.decode(bin.bits).require.value == expected)
+    }
+  }
+
   test("nonreg generic tlv") {
     val channelId = randomBytes32()
     val signature = randomBytes64()

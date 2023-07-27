@@ -513,7 +513,8 @@ object NodeParams extends Logging {
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
-        remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks"))
+        remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks")),
+        quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

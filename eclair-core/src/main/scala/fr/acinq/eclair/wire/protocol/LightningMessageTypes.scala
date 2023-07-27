@@ -278,6 +278,8 @@ case class ChannelReady(channelId: ByteVector32,
   val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
 }
 
+case class Stfu(channelId: ByteVector32, initiator: Boolean) extends SetupMessage with HasChannelId
+
 case class SpliceInit(channelId: ByteVector32,
                       fundingContribution: Satoshi,
                       feerate: FeeratePerKw,

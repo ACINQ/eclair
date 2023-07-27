@@ -117,7 +117,6 @@ case class ChannelParams(channelId: ByteVector32,
   }
 
   /**
-   *
    * @param localScriptPubKey local script pubkey (provided in CMD_CLOSE, as an upfront shutdown script, or set to the current final onchain script)
    * @return an exception if the provided script is not valid
    */
@@ -132,7 +131,6 @@ case class ChannelParams(channelId: ByteVector32,
   }
 
   /**
-   *
    * @param remoteScriptPubKey remote script included in a Shutdown message
    * @return an exception if the provided script is not valid
    */
@@ -143,6 +141,9 @@ case class ChannelParams(channelId: ByteVector32,
     else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
     else Right(remoteScriptPubKey)
   }
+
+  /** If both peers support quiescence, we have to exchange stfu when splicing. */
+  def useQuiescence: Boolean = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.Quiescence)
 
 }
 
@@ -350,7 +351,7 @@ case class Commitment(fundingTxIndex: Long,
     }
   }
 
-  private def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
 
   def hasNoPendingHtlcsOrFeeUpdate(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs &&
     (changes.localChanges.signed ++ changes.localChanges.acked ++ changes.remoteChanges.signed ++ changes.remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
@@ -358,8 +359,6 @@ case class Commitment(fundingTxIndex: Long,
   def hasPendingOrProposedHtlcs(changes: CommitmentChanges): Boolean = !hasNoPendingHtlcs ||
     changes.localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     changes.remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
-
-  def isIdle(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs && changes.localChanges.all.isEmpty && changes.remoteChanges.all.isEmpty
 
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc): Boolean = currentHeight >= add.cltvExpiry.blockHeight
@@ -795,8 +794,10 @@ case class Commitments(params: ChannelParams,
   def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
 
   // @formatter:off
+  def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
+  def remoteIsQuiescent: Boolean = changes.remoteChanges.all.isEmpty
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isIdle: Boolean = active.head.isIdle(changes)
+  def isQuiescent: Boolean = (params.useQuiescence || active.head.hasNoPendingHtlcs) && localIsQuiescent && remoteIsQuiescent
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)

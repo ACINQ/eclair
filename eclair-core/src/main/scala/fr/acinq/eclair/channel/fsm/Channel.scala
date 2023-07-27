@@ -22,7 +22,6 @@ import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, Possib
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
-import fr.acinq.eclair.Features.SplicePrototype
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -91,7 +90,8 @@ object Channel {
                          channelOpenerWhitelist: Set[PublicKey],
                          maxPendingChannelsPerPeer: Int,
                          maxTotalPendingChannelsPrivateNodes: Int,
-                         remoteRbfLimits: RemoteRbfLimits) {
+                         remoteRbfLimits: RemoteRbfLimits,
+                         quiescenceTimeout: FiniteDuration) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
 
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
@@ -155,6 +155,9 @@ object Channel {
 
   // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
+
+  // we will receive this message if we waited too long to reach quiescence, or stayed quiescent for too long (NB: we explicitly specify the peer to allow for testing)
+  case class QuiescenceTimeout(peer: ActorRef)
 
   /** We don't immediately process [[CurrentBlockHeight]] to avoid herd effects */
   case class ProcessCurrentBlockHeight(c: CurrentBlockHeight)
@@ -363,19 +366,46 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice =>
-      val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
+    case Event(c: ForbiddenCommandDuringQuiescence, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescenceNegotiation] =>
+      val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
-        // NB: the command cannot be an htlc settlement (fail/fulfill), because if we are splicing it means the channel is idle and has no htlcs
+        // Htlc settlement commands are ignored and will be replayed when not quiescent.
+        // This could create issues if we're keeping htlcs that should be settled pending for too long, as they could timeout.
+        // That's why we have a timer to actively disconnect if we stay in quiescence for too long.
+        case _: HtlcSettlementCommand => stay()
         case _ => handleCommandError(error, c)
       }
 
-    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus != SpliceStatus.NoSplice && !d.spliceStatus.isInstanceOf[SpliceStatus.SpliceRequested] =>
-      // In case of a race between our splice_init and a forbidden message from our peer, we accept their message, because
-      // we know they are going to reject our splice attempt
+    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
+      val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
+      c match {
+        case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
+        // Htlc settlement commands are ignored and will be replayed when not quiescent.
+        // This could create issues if we're keeping htlcs that should be settled pending for too long, as they could timeout.
+        // That's why we have a timer to actively disconnect if we're splicing for too long.
+        case _: HtlcSettlementCommand => stay()
+        case _ => handleCommandError(error, c)
+      }
+
+    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
+      log.warning("received forbidden message {} during splicing with status {}", msg.getClass.getSimpleName, d.spliceStatus.getClass.getSimpleName)
       val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
-      handleLocalError(error, d, Some(msg))
+      // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
+      msg match {
+        case fulfill: UpdateFulfillHtlc => d.commitments.receiveFulfill(fulfill) match {
+          case Right((_, origin, htlc)) => relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          case _ => ()
+        }
+        case _ => ()
+      }
+      // Instead of force-closing (which would cost us on-chain fees), we try to resolve this issue by disconnecting.
+      // This will abort the splice attempt if it hasn't been signed yet, and restore the channel to a clean state.
+      // If the splice attempt was signed, it gives us an opportunity to re-exchange signatures on reconnection before
+      // the forbidden message. It also provides the opportunity for our peer to update their node to get rid of that
+      // bug and resume normal execution.
+      context.system.scheduler.scheduleOnce(1 second, peer, Peer.Disconnect(remoteNodeId))
+      stay() sending Warning(d.channelId, error.getMessage)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
@@ -537,7 +567,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt)
                     val commitments1 = d.commitments.add(signingSession1.commitment)
                     val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
-                    stay() using d1 storing() sending signingSession1.localSigs
+                    stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
                 }
               }
             case _ if d.commitments.params.channelFeatures.hasFeature(Features.DualFunding) && d.commitments.latest.localFundingStatus.signedTx_opt.isEmpty && commit.batchSize == 1 =>
@@ -562,7 +592,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
                   }
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-                  stay() using d.copy(commitments = commitments1) storing() sending revocation
+                  // If we're now quiescent, we may send our stfu message.
+                  val (d1, toSend) = d.spliceStatus match {
+                    case SpliceStatus.QuiescenceRequested(cmd) if commitments1.localIsQuiescent =>
+                      val stfu = Stfu(d.channelId, initiator = true)
+                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)), Seq(revocation, stfu))
+                    case _: SpliceStatus.ReceivedStfu if commitments1.localIsQuiescent =>
+                      val stfu = Stfu(d.channelId, initiator = false)
+                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
+                    case _ =>
+                      (d.copy(commitments = commitments1), Seq(revocation))
+                  }
+                  stay() using d1 storing() sending toSend
                 case Left(cause) => handleLocalError(cause, d, Some(commit))
               }
           }
@@ -784,54 +825,90 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      d.spliceStatus match {
-        case SpliceStatus.NoSplice =>
-          if (d.commitments.isIdle && d.commitments.params.remoteParams.initFeatures.hasFeature(SplicePrototype)) {
-            val parentCommitment = d.commitments.latest.commitment
-            val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates)
-            val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
-              isInitiator = true,
-              sharedInput = Multisig2of2Input(parentCommitment),
-              spliceInAmount = cmd.additionalLocalFunding,
-              spliceOut = cmd.spliceOutputs,
-              targetFeerate = targetFeerate)
-            if (parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params)) {
-              log.warning("cannot do splice: insufficient funds")
-              cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceRequest(d.channelId))
-              stay()
-            } else if (cmd.spliceOut_opt.map(_.scriptPubKey).exists(!MutualClose.isValidFinalScriptPubkey(_, allowAnySegwit = true))) {
-              log.warning("cannot do splice: invalid splice-out script")
-              cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceRequest(d.channelId))
-              stay()
+      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+        d.spliceStatus match {
+          case SpliceStatus.NoSplice if d.commitments.params.useQuiescence =>
+            startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.revocationTimeout)
+            if (d.commitments.localIsQuiescent) {
+              stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, initiator = true)
             } else {
-              log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
-              val spliceInit = SpliceInit(d.channelId,
-                fundingContribution = fundingContribution,
-                lockTime = nodeParams.currentBlockHeight.toLong,
-                feerate = targetFeerate,
-                fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
-                pushAmount = cmd.pushAmount,
-                requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
-              )
-              stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+              stay() using d.copy(spliceStatus = SpliceStatus.QuiescenceRequested(cmd))
             }
-          } else {
-            log.warning("cannot initiate splice, channel is not idle or peer doesn't support splices")
-            cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
+          case SpliceStatus.NoSplice if !d.commitments.params.useQuiescence =>
+            initiateSplice(cmd, d) match {
+              case Left(f) =>
+                cmd.replyTo ! RES_FAILURE(cmd, f)
+                stay()
+              case Right(spliceInit) =>
+                stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+            }
+          case _ =>
+            log.warning("cannot initiate splice, another one is already in progress")
+            cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceAlreadyInProgress(d.channelId))
             stay()
-          }
-        case _ =>
-          log.warning("cannot initiate splice, another one is already in progress")
-          cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceAlreadyInProgress(d.channelId))
-          stay()
+        }
+      } else {
+        log.warning("cannot initiate splice, peer doesn't support splices")
+        cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
+        stay()
       }
+
+    case Event(msg: Stfu, d: DATA_NORMAL) =>
+      if (d.commitments.params.useQuiescence) {
+        if (d.commitments.remoteIsQuiescent) {
+          d.spliceStatus match {
+            case SpliceStatus.NoSplice =>
+              startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
+              if (d.commitments.localIsQuiescent) {
+                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
+              } else {
+                stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
+              }
+            case SpliceStatus.QuiescenceRequested(cmd) =>
+              // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
+              // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
+              log.warning("our peer initiated quiescence before us, cancelling our splice attempt")
+              cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
+              stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
+            case SpliceStatus.InitiatorQuiescent(cmd) =>
+              // if both sides send stfu at the same time, the quiescence initiator is the channel initiator
+              if (!msg.initiator || d.commitments.params.localParams.isInitiator) {
+                initiateSplice(cmd, d) match {
+                  case Left(f) =>
+                    cmd.replyTo ! RES_FAILURE(cmd, f)
+                    context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+                    stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
+                  case Right(spliceInit) =>
+                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+                }
+              } else {
+                log.warning("concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt")
+                cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
+                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
+              }
+            case _ =>
+              log.warning("ignoring duplicate stfu")
+              stay()
+          }
+        } else {
+          log.warning("our peer sent stfu but is not quiescent")
+          // NB: we use a small delay to ensure we've sent our warning before disconnecting.
+          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
+        }
+      } else {
+        log.warning("ignoring stfu because both peers do not advertise quiescence")
+        stay()
+      }
+
+    case Event(_: QuiescenceTimeout, d: DATA_NORMAL) => handleQuiescenceTimeout(d)
 
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.NoSplice =>
-          if (!d.commitments.isIdle) {
-            log.info("rejecting splice request: channel not idle")
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+        case SpliceStatus.NoSplice | SpliceStatus.NonInitiatorQuiescent =>
+          if (!d.commitments.isQuiescent) {
+            log.info("rejecting splice request: channel not quiescent")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
           } else if (msg.feerate < nodeParams.currentFeerates.minimum) {
             log.info("rejecting splice request: feerate too low")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
@@ -870,7 +947,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.SpliceAborted =>
           log.info("rejecting splice attempt: our previous tx_abort was not acked")
           stay() sending Warning(d.channelId, InvalidSpliceTxAbortNotAcked(d.channelId).getMessage)
-        case _: SpliceStatus.SpliceRequested | _: SpliceStatus.SpliceInProgress | _: SpliceStatus.SpliceWaitingForSigs =>
+        case _ =>
           log.info("rejecting splice attempt: the current splice attempt must be completed or aborted first")
           stay() sending Warning(d.channelId, InvalidSpliceAlreadyInProgress(d.channelId).getMessage)
       }
@@ -923,22 +1000,30 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, SpliceAttemptAborted(d.channelId)))
           txBuilder ! InteractiveTxBuilder.Abort
-          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
-          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceRequested(cmd, _) =>
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"splice attempt rejected by our peer: ${msg.toAscii}"))
-          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
+        case SpliceStatus.NonInitiatorQuiescent =>
+          log.info("our peer aborted their own splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceAborted =>
           log.debug("our peer acked our previous tx_abort")
-          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) calling endQuiescence(d)
         case SpliceStatus.NoSplice =>
           log.info("our peer wants to abort the splice, but we've already negotiated a splice transaction: ascii='{}' bin={}", msg.toAscii, msg.data)
           // We ack their tx_abort but we keep monitoring the funding transaction until it's confirmed or double-spent.
           stay() sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
+        case _: QuiescenceNegotiation =>
+          log.info("our peer aborted the splice during quiescence negotiation, disconnecting: ascii='{}' bin={}", msg.toAscii, msg.data)
+          // NB: we use a small delay to ensure we've sent our warning before disconnecting.
+          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
       }
 
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_NORMAL) =>
@@ -997,7 +1082,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
-                  stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx)
+                  stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx) calling endQuiescence(d1)
               }
             case _ =>
               // We may receive an outdated tx_signatures if the transaction is already confirmed.
@@ -1053,7 +1138,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (d.commitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
         val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
-        // NB: the htlcs stay() in the commitments.localChange, they will be cleaned up after reconnection
+        // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.changes.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
         }
@@ -2184,6 +2269,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (nextState == OFFLINE) {
         // we can cancel the timer, we are not expecting anything when disconnected
         cancelTimer(RevocationTimeout.toString)
+        cancelTimer(QuiescenceTimeout.toString)
       }
 
       sealed trait EmitLocalChannelEvent
@@ -2523,6 +2609,73 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     require(proposedTx_opt.nonEmpty, s"closing tx not found in our proposed transactions: tx=$tx")
     // they added their signature, so we use their version of the transaction
     proposedTx_opt.get.unsignedTx.copy(tx = tx)
+  }
+
+  private def initiateSplice(cmd: CMD_SPLICE, d: DATA_NORMAL): Either[ChannelException, SpliceInit] = {
+    if (d.commitments.isQuiescent) {
+      val parentCommitment = d.commitments.latest.commitment
+      val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates)
+      val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
+        isInitiator = true,
+        sharedInput = Multisig2of2Input(parentCommitment),
+        spliceInAmount = cmd.additionalLocalFunding,
+        spliceOut = cmd.spliceOutputs,
+        targetFeerate = targetFeerate)
+      if (parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params)) {
+        log.warning("cannot do splice: insufficient funds")
+        Left(InvalidSpliceRequest(d.channelId))
+      } else if (cmd.spliceOut_opt.map(_.scriptPubKey).exists(!MutualClose.isValidFinalScriptPubkey(_, allowAnySegwit = true))) {
+        log.warning("cannot do splice: invalid splice-out script")
+        Left(InvalidSpliceRequest(d.channelId))
+      } else {
+        log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
+        val spliceInit = SpliceInit(d.channelId,
+          fundingContribution = fundingContribution,
+          lockTime = nodeParams.currentBlockHeight.toLong,
+          feerate = targetFeerate,
+          fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
+          pushAmount = cmd.pushAmount,
+          requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
+        )
+        Right(spliceInit)
+      }
+    } else {
+      log.warning("cannot initiate splice, channel is not quiescent")
+      Left(InvalidSpliceNotQuiescent(d.channelId))
+    }
+  }
+
+  private def handleQuiescenceTimeout(d: DATA_NORMAL): State = {
+    if (d.spliceStatus == SpliceStatus.NoSplice) {
+      log.warning("quiescence timed out with no ongoing splice, did we forget to cancel the timer?")
+      stay()
+    } else {
+      log.warning("quiescence timed out in state {}, closing connection", d.spliceStatus.getClass.getSimpleName)
+      context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+      stay() sending Warning(d.channelId, SpliceAttemptTimedOut(d.channelId).getMessage)
+    }
+  }
+
+  /** Get out of a quiescent state: if there are HTLCs in flight, re-emit pending settlement commands. */
+  private def endQuiescence(d: DATA_NORMAL): Unit = {
+    // We cancel the quiescence timeout timer, otherwise it may fire during the next quiescence session.
+    cancelTimer(QuiescenceTimeout.toString)
+    if (d.commitments.hasPendingOrProposedHtlcs) {
+      PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, d.channelId).foreach(self ! _)
+    }
+  }
+
+  private def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
+    val cmd_opt = spliceStatus match {
+      case SpliceStatus.QuiescenceRequested(cmd) => Some(cmd)
+      case SpliceStatus.InitiatorQuiescent(cmd) => Some(cmd)
+      case SpliceStatus.SpliceRequested(cmd, _) => Some(cmd)
+      case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
+        txBuilder ! InteractiveTxBuilder.Abort
+        cmd_opt
+      case _ => None
+    }
+    cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
   }
 
   override def mdc(currentMessage: Any): MDC = {
