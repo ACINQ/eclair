@@ -2,10 +2,9 @@ package fr.acinq.eclair.crypto.keymanager
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptWitness
-import fr.acinq.bitcoin.psbt.{Psbt, SignPsbtResult}
+import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, computeBIP84Address}
-import fr.acinq.bitcoin.utils.EitherKt
 import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, Descriptors}
 import grizzled.slf4j.Logging
@@ -13,11 +12,21 @@ import scodec.bits.ByteVector
 
 import java.io.File
 import scala.jdk.CollectionConverters.MapHasAsScala
+import scala.util.Try
 
 object LocalOnchainKeyManager extends Logging {
   def descriptorChecksum(span: String): String = fr.acinq.bitcoin.Descriptor.checksum(span)
 
+  /**
+   * Load a configuration file and create an onchain key manager
+   *
+   * @param datadir   eclair data directory
+   * @param chainHash chain we're on
+   * @return a LocalOnchainKeyManager instance if a configuration file exists
+   */
   def load(datadir: File, chainHash: ByteVector32): Option[LocalOnchainKeyManager] = {
+    // we use a specific file instead of adding values to eclair's configuration file because it is available everywhere in the code through
+    // the actor system's settings and we'd like to restrict access to the onchain wallet seed
     val file = new File(datadir, "eclair-signer.conf")
     if (file.exists()) {
       val config = ConfigFactory.parseFile(file)
@@ -68,6 +77,8 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
     DeterministicWallet.encode(accountPub, prefix)
   }
 
+  override def getWalletTimestamp(): TimestampSecond = timestamp
+
   override def getDescriptors(account: Long): Descriptors = {
     val keyPath = s"$rootPath/$account'".replace('\'', 'h') // Bitcoin Core understands both ' and h suffix for hardened derivation, and h is much easier to parse for external tools
     val prefix: Int = chainHash match {
@@ -87,7 +98,7 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
     ))
   }
 
-  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Psbt = {
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Try[Psbt] = Try {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     val spent = ourInputs.map(i => kmp2scala(psbt.getInput(i).getWitnessUtxo.amount)).sum
@@ -124,6 +135,7 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
   }
 
   private def sigbnPsbtInput(psbt: Psbt, pos: Int): Psbt = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils.eitherkmp2either
     import fr.acinq.bitcoin.{Script, SigHash}
 
     val input = psbt.getInput(pos)
@@ -152,14 +164,17 @@ class LocalOnchainKeyManager(override val wallet: String, seed: ByteVector, time
 
     // update the input with the right script for a p2wpkh input, which is a * p2pkh * script
     // then sign and finalize the psbt input
-    val updated = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths)
-    val signed = EitherKt.flatMap(updated, (p: Psbt) => p.sign(priv, pos))
-    val finalized = EitherKt.flatMap(signed, (s: SignPsbtResult) => {
+
+    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths)
+    val signed = updated.flatMap(_.sign(priv, pos))
+    val finalized = signed.flatMap(s => {
       val sig = s.getSig
       require(sig.get(sig.size() - 1).toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
       s.getPsbt.finalizeWitnessInput(pos, new ScriptWitness().push(sig).push(pub.value))
     })
-    require(finalized.isRight, s"cannot sign psbt input, error = ${finalized.getLeft}")
-    finalized.getRight
+    finalized match {
+      case Right(psbt) => psbt
+      case Left(failure) => throw new RuntimeException(s"cannot sign psbt input, error = $failure")
+    }
   }
 }

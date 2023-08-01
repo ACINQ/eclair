@@ -151,8 +151,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       Files.writeString(datadir.toPath.resolve("eclair-signer.conf"), eclairSignerConf)
     }
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
-
-    val setup = new Setup(datadir, pluginParams = Seq.empty, seeds_opt = Some(Setup.Seeds(randomBytes32(), randomBytes32())))
+    val setup = new Setup(datadir, pluginParams = Seq.empty)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }

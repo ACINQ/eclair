@@ -142,12 +142,12 @@ class Setup(val datadir: File,
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)
 
-    def createDescriptorWallet(wallets: List[String]): Future[Boolean] = {
+    def createEclairBackedWallet(wallets: List[String]): Future[Boolean] = {
       if (wallet.exists(name => wallets.contains(name))) {
         // wallet already exists
         Future.successful(true)
       } else {
-        new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createDescriptorWallet().recover { case e =>
+        new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createEclairBackedWallet().recover { case e =>
           logger.error(s"cannot create descriptor wallet", e)
           throw BitcoinWalletNotCreatedException(wallet.getOrElse(""))
         }
@@ -161,7 +161,8 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
-      true <- createDescriptorWallet(wallets)
+      walletCreated <- createEclairBackedWallet(wallets)
+      _ = assert(walletCreated, "Cannot create eclair-backed wallet, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]

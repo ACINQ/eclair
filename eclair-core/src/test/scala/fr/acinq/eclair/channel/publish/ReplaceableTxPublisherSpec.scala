@@ -1665,7 +1665,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
     }
-    walletClient.createDescriptorWallet().pipeTo(probe.ref)
+    walletClient.createEclairBackedWallet().pipeTo(probe.ref)
     probe.expectMsg(true)
     
     (walletRpcClient, walletClient)
