@@ -3,7 +3,10 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Descriptors
+
+import scala.util.Try
 
 trait OnchainKeyManager {
   def wallet: String
@@ -24,6 +27,12 @@ trait OnchainKeyManager {
 
   /**
    *
+   * @return the creation time of the wallet managed by this key manager
+   */
+  def getWalletTimestamp(): TimestampSecond
+
+  /**
+   *
    * @param account account number
    * @return a pair of (main, change) wallet descriptors that can be imported into an onchain wallet
    */
@@ -36,5 +45,5 @@ trait OnchainKeyManager {
    * @param ourOutputs index of outputs that belong to our onchain wallet
    * @return a signed psbt, where all our inputs are signed
    */
-  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Psbt
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Try[Psbt]
 }

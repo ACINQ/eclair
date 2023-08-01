@@ -20,10 +20,9 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
-import fr.acinq.bitcoin.psbt.Psbt
+import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
-import fr.acinq.bitcoin.utils.EitherKt
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -202,7 +201,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
   test("fund transactions with external inputs") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-    import fr.acinq.bitcoin.utils.EitherKt
 
     val sender = TestProbe()
     val defaultWallet = makeBitcoinCoreClient
@@ -263,10 +261,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // And let bitcoind sign the wallet input.
       walletExternalFunds.signPsbt(new Psbt(fundedTx2.tx), fundedTx2.tx.txIn.indices, Nil).pipeTo(sender.ref)
       val psbt = sender.expectMsgType[ProcessPsbtResponse].psbt
-      val updated = psbt.updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of())
-      val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, bobPriv).map(_.publicKey), Seq(externalSig))))
-      val psbt1: Psbt = finalized.getRight
-      val signedTx: Transaction = psbt1.extract().getRight
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of())
+      val finalized = updated.flatMap(_.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, bobPriv).map(_.publicKey), Seq(externalSig))))
+      val signedTx: Transaction = finalized.flatMap(_.extract()).getOrElse(throw new RuntimeException("cannot compute transaction"))
 
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
@@ -295,9 +292,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
-      val updated = psbt.updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of())
-      val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))))
-      val signedTx: Transaction = finalized.getRight.extract().getRight
+
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of())
+      val finalized = updated.flatMap(_.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))))
+      val signedTx: Transaction = finalized.flatMap(_.extract()).getOrElse(throw new RuntimeException("cannot compute transaction"))
 
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
@@ -333,9 +331,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
-      val updated = psbt.updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of())
-      val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))))
-      val signedTx: Transaction = finalized.getRight.extract().getRight
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of())
+      val finalized = updated.flatMap(_.finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))))
+      val signedTx: Transaction = finalized.flatMap(_.extract()).getOrElse(throw new RuntimeException("cannot compute transaction"))
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
       // We have replaced the previous transaction.
@@ -684,9 +682,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedNonWalletInput = txWithNonWalletInput.updateWitness(0, nonWalletWitness)
       val psbt = new Psbt(txWithSignedNonWalletInput)
-      val updated = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
-      val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, nonWalletWitness))
-      bitcoinClient.signPsbt(finalized.getRight, txWithSignedNonWalletInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val Right(psbt1) = updated.flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
+      bitcoinClient.signPsbt(psbt1, txWithSignedNonWalletInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       val signTxResponse2 = sender.expectMsgType[ProcessPsbtResponse]
       assert(signTxResponse2.complete)
       Transaction.correctlySpends(signTxResponse2.finalTx, txToRemote +: walletInputTxs, bitcoin.ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -722,9 +720,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txWithSignedUnconfirmedInput = txWithUnconfirmedInput.updateWitness(0, nonWalletWitness)
       val previousTx = PreviousTx(Transactions.InputInfo(OutPoint(unconfirmedTx.txid, 0), unconfirmedTx.txOut.head, Script.pay2pkh(nonWalletKey.publicKey)), nonWalletWitness)
       val psbt = new Psbt(txWithSignedUnconfirmedInput)
-      val updated = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
-      val finalized = EitherKt.flatMap(updated, (psbt: Psbt) => psbt.finalizeWitnessInput(0, nonWalletWitness))
-      bitcoinClient.signPsbt(finalized.getRight, txWithSignedUnconfirmedInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val Right(psbt1) = updated.flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
+      bitcoinClient.signPsbt(psbt1, txWithSignedUnconfirmedInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       assert(sender.expectMsgType[ProcessPsbtResponse].complete)
     }
   }
@@ -944,7 +942,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
     val mempoolTx = sender.expectMsgType[MempoolTx]
-    val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
+    val currentFeerate = Transactions.fee2rate(mempoolTx.fees, tx.weight())
 
     bitcoinClient.getMempoolPackage(Set(tx.txid)).pipeTo(sender.ref)
     sender.expectMsg(Map(tx.txid -> mempoolTx))
@@ -1128,7 +1126,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(tx.txOut.length == 2) // there must be a change output
     bitcoinClient.getMempoolTx(tx.txid).pipeTo(sender.ref)
     val mempoolTx = sender.expectMsgType[MempoolTx]
-    val currentFeerate = FeeratePerKw(mempoolTx.fees * 1000 / tx.weight())
+    val currentFeerate = Transactions.fee2rate(mempoolTx.fees, tx.weight())
 
     val targetFeerate = currentFeerate * 1.5
     bitcoinClient.cpfp(Set(OutPoint(tx, 3)), targetFeerate).pipeTo(sender.ref)
@@ -1442,7 +1440,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
     val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
-    wallet1.createDescriptorWallet().pipeTo(sender.ref)
+    wallet1.createEclairBackedWallet().pipeTo(sender.ref)
     sender.expectMsg(true)
 
     // this account xpub can be used to create a watch-only wallet
@@ -1482,7 +1480,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       val onchainKeyManager = new LocalOnchainKeyManager(s"eclair_$hex", seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
       val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(s"eclair_$hex"))
       val wallet1 = new BitcoinCoreClient(jsonRpcClient, Some(onchainKeyManager))
-      wallet1.createDescriptorWallet().pipeTo(sender.ref)
+      wallet1.createEclairBackedWallet().pipeTo(sender.ref)
       sender.expectMsg(true)
       wallet1.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]

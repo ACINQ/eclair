@@ -775,7 +775,14 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     } else {
       // we only sign our wallet inputs, and check that we can spend our wallet outputs
       val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == OutPoint(i.previousTx, i.previousTxOutput.toInt)))
-      val ourWalletOutputs = unsignedTx.localOutputs.map(o => tx.txOut.indexWhere(output => output.amount == o.amount && output.publicKeyScript == o.pubkeyScript))
+      val ourWalletOutputs = unsignedTx.localOutputs.collect {
+        // README!! there are 2 types of local outputs:
+        // Change, which go back into our wallet
+        // NonChange, which go to an external address (typically during a splice-out)
+        // Here we only keep outputs which are ours i.e go back into our wallet
+        // And we trust that NonChange outputs are valid. This only works if the entry point for creating such outputs is trusted (for example, a secure API call)
+        case Output.Local.Change(_, amount, pubkeyScript) => tx.txOut.indexWhere(output => output.amount == amount && output.publicKeyScript == pubkeyScript)
+      }
       context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
         response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet
@@ -786,7 +793,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
           require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount ${actualLocalAmountIn} does not match what we expect ($expectedLocalAmountIn")
           val actualLocalAmountOut = ourWalletOutputs.map(i => partiallySignedTx.txOut(i).amount).sum
-          val expectedLocalAmountOut = unsignedTx.localOutputs.map(_.amount).sum
+          val expectedLocalAmountOut = unsignedTx.localOutputs.collect { case c: Output.Local.Change => c.amount }.sum
           require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount ${actualLocalAmountOut} does not match what we expect ($expectedLocalAmountOut")
           val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
           PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt))
