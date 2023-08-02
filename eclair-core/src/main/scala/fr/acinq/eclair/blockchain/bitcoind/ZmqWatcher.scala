@@ -30,7 +30,7 @@ import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, RealShortChannelId, T
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 21/02/2016.
@@ -415,23 +415,31 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
   private def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered]): Future[Unit] = {
     log.debug("checking confirmations of txid={}", w.txId)
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
+
+    val minDifficultyTarget = nodeParams.chainHash match {
+      case Block.LivenetGenesisBlock.hash => Try(context.system.settings.config.getLong("eclair.bitcoind.min-difficulty-target")).getOrElse(0x1715a35cL) // 0x1715a35cL = 387294044 = difficulty target of block 600000
+      case Block.TestnetGenesisBlock.hash => 0x1d00ffffL
+      case _ => 0x207fffffL
+    }
+
     client.getTxConfirmations(w.txId).flatMap {
       case Some(confirmations) if confirmations >= w.minDepth =>
-        client.getTransaction(w.txId).flatMap { tx =>
-          client.getTransactionShortId(w.txId).map {
-            case (height, index) => w match {
-              case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, index, tx))
-              case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, index, tx))
-              case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, index, tx))
-              case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, index, tx))
-              case w: WatchAlternativeCommitTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchAlternativeCommitTxConfirmedTriggered(height, index, tx))
-            }
+        for {
+          proof <- client.getTxConfirmationProof(w.txId)
+          _ = require(proof.confirmations >= confirmations)
+          _ = require(proof.headerInfos.forall(hi => hi.header.bits <= minDifficultyTarget))
+          height = BlockHeight(proof.height)
+          tx <- client.getTransaction(w.txId)
+        } yield {
+          w match {
+            case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, proof.txIndex, tx))
+            case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, proof.txIndex, tx))
+            case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, proof.txIndex, tx))
+            case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, proof.txIndex, tx))
+            case w: WatchAlternativeCommitTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchAlternativeCommitTxConfirmedTriggered(height, proof.txIndex, tx))
           }
         }
-      case _ => Future.successful((): Unit)
+      case _ => Future.successful(())
     }
   }
-
 }
