@@ -2029,7 +2029,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val Left(failureB) = successB2.signingSession.receiveCommitSig(fixtureParams.nodeParamsB, fixtureParams.channelParamsB, successA2.commitSig)(akka.event.NoLogging)
       assert(failureA.isInstanceOf[InvalidCommitmentSignature])
       assert(failureB.isInstanceOf[InvalidCommitmentSignature])
-      assert(failureA.asInstanceOf[InvalidCommitmentSignature].txId != failureB.asInstanceOf[InvalidCommitmentSignature].txId)
+      assert(failureA.asInstanceOf[InvalidCommitmentSignature].fundingTxId == failureB.asInstanceOf[InvalidCommitmentSignature].fundingTxId)
+      assert(failureA.asInstanceOf[InvalidCommitmentSignature].unsignedCommitTx.txid != failureB.asInstanceOf[InvalidCommitmentSignature].unsignedCommitTx.txid)
     }
   }
 
