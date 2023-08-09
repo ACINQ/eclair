@@ -267,7 +267,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.channelFeatures.commitmentFormat)
           val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
-            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxHash.reverse, localCommitTx.tx), d, None)
+            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxHash.reverse, fundingTxIndex = 0, localCommitTx.tx), d, None)
             case Success(_) =>
               val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, params.channelFeatures.commitmentFormat)
               val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
@@ -319,7 +319,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
           d.replyTo ! OpenChannelResponse.Rejected(cause.getMessage)
-          handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, localCommitTx.tx), d, Some(msg))
+          handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, fundingTxIndex = 0, localCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitment = Commitment(
             fundingTxIndex = 0,
