@@ -908,7 +908,7 @@ object InteractiveTxSigningSession {
           val localSigOfLocalTx = nodeParams.channelKeyManager.sign(unsignedLocalCommit.commitTx, fundingPubKey, TxOwner.Local, channelParams.channelFeatures.commitmentFormat)
           val signedLocalCommitTx = Transactions.addSigs(unsignedLocalCommit.commitTx, fundingPubKey.publicKey, fundingParams.remoteFundingPubKey, localSigOfLocalTx, remoteCommitSig.signature)
           Transactions.checkSpendable(signedLocalCommitTx) match {
-            case Failure(_) => Left(InvalidCommitmentSignature(fundingParams.channelId, signedLocalCommitTx.tx.txid))
+            case Failure(_) => Left(InvalidCommitmentSignature(fundingParams.channelId, fundingTx.txId, fundingTxIndex, unsignedLocalCommit.commitTx.tx))
             case Success(_) =>
               val signedLocalCommit = LocalCommit(unsignedLocalCommit.index, unsignedLocalCommit.spec, CommitTxAndRemoteSig(unsignedLocalCommit.commitTx, remoteCommitSig.signature), htlcTxsAndRemoteSigs = Nil)
               if (shouldSignFirst(channelParams, fundingTx.tx)) {
