@@ -283,6 +283,7 @@ object PaymentOnion {
           records.records.find {
             case _: EncryptedRecipientData => false
             case _: BlindingPoint => false
+            case _: UseAttributableError => false
             case _ => true
           } match {
             case Some(_) => return Left(ForbiddenTlv(UInt64(0)))
@@ -435,6 +436,7 @@ object PaymentOnion {
           case _: EncryptedRecipientData => false
           case _: BlindingPoint => false
           case _: TotalAmount => false
+          case _: UseAttributableError => false
           case _ => true
         } match {
           case Some(_) => return Left(ForbiddenTlv(UInt64(0)))

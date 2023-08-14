@@ -23,9 +23,10 @@ import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractShared
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Route}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.UseAttributableError
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -115,6 +116,10 @@ object IncomingPaymentPacket {
       case None => privateKey
     }
     decryptOnion(add.paymentHash, outerOnionDecryptionKey, add.onionRoutingPacket).flatMap {
+      case DecodedOnionPacket(payload, _) if payload.get[UseAttributableError].isDefined && !features.hasFeature(Features.AttributableError) =>
+        Left(InvalidOnionPayload(UInt64(20), 0))
+      case DecodedOnionPacket(payload, _) if payload.get[UseAttributableError].isEmpty && features.hasFeature(Features.AttributableError, Some(FeatureSupport.Mandatory)) =>
+        Left(InvalidOnionPayload(UInt64(20), 0))
       case DecodedOnionPacket(payload, Some(nextPacket)) =>
         payload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
           case Some(_) if !features.hasFeature(Features.RouteBlinding) => Left(InvalidOnionPayload(UInt64(10), 0))

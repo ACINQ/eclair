@@ -32,7 +32,6 @@ import fr.acinq.eclair.wire.protocol.{FailureMessage, InvalidOnionBlinding, Temp
 import fr.acinq.eclair.{CustomCommitmentsPlugin, Feature, Features, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import scala.concurrent.Promise
-import scala.concurrent.duration.DurationInt
 import scala.util.Try
 
 /**
@@ -132,7 +131,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                       val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                       CMD_FAIL_MALFORMED_HTLC(htlc.id, failure.onionHash, failure.code, commit = true)
                     case None =>
-                      CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), useAttributableErrors = false, TimestampMilli.min, commit = true)
+                      // By default we use attributable errors if the feature is activated.
+                      CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), useAttributableErrors = nodeParams.features.hasFeature(Features.AttributableError), TimestampMilli.min, commit = true)
                   }
                   channel ! cmd
                 } else {
@@ -262,7 +262,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                     val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                     CMD_FAIL_MALFORMED_HTLC(originHtlcId, failure.onionHash, failure.code, commit = true)
                   case None =>
-                    ChannelRelay.translateRelayFailure(originHtlcId, fail, useAttributableErrors = false, TimestampMilli.min)
+                    // By default we use attributable errors if the feature is activated.
+                    ChannelRelay.translateRelayFailure(originHtlcId, fail, useAttributableErrors = nodeParams.features.hasFeature(Features.AttributableError), TimestampMilli.min)
                 }
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
               case Origin.TrampolineRelayedCold(origins) =>
@@ -271,7 +272,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), useAttributableErrors = false, TimestampMilli.min, commit = true))
+                  // By default we use attributable errors if the feature is activated.
+                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), useAttributableErrors = nodeParams.features.hasFeature(Features.AttributableError), TimestampMilli.min, commit = true))
                 }
             }
           }
