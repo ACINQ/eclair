@@ -143,14 +143,13 @@ class Setup(val datadir: File,
       wallet = wallet)
 
     def createEclairBackedWallet(wallets: List[String]): Future[Boolean] = {
-      if (wallet.exists(name => wallets.contains(name))) {
-        // wallet already exists
-        Future.successful(true)
-      } else {
-        new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createEclairBackedWallet().recover { case e =>
-          logger.error(s"cannot create descriptor wallet", e)
-          throw BitcoinWalletNotCreatedException(wallet.getOrElse(""))
-        }
+      wallet match {
+        case Some(wallet) if !wallets.contains(wallet) =>
+          new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createEclairBackedWallet().recover { e =>
+            logger.error("cannot create eclair-backed descriptor wallet: ", e)
+            false
+          }
+        case _ => Future.successful(true)
       }
     }
 
@@ -236,9 +235,7 @@ class Setup(val datadir: File,
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash =>
-          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case Block.SignetGenesisBlock.hash =>
+        case Block.RegtestGenesisBlock.hash | Block.SignetGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
@@ -478,8 +475,6 @@ case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException
 case class BitcoinDefaultWalletException(loaded: List[String]) extends RuntimeException(s"no bitcoind wallet configured, but multiple wallets loaded: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
 
 case class BitcoinWalletNotLoadedException(wallet: String, loaded: List[String]) extends RuntimeException(s"configured wallet \"$wallet\" not in the set of loaded bitcoind wallets: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
-
-case class BitcoinWalletNotCreatedException(wallet: String) extends RuntimeException(s"configured wallet \"$wallet\" does not exist and could not be created.")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 
