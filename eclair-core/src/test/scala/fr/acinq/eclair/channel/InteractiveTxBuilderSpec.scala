@@ -539,9 +539,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("initiator and non-initiator splice-in") {
     val targetFeerate = FeeratePerKw(1000 sat)
     val fundingA1 = 100_000 sat
-    val utxosA = Seq(150_000 sat, 85_000 sat)
+    val utxosA = Seq(350_000 sat, 150_000 sat)
     val fundingB1 = 50_000 sat
-    val utxosB = Seq(90_000 sat, 80_000 sat)
+    val utxosB = Seq(175_000 sat, 90_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
@@ -813,9 +813,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("initiator and non-initiator combine splice-in and splice-out") {
     val targetFeerate = FeeratePerKw(1000 sat)
     val fundingA1 = 150_000 sat
-    val utxosA = Seq(200_000 sat, 100_000 sat)
+    val utxosA = Seq(480_000 sat, 130_000 sat)
     val fundingB1 = 100_000 sat
-    val utxosB = Seq(150_000 sat, 50_000 sat)
+    val utxosB = Seq(340_000 sat, 70_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
@@ -1321,9 +1321,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("fund splice transaction with previous inputs (no new inputs)") {
     val targetFeerate = FeeratePerKw(2_000 sat)
     val fundingA1 = 150_000 sat
-    val utxosA = Seq(200_000 sat, 75_000 sat)
+    val utxosA = Seq(480_000 sat, 75_000 sat)
     val fundingB1 = 100_000 sat
-    val utxosB = Seq(150_000 sat, 50_000 sat)
+    val utxosB = Seq(325_000 sat, 60_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
@@ -1446,9 +1446,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("fund splice transaction with previous inputs (with new inputs)") {
     val targetFeerate = FeeratePerKw(2_500 sat)
     val fundingA1 = 100_000 sat
-    val utxosA = Seq(140_000 sat, 40_000 sat, 35_000 sat)
+    val utxosA = Seq(340_000 sat, 40_000 sat, 35_000 sat)
     val fundingB1 = 80_000 sat
-    val utxosB = Seq(110_000 sat, 20_000 sat, 15_000 sat)
+    val utxosB = Seq(280_000 sat, 20_000 sat, 15_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
@@ -1579,9 +1579,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("funding splice transaction with previous inputs (different balance)") {
     val targetFeerate = FeeratePerKw(2_500 sat)
     val fundingA1 = 100_000 sat
-    val utxosA = Seq(140_000 sat, 40_000 sat, 35_000 sat)
+    val utxosA = Seq(340_000 sat, 40_000 sat, 35_000 sat)
     val fundingB1 = 80_000 sat
-    val utxosB = Seq(110_000 sat, 20_000 sat, 15_000 sat)
+    val utxosB = Seq(290_000 sat, 20_000 sat, 15_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 

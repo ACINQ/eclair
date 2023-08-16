@@ -1205,6 +1205,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // If we include the mempool, we see that tx1 produces an output that is still unspent.
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = true).pipeTo(sender.ref)
     sender.expectMsg(true)
+    // We're able to find the spending transaction in the mempool.
+    bitcoinClient.lookForMempoolSpendingTx(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt).pipeTo(sender.ref)
+    sender.expectMsg(tx1)
 
     // Let's confirm our transaction.
     generateBlocks(1)
@@ -1219,6 +1222,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(true)
 
     generateBlocks(1)
+    bitcoinClient.lookForMempoolSpendingTx(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
     bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt).pipeTo(sender.ref)
     sender.expectMsg(tx1)
   }
