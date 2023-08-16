@@ -855,7 +855,7 @@ object Helpers {
       def claimCommitTxOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, tx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
 
-        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitment, remoteCommit, feerates, onChainFeeConf, finalScriptPubKey)
+        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitment, remoteCommit, feerates, finalScriptPubKey)
 
         val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
@@ -920,7 +920,7 @@ object Helpers {
       /**
        * Claim our htlc outputs only
        */
-      def claimHtlcOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
+      def claimHtlcOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
         val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, commitment.params.channelConfig, commitment.params.channelFeatures, remoteCommit.index, commitment.localParams, commitment.remoteParams, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
         val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
@@ -1103,7 +1103,7 @@ object Helpers {
        * NB: when anchor outputs is used, htlc transactions can be aggregated in a single transaction if they share the same
        * lockTime (thanks to the use of sighash_single | sighash_anyonecanpay), so we may need to claim multiple outputs.
        */
-      def claimHtlcTxOutputs(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RevokedCommitPublished, Seq[ClaimHtlcDelayedOutputPenaltyTx]) = {
+      def claimHtlcTxOutputs(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RevokedCommitPublished, Seq[ClaimHtlcDelayedOutputPenaltyTx]) = {
         val isHtlcTx = htlcTx.txIn.map(_.outPoint.txid).contains(revokedCommitPublished.commitTx.txid) &&
           htlcTx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess.orElse(Scripts.extractPaymentHashFromHtlcTimeout)).nonEmpty
         if (isHtlcTx) {
@@ -1283,7 +1283,8 @@ object Helpers {
 
     /**
      * If a commitment tx reaches min_depth, we need to fail the outgoing htlcs that will never reach the blockchain.
-     * It could be because only us had signed them, or because a revoked commitment got confirmed.
+     * It could be because only us had signed them, because a revoked commitment got confirmed, or the next commitment
+     * didn't contain those HTLCs.
      */
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.latest.localCommit
@@ -1306,8 +1307,15 @@ object Helpers {
             Set.empty
         }
       } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
-        // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
-        Set.empty
+        // incoming htlcs that have been removed from their commitment are either fulfilled or failed:
+        //  - if they were fulfilled, we already relayed the preimage upstream
+        //  - if they were failed, we need to relay the failure upstream since those htlcs will never reach the chain
+        val settledHtlcs = remoteCommit.spec.htlcs.collect(incoming) -- nextRemoteCommit_opt.map(_.spec.htlcs.collect(incoming)).getOrElse(Set.empty)
+        val failedHtlcs = d.commitments.latest.changes.remoteChanges.all.collect {
+          case f: UpdateFailHtlc => f.id
+          case f: UpdateFailMalformedHtlc => f.id
+        }.toSet
+        settledHtlcs.filter(htlc => failedHtlcs.contains(htlc.id))
       } else if (d.revokedCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
         // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment:
         //  - outgoing htlcs that are in the local commitment but not in remote/nextRemote have already been fulfilled/failed so we don't care about them

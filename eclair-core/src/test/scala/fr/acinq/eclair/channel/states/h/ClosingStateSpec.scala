@@ -662,6 +662,38 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     listener.expectNoMessage(2 seconds)
   }
 
+  test("recv WatchTxConfirmedTriggered (next remote commit with settled htlcs)") { f =>
+    import f._
+
+    // alice sends two htlcs to bob
+    val (preimage1, htlc1) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc2) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // bob fulfills one HTLC and fails the other one without revoking its previous commitment.
+    fulfillHtlc(htlc1.id, preimage1, bob, alice, bob2alice, alice2bob)
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.RemoteFulfill]].htlc == htlc1)
+    failHtlc(htlc2.id, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck] // not sent to alice
+
+    // bob closes the channel using his latest commitment, which doesn't contain any htlc.
+    val bobCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
+    assert(bobCommit.htlcTxsAndRemoteSigs.isEmpty)
+    val commitTx = bobCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! WatchFundingSpentTriggered(commitTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, commitTx)
+    // alice propagates the HTLC failure upstream.
+    assert(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc == htlc2)
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
