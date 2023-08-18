@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnChainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
@@ -121,7 +121,7 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  val onchainKeyManager_opt = LocalOnchainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
+  val onChainKeyManager_opt = LocalOnChainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
 
   val (bitcoin, bitcoinChainHash) = {
     val wallet = {
@@ -145,7 +145,7 @@ class Setup(val datadir: File,
     def createEclairBackedWallet(wallets: List[String]): Future[Boolean] = {
       wallet match {
         case Some(wallet) if !wallets.contains(wallet) =>
-          new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createEclairBackedWallet().recover { e =>
+          new BitcoinCoreClient(bitcoinClient, onChainKeyManager_opt).createEclairBackedWallet().recover { e =>
             logger.error("cannot create eclair-backed descriptor wallet: ", e)
             false
           }
@@ -260,7 +260,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, onChainKeyManager_opt) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {

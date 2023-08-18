@@ -22,11 +22,10 @@ import akka.testkit.{TestKitBase, TestProbe}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, MnemonicCode, Satoshi, Transaction, TxOut, addressToPublicKeyScript, computeP2WpkhAddress}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.PreviousTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
-import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
+import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
 import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, randomKey}
 import grizzled.slf4j.Logging
@@ -87,9 +86,7 @@ trait BitcoindService extends Logging {
        |    }
        |}
        |""".stripMargin
-  val onchainKeyManager = {
-    new LocalOnchainKeyManager("eclair", MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
-  }
+  val onChainKeyManager = new LocalOnChainKeyManager("eclair", MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
 
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
@@ -136,7 +133,7 @@ trait BitcoindService extends Logging {
     }))
   }
 
-  def makeBitcoinCoreClient: BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, Some(onchainKeyManager))
+  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onChainKeyManager) else None)
 
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
@@ -174,7 +171,7 @@ trait BitcoindService extends Logging {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
     if (useEclairSigner) {
-      makeBitcoinCoreClient.createEclairBackedWallet().pipeTo(sender.ref)
+      makeBitcoinCoreClient().createEclairBackedWallet().pipeTo(sender.ref)
       sender.expectMsg(true)
     } else {
       sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
@@ -237,11 +234,11 @@ trait BitcoindService extends Logging {
     }
     val probe = TestProbe()
     val tx = Transaction(version = 2, Nil, TxOut(amountSat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil, lockTime = 0)
-    val client = makeBitcoinCoreClient
+    val client = makeBitcoinCoreClient()
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(Satoshi(10))), true)
+      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(Satoshi(10))), replaceable = true)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
-      txid <- client.publishTransaction(signed.finalTx)
+      txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
       tx <- client.getTransaction(txid)
     } yield tx
     f.pipeTo(probe.ref)
@@ -262,13 +259,9 @@ trait BitcoindService extends Logging {
     Transaction.read(rawTx)
   }
 
-  def signTransaction(client: BitcoinCoreClient, tx: Transaction): Future[SignTransactionResponse] = signTransaction(client, tx, Nil)
-
-  def signTransaction(client: BitcoinCoreClient, tx: Transaction, allowIncomplete: Boolean): Future[SignTransactionResponse] = signTransaction(client, tx, Nil, allowIncomplete)
-
-  def signTransaction(client: BitcoinCoreClient, tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false): Future[SignTransactionResponse] = {
+  def signTransaction(client: BitcoinCoreClient, tx: Transaction): Future[SignTransactionResponse] = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-    client.signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.extractFinalTx.getOrElse(p.extractPartiallySignedTx), p.extractFinalTx.isRight))
+    client.signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.finalTx_opt.getOrElse(p.partiallySignedTx), p.finalTx_opt.isRight))
   }
 }
 

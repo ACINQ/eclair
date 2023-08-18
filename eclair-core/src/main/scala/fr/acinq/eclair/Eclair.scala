@@ -669,16 +669,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  def payOfferInternal(offer: Offer,
-                       amount: MilliSatoshi,
-                       quantity: Long,
-                       externalId_opt: Option[String],
-                       maxAttempts_opt: Option[Int],
-                       maxFeeFlat_opt: Option[Satoshi],
-                       maxFeePct_opt: Option[Double],
-                       pathFindingExperimentName_opt: Option[String],
-                       connectDirectly: Boolean,
-                       blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
+  private def payOfferInternal(offer: Offer,
+                               amount: MilliSatoshi,
+                               quantity: Long,
+                               externalId_opt: Option[String],
+                               maxAttempts_opt: Option[Int],
+                               maxFeeFlat_opt: Option[Satoshi],
+                               maxFeePct_opt: Option[Double],
+                               pathFindingExperimentName_opt: Option[String],
+                               connectDirectly: Boolean,
+                               blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
     if (externalId_opt.exists(_.length > externalIdMaxLength)) {
       return Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
     }
@@ -722,12 +722,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def getDescriptors(account: Long): Descriptors = appKit.wallet match {
-    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getDescriptors(account)
+    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onChainKeyManager_opt.isDefined => bitcoinCoreClient.onChainKeyManager_opt.get.descriptors(account)
     case _ => throw new RuntimeException("onchain seed is not configured")
   }
 
   override def getOnchainMasterPubKey(account: Long): String = appKit.wallet match {
-    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onchainKeyManager_opt.isDefined => bitcoinCoreClient.onchainKeyManager_opt.get.getOnchainMasterPubKey(account)
+    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onChainKeyManager_opt.isDefined => bitcoinCoreClient.onChainKeyManager_opt.get.masterPubKey(account)
     case _ => throw new RuntimeException("onchain seed is not configured")
   }
 

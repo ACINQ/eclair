@@ -24,9 +24,9 @@ import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut, addressToPublicKeyScript}
-import fr.acinq.eclair.blockchain.OnChainWallet.FundTransactionResponse
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, ProcessPsbtResponse, Utxo}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
@@ -63,11 +63,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     wallet.getReceiveAddress().pipeTo(probe.ref)
     val walletAddress = probe.expectMsgType[String]
     val tx = Transaction(version = 2, Nil, TxOut(amount, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, walletAddress).toOption.get) :: Nil, lockTime = 0)
-    val client = makeBitcoinCoreClient
+    val client = makeBitcoinCoreClient()
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(10.sat)), true)
+      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(10.sat)), replaceable = true)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
-      txid <- client.publishTransaction(signed.finalTx)
+      txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
     } yield txid
     f.pipeTo(probe.ref)
     probe.expectMsgType[ByteVector32]
@@ -1004,11 +1004,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         walletA.getP2wpkhPubkey().pipeTo(probe.ref)
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-        val minerWallet = makeBitcoinCoreClient
+        val minerWallet = makeBitcoinCoreClient()
         minerWallet.fundTransaction(tx, FeeratePerKw(500 sat), replaceable = true).pipeTo(probe.ref)
         val unsignedTx = probe.expectMsgType[FundTransactionResponse].tx
         minerWallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(probe.ref)
-        val signedTx = probe.expectMsgType[ProcessPsbtResponse].finalTx
+        val Right(signedTx) = probe.expectMsgType[ProcessPsbtResponse].finalTx_opt
         assert(Transaction.write(signedTx).length >= 65_000)
         minerWallet.publishTransaction(signedTx).pipeTo(probe.ref)
         probe.expectMsgType[ByteVector32]

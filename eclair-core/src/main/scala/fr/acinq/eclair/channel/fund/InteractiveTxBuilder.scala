@@ -786,15 +786,15 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
         response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet
-          val partiallySignedTx = response.extractPartiallySignedTx
+          val partiallySignedTx = response.partiallySignedTx
           // partially signed PSBT must include spent amounts for all inputs that were signed, and we can "trust" these amounts because they are included
           // in the hash that we signed (see BIP143). If our bitcoin node lied about them, then our signatures are invalid
           val actualLocalAmountIn = ourWalletInputs.map(i => kmp2scala(response.psbt.getInput(i).getWitnessUtxo.amount)).sum
           val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
-          require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount ${actualLocalAmountIn} does not match what we expect ($expectedLocalAmountIn")
+          require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount $actualLocalAmountIn does not match what we expect ($expectedLocalAmountIn")
           val actualLocalAmountOut = ourWalletOutputs.map(i => partiallySignedTx.txOut(i).amount).sum
           val expectedLocalAmountOut = unsignedTx.localOutputs.collect { case c: Output.Local.Change => c.amount }.sum
-          require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount ${actualLocalAmountOut} does not match what we expect ($expectedLocalAmountOut")
+          require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount $actualLocalAmountOut does not match what we expect ($expectedLocalAmountOut")
           val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
           PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt))
       }) {

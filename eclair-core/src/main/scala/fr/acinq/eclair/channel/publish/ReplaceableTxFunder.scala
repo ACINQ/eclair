@@ -361,7 +361,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     val finalized = updated.flatMap(_.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
     finalized match {
       case Left(failure) =>
-        log.error(s"cannot sign ${cmd.desc}: ", failure)
+        log.error(s"cannot sign ${cmd.desc}: $failure")
         unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
       case Right(psbt1) =>
         // the transaction that we want to fund/replace has one input, the first one. Additional inputs are provided by our onchain wallet.
@@ -374,22 +374,25 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         }
         context.pipeToSelf(bitcoinClient.signPsbt(psbt1, ourWalletInputs, ourWalletOutputs)) {
           case Success(processPsbtResponse) =>
-            val signedTx = processPsbtResponse.finalTx
-            val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
-            val actualWeight = locallySignedTx match {
-              case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + dummySignedCommitTx(cmd.commitment).tx.weight()
-              case _ =>
-                locallySignedTx.txInfo match {
-                  case _: HtlcSuccessTx => cmd.commitment.params.commitmentFormat.htlcSuccessInputWeight + signedTx.weight()
-                  case _: HtlcTimeoutTx => cmd.commitment.params.commitmentFormat.htlcTimeoutInputWeight + signedTx.weight()
-                  case _ => signedTx.weight()
+            processPsbtResponse.finalTx_opt match {
+              case Right(signedTx) =>
+                val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
+                val actualWeight = locallySignedTx match {
+                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + dummySignedCommitTx(cmd.commitment).tx.weight()
+                  case _ =>
+                    locallySignedTx.txInfo match {
+                      case _: HtlcSuccessTx => cmd.commitment.params.commitmentFormat.htlcSuccessInputWeight + signedTx.weight()
+                      case _: HtlcTimeoutTx => cmd.commitment.params.commitmentFormat.htlcTimeoutInputWeight + signedTx.weight()
+                      case _ => signedTx.weight()
+                    }
                 }
-            }
-            val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
-            if (actualFeerate >= txFeerate * 2) {
-              SignWalletInputsFailed(new RuntimeException(s"actual fee rate $actualFeerate is more than twice the requested fee rate $txFeerate"))
-            } else {
-              SignWalletInputsOk(signedTx)
+                val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
+                if (actualFeerate >= txFeerate * 2) {
+                  SignWalletInputsFailed(new RuntimeException(s"actual fee rate $actualFeerate is more than twice the requested fee rate $txFeerate"))
+                } else {
+                  SignWalletInputsOk(signedTx)
+                }
+              case Left(failure) => SignWalletInputsFailed(new RuntimeException(s"could not sign psbt: $failure"))
             }
           case Failure(reason) => SignWalletInputsFailed(reason)
         }
@@ -463,7 +466,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       psbt = new Psbt(txSingleOutput)
       processPsbtResponse <- bitcoinClient.signPsbt(psbt, ourWalletInputs, ourWalletOutputs)
       // we cannot extract the final tx from the psbt because it is not fully signed yet
-      partiallySignedTx = processPsbtResponse.extractPartiallySignedTx
+      partiallySignedTx = processPsbtResponse.partiallySignedTx
       dummySignedTx = addSigs(anchorTx.updateTx(partiallySignedTx).txInfo, PlaceHolderSig)
       packageWeight = commitTx.weight() + dummySignedTx.tx.weight()
       // above, we asked bitcoin core to use the package weight to estimate fees when it built and funded this transaction, so we
