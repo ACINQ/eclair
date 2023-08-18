@@ -182,6 +182,7 @@ trait BitcoindService extends Logging {
     awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
   }
 
+  /** Generate blocks to a given address, or to our wallet if no address is provided. */
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
     val sender = TestProbe()
     val addressToUse = address match {

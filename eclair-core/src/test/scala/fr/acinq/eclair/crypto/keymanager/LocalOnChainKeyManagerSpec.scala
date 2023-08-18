@@ -11,7 +11,7 @@ import java.util.Base64
 import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.util.{Failure, Success}
 
-class LocalOnchainKeyManagerSpec extends AnyFunSuite {
+class LocalOnChainKeyManagerSpec extends AnyFunSuite {
   test("sign psbt (non-reg test)") {
     val entropy = ByteVector.fromValidHex("01" * 32)
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
@@ -39,9 +39,9 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
     def getPublicKey(index: Long) = DeterministicWallet.derivePublicKey(mainPub, index).publicKey
 
     val utxos = Seq(
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0),
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1100_000), Script.pay2wpkh(getPublicKey(1))) :: Nil, lockTime = 0),
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1200_000), Script.pay2wpkh(getPublicKey(2))) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_100_000), Script.pay2wpkh(getPublicKey(1))) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_200_000), Script.pay2wpkh(getPublicKey(2))) :: Nil, lockTime = 0),
     )
     val bip32paths = Seq(
       new KeyPathWithMaster(0, new fr.acinq.bitcoin.KeyPath("m/84'/1'/0'/0/0")),
@@ -104,7 +104,6 @@ class LocalOnchainKeyManagerSpec extends AnyFunSuite {
         p4 <- p3.updateNonWitnessInput(utxos(1), 0, null, null, java.util.Map.of())
         p5 <- p4.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
       } yield p5
-
       val Failure(error) = onChainKeyManager.sign(psbt, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("non-witness utxo is missing"))
     }
