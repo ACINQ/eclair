@@ -48,6 +48,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
   import RouteCalculationSpec._
 
+  implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
+
   val (a, b, c, d, e, f) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
 
   test("calculate simple route") {
@@ -1915,6 +1917,38 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(routes) = findRoute(g, a, d, 50000 msat, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = wr, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
     val route :: Nil = routes
     assert(route2Ids(route) == 3 :: 4 :: Nil)
+  }
+
+  test("take past attempts into account") {
+    //        C
+    //       / \
+    // A -- B   E
+    //       \ /
+    //        D
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, b, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+      makeEdge(2L, b, c, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+      makeEdge(3L, c, e, 100 msat, 100, minHtlc = 1000 msat, capacity = 100000000 sat),
+      makeEdge(4L, b, d, 1000 msat, 1000, minHtlc = 1000 msat, capacity = 100000 sat),
+      makeEdge(5L, d, e, 1000 msat, 1000, minHtlc = 1000 msat, capacity = 100000 sat),
+    )), 1 day)
+
+    val amount = 50000 msat
+
+    val hc = HeuristicsConstants(
+      lockedFundsRisk = 0,
+      failureFees = RelayFees(1000 msat, 1000),
+      hopFees = RelayFees(500 msat, 200),
+      useLogProbability = true,
+      usePastRelaysData = true
+    )
+    val Success(route1 :: Nil) = findRoute(g, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
+    assert(route2Ids(route1) == 1 :: 2 :: 3 :: Nil)
+
+    val h = g.routeCouldRelay(route1.stopAt(c)).channelCouldNotSend(route1.hops.last, amount)
+
+    val Success(route2 :: Nil) = findRoute(h, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
+    assert(route2Ids(route2) == 1 :: 4 :: 5 :: Nil)
   }
 }
 
