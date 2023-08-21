@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{addressToPublicKeyScript, Block, Btc, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, addressToPublicKeyScript, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
@@ -316,7 +316,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).isRight)
 
     val fundingTxs = for (_ <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
@@ -380,7 +380,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).isRight)
 
     bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
     sender.expectMsg(Set.empty[OutPoint])

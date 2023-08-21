@@ -229,13 +229,17 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+    val script = scriptOrAddress match {
+      case Left(script) => script
+      case Right(address) => addressToPublicKeyScript(this.appKit.nodeParams.chainHash, address) match {
+        case Left(failure) => throw new IllegalArgumentException(failure.toString)
+        case Right(script) => Script.write(script)
+      }
+    }
     sendToChannelTyped(channel = Left(channelId),
       cmdBuilder = CMD_SPLICE(_,
         spliceIn_opt = None,
-        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = scriptOrAddress match {
-          case Left(script) => script
-          case Right(address) => Script.write(addressToPublicKeyScript(appKit.nodeParams.chainHash, address))
-        }))
+        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script))
       ))
   }
 
@@ -312,7 +316,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
-    fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
+    fallbackAddress_opt.foreach { fa =>
+      addressToPublicKeyScript(appKit.nodeParams.chainHash, fa) match {
+        case Left(failure) => throw new IllegalArgumentException(failure.toString)
+        case Right(_) => ()
+      }
+    } // if it's not a bitcoin address throws an exception
     appKit.paymentHandler.toTyped.ask(ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt))
   }
 

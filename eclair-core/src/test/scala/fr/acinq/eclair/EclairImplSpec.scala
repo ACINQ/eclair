@@ -315,7 +315,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress_opt.contains(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalStateException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
