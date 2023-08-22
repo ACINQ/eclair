@@ -774,14 +774,14 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {
       // We only sign our wallet inputs, and check that we can spend our wallet outputs.
-      val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == i.outPoint)).filter(_ >= 0)
+      val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == i.outPoint))
       val ourWalletOutputs = unsignedTx.localOutputs.map {
         case Output.Local.Change(_, amount, pubkeyScript) => tx.txOut.indexWhere(output => output.amount == amount && output.publicKeyScript == pubkeyScript)
         // Non-change outputs may go to an external address (typically during a splice-out).
         // Here we only keep outputs which are ours i.e explicitly go back into our wallet.
         // We trust that non-change outputs are valid: this only works if the entry point for creating such outputs is trusted (for example, a secure API call).
         case _: Output.Local.NonChange => -1
-      }.filter(_ >= 0)
+      }
       context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
         response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet
