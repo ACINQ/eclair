@@ -317,9 +317,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
-      case ClaimLocalAnchorWithWitnessData(anchorTx) =>
-        val localSig = keyManager.sign(anchorTx, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat)
-        val signedTx = ClaimLocalAnchorWithWitnessData(addSigs(anchorTx, localSig))
+      case claimAnchorTx: ClaimLocalAnchorWithWitnessData =>
+        val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat)
+        val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn)
       case htlcTx: HtlcWithWitnessData =>
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
@@ -343,9 +343,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         }
         val sig = keyManager.sign(claimHtlcTx.txInfo, keyManager.htlcPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, cmd.commitment.params.commitmentFormat)
         val signedTx = claimHtlcTx match {
-          case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => ClaimHtlcSuccessWithWitnessData(addSigs(txInfo, sig, preimage), preimage)
+          case claimSuccess: ClaimHtlcSuccessWithWitnessData => claimSuccess.copy(txInfo = addSigs(claimSuccess.txInfo, sig, claimSuccess.preimage))
           case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess
-          case ClaimHtlcTimeoutWithWitnessData(txInfo) => ClaimHtlcTimeoutWithWitnessData(addSigs(txInfo, sig))
+          case claimTimeout: ClaimHtlcTimeoutWithWitnessData => claimTimeout.copy(txInfo = addSigs(claimTimeout.txInfo, sig))
         }
         replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate))
         Behaviors.stopped
