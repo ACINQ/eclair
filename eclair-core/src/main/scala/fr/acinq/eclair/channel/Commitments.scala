@@ -103,14 +103,14 @@ case class ChannelParams(channelId: ByteVector32,
   def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+  def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(remoteParams.dustLimit)
   } else {
     remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+  def remoteChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(localParams.dustLimit)
   } else {
     localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
@@ -268,10 +268,10 @@ case class Commitment(fundingTxIndex: Long,
   val capacity: Satoshi = commitInput.txOut.amount
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity)
+  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity, fundingTxIndex > 0)
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity)
+  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity, fundingTxIndex > 0)
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
   // top of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
