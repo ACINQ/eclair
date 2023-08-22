@@ -260,7 +260,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, onChainKeyManager_opt) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (bitcoin.wallet == onChainKeyManager_opt.map(_.wallet)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -385,7 +385,8 @@ class Setup(val datadir: File,
         balanceActor = balanceActor,
         postman = postman,
         offerManager = offerManager,
-        wallet = bitcoinClient)
+        wallet = bitcoinClient,
+        onChainKeyManager_opt = onChainKeyManager_opt)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -454,7 +455,8 @@ case class Kit(nodeParams: NodeParams,
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
                offerManager: typed.ActorRef[OfferManager.Command],
-               wallet: OnChainWallet with OnchainPubkeyCache)
+               wallet: OnChainWallet with OnchainPubkeyCache,
+               onChainKeyManager_opt: Option[LocalOnChainKeyManager])
 
 object Kit {
 

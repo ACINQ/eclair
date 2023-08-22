@@ -761,19 +761,6 @@ object BitcoinCoreClient {
     }
   }
 
-  case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
-
-  object PreviousTx {
-    def apply(inputInfo: Transactions.InputInfo, witness: ScriptWitness): PreviousTx = PreviousTx(
-      inputInfo.outPoint.txid,
-      inputInfo.outPoint.index,
-      inputInfo.txOut.publicKeyScript.toHex,
-      inputInfo.redeemScript.toHex,
-      ScriptWitness.write(witness).toHex,
-      inputInfo.txOut.amount.toBtc.toBigDecimal
-    )
-  }
-
   /**
    * Information about a transaction currently in the mempool.
    *

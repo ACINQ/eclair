@@ -178,7 +178,7 @@ trait Eclair {
 
   def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
 
-  def getOnchainMasterPubKey(account: Long): String
+  def getOnChainMasterPubKey(account: Long): String
 
   def getDescriptors(account: Long): Descriptors
 
@@ -721,14 +721,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
   }
 
-  override def getDescriptors(account: Long): Descriptors = appKit.wallet match {
-    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onChainKeyManager_opt.isDefined => bitcoinCoreClient.onChainKeyManager_opt.get.descriptors(account)
-    case _ => throw new RuntimeException("onchain seed is not configured")
+  override def getDescriptors(account: Long): Descriptors = appKit.onChainKeyManager_opt match {
+    case Some(keyManager) => keyManager.descriptors(account)
+    case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
-  override def getOnchainMasterPubKey(account: Long): String = appKit.wallet match {
-    case bitcoinCoreClient: BitcoinCoreClient if bitcoinCoreClient.onChainKeyManager_opt.isDefined => bitcoinCoreClient.onChainKeyManager_opt.get.masterPubKey(account)
-    case _ => throw new RuntimeException("onchain seed is not configured")
+  override def getOnChainMasterPubKey(account: Long): String = appKit.onChainKeyManager_opt match {
+    case Some(keyManager) => keyManager.masterPubKey(account)
+    case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
   override def stop(): Future[Unit] = {
