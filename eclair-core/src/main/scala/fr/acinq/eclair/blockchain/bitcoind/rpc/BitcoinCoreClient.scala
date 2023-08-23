@@ -35,7 +35,6 @@ import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import java.util.Base64
-import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.ListHasAsScala
 import scala.util.{Failure, Success, Try}
@@ -62,38 +61,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
   }
 
   val useEclairSigner = onChainKeyManager_opt.nonEmpty
-
-  //------------------------- WALLET  -------------------------//
-
-  private def importDescriptors(descriptors: Seq[Descriptor])(implicit ec: ExecutionContext): Future[Boolean] = {
-    rpcClient.invoke("importdescriptors", descriptors).collect {
-      case JArray(results) => results.forall(item => {
-        val JBool(success) = item \ "success"
-        success
-      })
-    }
-  }
-
-  /**
-   * Create a bitcoin core watch-only wallet with private keys owned by eclair.
-   * This should only be called if the corresponding wallet doesn't already exist.
-   */
-  def createEclairBackedWallet()(implicit ec: ExecutionContext): Future[Boolean] = {
-    onChainKeyManager_opt match {
-      case None => Future.successful(true) // no eclair-backed wallet is configured
-      case Some(onChainKeyManager) if onChainKeyManager.walletTimestamp() < (TimestampSecond.now() - 2.hours) =>
-        logger.warn("descriptors are too old, you will need to manually import them and select how far back to rescan")
-        Future.failed(new RuntimeException("Could not import descriptors, please check logs for details"))
-      case Some(onChainKeyManager) =>
-        logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: ${onChainKeyManager.wallet}")
-        for {
-          // we create an empty watch-only wallet, and then import our public key descriptors
-          _ <- rpcClient.invoke("createwallet", onChainKeyManager.wallet, /* disable_private_keys */ true, /* blank */ true, /* passphrase */ "", /* avoid_reuse */ false, /* descriptors */ true, /* load_on_startup */ true)
-          _ = logger.info(s"importing new descriptors ${onChainKeyManager.descriptors(0).descriptors}")
-          result <- importDescriptors(onChainKeyManager.descriptors(0).descriptors)
-        } yield result
-    }
-  }
 
   //------------------------- TRANSACTIONS  -------------------------//
 

@@ -171,7 +171,7 @@ trait BitcoindService extends Logging {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
     if (useEclairSigner) {
-      makeBitcoinCoreClient().createEclairBackedWallet().pipeTo(sender.ref)
+      onChainKeyManager.createWallet(bitcoinrpcclient).pipeTo(sender.ref)
       sender.expectMsg(true)
     } else {
       sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))

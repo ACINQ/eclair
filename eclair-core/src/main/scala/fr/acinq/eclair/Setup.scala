@@ -142,17 +142,6 @@ class Setup(val datadir: File,
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)
 
-    def createEclairBackedWallet(wallets: List[String]): Future[Boolean] = {
-      wallet match {
-        case Some(wallet) if !wallets.contains(wallet) =>
-          new BitcoinCoreClient(bitcoinClient, onChainKeyManager_opt).createEclairBackedWallet().recover { e =>
-            logger.error("cannot create eclair-backed descriptor wallet: ", e)
-            false
-          }
-        case _ => Future.successful(true)
-      }
-    }
-
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
@@ -160,8 +149,11 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
-      walletCreated <- createEclairBackedWallet(wallets)
-      _ = assert(walletCreated, "Cannot create eclair-backed wallet, check logs for details")
+      eclairBackedWalletOk <- onChainKeyManager_opt match {
+        case Some(keyManager) if !wallets.contains(keyManager.wallet) => keyManager.createWallet(bitcoinClient)
+        case _ => Future.successful(true)
+      }
+      _ = assert(eclairBackedWalletOk, "cannot create eclair-backed wallet, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]

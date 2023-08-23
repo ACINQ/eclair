@@ -21,7 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Descriptors
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 trait OnChainKeyManager {
@@ -31,6 +33,12 @@ trait OnChainKeyManager {
    * @return the creation time of the wallet managed by this key manager
    */
   def walletTimestamp(): TimestampSecond
+
+  /**
+   * Create a bitcoin core watch-only wallet with private keys owned by this key manager instance.
+   * This should only be called if the corresponding wallet doesn't already exist.
+   */
+  def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
    * @param account account number (0 is used by most wallets)

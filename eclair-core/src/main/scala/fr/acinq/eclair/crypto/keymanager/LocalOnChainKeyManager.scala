@@ -22,10 +22,14 @@ import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, computeBIP84Address}
 import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, Descriptors}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import grizzled.slf4j.Logging
+import org.json4s.{JArray, JBool}
 import scodec.bits.ByteVector
 
 import java.io.File
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 import scala.util.{Failure, Success, Try}
 
@@ -58,7 +62,7 @@ object LocalOnChainKeyManager extends Logging {
   }
 }
 
-class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, timestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
+class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, override val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
 
   import LocalOnChainKeyManager._
 
@@ -94,7 +98,26 @@ class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, time
     (pub, address)
   }
 
-  override def walletTimestamp(): TimestampSecond = timestamp
+  override def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean] = {
+    if (walletTimestamp < (TimestampSecond.now() - 2.hours)) {
+      logger.warn("eclair-backed wallet descriptors are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
+      Future.successful(false)
+    } else {
+      logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: $wallet")
+      rpcClient.invoke("createwallet", wallet, /* disable_private_keys */ true, /* blank */ true, /* passphrase */ "", /* avoid_reuse */ false, /* descriptors */ true, /* load_on_startup */ true).flatMap(_ => {
+        logger.info(s"importing new descriptors ${descriptors(0).descriptors}")
+        rpcClient.invoke("importdescriptors", descriptors(0).descriptors).collect {
+          case JArray(results) => results.forall(item => {
+            val JBool(success) = item \ "success"
+            success
+          })
+        }
+      }).recover { e =>
+        logger.error("cannot create eclair-backed on-chain wallet: ", e)
+        false
+      }
+    }
+  }
 
   override def descriptors(account: Long): Descriptors = {
     // TODO: we should use 'h' everywhere once bitcoin-kmp supports it.
@@ -110,8 +133,8 @@ class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, time
     val receiveDesc = s"wpkh([$fingerPrintHex/$keyPath]${encode(accountPub, prefix)}/0/*)"
     val changeDesc = s"wpkh([$fingerPrintHex/$keyPath]${encode(accountPub, prefix)}/1/*)"
     Descriptors(wallet_name = wallet, descriptors = List(
-      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = timestamp.toLong),
-      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = timestamp.toLong),
+      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = walletTimestamp.toLong),
+      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = walletTimestamp.toLong),
     ))
   }
 

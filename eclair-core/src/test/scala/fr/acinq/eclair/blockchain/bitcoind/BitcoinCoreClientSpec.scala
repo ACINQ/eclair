@@ -1405,11 +1405,11 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
   override def useEclairSigner = true
 
-  private def createWallet(seed: ByteVector): BitcoinCoreClient = {
+  private def createWallet(seed: ByteVector): (BitcoinCoreClient, LocalOnChainKeyManager) = {
     val name = s"eclair_${seed.toString()}"
     val onChainKeyManager = new LocalOnChainKeyManager(name, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(name))
-    new BitcoinCoreClient(jsonRpcClient, Some(onChainKeyManager))
+    (new BitcoinCoreClient(jsonRpcClient, Some(onChainKeyManager)), onChainKeyManager)
   }
 
   test("wallets managed by eclair implement BIP84") {
@@ -1417,8 +1417,8 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val entropy = randomBytes32()
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
     val master = DeterministicWallet.generate(seed)
-    val wallet = createWallet(seed)
-    wallet.createEclairBackedWallet().pipeTo(sender.ref)
+    val (wallet, keyManager) = createWallet(seed)
+    keyManager.createWallet(wallet.rpcClient).pipeTo(sender.ref)
     sender.expectMsg(true)
 
     // this account xpub can be used to create a watch-only wallet
@@ -1452,8 +1452,8 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val sender = TestProbe()
 
     (1 to 10).foreach { _ =>
-      val wallet = createWallet(randomBytes32())
-      wallet.createEclairBackedWallet().pipeTo(sender.ref)
+      val (wallet, keyManager) = createWallet(randomBytes32())
+      keyManager.createWallet(wallet.rpcClient).pipeTo(sender.ref)
       sender.expectMsg(true)
       wallet.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
