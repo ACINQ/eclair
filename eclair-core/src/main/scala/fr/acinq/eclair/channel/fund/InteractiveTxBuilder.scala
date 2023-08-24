@@ -660,11 +660,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(_ => {
-      val remoteReserve = channelParams.remoteChannelReserveForCapacity(fundingParams.fundingAmount, isSplice = true)
-      // We ignore the reserve requirement if we are splicing funds into the channel, which increases the size of the reserve.
-      if (sharedOutput.remoteAmount < remoteReserve && remoteOutputs.nonEmpty && localInputs.isEmpty) {
-        log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
-        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      if (fundingParams.remoteContribution >= 0.sat) {
+        // If remote has a positive contribution, we do not check their post-splice reserve level, because they are improving
+        // their situation, even if they stay below the requirement. Note that if local splices-in some funds in the same
+        // operation, remote post-splice reserve may actually be worse than before, but that's not their fault.
+      } else {
+        // If remote removes funds from the channel, it must meet reserve requirements post-splice
+        val remoteReserve = channelParams.remoteChannelReserveForCapacity(fundingParams.fundingAmount, isSplice = true)
+        if (sharedOutput.remoteAmount < remoteReserve) {
+          log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        }
       }
       if (sharedInputs.length > 1) {
         log.warn("invalid interactive tx: shared input included multiple times")
