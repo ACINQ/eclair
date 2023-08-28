@@ -153,7 +153,7 @@ class Setup(val datadir: File,
         case Some(keyManager) if !wallets.contains(keyManager.wallet) => keyManager.createWallet(bitcoinClient)
         case _ => Future.successful(true)
       }
-      _ = assert(eclairBackedWalletOk, "cannot create eclair-backed wallet, check logs for details")
+      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.wallet) != wallet, "cannot create eclair-backed wallet, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
@@ -192,7 +192,7 @@ class Setup(val datadir: File,
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onChainKeyManager_opt, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
@@ -377,8 +377,7 @@ class Setup(val datadir: File,
         balanceActor = balanceActor,
         postman = postman,
         offerManager = offerManager,
-        wallet = bitcoinClient,
-        onChainKeyManager_opt = onChainKeyManager_opt)
+        wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -447,8 +446,7 @@ case class Kit(nodeParams: NodeParams,
                balanceActor: typed.ActorRef[BalanceActor.Command],
                postman: typed.ActorRef[Postman.Command],
                offerManager: typed.ActorRef[OfferManager.Command],
-               wallet: OnChainWallet with OnchainPubkeyCache,
-               onChainKeyManager_opt: Option[LocalOnChainKeyManager])
+               wallet: OnChainWallet with OnchainPubkeyCache)
 
 object Kit {
 

@@ -88,8 +88,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       balanceActor.ref.toTyped,
       postman.ref.toTyped,
       offerManager.ref.toTyped,
-      new DummyOnChainWallet(),
-      None
+      new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
   }

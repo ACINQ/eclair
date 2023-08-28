@@ -721,12 +721,12 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
   }
 
-  override def getDescriptors(account: Long): Descriptors = appKit.onChainKeyManager_opt match {
+  override def getDescriptors(account: Long): Descriptors = appKit.nodeParams.onChainKeyManager_opt match {
     case Some(keyManager) => keyManager.descriptors(account)
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
-  override def getOnChainMasterPubKey(account: Long): String = appKit.onChainKeyManager_opt match {
+  override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
     case Some(keyManager) => keyManager.masterPubKey(account)
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
