@@ -100,7 +100,7 @@ class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, over
 
   override def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean] = {
     if (walletTimestamp < (TimestampSecond.now() - 2.hours)) {
-      logger.warn("eclair-backed wallet descriptors are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
+      logger.warn(s"eclair-backed wallet descriptors for wallet=$wallet are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
       Future.successful(false)
     } else {
       logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: $wallet")

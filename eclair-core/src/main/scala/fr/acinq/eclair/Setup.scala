@@ -153,7 +153,7 @@ class Setup(val datadir: File,
         case Some(keyManager) if !wallets.contains(keyManager.wallet) => keyManager.createWallet(bitcoinClient)
         case _ => Future.successful(true)
       }
-      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.wallet) != wallet, "cannot create eclair-backed wallet, check logs for details")
+      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.wallet) != wallet, s"cannot create eclair-backed wallet=${onChainKeyManager_opt.map(_.wallet)}, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
