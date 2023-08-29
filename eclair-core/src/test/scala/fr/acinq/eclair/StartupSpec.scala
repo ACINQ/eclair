@@ -168,6 +168,7 @@ class StartupSpec extends AnyFunSuite {
     val perNodeConf = ConfigFactory.parseString(
       """
         |  features {
+        |    option_data_loss_protect = optional
         |    var_onion_optin = mandatory
         |    payment_secret = mandatory
         |    option_channel_type = optional
@@ -186,13 +187,14 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf.withoutPath("features")))
     val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
-    assert(perNodeFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelRangeQueries -> Optional, ChannelType -> Optional))
+    assert(perNodeFeatures == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelRangeQueries -> Optional, ChannelType -> Optional))
   }
 
   test("combine node override features with default features") {
     val perNodeConf = ConfigFactory.parseString(
       """
         |  features {
+        |    option_data_loss_protect = optional
         |    var_onion_optin = mandatory
         |    payment_secret = mandatory
         |    basic_mpp = mandatory
@@ -220,11 +222,11 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf.withoutPath("features")))
     val defaultFeatures = nodeParams.features
-    assert(defaultFeatures == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Optional, ChannelType -> Optional))
+    assert(defaultFeatures == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Optional, ChannelType -> Optional))
     val perNodeFeatures1 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
-    assert(perNodeFeatures1 == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional))
+    assert(perNodeFeatures1 == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional))
     val perNodeFeatures2 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766")))
-    assert(perNodeFeatures2 == Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, ChannelType -> Optional))
+    assert(perNodeFeatures2 == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, ChannelType -> Optional))
   }
 
   test("reject non-init features in node override") {

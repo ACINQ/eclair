@@ -389,13 +389,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay() using d.copy(behavior = behavior1)
 
       case Event(DoSync(replacePrevious), d: ConnectedData) =>
-        val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
+        // We assume support for standard range queries since https://github.com/lightning/bolts/pull/1092
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
-        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-          log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
-          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
-        }
+        val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+        log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+        router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
         stay()
 
       case Event(ResumeAnnouncements, d: ConnectedData) =>
