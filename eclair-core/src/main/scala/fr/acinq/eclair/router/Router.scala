@@ -102,7 +102,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
     self ! nodeAnn
 
-    log.info(s"initialization completed, ready to process messages")
+    log.debug("initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     val data = Data(
       nodes.map(n => n.nodeId -> n).toMap, channels, pruned,
@@ -122,12 +122,12 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(SyncProgress(progress), d: Data) =>
       Metrics.SyncProgress.withoutTags().update(100 * progress)
       if (progress == 1.0 && d.channels.nonEmpty) {
-        log.info("initial routing sync done")
+        log.debug("initial routing sync done")
       }
       stay()
 
     case Event(GetRoutingState, d: Data) =>
-      log.info(s"getting valid announcements for ${sender()}")
+      log.debug(s"getting valid announcements for ${sender()}")
       sender() ! RoutingState(d.channels.values, d.nodes.values)
       stay()
 
