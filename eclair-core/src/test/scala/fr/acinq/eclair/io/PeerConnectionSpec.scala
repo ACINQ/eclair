@@ -338,6 +338,10 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
 
+    val fakeRoutingInfo = RoutingSyncSpec.shortChannelIds.take(PeerConnection.MAX_FUNDING_TX_ALREADY_SPENT + 1).toSeq.map(RoutingSyncSpec.makeFakeRoutingInfo(pub2priv))
+    val channels = fakeRoutingInfo.map(_._1.ann)
+    val updates = fakeRoutingInfo.flatMap(_._1.update_1_opt) ++ fakeRoutingInfo.flatMap(_._1.update_2_opt)
+
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(42000))),
@@ -355,13 +359,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       router.send(peerConnection, GossipDecision.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
-    var warningSent = false
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      if (!warningSent) {
-        transport.expectMsgType[Warning]
-        warningSent = true
-      }
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
     router.expectNoMessage(1 second)

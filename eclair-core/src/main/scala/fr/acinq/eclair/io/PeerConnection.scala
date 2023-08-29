@@ -370,8 +370,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             } else if (d.behavior.fundingTxAlreadySpentCount < MAX_FUNDING_TX_ALREADY_SPENT) {
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
             } else {
+              // Our peer isn't necessarily malicious: their bitcoind node may be late, or they restarted and have not
+              // yet received notifications for the recently closed channels. There may also be splicing attempts that
+              // are being confirmed and look like closed channels, but actually aren't.
+              // But we still need to protect ourselves against potentially malicious peers and ignore them.
               log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
-              d.transport ! Warning("too many channel announcements with funding tx already spent, please check your bitcoin node")
               startSingleTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
@@ -529,10 +532,7 @@ object PeerConnection {
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
-
-  // @formatter:off
-  val MAX_FUNDING_TX_ALREADY_SPENT = 10
-  // @formatter:on
+  val MAX_FUNDING_TX_ALREADY_SPENT = 250
 
   def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
     Props(new PeerConnection(keyPair, conf, switchboard, router))
