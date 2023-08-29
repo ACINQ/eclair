@@ -183,8 +183,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
   /**
    * Iterate over blocks to find the transaction that has spent a given output.
-   * NB: only call this method when you're sure the output has been spent, otherwise this will iterate over the whole
-   * blockchain history.
+   * NB: this will iterate over the past month of blockchain history, which is resource-intensive.
    *
    * @param blockhash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
    * @param txid          id of the transaction output that has been spent.
@@ -192,10 +191,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * @return the transaction spending the given output.
    */
   def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    lookForSpendingTx(blockhash_opt.map(KotlinUtils.scala2kmp), KotlinUtils.scala2kmp(txid), outputIndex)
+    // It isn't useful to look at the whole blockchain history: if the transaction was confirmed long ago, an attacker
+    // will have already claimed all possible outputs and there's nothing we can do about it.
+    val limit = 4 * 720
+    lookForSpendingTx(blockhash_opt.map(KotlinUtils.scala2kmp), txid, outputIndex, limit)
   }
 
-  def lookForSpendingTx(blockhash_opt: Option[fr.acinq.bitcoin.ByteVector32], txid: fr.acinq.bitcoin.ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+  def lookForSpendingTx(blockhash_opt: Option[fr.acinq.bitcoin.ByteVector32], txid: ByteVector32, outputIndex: Int, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] =
     for {
       blockhash <- blockhash_opt match {
         case Some(b) => Future.successful(b)
@@ -204,9 +206,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       // with a verbosity of 0, getblock returns the raw serialized block
       block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
       prevblockhash = block.header.hashPreviousBlock.reversed()
-      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-        case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
+      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == KotlinUtils.scala2kmp(txid) && i.outPoint.index == outputIndex)) match {
         case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
+        case None if limit > 0 => lookForSpendingTx(Some(prevblockhash), txid, outputIndex, limit - 1)
+        case None => Future.failed(new RuntimeException(s"couldn't find tx spending $txid:$outputIndex in the blockchain"))
       }
     } yield res
 

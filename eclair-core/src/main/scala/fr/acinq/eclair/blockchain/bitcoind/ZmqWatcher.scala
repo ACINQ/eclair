@@ -399,6 +399,8 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
                         client.lookForSpendingTx(None, w.txId, w.outputIndex).map { spendingTx =>
                           log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${spendingTx.txid}")
                           context.self ! ProcessNewTransaction(spendingTx)
+                        }.recover {
+                          case _ => log.warn(s"could not find the spending tx of ${w.txId}:${w.outputIndex} in the blockchain, funds are at risk")
                         }
                     }
                 }
