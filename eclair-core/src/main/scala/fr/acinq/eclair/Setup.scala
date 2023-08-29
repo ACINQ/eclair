@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnChainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
@@ -121,7 +121,7 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
-  val onchainKeyManager_opt = LocalOnchainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
+  val onChainKeyManager_opt = LocalOnChainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
 
   val (bitcoin, bitcoinChainHash) = {
     val wallet = {
@@ -142,18 +142,6 @@ class Setup(val datadir: File,
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)
 
-    def createEclairBackedWallet(wallets: List[String]): Future[Boolean] = {
-      if (wallet.exists(name => wallets.contains(name))) {
-        // wallet already exists
-        Future.successful(true)
-      } else {
-        new BitcoinCoreClient(bitcoinClient, onchainKeyManager_opt).createEclairBackedWallet().recover { case e =>
-          logger.error(s"cannot create descriptor wallet", e)
-          throw BitcoinWalletNotCreatedException(wallet.getOrElse(""))
-        }
-      }
-    }
-
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
@@ -161,8 +149,11 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
-      walletCreated <- createEclairBackedWallet(wallets)
-      _ = assert(walletCreated, "Cannot create eclair-backed wallet, check logs for details")
+      eclairBackedWalletOk <- onChainKeyManager_opt match {
+        case Some(keyManager) if !wallets.contains(keyManager.wallet) => keyManager.createWallet(bitcoinClient)
+        case _ => Future.successful(true)
+      }
+      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.wallet) != wallet, s"cannot create eclair-backed wallet=${onChainKeyManager_opt.map(_.wallet)}, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
@@ -201,7 +192,7 @@ class Setup(val datadir: File,
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onChainKeyManager_opt, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
@@ -236,9 +227,7 @@ class Setup(val datadir: File,
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash =>
-          FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case Block.SignetGenesisBlock.hash =>
+        case Block.RegtestGenesisBlock.hash | Block.SignetGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
@@ -263,7 +252,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, onchainKeyManager_opt) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (bitcoin.wallet == onChainKeyManager_opt.map(_.wallet)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -325,7 +314,7 @@ class Setup(val datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
+      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial address=$address for bitcoin wallet=${bitcoinClient.rpcClient.wallet.getOrElse("")}"))
 
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future
@@ -478,8 +467,6 @@ case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException
 case class BitcoinDefaultWalletException(loaded: List[String]) extends RuntimeException(s"no bitcoind wallet configured, but multiple wallets loaded: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
 
 case class BitcoinWalletNotLoadedException(wallet: String, loaded: List[String]) extends RuntimeException(s"configured wallet \"$wallet\" not in the set of loaded bitcoind wallets: ${loaded.map("\"" + _ + "\"").mkString("[", ",", "]")}")
-
-case class BitcoinWalletNotCreatedException(wallet: String) extends RuntimeException(s"configured wallet \"$wallet\" does not exist and could not be created.")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
 

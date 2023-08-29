@@ -21,10 +21,8 @@ import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.ProcessPsbtResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{randomBytes32, randomKey}
@@ -55,7 +53,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(FundTransactionResponse(tx, 0 sat, None))
   }
 
-  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[BitcoinCoreClient.ProcessPsbtResponse] = Future.successful(ProcessPsbtResponse(psbt, complete = true))
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = Future.successful(ProcessPsbtResponse(psbt, complete = true))
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
     published += (tx.txid -> tx)
@@ -155,7 +153,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
   }
 
-  private def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+  private def signTransaction(tx: Transaction): Future[SignTransactionResponse] = {
     val signedTx = tx.txIn.zipWithIndex.foldLeft(tx) {
       case (currentTx, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
         case Some(inputTx) =>
@@ -181,9 +179,8 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
       case (currentPsbt, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
         case Some(inputTx) =>
           val sig = Transaction.signInput(tx, index, Script.pay2pkh(pubkey), SigHash.SIGHASH_ALL, inputTx.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, privkey)
-          val updated = currentPsbt.updateWitnessInput(txIn.outPoint, inputTx.txOut(txIn.outPoint.index.toInt), null, Script.pay2pkh(pubkey).map(scala2kmp).asJava, null, java.util.Map.of())
-          val finalized = updated.getRight.finalizeWitnessInput(txIn.outPoint, Script.witnessPay2wpkh(pubkey, sig))
-          finalized.getRight
+          val updated = currentPsbt.updateWitnessInput(txIn.outPoint, inputTx.txOut(txIn.outPoint.index.toInt), null, Script.pay2pkh(pubkey).map(scala2kmp).asJava, null, java.util.Map.of()).getRight
+          updated.finalizeWitnessInput(txIn.outPoint, Script.witnessPay2wpkh(pubkey, sig)).getRight
         case None => currentPsbt
       }
     }
@@ -195,7 +192,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     val tx = Transaction(2, Nil, Seq(TxOut(amount, pubkeyScript)), 0)
     for {
       fundedTx <- fundTransaction(tx, feeRatePerKw, replaceable = true)
-      signedTx <- signTransaction(fundedTx.tx, allowIncomplete = true)
+      signedTx <- signTransaction(fundedTx.tx)
     } yield MakeFundingTxResponse(signedTx.tx, 0, fundedTx.fee)
   }
 

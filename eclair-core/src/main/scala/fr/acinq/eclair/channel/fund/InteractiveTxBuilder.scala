@@ -773,28 +773,30 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {
-      // we only sign our wallet inputs, and check that we can spend our wallet outputs
-      val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == OutPoint(i.previousTx, i.previousTxOutput.toInt)))
-      val ourWalletOutputs = unsignedTx.localOutputs.collect {
-        // README!! there are 2 types of local outputs:
-        // Change, which go back into our wallet
-        // NonChange, which go to an external address (typically during a splice-out)
-        // Here we only keep outputs which are ours i.e go back into our wallet
-        // And we trust that NonChange outputs are valid. This only works if the entry point for creating such outputs is trusted (for example, a secure API call)
-        case Output.Local.Change(_, amount, pubkeyScript) => tx.txOut.indexWhere(output => output.amount == amount && output.publicKeyScript == pubkeyScript)
+      // We only sign our wallet inputs, and check that we can spend our wallet outputs.
+      val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == i.outPoint))
+      val ourWalletOutputs = unsignedTx.localOutputs.flatMap {
+        case Output.Local.Change(_, amount, pubkeyScript) => Some(tx.txOut.indexWhere(output => output.amount == amount && output.publicKeyScript == pubkeyScript))
+        // Non-change outputs may go to an external address (typically during a splice-out).
+        // Here we only keep outputs which are ours i.e explicitly go back into our wallet.
+        // We trust that non-change outputs are valid: this only works if the entry point for creating such outputs is trusted (for example, a secure API call).
+        case _: Output.Local.NonChange => None
       }
       context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
         response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet
-          val partiallySignedTx = response.extractPartiallySignedTx
-          // partially signed PSBT must include spent amounts for all inputs that were signed, and we can "trust" these amounts because they are included
-          // in the hash that we signed (see BIP143). If our bitcoin node lied about them, then our signatures are invalid
+          val partiallySignedTx = response.partiallySignedTx
+          // Partially signed PSBT must include spent amounts for all inputs that were signed, and we can "trust" these amounts because they are included
+          // in the hash that we signed (see BIP143). If our bitcoin node lied about them, then our signatures are invalid.
           val actualLocalAmountIn = ourWalletInputs.map(i => kmp2scala(response.psbt.getInput(i).getWitnessUtxo.amount)).sum
           val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
-          require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount ${actualLocalAmountIn} does not match what we expect ($expectedLocalAmountIn")
+          require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount $actualLocalAmountIn does not match what we expect ($expectedLocalAmountIn): bitcoin core may be malicious")
           val actualLocalAmountOut = ourWalletOutputs.map(i => partiallySignedTx.txOut(i).amount).sum
-          val expectedLocalAmountOut = unsignedTx.localOutputs.collect { case c: Output.Local.Change => c.amount }.sum
-          require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount ${actualLocalAmountOut} does not match what we expect ($expectedLocalAmountOut")
+          val expectedLocalAmountOut = unsignedTx.localOutputs.map {
+            case c: Output.Local.Change => c.amount
+            case _: Output.Local.NonChange => 0.sat
+          }.sum
+          require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount $actualLocalAmountOut does not match what we expect ($expectedLocalAmountOut): bitcoin core may be malicious")
           val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
           PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt))
       }) {

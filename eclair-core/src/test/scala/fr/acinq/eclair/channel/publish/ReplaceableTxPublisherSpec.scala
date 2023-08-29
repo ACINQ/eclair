@@ -36,7 +36,7 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, Up
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.crypto.keymanager.LocalOnchainKeyManager
+import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
@@ -1655,7 +1655,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     // we use the wallet name as a passphrase to make sure we get a new empty wallet
     val entropy = ByteVector.fromValidHex("01" * 32)
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
-    val keyManager = new LocalOnchainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
+    val keyManager = new LocalOnChainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
     val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
       lazy val pubkey = {
@@ -1665,9 +1665,9 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
     }
-    walletClient.createEclairBackedWallet().pipeTo(probe.ref)
+    keyManager.createWallet(walletRpcClient).pipeTo(probe.ref)
     probe.expectMsg(true)
-    
+
     (walletRpcClient, walletClient)
   }
 }

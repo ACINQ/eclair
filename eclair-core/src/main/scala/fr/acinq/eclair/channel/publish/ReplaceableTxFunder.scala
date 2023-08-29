@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.OnChainWallet
@@ -295,7 +295,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case AddInputsOk(fundedTx, totalAmountIn) =>
-        log.info("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
+        log.debug("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
         sign(fundedTx, targetFeerate, totalAmountIn)
       case AddInputsFailed(reason) =>
         if (reason.getMessage.contains("Insufficient funds")) {
@@ -355,41 +355,39 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
-    // we finalize (sign) the input that we control, and will then ask our bitcoin client to sign wallet inputs
+    // We create a PSBT with the non-wallet input already signed:
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
-    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.input.txOut, null, fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.redeemScript), null, java.util.Map.of())
-    val finalized = updated.flatMap(_.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
-    finalized match {
+      .updateWitnessInput(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.input.txOut, null, fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.redeemScript), fr.acinq.bitcoin.SigHash.SIGHASH_ALL, java.util.Map.of())
+      .flatMap(_.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
+    psbt match {
       case Left(failure) =>
-        log.error(s"cannot sign ${cmd.desc}: ", failure)
+        log.error(s"cannot sign ${cmd.desc}: $failure")
         unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
       case Right(psbt1) =>
-        // the transaction that we want to fund/replace has one input, the first one. Additional inputs are provided by our onchain wallet.
-        val ourWalletInputs = locallySignedTx.txInfo.tx.txIn.indices.drop(1)
-        // for "claim anchor txs" there is a single change output that sends to our onchain wallet
-        // for htlc txs the first output is the one we want to fund/bump, additional outputs send to our onchain wallet
+        // The transaction that we want to fund/replace has one input, the first one. Additional inputs are provided by our on-chain wallet.
+        val ourWalletInputs = locallySignedTx.txInfo.tx.txIn.indices.tail
+        // For "claim anchor txs" there is a single change output that sends to our on-chain wallet.
+        // For htlc txs the first output is the one we want to fund/bump, additional outputs send to our on-chain wallet.
         val ourWalletOutputs = locallySignedTx match {
           case _: ClaimLocalAnchorWithWitnessData => Seq(0)
-          case _: HtlcWithWitnessData => locallySignedTx.txInfo.tx.txOut.indices.drop(1)
+          case _: HtlcWithWitnessData => locallySignedTx.txInfo.tx.txOut.indices.tail
         }
         context.pipeToSelf(bitcoinClient.signPsbt(psbt1, ourWalletInputs, ourWalletOutputs)) {
           case Success(processPsbtResponse) =>
-            val signedTx = processPsbtResponse.finalTx
-            val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
-            val actualWeight = locallySignedTx match {
-              case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + dummySignedCommitTx(cmd.commitment).tx.weight()
-              case _ =>
-                locallySignedTx.txInfo match {
-                  case _: HtlcSuccessTx => cmd.commitment.params.commitmentFormat.htlcSuccessInputWeight + signedTx.weight()
-                  case _: HtlcTimeoutTx => cmd.commitment.params.commitmentFormat.htlcTimeoutInputWeight + signedTx.weight()
+            processPsbtResponse.finalTx_opt match {
+              case Right(signedTx) =>
+                val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
+                val actualWeight = locallySignedTx match {
+                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + dummySignedCommitTx(cmd.commitment).tx.weight()
                   case _ => signedTx.weight()
                 }
-            }
-            val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
-            if (actualFeerate >= txFeerate * 2) {
-              SignWalletInputsFailed(new RuntimeException(s"actual fee rate $actualFeerate is more than twice the requested fee rate $txFeerate"))
-            } else {
-              SignWalletInputsOk(signedTx)
+                val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
+                if (actualFeerate >= txFeerate * 2) {
+                  SignWalletInputsFailed(new RuntimeException(s"actual fee rate $actualFeerate is more than twice the requested fee rate $txFeerate"))
+                } else {
+                  SignWalletInputsOk(signedTx)
+                }
+              case Left(failure) => SignWalletInputsFailed(new RuntimeException(s"could not sign psbt: $failure"))
             }
           case Failure(reason) => SignWalletInputsFailed(reason)
         }
@@ -439,31 +437,32 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // The anchor transaction is paying for the weight of the commitment transaction.
     val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTx.weight()))
 
-
-    def makeSingleOutputTx(fundTxResponse: OnChainWallet.FundTransactionResponse): Future[Transaction] = fundTxResponse.changePosition match {
-      case Some(changePos) =>
-        val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum)
-        val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput))
-        Future.successful(txSingleOutput)
-      case None =>
-        bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
-          // replace PlaceHolderPubKey with a real wallet key
-          val fundedTx = fundTxResponse.tx.copy(txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
-          fundedTx
-        })
+    def makeSingleOutputTx(fundTxResponse: OnChainWallet.FundTransactionResponse): Future[Transaction] = {
+      // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
+      val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
+      fundTxResponse.changePosition match {
+        case Some(changePos) =>
+          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum)
+          val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
+          Future.successful(txSingleOutput)
+        case None =>
+          bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
+            // replace PlaceHolderPubKey with a real wallet key
+            fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
+          })
+      }
     }
 
     for {
       fundTxResponse <- bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight))
       txSingleOutput <- makeSingleOutputTx(fundTxResponse)
-      changeOutput = txSingleOutput.txOut(0)
-      ourWalletInputs = fundTxResponse.tx.txIn.indices.filterNot(i => fundTxResponse.tx.txIn(i).outPoint == anchorTx.txInfo.input.outPoint)
+      changeOutput = txSingleOutput.txOut.head
+      ourWalletInputs = txSingleOutput.txIn.indices.tail // all inputs except the first one
       ourWalletOutputs = Seq(0) // one change output
       // We ask bitcoind to sign the wallet inputs to learn their final weight and adjust the change amount.
-      psbt = new Psbt(txSingleOutput)
-      processPsbtResponse <- bitcoinClient.signPsbt(psbt, ourWalletInputs, ourWalletOutputs)
+      processPsbtResponse <- bitcoinClient.signPsbt(new Psbt(txSingleOutput), ourWalletInputs, ourWalletOutputs)
       // we cannot extract the final tx from the psbt because it is not fully signed yet
-      partiallySignedTx = processPsbtResponse.extractPartiallySignedTx
+      partiallySignedTx = processPsbtResponse.partiallySignedTx
       dummySignedTx = addSigs(anchorTx.updateTx(partiallySignedTx).txInfo, PlaceHolderSig)
       packageWeight = commitTx.weight() + dummySignedTx.tx.weight()
       // above, we asked bitcoin core to use the package weight to estimate fees when it built and funded this transaction, so we
@@ -473,7 +472,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
 
       anchorTxFee = weight2fee(targetFeerate, packageWeight) - weight2fee(commitment.localCommit.spec.commitTxFeerate, commitTx.weight())
       changeAmount = dustLimit.max(fundTxResponse.amountIn - anchorTxFee)
-      fundedTx = fundTxResponse.tx.copy(txOut = Seq(changeOutput.copy(amount = changeAmount)))
+      fundedTx = txSingleOutput.copy(txOut = Seq(changeOutput.copy(amount = changeAmount)))
     } yield {
       (anchorTx.updateTx(fundedTx), fundTxResponse.amountIn)
     }
@@ -487,17 +486,17 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutInputWeight
     })
     bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight))).flatMap(fundTxResponse => {
-      val ourWalletInputs = fundTxResponse.tx.txIn.indices.filterNot(i => fundTxResponse.tx.txIn(i).outPoint == htlcTx.txInfo.input.outPoint)
-      val ourWalletOutputs = if (fundTxResponse.tx.txOut.size > 1) Seq(1) else Nil // there may not be a change output
-      val unsignedTx = htlcTx.updateTx(fundTxResponse.tx)
-      val psbt = new Psbt(fundTxResponse.tx)
-      bitcoinClient.signPsbt(psbt, ourWalletInputs, ourWalletOutputs).map(processPsbtResponse => {
+      // Bitcoin Core may not preserve the order of inputs, we need to make sure the htlc is the first input.
+      val fundedTx = fundTxResponse.tx.copy(txIn = htlcTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == htlcTx.txInfo.input.outPoint))
+      val ourWalletInputs = fundedTx.txIn.indices.tail // all inputs except the first one
+      val ourWalletOutputs = if (fundedTx.txOut.size > 1) Seq(1) else Nil // there may not be a change output
+      val unsignedTx = htlcTx.updateTx(fundedTx)
+      bitcoinClient.signPsbt(new Psbt(fundedTx), ourWalletInputs, ourWalletOutputs).map(processPsbtResponse => {
         val actualFees: Satoshi = processPsbtResponse.psbt.computeFees()
-        require(actualFees == fundTxResponse.fee, s"Bitcoin Core fees (${fundTxResponse.fee} do not match ours ($actualFees)")
-        val packageWeight = fundTxResponse.tx.weight() + htlcInputWeight.weight
+        require(actualFees == fundTxResponse.fee, s"Bitcoin Core fees (${fundTxResponse.fee}) do not match ours ($actualFees)")
+        val packageWeight = fundedTx.weight() + htlcInputWeight.weight
         val actualFeerate = Transactions.fee2rate(fundTxResponse.fee, packageWeight.toInt)
         require(actualFeerate < targetFeerate * 2, s"actual fee rate $actualFeerate is more than twice the requested fee rate $targetFeerate")
-
         (unsignedTx, fundTxResponse.amountIn)
       })
     })

@@ -73,15 +73,14 @@ trait OnChain {
 
   val getmasterxpub: Route = postRequest("getmasterxpub") { implicit t =>
     formFields("account".as[Long].?) { account_opt =>
-      val xpub = this.eclairApi.getOnchainMasterPubKey(account_opt.getOrElse(0L))
+      val xpub = eclairApi.getOnChainMasterPubKey(account_opt.getOrElse(0L))
       complete(new JObject(List("xpub" -> JString(xpub))))
     }
   }
 
   val getdescriptors: Route = postRequest("getdescriptors") { implicit t =>
-    formFields("account".as[Long].?) {
-      (account_opt) =>
-        val descriptors = this.eclairApi.getDescriptors(account_opt.getOrElse(0L))
+    formFields("account".as[Long].?) { account_opt =>
+        val descriptors = eclairApi.getDescriptors(account_opt.getOrElse(0L))
         complete(descriptors.descriptors)
     }
   }

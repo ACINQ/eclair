@@ -81,6 +81,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
@@ -244,6 +245,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",

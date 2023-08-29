@@ -19,7 +19,6 @@ package fr.acinq.eclair.blockchain
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.ProcessPsbtResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -34,12 +33,13 @@ trait OnChainChannelFunder {
 
   import OnChainWallet._
 
-  /** Fund the provided transaction by adding inputs (and a change output if necessary). */
+  /**
+   * Fund the provided transaction by adding inputs (and a change output if necessary).
+   * Callers must verify that the resulting transaction isn't sending funds to unexpected addresses (malicious bitcoin node).
+   */
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
-  /**
-   * sign a PSBT. Result may be partially signed: only inputs known to our bitcoin core wallet will be signed
-   */
+  /** Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. */
   def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse]
 
   /**
@@ -124,5 +124,31 @@ object OnChainWallet {
 
   final case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
+  }
+
+  final case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean) {
+
+    import fr.acinq.bitcoin.psbt.UpdateFailure
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    /** Transaction with all available witnesses. */
+    val partiallySignedTx: Transaction = {
+      var tx = psbt.getGlobal.getTx
+      for (i <- 0 until psbt.getInputs.size()) {
+        Option(psbt.getInputs.get(i).getScriptWitness).foreach { witness =>
+          tx = tx.updateWitness(i, witness)
+        }
+      }
+      tx
+    }
+
+    /** Extract a fully signed transaction if the psbt is finalized. */
+    val finalTx_opt: Either[UpdateFailure, Transaction] = {
+      val extracted: Either[UpdateFailure, fr.acinq.bitcoin.Transaction] = psbt.extract()
+      extracted match {
+        case Left(f) => Left(f)
+        case Right(tx) => Right(tx)
+      }
+    }
   }
 }

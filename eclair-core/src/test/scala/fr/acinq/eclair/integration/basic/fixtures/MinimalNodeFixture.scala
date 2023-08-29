@@ -17,7 +17,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnchainKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Switchboard}
@@ -66,15 +66,16 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def nodeParamsFor(alias: String, seed: ByteVector32): NodeParams = {
     NodeParams.makeNodeParams(
-      config = ConfigFactory.load().getConfig("eclair"),
-      instanceId = UUID.randomUUID(),
-      nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      torAddress_opt = None,
-      database = TestDatabases.inMemoryDb(),
-      blockHeight = new AtomicLong(400_000),
-      feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
-    ).modify(_.alias).setTo(alias)
+        config = ConfigFactory.load().getConfig("eclair"),
+        instanceId = UUID.randomUUID(),
+        nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        onChainKeyManager_opt = None,
+        torAddress_opt = None,
+        database = TestDatabases.inMemoryDb(),
+        blockHeight = new AtomicLong(400_000),
+        feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
+      ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
