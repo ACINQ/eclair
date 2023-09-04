@@ -424,6 +424,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val (fundingTx1, fundingTx2) = setup2Splices(f)
+    val commitAlice1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active(1).localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitAlice2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active(0).localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitBob1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active(1).localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitBob2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active(0).localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // splice 1 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
@@ -432,8 +436,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx1.txid)
     bob2alice.forward(alice)
-    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx1.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(fundingTx2.txid, commitAlice1.txid, commitBob1.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(fundingTx2.txid, commitAlice1.txid, commitBob1.txid)))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2, 1))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
 
@@ -444,8 +448,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
     bob2alice.forward(alice)
-    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
   }
@@ -478,6 +482,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val (fundingTx1, fundingTx2) = setup2Splices(f)
+    val commitAlice2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitBob2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // splice 2 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
@@ -486,8 +492,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
     bob2alice.forward(alice)
-    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
 
@@ -1403,7 +1409,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("put back watches after restart") { f =>
     import f._
 
-    val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    val commitments0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    val fundingTx0 = commitments0.localFundingStatus.signedTx_opt.get
     val (fundingTx1, fundingTx2) = setup2Splices(f)
 
     val (aliceNodeParams, bobNodeParams) = (alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams)
@@ -1423,7 +1430,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
     alice2blockchain.expectNoMessage(100 millis)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
@@ -1431,14 +1438,15 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
     bob2blockchain.expectNoMessage(100 millis)
   }
 
   test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
-    val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    val commitments0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    val fundingTx0 = commitments0.localFundingStatus.signedTx_opt.get
 
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx0)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx0)
@@ -1482,7 +1490,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchPublished(fundingTx2.txid)
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
     alice2blockchain.expectNoMessage(100 millis)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
@@ -1490,7 +1498,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchPublished(fundingTx2.txid)
     bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
     bob2blockchain.expectNoMessage(100 millis)
   }
 

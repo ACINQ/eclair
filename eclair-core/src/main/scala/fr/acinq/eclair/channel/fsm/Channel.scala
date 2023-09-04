@@ -288,7 +288,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   // in all other cases we need to be ready for any type of closing
                   watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet)
                 case _ =>
-                  watchFundingSpent(commitment)
+                  // Children splice transactions may already spend that confirmed funding transaction.
+                  val spliceSpendingTxs = data.commitments.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
+                  watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet)
               }
           }
         }

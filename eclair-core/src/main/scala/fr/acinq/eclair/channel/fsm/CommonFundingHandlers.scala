@@ -72,8 +72,10 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
       case (commitments1, commitment) =>
-        // first of all, we watch the funding tx that is now confirmed
-        watchFundingSpent(commitment)
+        // First of all, we watch the funding tx that is now confirmed.
+        // Children splice transactions may already spend that confirmed funding transaction.
+        val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
+        watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet)
         // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
         rollbackDualFundingTxs(d.commitments.active // note how we use the unpruned original commitments
           .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
