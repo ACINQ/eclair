@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.{ActorRef, FSM, Status}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
@@ -106,7 +107,20 @@ trait CommonHandlers {
     case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
     case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
-    case d => d.commitments.params.localParams.upfrontShutdownScript_opt.getOrElse(generateFinalScriptPubKey())
+    case d =>
+      d.commitments.params.localParams.upfrontShutdownScript_opt match {
+        case Some(upfrontShutdownScript) =>
+          if (data.commitments.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+            // we have a shutdown script, and the option_upfront_shutdown_script is enabled: we have to use it
+            upfrontShutdownScript
+          } else {
+            log.info("ignoring pre-generated shutdown script, because option_upfront_shutdown_script is disabled")
+            generateFinalScriptPubKey()
+          }
+        case None =>
+          // normal case: we don't pre-generate shutdown scripts
+          generateFinalScriptPubKey()
+      }
   }
 
   private def generateFinalScriptPubKey(): ByteVector = {
