@@ -103,16 +103,10 @@ object OfferPayment {
                          replyTo: ActorRef,
                          attemptNumber: Int,
                          sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
-    val destination = request.offer.contactInfo match {
-      case Left(blindedRoutes) =>
-        val blindedRoute = blindedRoutes(attemptNumber % blindedRoutes.length)
-        OnionMessages.BlindedPath(blindedRoute)
-      case Right(nodeId) =>
-        OnionMessages.Recipient(nodeId, None, None)
-    }
+    val contactInfo = request.offer.contactInfos(attemptNumber % request.offer.contactInfos.length)
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
     val routingStrategy = if (sendPaymentConfig.connectDirectly) OnionMessages.RoutingStrategy.connectDirectly else OnionMessages.RoutingStrategy.FindRoute
-    postman ! SendMessage(destination, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
+    postman ! SendMessage(contactInfo, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
     waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
   }
 

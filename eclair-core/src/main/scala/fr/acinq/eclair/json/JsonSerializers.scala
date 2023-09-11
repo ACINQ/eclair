@@ -440,9 +440,17 @@ object InvoiceSerializer extends MinimalSerializer({
           UnknownFeatureSerializer
       )),
       JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+        val introductionNode = path.route match {
+          case OfferTypes.BlindedPath(route) => route.introductionNodeId.toString
+          case OfferTypes.CompactBlindedPath(shortIdDir, _, _) => s"${if (shortIdDir.isNode1) '0' else '1'}x${shortIdDir.scid.toString}"
+        }
+        val blindedNodes = path.route match {
+          case OfferTypes.BlindedPath(route) => route.blindedNodes
+          case OfferTypes.CompactBlindedPath(_, _, nodes) => nodes
+        }
         JObject(List(
-          JField("introductionNodeId", JString(path.route.introductionNodeId.toString())),
-          JField("blindedNodeIds", JArray(path.route.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+          JField("introductionNodeId", JString(introductionNode)),
+          JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))
         ))
       }).toList)),
       JField("createdAt", JLong(p.createdAt.toLong)),

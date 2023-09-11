@@ -19,11 +19,11 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, nodeFee, randomBytes32}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
@@ -35,6 +35,13 @@ import scala.util.{Failure, Try}
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
 object OfferTypes {
+  case class ShortChannelIdDir(isNode1: Boolean, scid: RealShortChannelId)
+
+  sealed trait ContactInfo
+  sealed trait BlindedContactInfo extends ContactInfo
+  case class BlindedPath(route: BlindedRoute) extends BlindedContactInfo
+  case class CompactBlindedPath(introductionNode: ShortChannelIdDir, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) extends BlindedContactInfo
+  case class RecipientNodeId(nodeId: PublicKey) extends ContactInfo
 
   sealed trait Bolt12Tlv extends Tlv
 
@@ -84,7 +91,7 @@ object OfferTypes {
   /**
    * Paths that can be used to retrieve an invoice.
    */
-  case class OfferPaths(paths: Seq[BlindedRoute]) extends OfferTlv
+  case class OfferPaths(paths: Seq[BlindedContactInfo]) extends OfferTlv
 
   /**
    * Name of the offer creator.
@@ -144,7 +151,7 @@ object OfferTypes {
   /**
    * Payment paths to send the payment to.
    */
-  case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
+  case class InvoicePaths(paths: Seq[BlindedContactInfo]) extends InvoiceTlv
 
   case class PaymentInfo(feeBase: MilliSatoshi,
                          feeProportionalMillionths: Long,
@@ -228,12 +235,12 @@ object OfferTypes {
     val description: String = records.get[OfferDescription].get.description
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
-    private val paths: Option[Seq[BlindedRoute]] = records.get[OfferPaths].map(_.paths)
+    private val paths: Option[Seq[BlindedContactInfo]] = records.get[OfferPaths].map(_.paths)
     val issuer: Option[String] = records.get[OfferIssuer].map(_.issuer)
     val quantityMax: Option[Long] = records.get[OfferQuantityMax].map(_.max).map { q => if (q == 0) Long.MaxValue else q }
     val nodeId: PublicKey = records.get[OfferNodeId].map(_.publicKey).get
 
-    val contactInfo: Either[Seq[BlindedRoute], PublicKey] = paths.map(Left(_)).getOrElse(Right(nodeId))
+    val contactInfos: Seq[ContactInfo] = paths.getOrElse(Seq(RecipientNodeId(nodeId)))
 
     def encode(): String = {
       val data = OfferCodecs.offerTlvCodec.encode(records).require.bytes

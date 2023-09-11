@@ -663,15 +663,15 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
     TlvCodecs.tlvStream(MessageOnionCodecs.onionTlvCodec).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userTlvs, _)) =>
-        val destination = recipient match {
-          case Left(key) => OnionMessages.Recipient(key, None)
-          case Right(route) => OnionMessages.BlindedPath(route)
+        val contactInfo = recipient match {
+          case Left(key) => OfferTypes.RecipientNodeId(key)
+          case Right(route) => OfferTypes.BlindedPath(route)
         }
         val routingStrategy = intermediateNodes_opt match {
           case Some(intermediateNodes) => OnionMessages.RoutingStrategy.UseRoute(intermediateNodes)
           case None => OnionMessages.RoutingStrategy.FindRoute
         }
-        appKit.postman.ask(ref => Postman.SendMessage(destination, routingStrategy, userTlvs, expectsReply, ref)).map {
+        appKit.postman.ask(ref => Postman.SendMessage(contactInfo, routingStrategy, userTlvs, expectsReply, ref)).map {
           case Postman.Response(payload) => SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)

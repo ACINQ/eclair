@@ -86,7 +86,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
 }
 
-case class PaymentBlindedRoute(route: Sphinx.RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo)
+case class PaymentBlindedRoute(route: BlindedContactInfo, paymentInfo: PaymentInfo)
 
 object Bolt12Invoice {
   val hrp = "lni"

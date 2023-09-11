@@ -54,8 +54,12 @@ object OnionMessages {
   }
 
   // @formatter:off
-  sealed trait Destination
-  case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination
+  sealed trait Destination {
+    def nodeId: PublicKey
+  }
+  case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination {
+    override def nodeId: PublicKey = route.introductionNodeId
+  }
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination
   // @formatter:on
 

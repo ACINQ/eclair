@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{TimestampSecond, UInt64}
-import scodec.Codec
+import scodec.{Attempt, Codec, Err}
 import scodec.codecs._
 
 object OfferCodecs {
@@ -46,12 +46,34 @@ object OfferCodecs {
 
   private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
 
-  private val pathCodec: Codec[BlindedRoute] =
+  private val blindedPathCodec: Codec[BlindedPath] =
     (("firstNodeId" | publicKey) ::
       ("blinding" | publicKey) ::
-      ("path" | blindedNodesCodec)).as[BlindedRoute]
+      ("path" | blindedNodesCodec)).as[BlindedRoute].as[BlindedPath]
 
-  private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
+  private val isNode1: Codec[Boolean] = uint8.narrow(
+    n => if (n == 0) Attempt.Successful(true) else if (n == 1) Attempt.Successful(false) else Attempt.Failure(new Err.MatchingDiscriminatorNotFound(n)),
+    b => if (b) 0 else 1
+  )
+
+  private val shortChannelIdDirCodec: Codec[ShortChannelIdDir] =
+    (("isNode1" | isNode1) ::
+      ("scid" | realshortchannelid)).as[ShortChannelIdDir]
+
+  private val compactBlindedPathCodec: Codec[CompactBlindedPath] =
+    (("introductionNode" | shortChannelIdDirCodec) ::
+      ("blinding" | publicKey) ::
+      ("path" | blindedNodesCodec)).as[CompactBlindedPath]
+
+  private val pathCodec: Codec[BlindedContactInfo] = fallback(blindedPathCodec, compactBlindedPathCodec).xmap({
+    case Left(path) => path
+    case Right(compact) => compact
+  }, {
+    case path: BlindedPath => Left(path)
+    case compact: CompactBlindedPath => Right(compact)
+  })
+
+  private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
 
   private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
 
@@ -114,7 +136,7 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete
 
-  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
+  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
 
   private val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::
