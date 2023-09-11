@@ -22,8 +22,11 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
     msg
   }
 
-  def expectWatchFundingSpent(txid: ByteVector32): WatchFundingSpent =
-    expectMsgTypeHaving[WatchFundingSpent](w => assert(w.txId == txid, "txid"))
+  def expectWatchFundingSpent(txid: ByteVector32, hints_opt: Option[Set[ByteVector32]] = None): WatchFundingSpent =
+    expectMsgTypeHaving[WatchFundingSpent](w => {
+      assert(w.txId == txid, "txid")
+      hints_opt.foreach(hints => assert(hints == w.hints))
+    })
 
   def expectWatchFundingConfirmed(txid: ByteVector32): WatchFundingConfirmed =
     expectMsgTypeHaving[WatchFundingConfirmed](w => assert(w.txId == txid, "txid"))
