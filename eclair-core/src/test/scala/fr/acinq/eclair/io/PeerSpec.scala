@@ -50,7 +50,7 @@ class PeerSpec extends FixtureSpec {
 
   override implicit val patienceConfig: PatienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, mockLimiter: ActorRef) {
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, register: TestProbe, mockLimiter: ActorRef) {
     implicit val implicitSystem: ActorSystem = system
 
     def cleanup(): Unit = TestKit.shutdownActorSystem(system)
@@ -63,6 +63,7 @@ class PeerSpec extends FixtureSpec {
     val peerConnection = TestProbe()
     val channel = TestProbe()
     val switchboard = TestProbe()
+    val register = TestProbe()
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
@@ -98,9 +99,9 @@ class PeerSpec extends FixtureSpec {
       case _ => KeepRunning
     })
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, mockLimiter.ref))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, register.ref, mockLimiter.ref))
 
-    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, mockLimiter.ref)
+    FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, register, mockLimiter.ref)
   }
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()

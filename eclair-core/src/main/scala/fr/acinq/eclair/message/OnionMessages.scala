@@ -17,6 +17,7 @@
 package fr.acinq.eclair.message
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
@@ -153,7 +154,7 @@ object OnionMessages {
   // @formatter:off
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
-  case class SendMessage(nextNodeId: PublicKey, message: OnionMessage) extends Action
+  case class SendMessage(nextNode: Either[ShortChannelId, PublicKey], message: OnionMessage) extends Action
   case class ReceiveMessage(finalPayload: FinalPayload) extends Action
 
   sealed trait DropReason
@@ -199,7 +200,8 @@ object OnionMessages {
               case Left(f) => DropMessage(f)
               case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
                 case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-                  case SendMessage(nextNodeId, nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
+                  case SendMessage(Right(nextNodeId), nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
+                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg)
                   case action => action
                 }
                 case None => validateFinalPayload(payload, blindedPayload)
@@ -216,7 +218,7 @@ object OnionMessages {
   private def validateRelayPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Action = {
     IntermediatePayload.validate(payload, blindedPayload, nextBlinding) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
-      case Right(relayPayload) => SendMessage(relayPayload.nextNodeId, OnionMessage(nextBlinding, nextPacket))
+      case Right(relayPayload) => SendMessage(relayPayload.nextNode, OnionMessage(nextBlinding, nextPacket))
     }
   }
 

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.typed
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -77,6 +78,9 @@ class Register() extends Actor with ActorLogging {
 
     case Symbol("channelsTo") => sender() ! channelsTo
 
+    case GetNextNodeId(replyTo, shortChannelId) =>
+      replyTo ! shortIds.get(shortChannelId).flatMap(cid => channelsTo.get(cid))
+
     case fwd@Forward(replyTo, channelId, msg) =>
       // for backward compatibility with legacy ask, we use the replyTo as sender
       val compatReplyTo = if (replyTo == null) sender() else replyTo.toClassic
@@ -106,4 +110,6 @@ object Register {
   case class ForwardFailure[T](fwd: Forward[T])
   case class ForwardShortIdFailure[T](fwd: ForwardShortId[T])
   // @formatter:on
+
+  case class GetNextNodeId(replyTo: typed.ActorRef[Option[PublicKey]], shortChannelId: ShortChannelId)
 }

@@ -115,13 +115,13 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     // Checking that the onion is relayed properly
     process(alice, onionForAlice) match {
-      case SendMessage(nextNodeId, onionForBob) =>
+      case SendMessage(Right(nextNodeId), onionForBob) =>
         assert(nextNodeId == bob.publicKey)
         process(bob, onionForBob) match {
-          case SendMessage(nextNodeId, onionForCarol) =>
+          case SendMessage(Right(nextNodeId), onionForCarol) =>
             assert(nextNodeId == carol.publicKey)
             process(carol, onionForCarol) match {
-              case SendMessage(nextNodeId, onionForDave) =>
+              case SendMessage(Right(nextNodeId), onionForDave) =>
                 assert(nextNodeId == dave.publicKey)
                 process(dave, onionForDave) match {
                   case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
@@ -234,10 +234,10 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {
-      case SendMessage(nextNodeId, onionForBob) =>
+      case SendMessage(Right(nextNodeId), onionForBob) =>
         assert(nextNodeId == bob.publicKey)
         process(bob, onionForBob) match {
-          case SendMessage(nextNodeId, onionForCarol) =>
+          case SendMessage(Right(nextNodeId), onionForCarol) =>
             assert(nextNodeId == carol.publicKey)
             process(carol, onionForCarol) match {
               case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
@@ -328,13 +328,13 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     // Checking that the onion is relayed properly
     process(alice, message) match {
-      case SendMessage(nextNodeId, onionForBob) =>
+      case SendMessage(Right(nextNodeId), onionForBob) =>
         assert(nextNodeId == bob.publicKey)
         process(bob, onionForBob) match {
-          case SendMessage(nextNodeId, onionForCarol) =>
+          case SendMessage(Right(nextNodeId), onionForCarol) =>
             assert(nextNodeId == carol.publicKey)
             process(carol, onionForCarol) match {
-              case SendMessage(nextNodeId, onionForDave) =>
+              case SendMessage(Right(nextNodeId), onionForDave) =>
                 assert(nextNodeId == dave.publicKey)
                 process(dave, onionForDave) match {
                   case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))

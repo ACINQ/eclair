@@ -22,14 +22,15 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.io.{MessageRelay, Switchboard}
+import fr.acinq.eclair.io.MessageRelay
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.message.OnionMessages.{Destination, RoutingStrategy}
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{MessageRoute, MessageRouteNotFound, MessageRouteResponse}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoiceRequestPayload}
-import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{OnionMessage, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.{NodeParams, ShortChannelId, randomBytes32, randomKey}
 
 import scala.collection.mutable
 
@@ -50,6 +51,12 @@ object Postman {
                          message: TlvStream[OnionMessagePayloadTlv],
                          expectsReply: Boolean,
                          replyTo: ActorRef[OnionMessageResponse]) extends Command
+  case class RelayMessage(messageId: ByteVector32,
+                          prevNodeId: Option[PublicKey],
+                          nextNode: Either[ShortChannelId, PublicKey],
+                          message: OnionMessage,
+                          relayPolicy: RelayPolicy,
+                          replyTo_opt: Option[ActorRef[MessageRelay.Status]]) extends Command
   case class Subscribe(pathId: ByteVector32, replyTo: ActorRef[OnionMessageResponse]) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
   case class WrappedMessage(finalPayload: FinalPayload) extends Command
@@ -62,7 +69,7 @@ object Postman {
   case class MessageFailed(reason: String) extends MessageStatus
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, switchboard: ActorRef[Switchboard.RelayMessage], router: ActorRef[Router.MessageRouteRequest], offerManager: typed.ActorRef[OfferManager.RequestInvoice]): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, switchboard: akka.actor.ActorRef, router: ActorRef[Router.MessageRouteRequest], register: akka.actor.ActorRef, offerManager: typed.ActorRef[OfferManager.RequestInvoice]): Behavior[Command] = {
     Behaviors.setup(context => {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
 
@@ -85,8 +92,12 @@ object Postman {
           }
           Behaviors.same
         case SendMessage(destination, routingStrategy, messageContent, expectsReply, replyTo) =>
-          val child = context.spawnAnonymous(SendingMessage(nodeParams, switchboard, router, context.self, destination, messageContent, routingStrategy, expectsReply, replyTo))
+          val child = context.spawnAnonymous(SendingMessage(nodeParams, router, context.self, destination, messageContent, routingStrategy, expectsReply, replyTo))
           child ! SendingMessage.SendMessage
+          Behaviors.same
+        case RelayMessage(messageId, prevNodeId, nextNode, dataToRelay, relayPolicy, replyTo) =>
+          val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
+          relay ! MessageRelay.RelayMessage(messageId, switchboard, register, prevNodeId.getOrElse(nodeParams.nodeId), nextNode, dataToRelay, relayPolicy, replyTo)
           Behaviors.same
         case Subscribe(pathId, replyTo) =>
           subscribed += (pathId -> replyTo)
@@ -112,7 +123,6 @@ object SendingMessage {
   // @formatter:on
 
   def apply(nodeParams: NodeParams,
-            switchboard: ActorRef[Switchboard.RelayMessage],
             router: ActorRef[Router.MessageRouteRequest],
             postman: ActorRef[Postman.Command],
             destination: Destination,
@@ -121,14 +131,13 @@ object SendingMessage {
             expectsReply: Boolean,
             replyTo: ActorRef[Postman.OnionMessageResponse]): Behavior[Command] = {
     Behaviors.setup(context => {
-      val actor = new SendingMessage(nodeParams, switchboard, router, postman, destination, message, routingStrategy, expectsReply, replyTo, context)
+      val actor = new SendingMessage(nodeParams, router, postman, destination, message, routingStrategy, expectsReply, replyTo, context)
       actor.start()
     })
   }
 }
 
 private class SendingMessage(nodeParams: NodeParams,
-                             switchboard: ActorRef[Switchboard.RelayMessage],
                              router: ActorRef[Router.MessageRouteRequest],
                              postman: ActorRef[Postman.Command],
                              destination: Destination,
@@ -193,7 +202,7 @@ private class SendingMessage(nodeParams: NodeParams,
         replyTo ! Postman.MessageFailed(failure.toString)
         Behaviors.stopped
       case Right((nextNodeId, message)) =>
-        switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
+        postman ! Postman.RelayMessage(messageId, None, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
         waitForSent()
     }
   }
