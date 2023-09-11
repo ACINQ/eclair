@@ -1288,10 +1288,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = true).pipeTo(sender.ref)
     sender.expectMsg(true)
 
-    generateBlocks(1)
+    generateBlocks(10)
     bitcoinClient.lookForMempoolSpendingTx(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
-    bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt).pipeTo(sender.ref)
+    bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, limit = 5).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+    bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, limit = 15).pipeTo(sender.ref)
     sender.expectMsg(tx1)
   }
 
