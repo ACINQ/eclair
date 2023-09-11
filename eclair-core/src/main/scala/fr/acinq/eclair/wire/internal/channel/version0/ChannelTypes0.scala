@@ -199,7 +199,7 @@ private[channel] object ChannelTypes0 {
       nodeId = nodeId,
       dustLimit = dustLimit,
       maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
-      requestedChannelReserve_opt = requestedChannelReserve_opt,
+      initialRequestedChannelReserve_opt = requestedChannelReserve_opt,
       htlcMinimum = htlcMinimum,
       toSelfDelay = toSelfDelay,
       maxAcceptedHtlcs = maxAcceptedHtlcs,

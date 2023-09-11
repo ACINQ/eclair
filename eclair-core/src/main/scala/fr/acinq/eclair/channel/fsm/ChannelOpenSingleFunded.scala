@@ -85,7 +85,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         pushMsat = input.pushAmount_opt.getOrElse(0 msat),
         dustLimitSatoshis = input.localParams.dustLimit,
         maxHtlcValueInFlightMsat = UInt64(input.localParams.maxHtlcValueInFlightMsat.toLong),
-        channelReserveSatoshis = input.localParams.requestedChannelReserve_opt.get,
+        channelReserveSatoshis = input.localParams.initialRequestedChannelReserve_opt.get,
         htlcMinimumMsat = input.localParams.htlcMinimum,
         feeratePerKw = input.commitTxFeerate,
         toSelfDelay = input.localParams.toSelfDelay,
@@ -114,7 +114,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-            requestedChannelReserve_opt = Some(open.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
+            initialRequestedChannelReserve_opt = Some(open.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = open.htlcMinimumMsat,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
@@ -136,7 +136,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = d.initFundee.localParams.dustLimit,
             maxHtlcValueInFlightMsat = UInt64(d.initFundee.localParams.maxHtlcValueInFlightMsat.toLong),
-            channelReserveSatoshis = d.initFundee.localParams.requestedChannelReserve_opt.get,
+            channelReserveSatoshis = d.initFundee.localParams.initialRequestedChannelReserve_opt.get,
             minimumDepth = minimumDepth.getOrElse(0),
             htlcMinimumMsat = d.initFundee.localParams.htlcMinimum,
             toSelfDelay = d.initFundee.localParams.toSelfDelay,
@@ -172,7 +172,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            requestedChannelReserve_opt = Some(accept.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
+            initialRequestedChannelReserve_opt = Some(accept.channelReserveSatoshis), // our peer requires us to always have at least that much satoshis in our balance
             htlcMinimum = accept.htlcMinimumMsat,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,

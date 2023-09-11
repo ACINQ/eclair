@@ -27,8 +27,8 @@ case class ChannelParams(channelId: ByteVector32,
                          channelFlags: ChannelFlags) {
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
-  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.requestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
-  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.requestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.initialRequestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
 
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
   val channelType: SupportedChannelType = channelFeatures.channelType
@@ -106,14 +106,14 @@ case class ChannelParams(channelId: ByteVector32,
   def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(remoteParams.dustLimit)
   } else {
-    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+    remoteParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /** Channel reserve that applies to our peer's funds. */
   def remoteChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(localParams.dustLimit)
   } else {
-    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+    localParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /**
