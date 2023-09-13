@@ -1873,7 +1873,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           var sendQueue = Queue.empty[LightningMessage]
           // normal case, our data is up-to-date
 
-          // re-send channel_ready or splice_locked
+          // re-send channel_ready if necessary
           if (d.commitments.latest.fundingTxIndex == 0 && channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommitIndex == 0) {
             // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
             log.debug("re-sending channelReady")
@@ -1881,18 +1881,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
             val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
             sendQueue = sendQueue :+ channelReady
-          } else {
-            // NB: there is a key difference between channel_ready and splice_confirmed:
-            // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
-            // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices, so
-            //   we must keep sending our most recent splice_locked at each reconnection
-            val spliceLocked = d.commitments.active
-              .filter(c => c.fundingTxIndex > 0) // only consider splice txs
-              .collectFirst { case c if c.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked] =>
-                log.debug(s"re-sending splice_locked for fundingTxId=${c.fundingTxId}")
-                SpliceLocked(d.channelId, c.fundingTxId.reverse)
-              }
-            sendQueue = sendQueue ++ spliceLocked
           }
 
           // resume splice signing session if any
@@ -1934,6 +1922,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               }
             case None => d.spliceStatus
           }
+
+          // re-send splice_locked (must come *after* potentially retransmitting tx_signatures)
+          // NB: there is a key difference between channel_ready and splice_confirmed:
+          // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
+          // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices, so
+          //   we must keep sending our most recent splice_locked at each reconnection
+          val spliceLocked = d.commitments.active
+            .filter(c => c.fundingTxIndex > 0) // only consider splice txs
+            .collectFirst { case c if c.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked] =>
+              log.debug(s"re-sending splice_locked for fundingTxId=${c.fundingTxId}")
+              SpliceLocked(d.channelId, c.fundingTxId.reverse)
+            }
+          sendQueue = sendQueue ++ spliceLocked
 
           // we may need to retransmit updates and/or commit_sig and/or revocation
           sendQueue = sendQueue ++ syncSuccess.retransmit
