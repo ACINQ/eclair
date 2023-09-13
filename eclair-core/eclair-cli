@@ -43,6 +43,7 @@ and COMMAND is one of the available commands:
     - spliceout
     - close
     - forceclose
+    - bumpforceclose
     - channel
     - channels
     - closedchannels

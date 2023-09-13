@@ -13,6 +13,7 @@ scenarii. Note that even in a force close scenario, when an output is only spend
 the normal closing priority is used.
 
 Default setting is `medium` for both funding and closing. Node operators may configure their values like so:
+
 ```eclair.conf
 eclair.on-chain-fees.confirmation-priority {
     funding = fast
@@ -24,7 +25,7 @@ This configuration section replaces the previous `eclair.on-chain-fees.target-bl
 
 ### API changes
 
-<insert changes>
+- `bumpforceclose` can be used to make a force-close confirm faster, by spending the anchor output (#2743)
 
 ### Miscellaneous improvements and bug fixes
 

@@ -19,12 +19,12 @@ package fr.acinq.eclair.api.handlers
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.{Satoshi, Script}
-import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{ChannelTypes, ClosingFeerates}
+import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import scodec.bits.ByteVector
 
 trait Channel {
@@ -115,6 +115,14 @@ trait Channel {
     }
   }
 
+  val bumpForceClose: Route = postRequest("bumpforceclose") { implicit t =>
+    withChannelsIdentifier { channels =>
+      formFields(confirmationPriorityFormParam) { priority =>
+        complete(eclairApi.bumpForceCloseFee(channels, ConfirmationTarget.Priority(priority)))
+      }
+    }
+  }
+
   val channel: Route = postRequest("channel") { implicit t =>
     withChannelIdentifier { channel =>
       complete(eclairApi.channelInfo(channel))
@@ -155,6 +163,6 @@ trait Channel {
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }
