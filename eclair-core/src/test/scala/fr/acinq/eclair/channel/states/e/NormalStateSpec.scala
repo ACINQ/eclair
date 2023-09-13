@@ -3476,7 +3476,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 3
       alice2blockchain.expectMsgType[WatchOutputSpent], // htlc 4
       alice2blockchain.expectMsgType[WatchOutputSpent], // local anchor
-    ).map(w => OutPoint(w.txId.reverse, w.outputIndex)).toSet
+    ).map(w => OutPoint(w.txId, w.outputIndex)).toSet
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(watchedOutputs == localCommitPublished.htlcTxs.keySet + localAnchor.txInfo.input.outPoint)
     alice2blockchain.expectNoMessage(1 second)

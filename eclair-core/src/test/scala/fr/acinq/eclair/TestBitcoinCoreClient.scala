@@ -17,7 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Transaction, TxId}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
@@ -34,15 +34,15 @@ class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreC
 
   system.scheduler.scheduleWithFixedDelay(100 milliseconds, 100 milliseconds)(() => system.eventStream.publish(NewBlock(randomBytes32())))
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
     system.eventStream.publish(NewTransaction(tx))
     Future.successful(tx.txid)
   }
 
-  override def getTxConfirmations(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
+  override def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("not implemented"))
+  override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("not implemented"))
 
-  override def getTransactionShortId(txId: ByteVector32)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] = Future.successful((BlockHeight(400000), 42))
+  override def getTransactionShortId(txId: TxId)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] = Future.successful((BlockHeight(400000), 42))
 
 }

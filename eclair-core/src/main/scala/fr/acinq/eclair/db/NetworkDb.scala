@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
@@ -36,7 +36,7 @@ trait NetworkDb {
 
   def listNodes(): Seq[NodeAnnouncement]
 
-  def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit
+  def addChannel(c: ChannelAnnouncement, txid: TxId, capacity: Satoshi): Unit
 
   def updateChannel(u: ChannelUpdate): Unit
 

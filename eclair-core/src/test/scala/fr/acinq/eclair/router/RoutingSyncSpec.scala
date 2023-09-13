@@ -20,7 +20,7 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
@@ -355,7 +355,7 @@ object RoutingSyncSpec {
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), TestConstants.Bob.nodeParams.features.nodeAnnouncementFeatures())
     val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "b", Color(0, 0, 0), List(), Features.empty)
-    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
+    val publicChannel = PublicChannel(channelAnn_12, TxId(ByteVector32.Zeroes), Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 

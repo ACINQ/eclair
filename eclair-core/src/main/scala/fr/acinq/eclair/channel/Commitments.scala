@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -225,7 +225,7 @@ case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
 
 object LocalCommit {
-  def fromCommitSig(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxId: ByteVector32,
+  def fromCommitSig(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxId: TxId,
                     fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey): Either[ChannelException, LocalCommit] = {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommitIndex, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
@@ -249,7 +249,7 @@ object LocalCommit {
 }
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey) {
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: TxId, remotePerCommitmentPoint: PublicKey) {
   def sign(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, index, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, remotePerCommitmentPoint, spec)
     val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Remote, params.commitmentFormat)
@@ -276,7 +276,7 @@ case class Commitment(fundingTxIndex: Long,
                       localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
-  val fundingTxId: ByteVector32 = commitInput.outPoint.txid
+  val fundingTxId: TxId = commitInput.outPoint.txid
   val capacity: Satoshi = commitInput.txOut.amount
 
   /** Channel reserve that applies to our funds. */
@@ -1148,7 +1148,7 @@ case class Commitments(params: ChannelParams,
     params.channelFeatures.hasFeature(Features.DualFunding) && commitSig.batchSize == 1 && latestRemoteSig == commitSig.signature
   }
 
-  def localFundingSigs(fundingTxId: ByteVector32): Option[TxSignatures] = {
+  def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
   }
 
@@ -1158,7 +1158,7 @@ case class Commitments(params: ChannelParams,
    * @param updateMethod This method is tricky: it passes the fundingTxIndex of the commitment corresponding to the
    *                     fundingTxId, because in the remote case we may update several commitments.
    */
-  private def updateFundingStatus(fundingTxId: ByteVector32, updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
+  private def updateFundingStatus(fundingTxId: TxId, updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
     all.find(_.fundingTxId == fundingTxId) match {
       case Some(commitment) =>
         val commitments1 = copy(
@@ -1174,7 +1174,7 @@ case class Commitments(params: ChannelParams,
     }
   }
 
-  def updateLocalFundingStatus(fundingTxId: ByteVector32, status: LocalFundingStatus)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
     updateFundingStatus(fundingTxId, _ => {
       case c if c.fundingTxId == fundingTxId =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
@@ -1182,7 +1182,7 @@ case class Commitments(params: ChannelParams,
       case c => c
     })
 
-  def updateRemoteFundingStatus(fundingTxId: ByteVector32)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+  def updateRemoteFundingStatus(fundingTxId: TxId)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
     updateFundingStatus(fundingTxId, fundingTxIndex => {
       // all funding older than this one are considered locked
       case c if c.fundingTxId == fundingTxId || c.fundingTxIndex < fundingTxIndex =>

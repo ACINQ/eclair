@@ -18,7 +18,8 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong, TxId}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -29,7 +30,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -219,14 +220,14 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
     val bobSigs = bob2alice.expectMsgType[TxSignatures]
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2alice.forward(alice, bobSigs.copy(txHash = randomBytes32(), witnesses = Nil))
+    bob2alice.forward(alice, bobSigs.copy(txId = randomTxId(), witnesses = Nil))
     alice2bob.expectMsgType[Error]
     awaitCond(wallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
     // Bob has sent his signatures already, so he cannot close the channel yet.
-    alice2bob.forward(bob, TxSignatures(channelId(alice), randomBytes32(), Nil))
+    alice2bob.forward(bob, TxSignatures(channelId(alice), randomTxId(), Nil))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
@@ -390,7 +391,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
   }
 
-  private def reconnect(f: FixtureParam, fundingTxId: ByteVector32): Unit = {
+  private def reconnect(f: FixtureParam, fundingTxId: TxId): Unit = {
     import f._
 
     val listener = TestProbe()

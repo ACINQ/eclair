@@ -1,7 +1,7 @@
 package fr.acinq.eclair.testutils
 
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingSpent, WatchPublished, WatchTxConfirmed}
 import fr.acinq.eclair.channel.AvailableBalanceChanged
@@ -22,19 +22,19 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
     msg
   }
 
-  def expectWatchFundingSpent(txid: ByteVector32, hints_opt: Option[Set[ByteVector32]] = None): WatchFundingSpent =
+  def expectWatchFundingSpent(txid: TxId, hints_opt: Option[Set[TxId]] = None): WatchFundingSpent =
     expectMsgTypeHaving[WatchFundingSpent](w => {
       assert(w.txId == txid, "txid")
       hints_opt.foreach(hints => assert(hints == w.hints))
     })
 
-  def expectWatchFundingConfirmed(txid: ByteVector32): WatchFundingConfirmed =
+  def expectWatchFundingConfirmed(txid: TxId): WatchFundingConfirmed =
     expectMsgTypeHaving[WatchFundingConfirmed](w => assert(w.txId == txid, "txid"))
 
-  def expectWatchTxConfirmed(txid: ByteVector32): WatchTxConfirmed =
+  def expectWatchTxConfirmed(txid: TxId): WatchTxConfirmed =
     expectMsgTypeHaving[WatchTxConfirmed](w => assert(w.txId == txid, "txid"))
 
-  def expectWatchPublished(txid: ByteVector32): WatchPublished =
+  def expectWatchPublished(txid: TxId): WatchPublished =
     expectMsgTypeHaving[WatchPublished](w => assert(w.txId == txid, "txid"))
 
   def expectAvailableBalanceChanged(balance: MilliSatoshi, capacity: Satoshi): AvailableBalanceChanged =

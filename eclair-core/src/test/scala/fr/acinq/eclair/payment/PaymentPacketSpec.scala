@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
@@ -704,7 +705,7 @@ object PaymentPacketSpec {
     val channelReserve = testCapacity * 0.01
     val localParams = LocalParams(null, null, null, Long.MaxValue.msat, Some(channelReserve), null, null, 0, isInitiator = true, None, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
-    val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
+    val commitInput = InputInfo(OutPoint(randomTxId(), 1), TxOut(testCapacity, Nil), Nil)
     val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), null), Nil)
     val remoteCommit = RemoteCommit(0, null, null, randomKey().publicKey)
     val localChanges = LocalChanges(Nil, Nil, Nil)

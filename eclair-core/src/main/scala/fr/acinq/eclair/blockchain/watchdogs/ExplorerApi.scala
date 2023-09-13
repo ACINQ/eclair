@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.pattern.after
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -56,7 +56,7 @@ object ExplorerApi {
     /** Explorer friendly-name. */
     def name: String
     /** Map from chainHash to explorer API URI. */
-    def baseUris: Map[ByteVector32, Uri]
+    def baseUris: Map[BlockHash, Uri]
     /** Fetch latest headers from the explorer. */
     def getLatestHeaders(baseUri: Uri, currentBlockHeight: BlockHeight)(implicit context: ActorContext[Command]): Future[LatestHeaders]
     // @formatter:on
@@ -69,7 +69,7 @@ object ExplorerApi {
   private case class WrappedFailure(e: Throwable) extends Command
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, currentBlockHeight: BlockHeight, explorer: Explorer): Behavior[Command] = {
+  def apply(chainHash: BlockHash, currentBlockHeight: BlockHeight, explorer: Explorer): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.receiveMessage {
         case CheckLatestHeaders(replyTo) =>
@@ -164,7 +164,7 @@ object ExplorerApi {
             val JString(time) = block \ "time"
             val JInt(bits) = block \ "bits"
             val JInt(nonce) = block \ "nonce"
-            val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val previousBlockHash = (block \ "prev_block").extractOpt[String].map(h => BlockHash(ByteVector32.fromValidHex(h))).getOrElse(BlockHash(ByteVector32.Zeroes))
             val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
             val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
             Seq(BlockHeaderAt(BlockHeight(height.toLong), header))
@@ -193,7 +193,7 @@ object ExplorerApi {
             val JInt(time) = block \ "timestamp"
             val JInt(bits) = block \ "bits"
             val JInt(nonce) = block \ "nonce"
-            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(h => BlockHash(ByteVector32.fromValidHex(h))).getOrElse(BlockHash(ByteVector32.Zeroes))
             val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
             val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
             BlockHeaderAt(BlockHeight(height.toLong), header)

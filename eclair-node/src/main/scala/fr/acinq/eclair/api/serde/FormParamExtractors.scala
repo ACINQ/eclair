@@ -19,7 +19,7 @@ package fr.acinq.eclair.api.serde
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, TxId}
 import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, FeeratePerByte}
@@ -67,7 +67,7 @@ object FormParamExtractors {
 
   implicit val outPointListUnmarshaller: Unmarshaller[String, List[OutPoint]] = listUnmarshaller(outPoint => {
     val parts = outPoint.split(":")
-    OutPoint(ByteVector32.fromValidHex(parts.head).reverse, parts.last.toLong)
+    OutPoint(TxId.fromValidHex(parts.head), parts.last.toLong)
   })
 
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }

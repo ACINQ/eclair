@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
@@ -43,7 +43,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
 
   // Copy of Bolt11Invoice.apply that doesn't strip unknown features
-  def createInvoiceUnsafe(chainHash: ByteVector32,
+  def createInvoiceUnsafe(chainHash: BlockHash,
                           amount: Option[MilliSatoshi],
                           paymentHash: ByteVector32,
                           privateKey: PrivateKey,

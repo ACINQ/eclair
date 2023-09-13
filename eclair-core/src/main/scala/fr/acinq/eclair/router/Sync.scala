@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
@@ -481,7 +481,7 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[RealShortChannelId, PublicChannel]): ReplyChannelRange = {
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: BlockHash, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[RealShortChannelId, PublicChannel]): ReplyChannelRange = {
     val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>

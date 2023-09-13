@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
@@ -865,7 +865,7 @@ class AuditDbSpec extends AnyFunSuite {
       val channelId = randomBytes32()
       val scid = ShortChannelId(123)
       val remoteNodeId = randomKey().publicKey
-      val u = Announcements.makeChannelUpdate(randomBytes32(), randomKey(), remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
+      val u = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
       dbs.audit.addChannelUpdate(ChannelUpdateParametersChanged(null, channelId, remoteNodeId, u))
     }
   }

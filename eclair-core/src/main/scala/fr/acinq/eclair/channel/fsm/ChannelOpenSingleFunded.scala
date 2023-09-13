@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.pattern.pipe
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, TxHash}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -212,7 +212,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_INTERNAL(params, fundingAmount, pushMsat, commitTxFeerate, remoteFundingPubKey, remoteFirstPerCommitmentPoint, replyTo)) =>
       val temporaryChannelId = params.channelId
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      Funding.makeFirstCommitTxs(keyManager, params, localFundingAmount = fundingAmount, remoteFundingAmount = 0 sat, localPushAmount = pushMsat, remotePushAmount = 0 msat, commitTxFeerate, fundingTx.hash, fundingTxOutputIndex, remoteFundingPubKey = remoteFundingPubKey, remoteFirstPerCommitmentPoint = remoteFirstPerCommitmentPoint) match {
+      Funding.makeFirstCommitTxs(keyManager, params, localFundingAmount = fundingAmount, remoteFundingAmount = 0 sat, localPushAmount = pushMsat, remotePushAmount = 0 msat, commitTxFeerate, fundingTx.txid, fundingTxOutputIndex, remoteFundingPubKey = remoteFundingPubKey, remoteFirstPerCommitmentPoint = remoteFirstPerCommitmentPoint) match {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
@@ -220,11 +220,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
-            fundingTxHash = fundingTx.hash,
+            fundingTxId = fundingTx.txid,
             fundingOutputIndex = fundingTxOutputIndex,
             signature = localSigOfRemoteTx
           )
-          val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
+          val channelId = toLongId(fundingTx.txid, fundingTxOutputIndex)
           val params1 = params.copy(channelId = channelId)
           peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           txPublisher ! SetChannelId(remoteNodeId, channelId)
@@ -256,10 +256,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
-    case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_CREATED(params, fundingAmount, pushMsat, commitTxFeerate, remoteFundingPubKey, remoteFirstPerCommitmentPoint)) =>
+    case Event(FundingCreated(_, fundingTxId, fundingTxOutputIndex, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_CREATED(params, fundingAmount, pushMsat, commitTxFeerate, remoteFundingPubKey, remoteFirstPerCommitmentPoint)) =>
       val temporaryChannelId = params.channelId
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
-      Funding.makeFirstCommitTxs(keyManager, params, localFundingAmount = 0 sat, remoteFundingAmount = fundingAmount, localPushAmount = 0 msat, remotePushAmount = pushMsat, commitTxFeerate, fundingTxHash, fundingTxOutputIndex, remoteFundingPubKey = remoteFundingPubKey, remoteFirstPerCommitmentPoint = remoteFirstPerCommitmentPoint) match {
+      Funding.makeFirstCommitTxs(keyManager, params, localFundingAmount = 0 sat, remoteFundingAmount = fundingAmount, localPushAmount = 0 msat, remotePushAmount = pushMsat, commitTxFeerate, fundingTxId, fundingTxOutputIndex, remoteFundingPubKey = remoteFundingPubKey, remoteFirstPerCommitmentPoint = remoteFirstPerCommitmentPoint) match {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
@@ -267,10 +267,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.commitmentFormat)
           val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
-            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxHash.reverse, fundingTxIndex = 0, localCommitTx.tx), d, None)
+            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, fundingTxIndex = 0, localCommitTx.tx), d, None)
             case Success(_) =>
               val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, params.commitmentFormat)
-              val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
+              val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(
                 channelId = channelId,
                 signature = localSigOfRemoteTx

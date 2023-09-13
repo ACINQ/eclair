@@ -22,7 +22,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props, Terminated
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -89,7 +89,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
     (channels.values ++ pruned.values).foreach { pc =>
-      val txid = pc.fundingTxid
+      val txid = pc.fundingTxId
       val outputIndex = ShortChannelId.coordinates(pc.ann.shortChannelId).outputIndex
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.routerConf.watchSpentWindow.toSeconds).seconds) {
@@ -395,7 +395,7 @@ object Router {
     def updateBalances(commitments: Commitments): KnownChannel
     def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): KnownChannel
   }
-  case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends KnownChannel {
+  case class PublicChannel(ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends KnownChannel {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
     update_2_opt.foreach(u => assert(!u.channelFlags.isNode1))
 
@@ -689,7 +689,7 @@ object Router {
   // @formatter:on
 
   // @formatter:off
-  case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, replacePrevious: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
+  case class SendChannelQuery(chainHash: BlockHash, remoteNodeId: PublicKey, to: ActorRef, replacePrevious: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
   case object GetRoutingState
   case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
   case object GetRoutingStateStreaming extends RemoteTypes

@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
@@ -31,7 +31,7 @@ import kamon.tag.TagSet
 import scodec.bits.ByteVector
 
 object LocalChannelKeyManager {
-  def keyBasePath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
+  def keyBasePath(chainHash: BlockHash): List[Long] = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
@@ -56,7 +56,7 @@ object LocalChannelKeyManager {
  *
  * @param seed seed from which the channel keys will be derived
  */
-class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends ChannelKeyManager with Logging {
+class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends ChannelKeyManager with Logging {
   private val master = DeterministicWallet.generate(seed)
 
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()

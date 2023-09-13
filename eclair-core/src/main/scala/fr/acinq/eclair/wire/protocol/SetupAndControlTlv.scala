@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
@@ -33,7 +33,7 @@ sealed trait InitTlv extends Tlv
 object InitTlv {
 
   /** The chains the node is interested in. */
-  case class Networks(chainHashes: List[ByteVector32]) extends InitTlv
+  case class Networks(chainHashes: List[BlockHash]) extends InitTlv
 
   /**
    * When receiving an incoming connection, we can send back the public address our peer is connecting from.
@@ -47,7 +47,7 @@ object InitTlvCodecs {
 
   import InitTlv._
 
-  private val networks: Codec[Networks] = tlvField(list(bytes32))
+  private val networks: Codec[Networks] = tlvField(list(blockHash))
   private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress)
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)

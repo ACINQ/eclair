@@ -352,7 +352,7 @@ object Helpers {
 
   object Funding {
 
-    def makeFundingInputInfo(fundingTxId: ByteVector32, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
       val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
       InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
@@ -368,7 +368,7 @@ object Helpers {
                            localFundingAmount: Satoshi, remoteFundingAmount: Satoshi,
                            localPushAmount: MilliSatoshi, remotePushAmount: MilliSatoshi,
                            commitTxFeerate: FeeratePerKw,
-                           fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
+                           fundingTxId: TxId, fundingTxOutputIndex: Int,
                            remoteFundingPubKey: PublicKey,
                            remoteFirstPerCommitmentPoint: PublicKey): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
       makeCommitTxs(keyManager, params,
@@ -378,7 +378,7 @@ object Helpers {
         localHtlcs = Set.empty,
         commitTxFeerate,
         fundingTxIndex = 0,
-        fundingTxHash, fundingTxOutputIndex,
+        fundingTxId, fundingTxOutputIndex,
         remoteFundingPubKey = remoteFundingPubKey, remotePerCommitmentPoint = remoteFirstPerCommitmentPoint,
         localCommitmentIndex = 0, remoteCommitmentIndex = 0).map {
         case (localSpec, localCommit, remoteSpec, remoteCommit, _) => (localSpec, localCommit, remoteSpec, remoteCommit)
@@ -396,7 +396,7 @@ object Helpers {
                       localHtlcs: Set[DirectedHtlc],
                       commitTxFeerate: FeeratePerKw,
                       fundingTxIndex: Long,
-                      fundingTxHash: ByteVector32, fundingTxOutputIndex: Int,
+                      fundingTxId: TxId, fundingTxOutputIndex: Int,
                       remoteFundingPubKey: PublicKey,
                       remotePerCommitmentPoint: PublicKey,
                       localCommitmentIndex: Long, remoteCommitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx, Seq[HtlcTx])] = {
@@ -418,7 +418,7 @@ object Helpers {
 
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex)
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteFundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteFundingPubKey)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitmentIndex)
       val (localCommitTx, _) = Commitment.makeLocalTxs(keyManager, channelConfig, channelFeatures, localCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, channelConfig, channelFeatures, remoteCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, remotePerCommitmentPoint, remoteSpec)

@@ -246,7 +246,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.tx.txid.toArray)
+      statement.setBytes(1, e.tx.txid.value.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, e.miningFee.toLong)
@@ -258,7 +258,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_confirmed VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.tx.txid.toArray)
+      statement.setBytes(1, e.tx.txid.value.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, TimestampMilli.now().toLong)

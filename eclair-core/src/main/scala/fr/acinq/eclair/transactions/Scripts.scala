@@ -108,11 +108,11 @@ object Scripts {
   /**
    * @return the number of confirmations of each parent before which the given transaction can be published.
    */
-  def csvTimeouts(tx: Transaction): Map[ByteVector32, Long] = {
+  def csvTimeouts(tx: Transaction): Map[TxId, Long] = {
     if (tx.version < 2) {
       Map.empty
     } else {
-      tx.txIn.foldLeft(Map.empty[ByteVector32, Long]) { case (current, txIn) =>
+      tx.txIn.foldLeft(Map.empty[TxId, Long]) { case (current, txIn) =>
         val csvTimeout = sequenceToBlockHeight(txIn.sequence)
         if (csvTimeout > 0) {
           val maxCsvTimeout = math.max(csvTimeout, current.getOrElse(txIn.outPoint.txid, 0L))

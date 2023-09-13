@@ -19,14 +19,13 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -43,7 +42,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   /**
    * @param delay_opt optional delay to reduce herd effect at startup.
    */
-  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32], delay_opt: Option[FiniteDuration]): Unit = {
+  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.commit.txid).toSet ++ additionalKnownSpendingTxs
     val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
     delay_opt match {
@@ -55,7 +54,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   /**
    * @param delay_opt optional delay to reduce herd effect at startup.
    */
-  def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long], delay_opt: Option[FiniteDuration]): Unit = {
+  def watchFundingConfirmed(fundingTxId: TxId, minDepth_opt: Option[Long], delay_opt: Option[FiniteDuration]): Unit = {
     val watch = minDepth_opt match {
       case Some(fundingMinDepth) => WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
       // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk

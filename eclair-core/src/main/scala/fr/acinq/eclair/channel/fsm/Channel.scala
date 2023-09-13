@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -161,7 +161,7 @@ object Channel {
   private[channel] sealed trait BitcoinEvent extends PossiblyHarmful
   private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
   private[channel] case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
-  private[channel] case class BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxIds: Set[ByteVector32]) extends BitcoinEvent
+  private[channel] case class BITCOIN_FUNDING_DOUBLE_SPENT(fundingTxIds: Set[TxId]) extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout
@@ -1135,7 +1135,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.hash)
+          stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
         case Left(_) => stay()
       }
 
@@ -1144,7 +1144,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Right((commitments1, commitment)) =>
           val toSend = if (d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])) {
             // this commitment just moved from NotLocked to Locked
-            Some(SpliceLocked(d.channelId, w.tx.hash))
+            Some(SpliceLocked(d.channelId, w.tx.txid))
           } else {
             // this was a zero-conf splice and we already sent our splice_locked
             None
@@ -1156,7 +1156,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
-      d.commitments.updateRemoteFundingStatus(msg.fundingTxid) match {
+      d.commitments.updateRemoteFundingStatus(msg.fundingTxId) match {
         case Right((commitments1, _)) =>
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
@@ -1808,7 +1808,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       activeConnection = r
       val channelKeyPath = keyManager.keyPath(d.channelParams.localParams, d.channelParams.channelConfig)
       val myFirstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
-      val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId.reverse))
+      val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = 1,
@@ -1828,16 +1828,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
       val rbfTlv: Set[ChannelReestablishTlv] = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.rbfStatus match {
-          case RbfStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case RbfStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
           case _ => d.latestFundingTx.sharedTx match {
-            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId.reverse))
+            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId))
             case _: InteractiveTxBuilder.FullySignedSharedTransaction => Set.empty
           }
         }
         case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId.reverse))
+          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
           case _ => d.commitments.latest.localFundingStatus match {
-            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId.reverse))
+            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId))
             case _ => Set.empty
           }
         }
@@ -1991,7 +1991,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             .filter(c => c.fundingTxIndex > 0) // only consider splice txs
             .collectFirst { case c if c.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked] =>
               log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
-              SpliceLocked(d.channelId, c.fundingTxId.reverse)
+              SpliceLocked(d.channelId, c.fundingTxId)
             }
           sendQueue = sendQueue ++ spliceLocked
 

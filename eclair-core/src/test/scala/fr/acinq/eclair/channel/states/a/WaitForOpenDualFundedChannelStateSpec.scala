@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -120,7 +120,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
   test("recv OpenDualFundedChannel (invalid chain)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    val chain = randomBytes32()
+    val chain = BlockHash(randomBytes32())
     bob ! open.copy(chainHash = chain)
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, InvalidChainHash(open.temporaryChannelId, Block.RegtestGenesisBlock.hash, chain).getMessage))

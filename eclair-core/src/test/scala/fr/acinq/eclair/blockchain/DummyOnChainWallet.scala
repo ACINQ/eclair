@@ -19,13 +19,14 @@ package fr.acinq.eclair.blockchain
 import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{randomBytes32, randomKey}
 import scodec.bits._
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -38,8 +39,8 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   import DummyOnChainWallet._
 
-  val funded = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
-  val published = collection.concurrent.TrieMap.empty[ByteVector32, Transaction]
+  val funded = collection.concurrent.TrieMap.empty[TxId, Transaction]
+  val published = collection.concurrent.TrieMap.empty[TxId, Transaction]
   var rolledback = Set.empty[Transaction]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
@@ -55,7 +56,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = Future.successful(ProcessPsbtResponse(psbt, complete = true))
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
     published += (tx.txid -> tx)
     Future.successful(tx.txid)
   }
@@ -68,9 +69,9 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).map(_ => true)
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("transaction not found"))
+  override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = Future.failed(new RuntimeException("transaction not found"))
 
-  override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.failed(new RuntimeException("transaction not found"))
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.failed(new RuntimeException("transaction not found"))
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback + tx
@@ -87,7 +88,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   import DummyOnChainWallet._
 
   var rolledback = Seq.empty[Transaction]
-  var doubleSpent = Set.empty[ByteVector32]
+  var doubleSpent = Set.empty[TxId]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -99,15 +100,15 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = Promise().future // will never be completed
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = Future.successful(tx.txid)
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = Future.successful(tx.txid)
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise().future // will never be completed
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
+  override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
 
-  override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Promise().future // will never be completed
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Promise().future // will never be completed
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback :+ tx
@@ -125,7 +126,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   // We create a new dummy input transaction for every funding request.
   var inputs = Seq.empty[Transaction]
   var rolledback = Seq.empty[Transaction]
-  var doubleSpent = Set.empty[ByteVector32]
+  var doubleSpent = Set.empty[TxId]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -138,7 +139,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     val amountOut = tx.txOut.map(_.amount).sum
     // We add a single input to reach the desired feerate.
     val inputAmount = amountOut + 100_000.sat
-    val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomBytes32(), 1), Nil, 0)), Seq(TxOut(inputAmount, Script.pay2wpkh(pubkey))), 0)
+    val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, Script.pay2wpkh(pubkey))), 0)
     inputs = inputs :+ inputTx
     val dummyWitness = Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))
     val dummySignedTx = tx.copy(
@@ -166,7 +167,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(SignTransactionResponse(signedTx, complete))
   }
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
     inputs = inputs :+ tx
     Future.successful(tx.txid)
   }
@@ -174,7 +175,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
-    val tx: Transaction = psbt.getGlobal.getTx
+    val tx: Transaction = psbt.global.tx
     val signedPsbt = tx.txIn.zipWithIndex.foldLeft(new Psbt(tx)) {
       case (currentPsbt, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
         case Some(inputTx) =>
@@ -198,14 +199,14 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] = synchronized {
+  override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = synchronized {
     inputs.find(_.txid == txId) match {
       case Some(tx) => Future.successful(tx)
       case None => Future.failed(new RuntimeException(s"txid=$txId not found"))
     }
   }
 
-  override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback :+ tx
@@ -225,7 +226,7 @@ object DummyOnChainWallet {
   def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): MakeFundingTxResponse = {
     val fundingTx = Transaction(
       version = 2,
-      txIn = TxIn(OutPoint(ByteVector32(ByteVector.fill(32)(1)), 42), signatureScript = Nil, sequence = SEQUENCE_FINAL) :: Nil,
+      txIn = TxIn(OutPoint(TxId.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101"), 42), signatureScript = Nil, sequence = SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0
     )

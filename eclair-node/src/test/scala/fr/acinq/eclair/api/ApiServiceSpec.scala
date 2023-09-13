@@ -25,7 +25,7 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OutPoint, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, SatoshiLong, TxId}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, DataLossProtect}
@@ -250,7 +250,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       features = Features(DataLossProtect -> Mandatory, ChannelRangeQueriesExtended -> Optional),
       nodeId = aliceNodeId,
       alias = "alice",
-      chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      chainHash = BlockHash(ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f")),
       network = "regtest",
       blockHeight = 9999,
       publicAddresses = NodeAddress.fromParts("127.0.0.1", 9731).get :: Nil,
@@ -274,7 +274,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
     eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 100 sat))
@@ -311,7 +311,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels with standard channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
     eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 0 sat))
@@ -332,7 +332,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels with static_remotekey channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
     eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 1 sat))
@@ -353,7 +353,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels with anchor_outputs channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
     eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 500 sat))
@@ -575,9 +575,9 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'cpfpbumpfees'") {
     val eclair = mock[Eclair]
-    eclair.cpfpBumpFees(any, any) returns Future.successful(randomBytes32())
+    eclair.cpfpBumpFees(any, any) returns Future.successful(TxId(randomBytes32()))
     val mockService = new MockService(eclair)
-    val (txId1, txId2) = (randomBytes32(), randomBytes32())
+    val (txId1, txId2) = (TxId(randomBytes32()), TxId(randomBytes32()))
 
     Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10", "outpoints" -> s"$txId1:2,$txId2:0,$txId1:13").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -585,7 +585,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.cpfpBumpFees(FeeratePerByte(10 sat), Set(OutPoint(txId1.reverse, 2), OutPoint(txId1.reverse, 13), OutPoint(txId2.reverse, 0))).wasCalled(once)
+        eclair.cpfpBumpFees(FeeratePerByte(10 sat), Set(OutPoint(txId1, 2), OutPoint(txId1, 13), OutPoint(txId2, 0))).wasCalled(once)
       }
 
     Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10").toEntity) ~>
@@ -1032,7 +1032,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val mockChannelUpdate1 = ChannelUpdate(
       signature = ByteVector64.fromValidHex("92cf3f12e161391986eb2cd7106ddab41a23c734f8f1ed120fb64f4b91f98f690ecf930388e62965f8aefbf1adafcd25a572669a125396dcfb83615208754679"),
-      chainHash = ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2"),
+      chainHash = BlockHash(ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2")),
       shortChannelId = RealShortChannelId(BlockHeight(1), 2, 3),
       timestamp = 0 unixsec,
       messageFlags = ChannelUpdate.MessageFlags(dontForward = false),

@@ -22,8 +22,9 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, ByteVector32, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
@@ -198,7 +199,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       walletExternalFunds.getReceiveAddress().pipeTo(sender.ref)
       val walletAddress = sender.expectMsgType[String]
       defaultWallet.sendToPubkeyScript(Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, walletAddress).toOption.get), amount, FeeratePerKw(FeeratePerByte(3.sat))).pipeTo(sender.ref)
-      sender.expectMsgType[ByteVector32]
+      sender.expectMsgType[TxId]
     })
 
     // We receive more funds on an address that does not belong to our wallet.
@@ -664,7 +665,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedNonWalletInput = txWithNonWalletInput.updateWitness(0, nonWalletWitness)
       val psbt = new Psbt(txWithSignedNonWalletInput)
-      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
       val Right(psbt1) = updated.flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
       bitcoinClient.signPsbt(psbt1, txWithSignedNonWalletInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       val signTxResponse2 = sender.expectMsgType[ProcessPsbtResponse]
@@ -696,7 +697,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedUnconfirmedInput = txWithUnconfirmedInput.updateWitness(0, nonWalletWitness)
       val psbt = new Psbt(txWithSignedUnconfirmedInput)
-      val Right(psbt1) = psbt.updateWitnessInput(psbt.getGlobal.getTx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val Right(psbt1) = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
         .flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
       bitcoinClient.signPsbt(psbt1, txWithSignedUnconfirmedInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       assert(sender.expectMsgType[ProcessPsbtResponse].complete)
@@ -733,7 +734,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val spendingTx = {
       val address = getNewAddress(sender)
       val pos = if (changePos == 0) 1 else 0
-      bitcoinrpcclient.invoke("createrawtransaction", Array(Map("txid" -> tx.txid.toHex, "vout" -> pos)), Map(address -> 5.999)).pipeTo(sender.ref)
+      bitcoinrpcclient.invoke("createrawtransaction", Array(Map("txid" -> tx.txid.value.toHex, "vout" -> pos)), Map(address -> 5.999)).pipeTo(sender.ref)
       val JString(unsignedTxStr) = sender.expectMsgType[JValue]
       val unsignedTx = Transaction.read(unsignedTxStr)
       val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv.publicKey), bitcoin.SigHash.SIGHASH_ALL, 6.btc.toSatoshi, bitcoin.SigVersion.SIGVERSION_WITNESS_V0, priv)
@@ -1026,7 +1027,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       signTxResponse.tx
     }
 
-    def getMempoolTx(txid: ByteVector32): MempoolTx = {
+    def getMempoolTx(txid: TxId): MempoolTx = {
       val probe = TestProbe()
       bitcoinClient.getMempoolTx(txid).pipeTo(probe.ref)
       probe.expectMsgType[MempoolTx]
@@ -1090,7 +1091,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   test("cannot bump transaction fees (unknown transaction)") {
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
-    bitcoinClient.cpfp(Set(OutPoint(randomBytes32(), 0), OutPoint(randomBytes32(), 3)), FeeratePerKw(1500 sat)).pipeTo(sender.ref)
+    bitcoinClient.cpfp(Set(OutPoint(randomTxId(), 0), OutPoint(randomTxId(), 3)), FeeratePerKw(1500 sat)).pipeTo(sender.ref)
     val failure = sender.expectMsgType[Failure]
     assert(failure.cause.getMessage.contains("some transactions could not be found"))
   }
@@ -1328,7 +1329,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val pubKey = randomKey().publicKey
     val legacyAddress = computeP2PkhAddress(pubKey, Block.RegtestGenesisBlock.hash)
     bitcoinClient.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, legacyAddress).toOption.get, 150_000 sat, FeeratePerKw(FeeratePerByte(3.sat))).pipeTo(sender.ref)
-    val txId = sender.expectMsgType[ByteVector32]
+    val txId = sender.expectMsgType[TxId]
     bitcoinClient.getTransaction(txId).pipeTo(sender.ref)
     val tx = sender.expectMsgType[Transaction]
     // We have a change output.
@@ -1468,7 +1469,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       assert(error.cause.getMessage.contains("Private keys are disabled for this wallet"))
 
       wallet.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get, 50_000.sat, FeeratePerKw(FeeratePerByte(5.sat))).pipeTo(sender.ref)
-      sender.expectMsgType[ByteVector32]
+      sender.expectMsgType[TxId]
     }
   }
 }

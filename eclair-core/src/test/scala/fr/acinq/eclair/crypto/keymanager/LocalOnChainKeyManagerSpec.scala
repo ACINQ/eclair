@@ -21,7 +21,7 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
       Base64.getDecoder.decode("cHNidP8BAHECAAAAAfZo4nGIyTg77MFmEBkQH1Au3Jl8vzB2WWQGGz/MbyssAAAAAAD9////ArAHPgUAAAAAFgAU6j9yVvLg66Zu3GM/xHbmXT0yvyiAlpgAAAAAABYAFODscQh3N7lmDYyV5yrHpGL2Zd4JAAAAAAABAH0CAAAAAaNdmqUNlziIjSaif3JUcvJWdyF0U5bYq13NMe+LbaBZAAAAAAD9////AjSp1gUAAAAAFgAUjfFMfBg8ulo/874n3+0ode7ka0BAQg8AAAAAACIAIPUn/XU17DfnvDkj8gn2twG3jtr2Z7sthy9K2MPTdYkaAAAAAAEBHzSp1gUAAAAAFgAUjfFMfBg8ulo/874n3+0ode7ka0AiBgM+PDdyxsVisa66SyBxiUvhEam8lEP64yujvVsEcGaqIxgPCfOBVAAAgAEAAIAAAACAAQAAAAMAAAAAIgIDWmAhb/sCV9+HjwFpPuy2TyEBi/Y11wrEHZUihe3N80EYDwnzgVQAAIABAACAAAAAgAEAAAAFAAAAAAA=")
     ).getRight
 
-    val Success(psbt1) = onChainKeyManager.sign(psbt, psbt.getInputs.toArray().indices, Seq(0))
+    val Success(psbt1) = onChainKeyManager.sign(psbt, psbt.inputs.toArray().indices, Seq(0))
     val tx = psbt1.extract()
     assert(tx.isRight)
   }

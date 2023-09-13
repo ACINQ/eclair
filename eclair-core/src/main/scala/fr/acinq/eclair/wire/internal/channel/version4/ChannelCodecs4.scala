@@ -395,7 +395,7 @@ private[channel] object ChannelCodecs4 {
     private def remoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
+        ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
     private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = (

@@ -259,7 +259,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
-        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(1, e.tx.txid.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
         statement.setLong(4, e.miningFee.toLong)
@@ -273,7 +273,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO audit.transactions_confirmed VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
-        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(1, e.tx.txid.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
         statement.setTimestamp(4, Timestamp.from(Instant.now()))

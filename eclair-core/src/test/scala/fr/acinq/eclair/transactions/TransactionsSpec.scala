@@ -19,7 +19,8 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -50,21 +51,21 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   val localHtlcPriv = PrivateKey(randomBytes32())
   val remoteHtlcPriv = PrivateKey(randomBytes32())
   val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-  val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+  val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
   val toLocalDelay = CltvExpiryDelta(144)
   val localDustLimit = Satoshi(546)
   val feeratePerKw = FeeratePerKw(22000 sat)
 
   test("extract csv and cltv timeouts") {
-    val parentTxId1 = randomBytes32()
-    val parentTxId2 = randomBytes32()
-    val parentTxId3 = randomBytes32()
+    val parentTxId1 = randomTxId()
+    val parentTxId2 = randomTxId()
+    val parentTxId3 = randomTxId()
     val txIn = Seq(
-      TxIn(OutPoint(parentTxId1.reverse, 3), Nil, 3),
-      TxIn(OutPoint(parentTxId2.reverse, 1), Nil, 4),
-      TxIn(OutPoint(parentTxId3.reverse, 0), Nil, 5),
-      TxIn(OutPoint(randomBytes32(), 4), Nil, 0),
-      TxIn(OutPoint(parentTxId1.reverse, 2), Nil, 5),
+      TxIn(OutPoint(parentTxId1, 3), Nil, 3),
+      TxIn(OutPoint(parentTxId2, 1), Nil, 4),
+      TxIn(OutPoint(parentTxId3, 0), Nil, 5),
+      TxIn(OutPoint(randomTxId(), 4), Nil, 0),
+      TxIn(OutPoint(parentTxId1, 2), Nil, 5),
     )
     val tx = Transaction(2, txIn, Nil, 10)
     val expected = Map(
@@ -205,7 +206,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // we use dummy signatures to compute the weight
       val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
       val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.copy(
-        txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, p2wpkhWitness),
+        txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, p2wpkhWitness),
         txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey)))
       ))
       val signedTx = addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx
@@ -256,7 +257,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment and htlc transactions (default commitment format)") {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32()
@@ -487,7 +488,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment and htlc transactions (anchor outputs)") {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1, htlc2a and htlc2b are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32()
@@ -751,7 +752,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
     val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
     val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
-    val commitInput = Funding.makeFundingInputInfo(ByteVector32(hex"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -811,7 +812,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("find our output in closing tx") {
-    val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val localPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
     val remotePubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes._
@@ -191,7 +191,7 @@ object MinimalBolt12Invoice {
   val hrp = "lndi"
 
   def apply(offer: Offer,
-            chain: ByteVector32,
+            chain: BlockHash,
             amount: MilliSatoshi,
             quantity: Long,
             paymentHash: ByteVector32,

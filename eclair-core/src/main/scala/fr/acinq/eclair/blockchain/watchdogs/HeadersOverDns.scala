@@ -22,8 +22,8 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.io.dns.{AAAARecord, DnsProtocol}
 import akka.io.{Dns, IO}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.BlockHeaderAt
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
@@ -46,7 +46,7 @@ object HeadersOverDns {
   private case class WrappedDnsFailed(cause: Throwable) extends Command
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, currentBlockHeight: BlockHeight): Behavior[Command] = {
+  def apply(chainHash: BlockHash, currentBlockHeight: BlockHeight): Behavior[Command] = {
     Behaviors.setup { context =>
       val dnsAdapters = {
         context.messageAdapter[DnsProtocol.Resolved](WrappedDnsResolved)
@@ -87,7 +87,7 @@ object HeadersOverDns {
           stopOrCollect(replyTo, currentBlockHeight, received1, remaining - 1)
 
         case WrappedDnsFailed(ex) =>
-          context.log.warn("bitcoinheaders.net failed to resolve: {}", ex)
+          context.log.warn(s"bitcoinheaders.net failed to resolve: $ex")
           stopOrCollect(replyTo, currentBlockHeight, received, remaining - 1)
 
         case _ => Behaviors.unhandled

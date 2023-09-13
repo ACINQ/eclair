@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
@@ -554,7 +554,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
       val HopRelayParams.FromAnnouncement(update) = edges.find(_.desc.shortChannelId == shortChannelId).get.params
       val (update_1_opt, update_2_opt) = if (update.channelFlags.isNode1) (Some(update), None) else (None, Some(update))
-      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt, update_2_opt, None)
+      val pc = PublicChannel(announcement, TxId(ByteVector32.Zeroes), Satoshi(1000), update_1_opt, update_2_opt, None)
       (shortChannelId, pc)
     }
 
@@ -903,26 +903,26 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val updates = SortedMap(
       RealShortChannelId(BlockHeight(565643), 1216, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("565643x1216x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(542280), 2156, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("542280x2156x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(565779), 2711, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("565779x2711x0").success.value.toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
         meta_opt = None
       )
     )

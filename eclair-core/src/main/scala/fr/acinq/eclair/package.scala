@@ -16,7 +16,6 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
@@ -24,8 +23,6 @@ import fr.acinq.eclair.crypto.StrongRandom
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
-
-import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 package object eclair {
 
@@ -45,9 +42,9 @@ package object eclair {
 
   def randomLong(): Long = randomGen.nextLong()
 
-  def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
-    require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
-    val channelId = ByteVector32(fundingTxHash.take(30) :+ (fundingTxHash(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash(31) ^ fundingOutputIndex).toByte)
+  def toLongId(fundingTxId: TxId, fundingOutputIndex: Int): ByteVector32 = {
+    require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than 0xFFFF")
+    val channelId = ByteVector32(fundingTxId.value.reverse.take(30) :+ (fundingTxId.value(1) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxId.value(0) ^ fundingOutputIndex).toByte)
     channelId
   }
 

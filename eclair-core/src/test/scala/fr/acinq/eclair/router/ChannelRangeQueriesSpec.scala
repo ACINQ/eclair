@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
@@ -103,8 +103,8 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     val ef = RouteCalculationSpec.makeChannel(167514L, e, f)
 
     val channels = SortedMap(
-      ab.shortChannelId -> PublicChannel(ab, ByteVector32.Zeroes, 0 sat, Some(uab1), Some(uab2), Some(ChannelMeta(1000 msat, 400 msat))),
-      cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None, None)
+      ab.shortChannelId -> PublicChannel(ab, TxId(ByteVector32.Zeroes), 0 sat, Some(uab1), Some(uab2), Some(ChannelMeta(1000 msat, 400 msat))),
+      cd.shortChannelId -> PublicChannel(cd, TxId(ByteVector32.Zeroes), 0 sat, Some(ucd1), None, None)
     )
 
     assert(getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(3352963162L, 2581904122L)))
