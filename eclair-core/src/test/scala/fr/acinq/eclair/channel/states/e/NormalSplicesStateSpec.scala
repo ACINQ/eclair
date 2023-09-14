@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFe
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.time.SpanSugar.convertIntToGrainOfTime
@@ -1339,6 +1340,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // bob's remote tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
     // we're back to the normal handling of remote commit
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     val watchConfirmedRemoteCommit = alice2blockchain.expectMsgType[WatchTxConfirmed]
     assert(watchConfirmedRemoteCommit.txId == bobCommitTx1.txid)

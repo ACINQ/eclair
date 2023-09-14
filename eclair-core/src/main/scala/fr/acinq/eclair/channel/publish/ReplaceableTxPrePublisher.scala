@@ -128,8 +128,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-    //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
-    val commitTx = cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
+    //  - the local or remote commit tx is in the mempool (otherwise we can't claim our anchor)
     val fundingOutpoint = cmd.commitment.commitInput.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
@@ -137,9 +136,17 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
           case false => Future.failed(CommitTxAlreadyConfirmed)
           case true =>
-            // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-            // If it's already published, this call will be a no-op.
-            bitcoinClient.publishTransaction(commitTx)
+            val remoteCommits = Set(Some(cmd.commitment.remoteCommit.txid), cmd.commitment.nextRemoteCommit_opt.map(_.commit.txid)).flatten
+            if (remoteCommits.contains(localAnchorTx.input.outPoint.txid)) {
+              // We're trying to bump the remote commit tx: we must make sure it is in our mempool first.
+              // If it isn't, we will publish our local commit tx instead.
+              bitcoinClient.getMempoolTx(localAnchorTx.input.outPoint.txid).map(_.txid)
+            } else {
+              // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
+              // If it's already published, this call will be a no-op.
+              val commitTx = cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
+              bitcoinClient.publishTransaction(commitTx)
+            }
         }
       case None =>
         // If the funding transaction cannot be found (e.g. when using 0-conf), we should retry later.

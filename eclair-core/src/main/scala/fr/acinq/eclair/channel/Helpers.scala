@@ -718,6 +718,25 @@ object Helpers {
       if (isInitiator) commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum else 0 sat
     }
 
+    /**
+     * This function checks if the proposed confirmation target is more aggressive than whatever confirmation target
+     * we previously had. Not that absolute targets are always considered more aggressive than relative targets.
+     */
+    private def shouldUpdateAnchorTxs(anchorTxs: List[ClaimAnchorOutputTx], confirmationTarget: ConfirmationTarget): Boolean = {
+      anchorTxs
+        .collect { case tx: ClaimLocalAnchorOutputTx => tx.confirmationTarget }
+        .forall {
+          case ConfirmationTarget.Absolute(current) => confirmationTarget match {
+            case ConfirmationTarget.Absolute(proposed) => proposed < current
+            case _: ConfirmationTarget.Priority => false
+          }
+          case ConfirmationTarget.Priority(current) => confirmationTarget match {
+            case _: ConfirmationTarget.Absolute => true
+            case ConfirmationTarget.Priority(proposed) => current < proposed
+          }
+        }
+    }
+
     object LocalClose {
 
       /**
@@ -763,16 +782,20 @@ object Helpers {
       }
 
       def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): LocalCommitPublished = {
-        val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
-        val claimAnchorTxs = List(
-          withTxGenerationLog("local-anchor") {
-            Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
-          },
-          withTxGenerationLog("remote-anchor") {
-            Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
-          }
-        ).flatten
-        lcp.copy(claimAnchorTxs = claimAnchorTxs)
+        if (shouldUpdateAnchorTxs(lcp.claimAnchorTxs, confirmationTarget)) {
+          val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
+          val claimAnchorTxs = List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
+            }
+          ).flatten
+          lcp.copy(claimAnchorTxs = claimAnchorTxs)
+        } else {
+          lcp
+        }
       }
 
       /**
@@ -862,30 +885,38 @@ object Helpers {
 
         val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(keyManager, commitment, remoteCommit, feerates, finalScriptPubKey)
 
-        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
-          // If we don't have pending HTLCs, we don't have funds at risk, so we use the normal closing priority.
-          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-          val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
-          List(
-            withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
-            },
-            withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitment.remoteFundingPubKey)
-            }
-          ).flatten
-        } else {
-          Nil
-        }
-
-        RemoteCommitPublished(
+        val rcp = RemoteCommitPublished(
           commitTx = tx,
           claimMainOutputTx = claimMainOutput(keyManager, commitment.params, remoteCommit.remotePerCommitmentPoint, tx, feerates, onChainFeeConf, finalScriptPubKey),
           claimHtlcTxs = htlcTxs,
-          claimAnchorTxs = claimAnchorTxs,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        if (spendAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we use the normal closing priority.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
+          claimAnchors(keyManager, commitment, rcp, confirmCommitBefore)
+        } else {
+          rcp
+        }
+      }
+
+      def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, rcp: RemoteCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+        if (shouldUpdateAnchorTxs(rcp.claimAnchorTxs, confirmationTarget)) {
+          val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
+          val claimAnchorTxs = List(
+            withTxGenerationLog("local-anchor") {
+              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localFundingPubkey, confirmationTarget)
+            },
+            withTxGenerationLog("remote-anchor") {
+              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, commitment.remoteFundingPubKey)
+            }
+          ).flatten
+          rcp.copy(claimAnchorTxs = claimAnchorTxs)
+        } else {
+          rcp
+        }
       }
 
       /**
