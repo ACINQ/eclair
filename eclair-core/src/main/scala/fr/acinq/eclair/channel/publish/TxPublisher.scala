@@ -241,7 +241,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               case (ConfirmationTarget.Absolute(currentConfirmBefore), ConfirmationTarget.Absolute(proposedConfirmBefore)) if proposedConfirmBefore < currentConfirmBefore =>
                 // The proposed block target is closer than what it was
                 updateConfirmationTarget()
-              case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(proposedConfirmBefore)) =>
+              case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(_)) =>
                 // Switch from relative priority mode to absolute blockheight mode
                 updateConfirmationTarget()
               case _ =>

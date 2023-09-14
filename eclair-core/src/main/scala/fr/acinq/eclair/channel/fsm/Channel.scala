@@ -39,7 +39,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -1705,6 +1705,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_CLOSE, d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
+    case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d: DATA_CLOSING) =>
+      d.localCommitPublished match {
+        case Some(lcp) => d.commitments.params.commitmentFormat match {
+          case _: Transactions.AnchorOutputsCommitmentFormat =>
+            val lcp1 = Closing.LocalClose.claimAnchors(keyManager, d.commitments.latest, lcp, c.confirmationTarget)
+            lcp1.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest) }
+            c.replyTo ! RES_SUCCESS(c, d.channelId)
+            stay() using d.copy(localCommitPublished = Some(lcp1))
+          case Transactions.DefaultCommitmentFormat =>
+            log.warning("cannot bump force-close fees, channel is not using anchor outputs")
+            c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
+            stay()
+        }
+        case None =>
+          log.warning("cannot bump force-close fees, local commit hasn't been published")
+          c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
+          stay()
+      }
+
     case Event(e: Error, d: DATA_CLOSING) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED | INPUT_RECONNECTED(_, _, _), _) => stay() // we don't really care at this point
@@ -2116,6 +2135,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_BUMP_FUNDING_FEE, d) =>
       c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf", stateName))
+      stay()
+
+    case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d) =>
+      c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
       stay()
 
     case Event(c: CMD_SPLICE, d) =>

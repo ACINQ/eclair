@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair.ApiTypes.{ChannelIdentifier, ChannelNotFound}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -272,8 +272,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
     register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
+    eclair.bumpForceCloseFee(Left(ByteVector32.Zeroes) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
+    register.expectMsgType[Register.Forward[CMD_BUMP_FORCE_CLOSE_FEE]]
+
     eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
+
+    eclair.bumpForceCloseFee(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    register.expectMsgType[Register.ForwardShortId[CMD_BUMP_FORCE_CLOSE_FEE]]
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsgAllOf(

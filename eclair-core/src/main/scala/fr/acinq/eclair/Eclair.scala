@@ -31,7 +31,7 @@ import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -97,6 +97,8 @@ trait Eclair {
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
+
+  def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]]
 
   def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
 
@@ -249,6 +251,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
     sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender))
+  }
+
+  override def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]] = {
+    sendToChannelsTyped(channels, cmdBuilder = CMD_BUMP_FORCE_CLOSE_FEE(_, confirmationTarget))
   }
 
   override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
@@ -557,6 +563,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
    */
   private def sendToChannels[C <: Command, R <: CommandResponse[C]](channels: List[ApiTypes.ChannelIdentifier], request: C)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, R]]] = {
     val commands = channels.map(c => sendToChannel[C, R](c, request).map(r => Right(r)).recover(t => Left(t)).map(r => c -> r))
+    Future.foldLeft(commands)(Map.empty[ApiTypes.ChannelIdentifier, Either[Throwable, R]])(_ + _)
+  }
+
+  private def sendToChannelsTyped[C <: Command, R <: CommandResponse[C]](channels: List[ApiTypes.ChannelIdentifier], cmdBuilder: akka.actor.typed.ActorRef[Any] => C)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, R]]] = {
+    val commands = channels.map(c => sendToChannelTyped[C, R](c, cmdBuilder).map(r => Right(r)).recover(t => Left(t)).map(r => c -> r))
     Future.foldLeft(commands)(Map.empty[ApiTypes.ChannelIdentifier, Either[Throwable, R]])(_ + _)
   }
 

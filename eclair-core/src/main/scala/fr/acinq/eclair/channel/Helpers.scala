@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -732,7 +732,6 @@ object Helpers {
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index.toInt)
         val localRevocationPubkey = Generators.revocationPubKey(commitment.remoteParams.revocationBasepoint, localPerCommitmentPoint)
         val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-        val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
         val feeratePerKwDelayed = onChainFeeConf.getClosingFeerate(feerates)
 
         // first we will claim our main output as soon as the delay is over
@@ -745,29 +744,35 @@ object Helpers {
 
         val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimHtlcOutputs(keyManager, commitment)
 
-        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
-        val claimAnchorTxs: List[ClaimAnchorOutputTx] = if (spendAnchors) {
-          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
-          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-          List(
-            withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
-            },
-            withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(tx, commitment.remoteFundingPubKey)
-            }
-          ).flatten
-        } else {
-          Nil
-        }
-
-        LocalCommitPublished(
+        val lcp = LocalCommitPublished(
           commitTx = tx,
           claimMainDelayedOutputTx = mainDelayedTx,
           htlcTxs = htlcTxs,
           claimHtlcDelayedTxs = Nil, // we will claim these once the htlc txs are confirmed
-          claimAnchorTxs = claimAnchorTxs,
-          irrevocablySpent = Map.empty)
+          claimAnchorTxs = Nil,
+          irrevocablySpent = Map.empty
+        )
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        if (spendAnchors) {
+          // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+          val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
+          claimAnchors(keyManager, commitment, lcp, confirmCommitBefore)
+        } else {
+          lcp
+        }
+      }
+
+      def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): LocalCommitPublished = {
+        val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
+        val claimAnchorTxs = List(
+          withTxGenerationLog("local-anchor") {
+            Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
+          },
+          withTxGenerationLog("remote-anchor") {
+            Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
+          }
+        ).flatten
+        lcp.copy(claimAnchorTxs = claimAnchorTxs)
       }
 
       /**
