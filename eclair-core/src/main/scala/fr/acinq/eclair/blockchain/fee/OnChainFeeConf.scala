@@ -24,26 +24,29 @@ import fr.acinq.eclair.transactions.Transactions
 
 // @formatter:off
 sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
+  def underlying: Int
+
   def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
     case ConfirmationPriority.Slow => feerates.slow
     case ConfirmationPriority.Medium => feerates.medium
     case ConfirmationPriority.Fast => feerates.fast
   }
 
-  override def compare(that:  ConfirmationPriority): Int = (this, that) match {
-    case (ConfirmationPriority.Slow, ConfirmationPriority.Slow) => 0
-    case (ConfirmationPriority.Slow, _) => -1
-    case (ConfirmationPriority.Medium, ConfirmationPriority.Slow) => 1
-    case (ConfirmationPriority.Medium, ConfirmationPriority.Medium) => 0
-    case (ConfirmationPriority.Medium, ConfirmationPriority.Fast) => -1
-    case (ConfirmationPriority.Fast, ConfirmationPriority.Fast) => 0
-    case (ConfirmationPriority.Fast, _) => 1
-  }
+  override def compare(that: ConfirmationPriority): Int = this.underlying.compare(that.underlying)
 }
 object ConfirmationPriority {
-  case object Slow extends ConfirmationPriority { override def toString = "slow" }
-  case object Medium extends ConfirmationPriority { override def toString = "medium" }
-  case object Fast extends ConfirmationPriority { override def toString = "fast" }
+  case object Slow extends ConfirmationPriority {
+    override val underlying = 1
+    override def toString = "slow"
+  }
+  case object Medium extends ConfirmationPriority {
+    override val underlying = 2
+    override def toString = "medium"
+  }
+  case object Fast extends ConfirmationPriority {
+    override val underlying = 3
+    override def toString = "fast"
+  }
 }
 sealed trait ConfirmationTarget
 object ConfirmationTarget {

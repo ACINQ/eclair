@@ -720,7 +720,7 @@ object Helpers {
 
     /**
      * This function checks if the proposed confirmation target is more aggressive than whatever confirmation target
-     * we previously had. Not that absolute targets are always considered more aggressive than relative targets.
+     * we previously had. Note that absolute targets are always considered more aggressive than relative targets.
      */
     private def shouldUpdateAnchorTxs(anchorTxs: List[ClaimAnchorOutputTx], confirmationTarget: ConfirmationTarget): Boolean = {
       anchorTxs
