@@ -362,6 +362,18 @@ case class ClosingSigned(channelId: ByteVector32,
   val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
 }
 
+case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
+case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
                          amountMsat: MilliSatoshi,
