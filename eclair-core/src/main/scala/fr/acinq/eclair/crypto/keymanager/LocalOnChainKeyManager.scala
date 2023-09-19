@@ -67,7 +67,7 @@ object LocalOnChainKeyManager extends Logging {
  * Eclair is in charge of signing transactions.
  * This is an advanced feature particularly suited when Eclair runs in a secure runtime.
  */
-class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, override val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
+class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
 
   import LocalOnChainKeyManager._
 
@@ -101,27 +101,6 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val pub = DeterministicWallet.derivePrivateKey(master, keyPath).publicKey
     val address = computeBIP84Address(pub, chainHash)
     (pub, address)
-  }
-
-  override def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean] = {
-    if (walletTimestamp < (TimestampSecond.now() - 2.hours)) {
-      logger.warn(s"eclair-backed wallet descriptors for wallet=$walletName are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
-      Future.successful(false)
-    } else {
-      logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: $walletName")
-      rpcClient.invoke("createwallet", walletName, /* disable_private_keys */ true, /* blank */ true, /* passphrase */ "", /* avoid_reuse */ false, /* descriptors */ true, /* load_on_startup */ true).flatMap(_ => {
-        logger.info(s"importing new descriptors ${descriptors(0).descriptors}")
-        rpcClient.invoke("importdescriptors", descriptors(0).descriptors).collect {
-          case JArray(results) => results.forall(item => {
-            val JBool(success) = item \ "success"
-            success
-          })
-        }
-      }).recover { e =>
-        logger.error("cannot create eclair-backed on-chain wallet: ", e)
-        false
-      }
-    }
   }
 
   override def descriptors(account: Long): Descriptors = {

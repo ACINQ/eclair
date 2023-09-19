@@ -149,11 +149,6 @@ class Setup(val datadir: File,
         .collect {
           case JArray(values) => values.map(value => value.extract[String])
         }
-      eclairBackedWalletOk <- onChainKeyManager_opt match {
-        case Some(keyManager) if !wallets.contains(keyManager.walletName) => keyManager.createWallet(bitcoinClient)
-        case _ => Future.successful(true)
-      }
-      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.walletName) != wallet, s"cannot create eclair-backed wallet=${onChainKeyManager_opt.map(_.walletName)}, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
