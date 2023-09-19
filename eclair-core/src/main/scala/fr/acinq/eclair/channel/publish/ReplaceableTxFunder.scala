@@ -22,7 +22,6 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -426,7 +425,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def addInputs(anchorTx: ClaimLocalAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimLocalAnchorWithWitnessData, Satoshi)] = {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils
 
     val dustLimit = commitment.localParams.dustLimit
     val commitTxWeight = commitWeight(commitment)
@@ -434,72 +433,41 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
     // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
     // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
-    val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
+    val dummyChangeOutput = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey))
+    val txNotFunded = anchorTx.txInfo.tx.copy(txOut = dummyChangeOutput :: Nil)
     // The anchor transaction is paying for the weight of the commitment transaction.
-    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTxWeight))
-
-    def makeSingleOutputTx(fundTxResponse: OnChainWallet.FundTransactionResponse): Future[Transaction] = {
+    // We remove the weight of the artificially added change output, because we will remove that output after funding.
+    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTxWeight - KotlinUtils.scala2kmp(dummyChangeOutput).weight()))
+    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight)).flatMap { fundTxResponse =>
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
+      // The commitment transaction was already paying some fees that we're paying again in the anchor transaction since
+      // we included the commit weight, so we need to increase our change output to avoid overshooting the feerate.
+      val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
       fundTxResponse.changePosition match {
         case Some(changePos) =>
-          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum)
+          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum + commitFee)
           val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
-          Future.successful(txSingleOutput)
+          Future.successful(anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
         case None =>
           bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
             // replace PlaceHolderPubKey with a real wallet key
-            fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
+            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit + commitFee, Script.pay2wpkh(pubkeyHash))))
+            (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
           })
       }
-    }
-
-    for {
-      fundTxResponse <- bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight))
-      txSingleOutput <- makeSingleOutputTx(fundTxResponse)
-      changeOutput = txSingleOutput.txOut.head
-      ourWalletInputs = txSingleOutput.txIn.indices.tail // all inputs except the first one
-      ourWalletOutputs = Seq(0) // one change output
-      // We ask bitcoind to sign the wallet inputs to learn their final weight and adjust the change amount.
-      processPsbtResponse <- bitcoinClient.signPsbt(new Psbt(txSingleOutput), ourWalletInputs, ourWalletOutputs)
-      // we cannot extract the final tx from the psbt because it is not fully signed yet
-      partiallySignedTx = processPsbtResponse.partiallySignedTx
-      dummySignedTx = addSigs(anchorTx.updateTx(partiallySignedTx).txInfo, PlaceHolderSig)
-      packageWeight = commitTxWeight + dummySignedTx.tx.weight()
-      // above, we asked bitcoin core to use the package weight to estimate fees when it built and funded this transaction, so we
-      // use the same package weight here to compute the actual fee rate that we get
-      actualFeerate = Transactions.fee2rate(processPsbtResponse.psbt.computeFees(), packageWeight)
-      _ = require(actualFeerate < targetFeerate * 2, s"actual fee rate $actualFeerate is more than twice the requested fee rate $targetFeerate")
-
-      anchorTxFee = weight2fee(targetFeerate, packageWeight) - weight2fee(commitment.localCommit.spec.commitTxFeerate, commitTxWeight)
-      changeAmount = dustLimit.max(fundTxResponse.amountIn - anchorTxFee)
-      fundedTx = txSingleOutput.copy(txOut = Seq(changeOutput.copy(amount = changeAmount)))
-    } yield {
-      (anchorTx.updateTx(fundedTx), fundTxResponse.amountIn)
     }
   }
 
   private def addInputs(htlcTx: HtlcWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(HtlcWithWitnessData, Satoshi)] = {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-
     val htlcInputWeight = InputWeight(htlcTx.txInfo.input.outPoint, htlcTx.txInfo match {
       case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessInputWeight
       case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutInputWeight
     })
-    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight))).flatMap(fundTxResponse => {
+    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight))).map(fundTxResponse => {
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the htlc is the first input.
       val fundedTx = fundTxResponse.tx.copy(txIn = htlcTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == htlcTx.txInfo.input.outPoint))
-      val ourWalletInputs = fundedTx.txIn.indices.tail // all inputs except the first one
-      val ourWalletOutputs = if (fundedTx.txOut.size > 1) Seq(1) else Nil // there may not be a change output
-      val unsignedTx = htlcTx.updateTx(fundedTx)
-      bitcoinClient.signPsbt(new Psbt(fundedTx), ourWalletInputs, ourWalletOutputs).map(processPsbtResponse => {
-        val actualFees: Satoshi = processPsbtResponse.psbt.computeFees()
-        require(actualFees == fundTxResponse.fee, s"Bitcoin Core fees (${fundTxResponse.fee}) do not match ours ($actualFees)")
-        val packageWeight = fundedTx.weight() + htlcInputWeight.weight
-        val actualFeerate = Transactions.fee2rate(fundTxResponse.fee, packageWeight.toInt)
-        require(actualFeerate < targetFeerate * 2, s"actual fee rate $actualFeerate is more than twice the requested fee rate $targetFeerate")
-        (unsignedTx, fundTxResponse.amountIn)
-      })
+      (htlcTx.updateTx(fundedTx), fundTxResponse.amountIn)
     })
   }
 }
