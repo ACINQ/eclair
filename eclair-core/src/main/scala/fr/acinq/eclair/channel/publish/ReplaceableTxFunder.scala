@@ -87,9 +87,10 @@ object ReplaceableTxFunder {
     }
   }
 
-  private def dummySignedCommitTx(commitment: FullCommitment): CommitTx = {
+  private def commitWeight(commitment: FullCommitment): Int = {
     val unsignedCommitTx = commitment.localCommit.commitTxAndRemoteSig.commitTx
-    addSigs(unsignedCommitTx, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderSig, PlaceHolderSig)
+    val dummySignedCommitTx = addSigs(unsignedCommitTx, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderSig, PlaceHolderSig)
+    dummySignedCommitTx.tx.weight()
   }
 
   /**
@@ -116,7 +117,7 @@ object ReplaceableTxFunder {
       case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
-      case _: ClaimLocalAnchorOutputTx => dummySignedCommitTx(commitment).tx.weight() + Transactions.claimAnchorOutputMinWeight
+      case _: ClaimLocalAnchorOutputTx => commitWeight(commitment) + Transactions.claimAnchorOutputMinWeight
     }
     Transactions.fee2rate(maxFee, weight)
   }
@@ -164,9 +165,9 @@ object ReplaceableTxFunder {
     val dustLimit = commitment.localParams.dustLimit
     val targetFee = previousTx.signedTxWithWitnessData match {
       case _: ClaimLocalAnchorWithWitnessData =>
-        val commitTx = dummySignedCommitTx(commitment)
-        val totalWeight = previousTx.signedTx.weight() + commitTx.tx.weight()
-        weight2fee(targetFeerate, totalWeight) - commitTx.fee
+        val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
+        val totalWeight = previousTx.signedTx.weight() + commitWeight(commitment)
+        weight2fee(targetFeerate, totalWeight) - commitFee
       case _ =>
         weight2fee(targetFeerate, previousTx.signedTx.weight())
     }
@@ -378,7 +379,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
               case Right(signedTx) =>
                 val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
                 val actualWeight = locallySignedTx match {
-                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + dummySignedCommitTx(cmd.commitment).tx.weight()
+                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + commitWeight(cmd.commitment)
                   case _ => signedTx.weight()
                 }
                 val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
@@ -428,14 +429,14 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     val dustLimit = commitment.localParams.dustLimit
-    val commitTx = dummySignedCommitTx(commitment).tx
+    val commitTxWeight = commitWeight(commitment)
     // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
     // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
     // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
     // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
     val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
     // The anchor transaction is paying for the weight of the commitment transaction.
-    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTx.weight()))
+    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTxWeight))
 
     def makeSingleOutputTx(fundTxResponse: OnChainWallet.FundTransactionResponse): Future[Transaction] = {
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
@@ -464,13 +465,13 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       // we cannot extract the final tx from the psbt because it is not fully signed yet
       partiallySignedTx = processPsbtResponse.partiallySignedTx
       dummySignedTx = addSigs(anchorTx.updateTx(partiallySignedTx).txInfo, PlaceHolderSig)
-      packageWeight = commitTx.weight() + dummySignedTx.tx.weight()
+      packageWeight = commitTxWeight + dummySignedTx.tx.weight()
       // above, we asked bitcoin core to use the package weight to estimate fees when it built and funded this transaction, so we
       // use the same package weight here to compute the actual fee rate that we get
       actualFeerate = Transactions.fee2rate(processPsbtResponse.psbt.computeFees(), packageWeight)
       _ = require(actualFeerate < targetFeerate * 2, s"actual fee rate $actualFeerate is more than twice the requested fee rate $targetFeerate")
 
-      anchorTxFee = weight2fee(targetFeerate, packageWeight) - weight2fee(commitment.localCommit.spec.commitTxFeerate, commitTx.weight())
+      anchorTxFee = weight2fee(targetFeerate, packageWeight) - weight2fee(commitment.localCommit.spec.commitTxFeerate, commitTxWeight)
       changeAmount = dustLimit.max(fundTxResponse.amountIn - anchorTxFee)
       fundedTx = txSingleOutput.copy(txOut = Seq(changeOutput.copy(amount = changeAmount)))
     } yield {
