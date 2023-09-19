@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
@@ -267,6 +267,26 @@ object ClosingSignedTlv {
 
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
     .typecase(UInt64(1), feeRange)
+  )
+
+}
+
+sealed trait ClosingTlv extends Tlv
+
+object ClosingTlv {
+  /** Signature for a closing transaction containing only the closer's output. */
+  case class CloserNoClosee(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing only the closee's output. */
+  case class NoCloserClosee(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing the closer and closee's outputs. */
+  case class CloserAndClosee(sig: ByteVector64) extends ClosingTlv
+
+  val closingTlvCodec: Codec[TlvStream[ClosingTlv]] = tlvStream(discriminated[ClosingTlv].by(varint)
+    .typecase(UInt64(1), tlvField(bytes64.as[CloserNoClosee]))
+    .typecase(UInt64(2), tlvField(bytes64.as[NoCloserClosee]))
+    .typecase(UInt64(3), tlvField(bytes64.as[CloserAndClosee]))
   )
 
 }

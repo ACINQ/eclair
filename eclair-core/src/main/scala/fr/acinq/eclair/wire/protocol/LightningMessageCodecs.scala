@@ -227,6 +227,16 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | ClosingSignedTlv.closingSignedTlvCodec)).as[ClosingSigned]
 
+  val closingCompleteCodec: Codec[ClosingComplete] = (
+    ("channelId" | bytes32) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+
+  val closingSigCodec: Codec[ClosingSig] = (
+    ("channelId" | bytes32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
+
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
@@ -487,6 +497,8 @@ object LightningMessageCodecs {
     .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
+    .typecase(40, closingCompleteCodec)
+    .typecase(41, closingSigCodec)
     .typecase(64, openDualFundedChannelCodec)
     .typecase(65, acceptDualFundedChannelCodec)
     .typecase(66, txAddInputCodec)
