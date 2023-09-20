@@ -57,7 +57,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
   implicit val formats: Formats = org.json4s.DefaultFormats
 
   onChainKeyManager_opt.foreach { keyManager =>
-    require(rpcClient.wallet.contains(keyManager.wallet), s"eclair-backed bitcoin wallet mismatch: eclair-signer.conf uses wallet=${keyManager.wallet}, but eclair.conf uses wallet=${rpcClient.wallet.getOrElse("")}")
+    require(rpcClient.wallet.contains(keyManager.walletName), s"eclair-backed bitcoin wallet mismatch: eclair-signer.conf uses wallet=${keyManager.walletName}, but eclair.conf uses wallet=${rpcClient.wallet.getOrElse("")}")
   }
 
   val useEclairSigner = onChainKeyManager_opt.nonEmpty
@@ -753,7 +753,21 @@ object BitcoinCoreClient {
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
+  /**
+   * Bitcoin Core descriptor, as used in Bitcoin Core's RPC API.
+   *
+   * @param desc      Descriptor string representation
+   * @param internal  True if this descriptor is used to generate change addresses. False if this descriptor is used to generate receiving addresses; defined only for active descriptors
+   * @param timestamp The creation time of the descriptor
+   * @param active    Whether this descriptor is currently used to generate new addresses
+   */
   case class Descriptor(desc: String, internal: Boolean = false, timestamp: Long, active: Boolean = true)
 
+  /**
+   * Descriptors for a specific Bitcoin wallet.
+   *
+   * @param wallet_name wallet name
+   * @param descriptors list of wallet descriptors
+   */
   case class Descriptors(wallet_name: String, descriptors: Seq[Descriptor])
 }

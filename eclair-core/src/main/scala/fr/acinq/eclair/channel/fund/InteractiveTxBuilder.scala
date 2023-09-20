@@ -773,7 +773,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {
-      // We only sign our wallet inputs, and check that we can spend our wallet outputs.
       val ourWalletInputs = unsignedTx.localInputs.map(i => tx.txIn.indexWhere(_.outPoint == i.outPoint))
       val ourWalletOutputs = unsignedTx.localOutputs.flatMap {
         case Output.Local.Change(_, amount, pubkeyScript) => Some(tx.txOut.indexWhere(output => output.amount == amount && output.publicKeyScript == pubkeyScript))
@@ -782,6 +781,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         // We trust that non-change outputs are valid: this only works if the entry point for creating such outputs is trusted (for example, a secure API call).
         case _: Output.Local.NonChange => None
       }
+      // We track our wallet inputs and outputs, so we can verify them when we sign the transaction: if Eclair is managing bitcoin core wallet keys, it will
+      // only sign our wallet inputs, and check that it can re-compute private keys for our wallet outputs
       context.pipeToSelf(wallet.signPsbt(new Psbt(tx), ourWalletInputs, ourWalletOutputs).map {
         response =>
           val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet

@@ -27,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 trait OnChainKeyManager {
-  def wallet: String
+  def walletName: String
 
   /**
    * @return the creation time of the wallet managed by this key manager

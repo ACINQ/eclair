@@ -39,7 +39,13 @@ trait OnChainChannelFunder {
    */
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
-  /** Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. */
+  /**
+   * Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. *
+   *
+   * @param psbt       PSBT to sign
+   * @param ourInputs  our wallet inputs. If Eclair is managing Bitcoin Core wallet keys, only these inputs will be signed.
+   * @param ourOutputs our wallet outputs. If Eclair is managing Bitcoin Core wallet keys, it will check that it can actually spend them (i.e re-compute private keys for them)
+   */
   def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse]
 
   /**

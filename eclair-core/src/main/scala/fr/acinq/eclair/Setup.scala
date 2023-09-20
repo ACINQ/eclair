@@ -150,10 +150,10 @@ class Setup(val datadir: File,
           case JArray(values) => values.map(value => value.extract[String])
         }
       eclairBackedWalletOk <- onChainKeyManager_opt match {
-        case Some(keyManager) if !wallets.contains(keyManager.wallet) => keyManager.createWallet(bitcoinClient)
+        case Some(keyManager) if !wallets.contains(keyManager.walletName) => keyManager.createWallet(bitcoinClient)
         case _ => Future.successful(true)
       }
-      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.wallet) != wallet, s"cannot create eclair-backed wallet=${onChainKeyManager_opt.map(_.wallet)}, check logs for details")
+      _ = assert(eclairBackedWalletOk || onChainKeyManager_opt.map(_.walletName) != wallet, s"cannot create eclair-backed wallet=${onChainKeyManager_opt.map(_.walletName)}, check logs for details")
       progress = (json \ "verificationprogress").extract[Double]
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
@@ -252,7 +252,7 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin, if (bitcoin.wallet == onChainKeyManager_opt.map(_.wallet)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (bitcoin.wallet == onChainKeyManager_opt.map(_.walletName)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -314,8 +314,7 @@ class Setup(val datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial address=$address for bitcoin wallet=${bitcoinClient.rpcClient.wallet.getOrElse("")}"))
-
+      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial address=$address for bitcoin wallet=${bitcoinClient.rpcClient.wallet.getOrElse("(default)")}"))
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future
 

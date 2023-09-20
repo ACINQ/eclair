@@ -34,7 +34,6 @@ import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 import scala.util.{Failure, Success, Try}
 
 object LocalOnChainKeyManager extends Logging {
-  def descriptorChecksum(span: String): String = fr.acinq.bitcoin.Descriptor.checksum(span)
 
   /**
    * Load a configuration file and create an on-chain key manager
@@ -62,7 +61,13 @@ object LocalOnChainKeyManager extends Logging {
   }
 }
 
-class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, override val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
+/**
+ * A manager for on-chain keys used by Eclair, to be used in combination with a watch-only descriptor-based wallet managed by Bitcoin Core.
+ * In this setup, Bitcoin Core handles all non-sensitive wallet tasks (including watching the blockchain and building transactions), while
+ * Eclair is in charge of signing transactions.
+ * This is an advanced feature particularly suited when Eclair runs in a secure runtime.
+ */
+class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, override val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
 
   import LocalOnChainKeyManager._
 
@@ -100,11 +105,11 @@ class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, over
 
   override def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean] = {
     if (walletTimestamp < (TimestampSecond.now() - 2.hours)) {
-      logger.warn(s"eclair-backed wallet descriptors for wallet=$wallet are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
+      logger.warn(s"eclair-backed wallet descriptors for wallet=$walletName are too old to be automatically imported into bitcoin core, you will need to manually import them and select how far back to rescan")
       Future.successful(false)
     } else {
-      logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: $wallet")
-      rpcClient.invoke("createwallet", wallet, /* disable_private_keys */ true, /* blank */ true, /* passphrase */ "", /* avoid_reuse */ false, /* descriptors */ true, /* load_on_startup */ true).flatMap(_ => {
+      logger.info(s"creating a new on-chain eclair-backed wallet in bitcoind: $walletName")
+      rpcClient.invoke("createwallet", walletName, /* disable_private_keys */ true, /* blank */ true, /* passphrase */ "", /* avoid_reuse */ false, /* descriptors */ true, /* load_on_startup */ true).flatMap(_ => {
         logger.info(s"importing new descriptors ${descriptors(0).descriptors}")
         rpcClient.invoke("importdescriptors", descriptors(0).descriptors).collect {
           case JArray(results) => results.forall(item => {
@@ -132,9 +137,9 @@ class LocalOnChainKeyManager(override val wallet: String, seed: ByteVector, over
     // 84'/{0'/1'}/0'/1/* for change addresses
     val receiveDesc = s"wpkh([$fingerPrintHex/$keyPath]${encode(accountPub, prefix)}/0/*)"
     val changeDesc = s"wpkh([$fingerPrintHex/$keyPath]${encode(accountPub, prefix)}/1/*)"
-    Descriptors(wallet_name = wallet, descriptors = List(
-      Descriptor(desc = s"$receiveDesc#${descriptorChecksum(receiveDesc)}", internal = false, active = true, timestamp = walletTimestamp.toLong),
-      Descriptor(desc = s"$changeDesc#${descriptorChecksum(changeDesc)}", internal = true, active = true, timestamp = walletTimestamp.toLong),
+    Descriptors(wallet_name = walletName, descriptors = List(
+      Descriptor(desc = s"$receiveDesc#${fr.acinq.bitcoin.Descriptor.checksum(receiveDesc)}", internal = false, active = true, timestamp = walletTimestamp.toLong),
+      Descriptor(desc = s"$changeDesc#${fr.acinq.bitcoin.Descriptor.checksum(changeDesc)}", internal = true, active = true, timestamp = walletTimestamp.toLong),
     ))
   }
 
