@@ -30,7 +30,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
-import scala.util.Try
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 15/12/2016.
@@ -230,6 +230,27 @@ object Transactions {
    * @return the fee rate (in Satoshi/Kw) for this tx
    */
   def fee2rate(fee: Satoshi, weight: Int): FeeratePerKw = FeeratePerKw((fee * 1000L) / weight)
+
+  /** As defined in https://github.com/lightning/bolts/blob/master/03-transactions.md#dust-limits */
+  def dustLimit(scriptPubKey: ByteVector): Satoshi = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => 546.sat
+      case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => 540.sat
+      case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => 294.sat
+      case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => 330.sat
+      case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => 354.sat
+      case Success(OP_RETURN :: _) => 0.sat // OP_RETURN is never dust
+      case _ => 546.sat
+    }
+  }
+
+  /** When an output is using OP_RETURN, we usually want to make sure its amount is 0, otherwise bitcoind won't accept it. */
+  def isOpReturn(scriptPubKey: ByteVector): Boolean = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_RETURN :: _) => true
+      case _ => false
+    }
+  }
 
   /** Offered HTLCs below this amount will be trimmed. */
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =

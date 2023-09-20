@@ -67,14 +67,15 @@ object Helpers {
   private def extractShutdownScript(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     val canUseUpfrontShutdownScript = Features.canUseFeature(localFeatures, remoteFeatures, Features.UpfrontShutdownScript)
     val canUseAnySegwit = Features.canUseFeature(localFeatures, remoteFeatures, Features.ShutdownAnySegwit)
-    extractShutdownScript(channelId, canUseUpfrontShutdownScript, canUseAnySegwit, upfrontShutdownScript_opt)
+    val canUseOpReturn = Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleClose)
+    extractShutdownScript(channelId, canUseUpfrontShutdownScript, canUseAnySegwit, canUseOpReturn, upfrontShutdownScript_opt)
   }
 
-  private def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+  private def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, allowOpReturn: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
       case (true, None) => Left(MissingUpfrontShutdownScript(channelId))
       case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
-      case (true, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (true, Some(script)) if !Closing.MutualClose.isValidFinalScriptPubkey(script, allowAnySegwit, allowOpReturn) => Left(InvalidFinalScript(channelId))
       case (true, Some(script)) => Right(Some(script))
       case (false, Some(_)) => Right(None) // they provided a script but the feature is not active, we just ignore it
       case _ => Right(None)
@@ -640,13 +641,14 @@ object Helpers {
 
     object MutualClose {
 
-      def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean): Boolean = {
+      def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean, allowOpReturn: Boolean): Boolean = {
         Try(Script.parse(scriptPubKey)) match {
           case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
           case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => true
           case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => true
           case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => true
           case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if allowAnySegwit && 2 <= program.length && program.length <= 40 => true
+          case Success(OP_RETURN :: _) if allowOpReturn => true
           case _ => false
         }
       }
@@ -713,16 +715,7 @@ object Helpers {
        * The various dust limits are detailed in https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
        */
       def checkClosingDustAmounts(closingTx: ClosingTx): Boolean = {
-        closingTx.tx.txOut.forall(txOut => {
-          Try(Script.parse(txOut.publicKeyScript)) match {
-            case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => txOut.amount >= 546.sat
-            case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => txOut.amount >= 540.sat
-            case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => txOut.amount >= 294.sat
-            case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => txOut.amount >= 330.sat
-            case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => txOut.amount >= 354.sat
-            case _ => txOut.amount >= 546.sat
-          }
-        })
+        closingTx.tx.txOut.forall(txOut => txOut.amount >= Transactions.dustLimit(txOut.publicKeyScript))
       }
     }
 
