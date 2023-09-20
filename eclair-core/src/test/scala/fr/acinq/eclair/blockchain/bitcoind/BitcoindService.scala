@@ -186,14 +186,11 @@ trait BitcoindService extends Logging {
     // wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer
     bitcoinClient.invoke("createwallet", keyManager.walletName, true, false, "", false, true, true, false).pipeTo(sender.ref)
     sender.expectMsgType[JValue]
-    importEclairDescriptors(bitcoinClient, keyManager)
+    val descriptors = keyManager.descriptors(0).descriptors
+    bitcoinClient.invoke("importdescriptors", descriptors).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
   }
 
-  def importEclairDescriptors(jsonRpcClient: BitcoinJsonRPCClient, keyManager: OnChainKeyManager, probe: TestProbe = TestProbe()): Unit = {
-    val descriptors = keyManager.descriptors(0).descriptors
-    jsonRpcClient.invoke("importdescriptors", descriptors).pipeTo(probe.ref)
-    probe.expectMsgType[JValue]
-  }
 
   /** Generate blocks to a given address, or to our wallet if no address is provided. */
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
