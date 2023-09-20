@@ -112,10 +112,11 @@ case class ChannelParams(channelId: ByteVector32,
     // README: if we set our bitcoin node to generate taproot addresses and our peer does not support option_shutdown_anysegwit, we will not be able to mutual-close
     // channels as the isValidFinalScriptPubkey() check would fail.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    val allowOpReturn = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.SimpleClose)
     val mustUseUpfrontShutdownScript = channelFeatures.hasFeature(Features.UpfrontShutdownScript)
     // we only enforce using the pre-generated shutdown script if option_upfront_shutdown_script is set
     if (mustUseUpfrontShutdownScript && localParams.upfrontShutdownScript_opt.exists(_ != localScriptPubKey)) Left(InvalidFinalScript(channelId))
-    else if (!Closing.MutualClose.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit, allowOpReturn)) Left(InvalidFinalScript(channelId))
     else Right(localScriptPubKey)
   }
 
@@ -126,10 +127,11 @@ case class ChannelParams(channelId: ByteVector32,
   def validateRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    val allowOpReturn = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.SimpleClose)
     val mustUseUpfrontShutdownScript = channelFeatures.hasFeature(Features.UpfrontShutdownScript)
     // we only enforce using the pre-generated shutdown script if option_upfront_shutdown_script is set
     if (mustUseUpfrontShutdownScript && remoteParams.upfrontShutdownScript_opt.exists(_ != remoteScriptPubKey)) Left(InvalidFinalScript(channelId))
-    else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit, allowOpReturn)) Left(InvalidFinalScript(channelId))
     else Right(remoteScriptPubKey)
   }
 
