@@ -125,10 +125,7 @@ class Setup(val datadir: File,
   val onChainKeyManager_opt = LocalOnChainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
 
   val (bitcoin, bitcoinChainHash) = {
-    val wallet = {
-      val name = config.getString("bitcoind.wallet")
-      if (!name.isBlank) Some(name) else None
-    }
+    val wallet = if (config.hasPath("bitcoind.wallet")) Some(config.getString("bitcoind.wallet")) else None
     val rpcAuthMethod = config.getString("bitcoind.auth") match {
       case "safecookie" => BitcoinJsonRPCAuthMethod.readCookie(config.getString("bitcoind.cookie")) match {
         case Success(safeCookie) => safeCookie
