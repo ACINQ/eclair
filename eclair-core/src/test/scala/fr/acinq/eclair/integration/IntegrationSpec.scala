@@ -28,13 +28,14 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
+import java.nio.file.Files
 import java.util.Properties
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -146,6 +147,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
+    if (useEclairSigner) {
+      Files.writeString(datadir.toPath.resolve("eclair-signer.conf"), eclairSignerConf)
+    }
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
     val setup = new Setup(datadir, pluginParams = Seq.empty)
     val kit = Await.result(setup.bootstrap, 10 seconds)

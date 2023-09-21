@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -32,11 +33,20 @@ trait OnChainChannelFunder {
 
   import OnChainWallet._
 
-  /** Fund the provided transaction by adding inputs (and a change output if necessary). */
+  /**
+   * Fund the provided transaction by adding inputs (and a change output if necessary).
+   * Callers must verify that the resulting transaction isn't sending funds to unexpected addresses (malicious bitcoin node).
+   */
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
-  /** Sign the wallet inputs of the provided transaction. */
-  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
+  /**
+   * Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. *
+   *
+   * @param psbt       PSBT to sign
+   * @param ourInputs  our wallet inputs. If Eclair is managing Bitcoin Core wallet keys, only these inputs will be signed.
+   * @param ourOutputs our wallet outputs. If Eclair is managing Bitcoin Core wallet keys, it will check that it can actually spend them (i.e re-compute private keys for them)
+   */
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse]
 
   /**
    * Publish a transaction on the bitcoin network.
@@ -122,6 +132,29 @@ object OnChainWallet {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
 
-  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
+  final case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean) {
 
+    import fr.acinq.bitcoin.psbt.UpdateFailure
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    /** Transaction with all available witnesses. */
+    val partiallySignedTx: Transaction = {
+      var tx = psbt.getGlobal.getTx
+      for (i <- 0 until psbt.getInputs.size()) {
+        Option(psbt.getInputs.get(i).getScriptWitness).foreach { witness =>
+          tx = tx.updateWitness(i, witness)
+        }
+      }
+      tx
+    }
+
+    /** Extract a fully signed transaction if the psbt is finalized. */
+    val finalTx_opt: Either[UpdateFailure, Transaction] = {
+      val extracted: Either[UpdateFailure, fr.acinq.bitcoin.Transaction] = psbt.extract()
+      extracted match {
+        case Left(f) => Left(f)
+        case Right(tx) => Right(tx)
+      }
+    }
+  }
 }

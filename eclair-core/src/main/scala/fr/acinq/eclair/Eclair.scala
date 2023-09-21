@@ -32,6 +32,7 @@ import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -130,7 +131,7 @@ trait Eclair {
 
   def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
-  def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
+  def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[ByteVector32]
 
   def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[ByteVector32]
 
@@ -179,6 +180,10 @@ trait Eclair {
   def payOffer(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[UUID]
 
   def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
+
+  def getOnChainMasterPubKey(account: Long): String
+
+  def getDescriptors(account: Long): Descriptors
 
   def stop(): Future[Unit]
 }
@@ -352,9 +357,20 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
+  override def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[ByteVector32] = {
+    val feeRate = confirmationTargetOrFeerate match {
+      case Left(blocks) =>
+        if (blocks < 3) appKit.nodeParams.currentFeerates.fast
+        else if (blocks > 6) appKit.nodeParams.currentFeerates.slow
+        else appKit.nodeParams.currentFeerates.medium
+      case Right(feeratePerByte) => FeeratePerKw(feeratePerByte)
+    }
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.sendToAddress(address, amount, confirmationTarget)
+      case w: BitcoinCoreClient =>
+        addressToPublicKeyScript(appKit.nodeParams.chainHash, address) match {
+          case Right(pubkeyScript) => w.sendToPubkeyScript(pubkeyScript, amount, feeRate)
+          case Left(failure) => Future.failed(new IllegalArgumentException(s"invalid address ($failure)"))
+        }
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -665,16 +681,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  def payOfferInternal(offer: Offer,
-                       amount: MilliSatoshi,
-                       quantity: Long,
-                       externalId_opt: Option[String],
-                       maxAttempts_opt: Option[Int],
-                       maxFeeFlat_opt: Option[Satoshi],
-                       maxFeePct_opt: Option[Double],
-                       pathFindingExperimentName_opt: Option[String],
-                       connectDirectly: Boolean,
-                       blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
+  private def payOfferInternal(offer: Offer,
+                               amount: MilliSatoshi,
+                               quantity: Long,
+                               externalId_opt: Option[String],
+                               maxAttempts_opt: Option[Int],
+                               maxFeeFlat_opt: Option[Satoshi],
+                               maxFeePct_opt: Option[Double],
+                               pathFindingExperimentName_opt: Option[String],
+                               connectDirectly: Boolean,
+                               blocking: Boolean)(implicit timeout: Timeout): Future[Any] = {
     if (externalId_opt.exists(_.length > externalIdMaxLength)) {
       return Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
     }
@@ -715,6 +731,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 pathFindingExperimentName_opt: Option[String],
                                 connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
     payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+  }
+
+  override def getDescriptors(account: Long): Descriptors = appKit.nodeParams.onChainKeyManager_opt match {
+    case Some(keyManager) => keyManager.descriptors(account)
+    case _ => throw new RuntimeException("on-chain seed is not configured")
+  }
+
+  override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
+    case Some(keyManager) => keyManager.masterPubKey(account)
+    case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
   override def stop(): Future[Unit] = {

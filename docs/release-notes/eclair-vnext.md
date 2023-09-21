@@ -23,6 +23,12 @@ eclair.on-chain-fees.confirmation-priority {
 
 This configuration section replaces the previous `eclair.on-chain-fees.target-blocks` section.
 
+### Managing Bitcoin Core wallet keys
+
+You can now use Eclair to manage the private keys for on-chain funds monitored by a Bitcoin Core watch-only wallet.
+
+See `docs/BitcoinCoreKeys.md` for more details.
+
 ### API changes
 
 - `bumpforceclose` can be used to make a force-close confirm faster, by spending the anchor output (#2743)

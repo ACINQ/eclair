@@ -455,9 +455,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29840 else 29740), "eclair.api.port" -> (if (useEclairSigner) 28190 else 28090)).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29841 else 29741), "eclair.api.port" -> (if (useEclairSigner) 28191 else 28091)).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29842 else 29742), "eclair.api.port" -> (if (useEclairSigner) 28192 else 28092)).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -626,6 +626,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     awaitAnnouncements(1)
   }
 
+}
+
+class StandardChannelIntegrationWithEclairSignerSpec extends StandardChannelIntegrationSpec {
+  override def useEclairSigner: Boolean = true
 }
 
 abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {

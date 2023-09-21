@@ -22,6 +22,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import org.json4s.{JObject, JString}
 
 trait OnChain {
   this: Service with EclairDirectives =>
@@ -33,9 +34,15 @@ trait OnChain {
   }
 
   val sendOnChain: Route = postRequest("sendonchain") { implicit t =>
-    formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) {
-      (address, amount, confirmationTarget) =>
-        complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
+    formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long].?, "feeRatePerByte".as[Int].?) {
+      (address, amount, confirmationTarget_opt, feeratePerByte_opt) => {
+        val confirmationTargetOrFeerate = (feeratePerByte_opt, confirmationTarget_opt) match {
+          case (Some(feeratePerByte), _) => Right(FeeratePerByte(Satoshi(feeratePerByte)))
+          case (None, Some(confirmationTarget)) => Left(confirmationTarget)
+          case _ => throw new IllegalArgumentException("You must provide a confirmation target (in blocks) or a fee rate (in sat/vb)")
+        }
+        complete(eclairApi.sendOnChain(address, amount, confirmationTargetOrFeerate))
+      }
     }
   }
 
@@ -64,6 +71,20 @@ trait OnChain {
     complete(eclairApi.globalBalance())
   }
 
-  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance
+  val getmasterxpub: Route = postRequest("getmasterxpub") { implicit t =>
+    formFields("account".as[Long].?) { account_opt =>
+      val xpub = eclairApi.getOnChainMasterPubKey(account_opt.getOrElse(0L))
+      complete(new JObject(List("xpub" -> JString(xpub))))
+    }
+  }
+
+  val getdescriptors: Route = postRequest("getdescriptors") { implicit t =>
+    formFields("account".as[Long].?) { account_opt =>
+        val descriptors = eclairApi.getDescriptors(account_opt.getOrElse(0L))
+        complete(descriptors.descriptors)
+    }
+  }
+
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ getmasterxpub ~ getdescriptors
 
 }

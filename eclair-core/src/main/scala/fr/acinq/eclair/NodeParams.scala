@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
@@ -33,8 +33,8 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
-import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -54,6 +54,7 @@ import scala.jdk.CollectionConverters._
  */
 case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
+                      onChainKeyManager_opt: Option[OnChainKeyManager],
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
                       private val feerates: AtomicReference[FeeratesPerKw],
@@ -101,7 +102,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def currentFeerates: FeeratesPerKw = feerates.get()
 
   /** Only to be used in tests. */
-  def setFeerates(value: FeeratesPerKw) = feerates.set(value)
+  def setFeerates(value: FeeratesPerKw): Unit = feerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -211,7 +212,8 @@ object NodeParams extends Logging {
     }
   }
 
-  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+  def makeNodeParams(config: Config, instanceId: UUID,
+                     nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onChainKeyManager_opt: Option[OnChainKeyManager],
                      torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
@@ -475,6 +477,7 @@ object NodeParams extends Logging {
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
+      onChainKeyManager_opt = onChainKeyManager_opt,
       instanceId = instanceId,
       blockHeight = blockHeight,
       feerates = feerates,

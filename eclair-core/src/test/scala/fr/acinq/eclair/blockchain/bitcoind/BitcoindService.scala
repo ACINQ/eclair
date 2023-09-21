@@ -19,13 +19,15 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, Satoshi, Transaction, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, MnemonicCode, Satoshi, Transaction, TxOut, addressToPublicKeyScript, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
+import fr.acinq.eclair.crypto.keymanager.{LocalOnChainKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.integration.IntegrationSpec
-import fr.acinq.eclair.{BlockHeight, TestUtils, randomKey}
+import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import sttp.client3.okhttp.OkHttpFutureBackend
@@ -40,6 +42,8 @@ import scala.io.Source
 trait BitcoindService extends Logging {
   self: TestKitBase =>
 
+  def useEclairSigner: Boolean = false
+
   import BitcoindService._
 
   import scala.sys.process._
@@ -47,7 +51,7 @@ trait BitcoindService extends Logging {
   implicit val system: ActorSystem
   implicit val sttpBackend: sttp.client3.SttpBackend[Future, sttp.capabilities.WebSockets] = OkHttpFutureBackend()
 
-  val defaultWallet: String = "miner"
+  val defaultWallet: String = if (useEclairSigner) "eclair" else "miner"
   val bitcoindPort: Int = TestUtils.availablePort
   val bitcoindRpcPort: Int = TestUtils.availablePort
   val bitcoindZmqBlockPort: Int = TestUtils.availablePort
@@ -67,6 +71,22 @@ trait BitcoindService extends Logging {
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
   var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
+  val mnemonics = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title"
+  val passphrase = ""
+  val eclairSignerConf =
+    s"""
+       |{
+       |    eclair {
+       |        signer {
+       |            wallet = "eclair"
+       |            mnemonics = $mnemonics
+       |            passphrase = "$passphrase"
+       |            timestamp = ${TimestampSecond.now().toLong}
+       |        }
+       |    }
+       |}
+       |""".stripMargin
+  val onChainKeyManager = new LocalOnChainKeyManager("eclair", MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
 
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
@@ -113,6 +133,8 @@ trait BitcoindService extends Logging {
     }))
   }
 
+  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onChainKeyManager) else None)
+
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
     val sender = TestProbe()
@@ -148,12 +170,27 @@ trait BitcoindService extends Logging {
   def waitForBitcoindReady(): Unit = {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
-    sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
-    sender.expectMsgType[JValue]
+    if (useEclairSigner) {
+      createEclairBackedWallet(bitcoinrpcclient, onChainKeyManager)
+    } else {
+      sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
+      sender.expectMsgType[JValue]
+    }
     logger.info(s"generating initial blocks to wallet=$defaultWallet...")
     generateBlocks(150)
     awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
   }
+
+  def createEclairBackedWallet(bitcoinClient: BitcoinJsonRPCClient, keyManager: OnChainKeyManager): Unit = {
+    val sender = TestProbe()
+    // wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer
+    bitcoinClient.invoke("createwallet", keyManager.walletName, true, false, "", false, true, true, false).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
+    val descriptors = keyManager.descriptors(0).descriptors
+    bitcoinClient.invoke("importdescriptors", descriptors).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
+  }
+
 
   /** Generate blocks to a given address, or to our wallet if no address is provided. */
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {
@@ -161,7 +198,7 @@ trait BitcoindService extends Logging {
     val addressToUse = address match {
       case Some(addr) => addr
       case None =>
-        sender.send(bitcoincli, BitcoinReq("getnewaddress"))
+        sender.send(bitcoincli, BitcoinReq("getnewaddress", "", "bech32"))
         val JString(address) = sender.expectMsgType[JValue](timeout)
         address
     }
@@ -198,6 +235,27 @@ trait BitcoindService extends Logging {
     (priv, address)
   }
 
+  def sendToAddress(address: String, amount: BtcAmount): Transaction = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val amountSat = amount match {
+      case amount: Satoshi => amount
+      case amount: MilliBtc => amount.toSatoshi
+      case amount: Btc => amount.toSatoshi
+    }
+    val probe = TestProbe()
+    val tx = Transaction(version = 2, Nil, TxOut(amountSat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil, lockTime = 0)
+    val client = makeBitcoinCoreClient()
+    val f = for {
+      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(Satoshi(10))), replaceable = true)
+      signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
+      txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
+      tx <- client.getTransaction(txid)
+    } yield tx
+    f.pipeTo(probe.ref)
+    probe.expectMsgType[Transaction]
+  }
+
   /** Send to a given address, without generating blocks to confirm. */
   def sendToAddress(address: String, amount: BtcAmount, sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): Transaction = {
     val amountDecimal = amount match {
@@ -212,10 +270,15 @@ trait BitcoindService extends Logging {
     Transaction.read(rawTx)
   }
 
+  def signTransaction(client: BitcoinCoreClient, tx: Transaction): Future[SignTransactionResponse] = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    client.signPsbt(new Psbt(tx), tx.txIn.indices, Nil).map(p => SignTransactionResponse(p.finalTx_opt.getOrElse(p.partiallySignedTx), p.finalTx_opt.isRight))
+  }
 }
 
 object BitcoindService {
 
   case class BitcoinReq(method: String, params: Any*)
 
+  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 }
