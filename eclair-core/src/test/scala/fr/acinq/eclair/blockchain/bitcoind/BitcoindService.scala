@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcAmount, MilliBtc, MnemonicCo
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKB, FeeratePerKw}
-import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
+import fr.acinq.eclair.crypto.keymanager.{LocalOnChainKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.integration.IntegrationSpec
 import fr.acinq.eclair.{BlockHeight, TestUtils, TimestampSecond, randomKey}
 import grizzled.slf4j.Logging
@@ -171,8 +171,7 @@ trait BitcoindService extends Logging {
     val sender = TestProbe()
     waitForBitcoindUp(sender)
     if (useEclairSigner) {
-      onChainKeyManager.createWallet(bitcoinrpcclient).pipeTo(sender.ref)
-      sender.expectMsg(true)
+      createEclairBackedWallet(bitcoinrpcclient, onChainKeyManager)
     } else {
       sender.send(bitcoincli, BitcoinReq("createwallet", defaultWallet))
       sender.expectMsgType[JValue]
@@ -181,6 +180,17 @@ trait BitcoindService extends Logging {
     generateBlocks(150)
     awaitCond(currentBlockHeight(sender) >= BlockHeight(150), max = 3 minutes, interval = 2 second)
   }
+
+  def createEclairBackedWallet(bitcoinClient: BitcoinJsonRPCClient, keyManager: OnChainKeyManager): Unit = {
+    val sender = TestProbe()
+    // wallet_name, disable_private_keys, blank, passphrase, avoid_reuse, descriptors, load_on_startup, external_signer
+    bitcoinClient.invoke("createwallet", keyManager.walletName, true, false, "", false, true, true, false).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
+    val descriptors = keyManager.descriptors(0).descriptors
+    bitcoinClient.invoke("importdescriptors", descriptors).pipeTo(sender.ref)
+    sender.expectMsgType[JValue]
+  }
+
 
   /** Generate blocks to a given address, or to our wallet if no address is provided. */
   def generateBlocks(blockCount: Int, address: Option[String] = None, timeout: FiniteDuration = 10 seconds)(implicit system: ActorSystem): Unit = {

@@ -30,17 +30,6 @@ trait OnChainKeyManager {
   def walletName: String
 
   /**
-   * @return the creation time of the wallet managed by this key manager
-   */
-  def walletTimestamp(): TimestampSecond
-
-  /**
-   * Create a bitcoin core watch-only wallet with private keys owned by this key manager instance.
-   * This should only be called if the corresponding wallet doesn't already exist.
-   */
-  def createWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext): Future[Boolean]
-
-  /**
    * @param account account number (0 is used by most wallets)
    * @return the on-chain pubkey for this account, which can then be imported into a BIP39-compatible wallet such as Electrum
    */

@@ -1418,8 +1418,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
     val master = DeterministicWallet.generate(seed)
     val (wallet, keyManager) = createWallet(seed)
-    keyManager.createWallet(wallet.rpcClient).pipeTo(sender.ref)
-    sender.expectMsg(true)
+    createEclairBackedWallet(wallet.rpcClient, keyManager)
 
     // this account xpub can be used to create a watch-only wallet
     val accountXPub = DeterministicWallet.encode(
@@ -1453,8 +1452,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
 
     (1 to 10).foreach { _ =>
       val (wallet, keyManager) = createWallet(randomBytes32())
-      keyManager.createWallet(wallet.rpcClient).pipeTo(sender.ref)
-      sender.expectMsg(true)
+      createEclairBackedWallet(wallet.rpcClient, keyManager)
       wallet.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 
