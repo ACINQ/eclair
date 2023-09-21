@@ -84,6 +84,7 @@ object Channel {
                          minFinalExpiryDelta: CltvExpiryDelta,
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
+                         maxChannelSpentRescanBlocks: Int,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
                          requireConfirmedInputsForDualFunding: Boolean,

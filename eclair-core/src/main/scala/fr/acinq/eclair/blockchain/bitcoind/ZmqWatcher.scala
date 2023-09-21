@@ -396,9 +396,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
                       case None =>
                         // no luck, we have to do it the hard way...
                         log.warn(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, w.txId, w.outputIndex).map { spendingTx =>
+                        client.lookForSpendingTx(None, w.txId, w.outputIndex, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
                           log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${spendingTx.txid}")
                           context.self ! ProcessNewTransaction(spendingTx)
+                        }.recover {
+                          case _ => log.warn(s"could not find the spending tx of ${w.txId}:${w.outputIndex} in the blockchain, funds are at risk")
                         }
                     }
                 }
