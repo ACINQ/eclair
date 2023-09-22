@@ -1094,7 +1094,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
-      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
+      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
@@ -1908,7 +1908,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               d.spliceStatus match {
                 case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
                   // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-                  log.info(s"re-sending commit_sig for splice attempt with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
+                  log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
                   val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
                   sendQueue = sendQueue :+ commitSig
                   d.spliceStatus
@@ -1918,18 +1918,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                       dfu.sharedTx match {
                         case fundingTx: InteractiveTxBuilder.PartiallySignedSharedTransaction =>
                           // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
-                          log.info(s"re-sending commit_sig and tx_signatures for fundingTxIndex=${d.commitments.latest.fundingTxIndex} fundingTxId=${d.commitments.latest.fundingTxId}")
+                          log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
                           val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
                           sendQueue = sendQueue :+ commitSig :+ fundingTx.localSigs
                         case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
-                          log.info(s"re-sending tx_signatures for fundingTxIndex=${d.commitments.latest.fundingTxIndex} fundingTxId=${d.commitments.latest.fundingTxId}")
+                          log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
                           sendQueue = sendQueue :+ fundingTx.localSigs
                       }
-                    case _ =>
-                      // The funding tx is published or confirmed, and they have not received our tx_signatures, but they must have received our commit_sig, otherwise they
-                      // would not have sent their tx_signatures and we would not have been able to publish the funding tx in the first place. We could in theory
-                      // recompute our tx_signatures, but instead we do nothing: they will be notified that the funding tx has confirmed.
-                      log.warning("cannot re-send tx_signatures for fundingTxId={}, transaction is already published or confirmed", fundingTxId)
+                    case fundingStatus =>
+                      // They have not received our tx_signatures, but they must have received our commit_sig, otherwise
+                      // we would be in the case above.
+                      log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={} (already published or confirmed)", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                      sendQueue = sendQueue ++ fundingStatus.localSigs_opt.toSeq
                   }
                   d.spliceStatus
                 case _ =>
@@ -1950,7 +1950,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           val spliceLocked = d.commitments.active
             .filter(c => c.fundingTxIndex > 0) // only consider splice txs
             .collectFirst { case c if c.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked] =>
-              log.debug(s"re-sending splice_locked for fundingTxId=${c.fundingTxId}")
+              log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
               SpliceLocked(d.channelId, c.fundingTxId.reverse)
             }
           sendQueue = sendQueue ++ spliceLocked
@@ -2181,11 +2181,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
       // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
       // trigger and rewrite the funding status again.
-      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx) => tx }.exists(_.txid == w.tx.txid)
+      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx, _) => tx }.exists(_.txid == w.tx.txid)
       if (alreadyConfirmed) {
         stay()
       } else {
-        val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx)
+        val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
         d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
           case Right((commitments1, _)) =>
             log.info(s"zero-conf funding txid=${w.tx.txid} has been published")

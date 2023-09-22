@@ -1132,6 +1132,10 @@ case class Commitments(params: ChannelParams,
     }
   }
 
+  def localFundingSigs(fundingTxId: ByteVector32): Option[TxSignatures] = {
+    all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
+  }
+
   /**
    * Update the local/remote funding status
    *
