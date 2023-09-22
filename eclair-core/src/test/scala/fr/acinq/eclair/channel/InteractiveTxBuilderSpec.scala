@@ -513,18 +513,25 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("initiator uses unconfirmed inputs") {
-    withFixture(100_000 sat, Seq(250_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    withFixture(100_000 sat, Seq(170_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
-      // Alice's inputs are all unconfirmed.
+      // Alice's inputs are all unconfirmed: we spent her only confirmed input to create two unconfirmed outputs.
       val probe = TestProbe()
       val tx = sendToAddress(getNewAddress(probe, rpcClientA), 75_000 sat, probe, rpcClientA)
       walletA.listUnspent().pipeTo(probe.ref)
-      probe.expectMsgType[Seq[Utxo]].foreach(utxo => assert(utxo.confirmations == 0))
+      val utxosA = probe.expectMsgType[Seq[Utxo]]
+      assert(utxosA.size == 2)
+      utxosA.foreach(utxo => assert(utxo.confirmations == 0))
+      utxosA.foreach(utxo => assert(utxo.amount < 100_000.sat)) // Alice will need both inputs to fund the channel.
 
       alice ! Start(alice2bob.ref)
       bob ! Start(bob2alice.ref)
 
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob

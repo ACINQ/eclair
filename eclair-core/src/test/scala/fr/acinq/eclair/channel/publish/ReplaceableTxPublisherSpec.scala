@@ -553,7 +553,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx not confirming, adding other wallet inputs") {
-    withFixture(Seq(10.4 millibtc, 5 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+    withFixture(Seq(10.2 millibtc, 0.15 millibtc, 0.15 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 40)
@@ -563,8 +563,14 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val listener = TestProbe()
       system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
 
+      // We have 3 small utxos: one is enough to fund the first anchor tx, but we'll need several at a higher feerate.
+      wallet.listUnspent().pipeTo(probe.ref)
+      val utxos = probe.expectMsgType[Seq[BitcoinCoreClient.Utxo]]
+      assert(utxos.size == 3)
+      utxos.foreach(utxo => assert(utxo.amount <= 0.15.millibtc))
+
       // The feerate is (much) higher for higher block targets
-      val targetFeerate = FeeratePerKw(20_000 sat)
+      val targetFeerate = FeeratePerKw(10_000 sat)
       setFeerate(FeeratePerKw(3000 sat))
       setFeerate(targetFeerate, blockTarget = 6)
       publisher ! Publish(probe.ref, anchorTx)
