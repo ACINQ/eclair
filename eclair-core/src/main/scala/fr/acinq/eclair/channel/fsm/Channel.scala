@@ -572,7 +572,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
                 }
               }
-            case _ if d.commitments.params.channelFeatures.hasFeature(Features.DualFunding) && d.commitments.ignoreRetransmittedCommitSig(commit) =>
+            case _ if d.commitments.ignoreRetransmittedCommitSig(commit) =>
               // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
               // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
               // Note that the funding transaction may have confirmed while we were reconnecting.
@@ -1926,8 +1926,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                           sendQueue = sendQueue :+ fundingTx.localSigs
                       }
                     case fundingStatus =>
-                      // They have not received our tx_signatures, but they must have received our commit_sig, otherwise
-                      // we would be in the case above.
+                      // They have not received our tx_signatures, but they must have received our commit_sig, otherwise we would be in the case above.
                       log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={} (already published or confirmed)", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
                       sendQueue = sendQueue ++ fundingStatus.localSigs_opt.toSeq
                   }

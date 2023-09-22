@@ -414,6 +414,7 @@ case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Op
 
 sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]
+  /** We store local signatures for the purpose of retransmitting if the funding/splicing flow is interrupted. */
   def localSigs_opt: Option[TxSignatures]
 }
 object LocalFundingStatus {
