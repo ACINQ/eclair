@@ -974,17 +974,48 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectWatchPublished(spliceTx.txid)
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
 
-    // Alice doesn't retransmit her tx_signatures because the funding transaction has already been published.
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
     assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == spliceTx.txid)
     alice2bob.forward(bob)
-    // Bob cannot publish the transaction, but it will eventually confirm because it was published by Alice.
-    bob2blockchain.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+  }
+
+  test("disconnect (tx_signatures sent by alice, splice confirms while bob is offline)") { f =>
+    import f._
+
+    val sender = initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures] // Bob doesn't receive Alice's tx_signatures
+    sender.expectMsgType[RES_SPLICE]
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+
+    // The splice transaction confirms while Bob is offline.
+    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    disconnect(f)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f, interceptFundingDeeplyBuried = false)
+    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceTx.txid))
+    bob2alice.expectNoMessage(100 millis)
+
+    // Bob receives Alice's tx_signatures, which completes the splice.
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
 
   test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

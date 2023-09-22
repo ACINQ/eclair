@@ -68,7 +68,7 @@ trait CommonFundingHandlers extends CommonHandlers {
         }
       case _ => () // in the dual-funding case, we have already verified the funding tx
     }
-    val fundingStatus = ConfirmedFundingTx(w.tx)
+    val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
       case (commitments1, commitment) =>
