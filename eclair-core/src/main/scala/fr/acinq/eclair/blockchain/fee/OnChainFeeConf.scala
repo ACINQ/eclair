@@ -23,17 +23,30 @@ import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions
 
 // @formatter:off
-sealed trait ConfirmationPriority {
+sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
+  def underlying: Int
+
   def getFeerate(feerates: FeeratesPerKw): FeeratePerKw = this match {
     case ConfirmationPriority.Slow => feerates.slow
     case ConfirmationPriority.Medium => feerates.medium
     case ConfirmationPriority.Fast => feerates.fast
   }
+
+  override def compare(that: ConfirmationPriority): Int = this.underlying.compare(that.underlying)
 }
 object ConfirmationPriority {
-  case object Slow extends ConfirmationPriority { override def toString = "slow" }
-  case object Medium extends ConfirmationPriority { override def toString = "medium" }
-  case object Fast extends ConfirmationPriority { override def toString = "fast" }
+  case object Slow extends ConfirmationPriority {
+    override val underlying = 1
+    override def toString = "slow"
+  }
+  case object Medium extends ConfirmationPriority {
+    override val underlying = 2
+    override def toString = "medium"
+  }
+  case object Fast extends ConfirmationPriority {
+    override val underlying = 3
+    override def toString = "fast"
+  }
 }
 sealed trait ConfirmationTarget
 object ConfirmationTarget {

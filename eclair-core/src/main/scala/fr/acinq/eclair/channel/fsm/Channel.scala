@@ -1707,20 +1707,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CMD_CLOSE, d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d: DATA_CLOSING) =>
-      d.localCommitPublished match {
-        case Some(lcp) => d.commitments.params.commitmentFormat match {
-          case _: Transactions.AnchorOutputsCommitmentFormat =>
-            val lcp1 = Closing.LocalClose.claimAnchors(keyManager, d.commitments.latest, lcp, c.confirmationTarget)
-            lcp1.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest) }
+      d.commitments.params.commitmentFormat match {
+        case _: Transactions.AnchorOutputsCommitmentFormat =>
+          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(keyManager, d.commitments.latest, lcp, c.confirmationTarget))
+          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, rcp, c.confirmationTarget))
+          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, nrcp, c.confirmationTarget))
+          val claimAnchorTxs = lcp1.toSeq.flatMap(_.claimAnchorTxs) ++ rcp1.toSeq.flatMap(_.claimAnchorTxs) ++ nrcp1.toSeq.flatMap(_.claimAnchorTxs)
+          claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest) }
+          if (claimAnchorTxs.nonEmpty) {
             c.replyTo ! RES_SUCCESS(c, d.channelId)
-            stay() using d.copy(localCommitPublished = Some(lcp1))
-          case Transactions.DefaultCommitmentFormat =>
-            log.warning("cannot bump force-close fees, channel is not using anchor outputs")
+            stay() using d.copy(localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1) storing()
+          } else {
+            log.warning("cannot bump force-close fees, local or remote commit not published")
             c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
             stay()
-        }
-        case None =>
-          log.warning("cannot bump force-close fees, local commit hasn't been published")
+          }
+        case _ =>
+          log.warning("cannot bump force-close fees, channel is not using anchor outputs")
           c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
           stay()
       }

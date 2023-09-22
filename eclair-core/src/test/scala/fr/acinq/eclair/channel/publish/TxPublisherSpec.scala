@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOp
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.publish
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
@@ -116,16 +116,30 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val confirmBefore = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 3)
-    val anchorTx = ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ConfirmationTarget.Absolute(confirmBefore))
+    val anchorTx = ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     val cmd = PublishReplaceableTx(anchorTx, null)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     assert(child.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
 
-    // We ignore duplicates that don't use a more aggressive confirmation target:
-    txPublisher ! PublishReplaceableTx(anchorTx, null)
+    // We ignore duplicates that don't use a more aggressive priority:
+    txPublisher ! PublishReplaceableTx(anchorTx.copy(confirmationTarget = ConfirmationTarget.Priority(ConfirmationPriority.Slow)), null)
     child.expectNoMessage(100 millis)
     factory.expectNoMessage(100 millis)
+
+    // But we allow duplicates with a more aggressive priority:
+    val cmdHigherPriority = cmd.copy(txInfo = anchorTx.copy(confirmationTarget = ConfirmationTarget.Priority(ConfirmationPriority.Fast)))
+    txPublisher ! cmdHigherPriority
+    child.expectMsg(ReplaceableTxPublisher.UpdateConfirmationTarget(ConfirmationTarget.Priority(ConfirmationPriority.Fast)))
+    factory.expectNoMessage(100 millis)
+
+    // Absolute confirmation targets replace relative priorities:
+    val cmdAbsoluteTarget = cmd.copy(txInfo = anchorTx.copy(confirmationTarget = ConfirmationTarget.Absolute(confirmBefore)))
+    txPublisher ! cmdAbsoluteTarget
+    child.expectMsg(ReplaceableTxPublisher.UpdateConfirmationTarget(ConfirmationTarget.Absolute(confirmBefore)))
+    factory.expectNoMessage(100 millis)
+
+    // We ignore duplicates with a less aggressive confirmation target:
     val cmdHigherTarget = cmd.copy(txInfo = anchorTx.copy(confirmationTarget = ConfirmationTarget.Absolute(confirmBefore + 1)))
     txPublisher ! cmdHigherTarget
     child.expectNoMessage(100 millis)

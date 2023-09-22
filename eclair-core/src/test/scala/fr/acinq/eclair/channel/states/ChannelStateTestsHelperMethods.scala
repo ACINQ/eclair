@@ -574,6 +574,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(closingData.localCommitPublished.isEmpty)
     val remoteCommitPublished = remoteCommitPublished_opt.get
 
+    // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
+    closingData.commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat =>
+        val anchorTx = s2blockchain.expectMsgType[PublishReplaceableTx]
+        assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      case Transactions.DefaultCommitmentFormat => ()
+    }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

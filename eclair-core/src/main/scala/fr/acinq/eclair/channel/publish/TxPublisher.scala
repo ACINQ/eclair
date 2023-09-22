@@ -244,6 +244,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(_)) =>
                 // Switch from relative priority mode to absolute blockheight mode
                 updateConfirmationTarget()
+              case (ConfirmationTarget.Priority(current), ConfirmationTarget.Priority(proposed)) if current < proposed =>
+                // Switch to a higher relative priority.
+                updateConfirmationTarget()
               case _ =>
                 log.debug("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
                 Behaviors.same

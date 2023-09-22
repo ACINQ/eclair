@@ -394,6 +394,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(localAnchor2.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     val localCommitPublished2 = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished2.claimAnchorTxs.contains(localAnchor2))
+
+    // If we try bumping again, but with a lower priority, this won't override the previous priority.
+    alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
+    replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
+    val localAnchor3 = alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+    assert(localAnchor3.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.contains(localCommitPublished2))
   }
 
   def testLocalCommitTxConfirmed(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
@@ -730,14 +737,38 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
   }
 
-  test("recv WatchTxConfirmedTriggered (remote commit)") { f =>
+  test("recv CMD_BUMP_FORCE_CLOSE_FEE (remote commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
+    val closingState1 = remoteClose(bobCommitTx, alice, alice2blockchain)
+    assert(closingState1.claimAnchorTxs.nonEmpty)
+    val Some(localAnchor1) = closingState1.claimAnchorTxs.collectFirst { case tx: ClaimLocalAnchorOutputTx => tx }
+    assert(localAnchor1.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Medium))
+
+    val replyTo = TestProbe()
+    alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
+    val localAnchor2 = alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+    assert(localAnchor2.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    val closingState2 = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
+    assert(closingState2.claimAnchorTxs.contains(localAnchor2))
+
+    // If we try bumping again, but with a lower priority, this won't override the previous priority.
+    alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
+    replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
+    val localAnchor3 = alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+    assert(localAnchor3.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.contains(closingState2))
+  }
+
+  test("recv WatchTxConfirmedTriggered (remote commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    assert(initialState.commitments.params.channelFeatures == ChannelFeatures())
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
-    assert(bobCommitTx.txOut.size == 2) // two main outputs
+    assert(bobCommitTx.txOut.size == 4) // two main outputs + two anchors
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
 
     // actual test starts here
@@ -1081,6 +1112,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimMain.tx))
     claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx == claimHtlcTimeout.tx))
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
