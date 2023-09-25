@@ -202,6 +202,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! cmd
     // we tweak the feerate
     val spliceInit = alice2bob.expectMsgType[SpliceInit].copy(feerate = FeeratePerKw(100.sat))
+    bob.setFeerates(alice.nodeParams.currentFeerates.copy(minimum = FeeratePerKw(101.sat)))
     alice2bob.forward(bob, spliceInit)
     val txAbortBob = bob2alice.expectMsgType[TxAbort]
     bob2alice.forward(alice, txAbortBob)
