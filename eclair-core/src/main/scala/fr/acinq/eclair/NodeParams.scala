@@ -443,8 +443,7 @@ object NodeParams extends Logging {
       val ratioBase = config.getDouble("ratios.base")
       val ratioAge = config.getDouble("ratios.channel-age")
       val ratioCapacity = config.getDouble("ratios.channel-capacity")
-      val disabledMultiplier = config.getDouble("ratios.disabled-multiplier")
-      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity, disabledMultiplier))
+      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity))
     }
 
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
