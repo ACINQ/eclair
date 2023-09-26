@@ -99,6 +99,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional",
+      s"features.${StaticRemoteKey.rfcName}" -> "mandatory",
     ).asJava)
 
     // var_onion_optin cannot be disabled
@@ -107,6 +108,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${ChannelType.rfcName}" -> "optional",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
     ).asJava)
 
     // var_onion_optin cannot be optional
@@ -115,6 +117,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "optional",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
     ).asJava)
 
     // payment_secret cannot be optional
@@ -123,6 +126,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "optional",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
     ).asJava)
 
     // option_channel_type cannot be disabled
@@ -130,6 +134,18 @@ class StartupSpec extends AnyFunSuite {
       s"features.${DataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
+      s"features.${PaymentSecret.rfcName}" -> "mandatory",
+      s"features.${BasicMultiPartPayment.rfcName}" -> "optional",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
+    ).asJava)
+
+    // option_static_remotekey cannot be disabled
+    val noStaticRemoteKeyConf = ConfigFactory.parseMap(Map(
+      s"features.${DataLossProtect.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueries.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
+      s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional",
@@ -144,6 +160,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
     ).asJava)
 
     // extended channel queries without channel queries
@@ -153,6 +170,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelType.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
       s"features.${PaymentSecret.rfcName}" -> "mandatory",
+      s"features.${StaticRemoteKey.rfcName}" -> "optional",
     ).asJava)
 
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
@@ -160,6 +178,7 @@ class StartupSpec extends AnyFunSuite {
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(optionalVarOnionOptinConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(optionalPaymentSecretConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(noChannelTypeConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(noStaticRemoteKeyConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(initialRoutingSyncConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
@@ -171,6 +190,7 @@ class StartupSpec extends AnyFunSuite {
         |    option_data_loss_protect = optional
         |    var_onion_optin = mandatory
         |    payment_secret = mandatory
+        |    option_static_remotekey = optional
         |    option_channel_type = optional
         |  }
         |  override-init-features = [ // optional per-node features
@@ -187,7 +207,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf.withoutPath("features")))
     val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
-    assert(perNodeFeatures == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelRangeQueries -> Optional, ChannelType -> Optional))
+    assert(perNodeFeatures == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelRangeQueries -> Optional, StaticRemoteKey -> Optional, ChannelType -> Optional))
   }
 
   test("combine node override features with default features") {
@@ -213,7 +233,7 @@ class StartupSpec extends AnyFunSuite {
         |        nodeid = "024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
         |        features {
         |          basic_mpp = optional
-        |          option_static_remotekey = disabled
+        |          option_static_remotekey = optional
         |        }
         |      }
         |  ]
@@ -226,7 +246,7 @@ class StartupSpec extends AnyFunSuite {
     val perNodeFeatures1 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
     assert(perNodeFeatures1 == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional))
     val perNodeFeatures2 = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766")))
-    assert(perNodeFeatures2 == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, ChannelType -> Optional))
+    assert(perNodeFeatures2 == Features(DataLossProtect -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, StaticRemoteKey -> Optional, ChannelType -> Optional))
   }
 
   test("reject non-init features in node override") {
