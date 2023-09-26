@@ -359,8 +359,13 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       router.send(peerConnection, GossipDecision.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
+    var warningSent = false
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
+      if (!warningSent) {
+        transport.expectMsgType[Warning]
+        warningSent = true
+      }
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
     router.expectNoMessage(1 second)

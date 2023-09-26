@@ -40,6 +40,9 @@ trait CommonFundingHandlers extends CommonHandlers {
 
   this: Channel =>
 
+  /**
+   * @param delay_opt optional delay to reduce herd effect at startup.
+   */
   def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.commit.txid).toSet ++ additionalKnownSpendingTxs
     val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
@@ -49,6 +52,9 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
   }
 
+  /**
+   * @param delay_opt optional delay to reduce herd effect at startup.
+   */
   def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long], delay_opt: Option[FiniteDuration]): Unit = {
     val watch = minDepth_opt match {
       case Some(fundingMinDepth) => WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
