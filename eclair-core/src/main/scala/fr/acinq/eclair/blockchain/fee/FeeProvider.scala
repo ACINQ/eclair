@@ -136,8 +136,8 @@ object FeeratesPerKw {
     fastest = FeeratePerKw(feerates.fastest))
 
   /** Used in tests */
-  def single(feeratePerKw: FeeratePerKw): FeeratesPerKw = FeeratesPerKw(
-    minimum = feeratePerKw,
+  def single(feeratePerKw: FeeratePerKw, networkMinFee: FeeratePerKw = FeeratePerKw(FeeratePerByte(1 sat))): FeeratesPerKw = FeeratesPerKw(
+    minimum = networkMinFee,
     slow = feeratePerKw,
     medium = feeratePerKw,
     fast = feeratePerKw,
