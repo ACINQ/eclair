@@ -31,7 +31,7 @@ import scala.jdk.CollectionConverters._
 class StartupIntegrationSpec extends IntegrationSpec {
 
   test("no bitcoind wallet configured and one wallet loaded") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig).withoutPath("eclair.bitcoind.wallet"))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig).withoutPath("eclair.bitcoind.wallet"))
   }
 
   test("no bitcoind wallet configured and two wallets loaded") {
@@ -39,7 +39,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
     sender.send(bitcoincli, BitcoinReq("createwallet", ""))
     sender.expectMsgType[Any]
     val thrown = intercept[BitcoinDefaultWalletException] {
-      instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig).withoutPath("eclair.bitcoind.wallet"))
+      instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig).withoutPath("eclair.bitcoind.wallet"))
     }
     assert(thrown == BitcoinDefaultWalletException(List(defaultWallet, "")))
   }
@@ -48,7 +48,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("createwallet", ""))
     sender.expectMsgType[Any]
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
   }
 
   test("explicit bitcoind wallet configured but not loaded") {
@@ -56,7 +56,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
     sender.send(bitcoincli, BitcoinReq("createwallet", ""))
     sender.expectMsgType[Any]
     val thrown = intercept[BitcoinWalletNotLoadedException] {
-      instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "notloaded", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+      instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> "notloaded", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
     }
     assert(thrown == BitcoinWalletNotLoadedException("notloaded", List(defaultWallet, "")))
   }
@@ -64,7 +64,7 @@ class StartupIntegrationSpec extends IntegrationSpec {
   test("bitcoind started with wallets disabled") {
     restartBitcoind(startupFlags = "-disablewallet", loadWallet = false)
     val thrown = intercept[BitcoinWalletDisabledException] {
-      instantiateEclairNode("F", ConfigFactory.load().getConfig("eclair").withFallback(withDefaultCommitment).withFallback(commonConfig))
+      instantiateEclairNode("F", ConfigFactory.load().getConfig("eclair").withFallback(withStaticRemoteKey).withFallback(commonConfig))
     }
     assert(thrown == BitcoinWalletDisabledException(e = JsonRPCError(Error(-32601, "Method not found"))))
   }

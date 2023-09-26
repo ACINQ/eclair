@@ -103,15 +103,11 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${RouteBlinding.rfcName}" -> "optional",
   ).asJava)
 
-  val withDefaultCommitment = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
-    s"eclair.features.${StaticRemoteKey.rfcName}" -> "disabled",
+  val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${StaticRemoteKey.rfcName}" -> "mandatory",
     s"eclair.features.${AnchorOutputs.rfcName}" -> "disabled",
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "disabled",
   ).asJava))
-
-  val withStaticRemoteKey = ConfigFactory.parseMap(Map(
-    s"eclair.features.${StaticRemoteKey.rfcName}" -> "optional"
-  ).asJava).withFallback(withDefaultCommitment)
 
   val withAnchorOutputs = ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
