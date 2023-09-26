@@ -153,7 +153,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           }
           Behaviors.same
         } else if (confirmations < nodeParams.channelConf.minDepthBlocks) {
-          log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
+          log.debug("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
           cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
           Behaviors.same
         } else {

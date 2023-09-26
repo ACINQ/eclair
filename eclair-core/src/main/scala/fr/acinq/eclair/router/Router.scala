@@ -102,7 +102,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
     self ! nodeAnn
 
-    log.info(s"initialization completed, ready to process messages")
+    log.info("initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
     val data = Data(
       nodes.map(n => n.nodeId -> n).toMap, channels, pruned,

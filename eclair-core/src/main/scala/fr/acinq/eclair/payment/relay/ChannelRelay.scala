@@ -118,16 +118,16 @@ class ChannelRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case DoRelay =>
         if (previousFailures.isEmpty) {
-          context.log.info(s"relaying htlc #${r.add.id} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.channelId, r.payload.outgoingChannelId, nextNodeId_opt.getOrElse(""))
+          context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, r.payload.outgoingChannelId, nextNodeId_opt.getOrElse(""))
         }
         context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
         handleRelay(previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-            context.log.info(s"rejecting htlc reason=${cmdFail.reason}")
+            context.log.info("rejecting htlc reason={}", cmdFail.reason)
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
-            context.log.info(s"forwarding htlc to channelId=$selectedChannelId")
+            context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
             register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
             waitForAddResponse(selectedChannelId, previousFailures)
         }

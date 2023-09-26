@@ -252,7 +252,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       case htlcTx: HtlcWithWitnessData =>
         val htlcFeerate = cmd.commitment.localCommit.spec.htlcTxFeerate(cmd.commitment.params.commitmentFormat)
         if (targetFeerate <= htlcFeerate) {
-          log.info("publishing {} without adding inputs: txid={}", cmd.desc, htlcTx.txInfo.tx.txid)
+          log.debug("publishing {} without adding inputs: txid={}", cmd.desc, htlcTx.txInfo.tx.txid)
           sign(txWithWitnessData, htlcFeerate, htlcTx.txInfo.amountIn)
         } else {
           addWalletInputs(htlcTx, targetFeerate)

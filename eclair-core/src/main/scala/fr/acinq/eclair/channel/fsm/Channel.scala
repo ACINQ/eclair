@@ -82,6 +82,7 @@ object Channel {
                          maxExpiryDelta: CltvExpiryDelta,
                          fulfillSafetyBeforeTimeout: CltvExpiryDelta,
                          minFinalExpiryDelta: CltvExpiryDelta,
+                         maxRestartWatchDelay: FiniteDuration,
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
                          maxChannelSpentRescanBlocks: Int,
@@ -252,8 +253,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
 
-      // we watch all unconfirmed funding txs, whatever our state is
-      // (there can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf)
+      // We watch all unconfirmed funding txs, whatever our state is.
+      // There can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf.
+      // To avoid a herd effect on restart, we add a delay before watching funding txs.
+      val herdDelay_opt = nodeParams.channelConf.maxRestartWatchDelay.toSeconds match {
+        case maxRestartWatchDelay if maxRestartWatchDelay > 0 => Some((1 + Random.nextLong(maxRestartWatchDelay)).seconds)
+        case _ => None
+      }
       data match {
         case _: ChannelDataWithoutCommitments => ()
         case data: ChannelDataWithCommitments => data.commitments.all.foreach { commitment =>
@@ -272,14 +278,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   // once, because at the next restore, the status of the funding tx will be "confirmed".
                   ()
               }
-              watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)))
+              watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)), herdDelay_opt)
             case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
               publishFundingTx(fundingTx)
               val minDepth_opt = data.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, fundingTx.sharedTx.tx)
-              watchFundingConfirmed(fundingTx.sharedTx.txId, minDepth_opt)
+              watchFundingConfirmed(fundingTx.sharedTx.txId, minDepth_opt, herdDelay_opt)
             case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
               // those are zero-conf channels, the min-depth isn't critical, we use the default
-              watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong))
+              watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepthBlocks.toLong), herdDelay_opt)
             case _: LocalFundingStatus.ConfirmedFundingTx =>
               data match {
                 case closing: DATA_CLOSING if Closing.nothingAtStake(closing) || Closing.isClosingTypeAlreadyKnown(closing).isDefined =>
@@ -287,11 +293,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   ()
                 case closing: DATA_CLOSING =>
                   // in all other cases we need to be ready for any type of closing
-                  watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet)
+                  watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet, herdDelay_opt)
                 case _ =>
                   // Children splice transactions may already spend that confirmed funding transaction.
                   val spliceSpendingTxs = data.commitments.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-                  watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet)
+                  watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, herdDelay_opt)
               }
           }
         }
@@ -342,7 +348,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
             fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
             nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
-            log.info("refreshing channel_update due to configuration changes")
+            log.debug("refreshing channel_update due to configuration changes")
             self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(nodeParams.channelConf.expiryDelta))
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
@@ -567,7 +573,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
                     // receive their tx_sigs.
                     val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, signingSession1.fundingTx.sharedTx.tx)
-                    watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt)
+                    watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                     val commitments1 = d.commitments.add(signingSession1.commitment)
                     val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                     stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
@@ -807,7 +813,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = Helpers.aboveReserve(d.commitments))
-      log.info(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
+      log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we use goto() instead of stay() because we want to fire transitions
@@ -1081,7 +1087,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) =>
                   val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, signingSession1.fundingTx.sharedTx.tx)
-                  watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt)
+                  watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
@@ -1098,7 +1104,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Right((commitments1, _)) =>
-          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.hash)
         case Left(_) => stay()
@@ -2192,7 +2198,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
           case Right((commitments1, _)) =>
             log.info(s"zero-conf funding txid=${w.tx.txid} has been published")
-            watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks))
+            watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
             val d1 = d match {
               // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
               case d: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
@@ -2525,7 +2531,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // we will only emit a new channel_update with the disable flag set if someone tries to use that channel
     if (d.channelUpdate.channelFlags.isEnabled) {
       // if the channel isn't disabled we generate a new channel_update
-      log.info("updating channel_update announcement (reason=disabled)")
+      log.debug("updating channel_update announcement (reason=disabled)")
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
       // then we update the state and replay the request
       self forward c
@@ -2540,7 +2546,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
     val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
-    log.info(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
+    log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, d.channelId)
     // We're in OFFLINE state, by using stay() instead of goto() we skip the transition handler and won't broadcast the

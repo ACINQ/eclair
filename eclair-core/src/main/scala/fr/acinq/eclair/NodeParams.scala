@@ -508,6 +508,7 @@ object NodeParams extends Logging {
         maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
         minFinalExpiryDelta = minFinalExpiryDelta,
+        maxRestartWatchDelay = FiniteDuration(config.getDuration("channel.max-restart-watch-delay").getSeconds, TimeUnit.SECONDS),
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
         maxChannelSpentRescanBlocks = config.getInt("channel.max-channel-spent-rescan-blocks"),

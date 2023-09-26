@@ -106,7 +106,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
-      log.info(s"using features=$localFeatures")
+      log.debug(s"using features=$localFeatures")
       val localInit = d.pendingAuth.address match {
         case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
         case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
@@ -161,7 +161,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
           val rebroadcastDelay = Random.nextInt(conf.maxRebroadcastDelay.toSeconds.toInt).seconds
-          log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
+          log.debug(s"rebroadcast will be delayed by $rebroadcastDelay")
           context.system.eventStream.subscribe(self, classOf[Rebroadcast])
 
           goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay, isPersistent = d.isPersistent)
@@ -370,6 +370,10 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             } else if (d.behavior.fundingTxAlreadySpentCount < MAX_FUNDING_TX_ALREADY_SPENT) {
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
             } else {
+              // Our peer isn't necessarily malicious: their bitcoind node may be late, or they restarted and have not
+              // yet received notifications for the recently closed channels. There may also be splicing attempts that
+              // are being confirmed and look like closed channels, but actually aren't.
+              // But we still need to protect ourselves against potentially malicious peers and ignore them.
               log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
               d.transport ! Warning("too many channel announcements with funding tx already spent, please check your bitcoin node")
               startSingleTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD)
@@ -529,10 +533,7 @@ object PeerConnection {
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
-
-  // @formatter:off
-  val MAX_FUNDING_TX_ALREADY_SPENT = 10
-  // @formatter:on
+  val MAX_FUNDING_TX_ALREADY_SPENT = 250
 
   def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
     Props(new PeerConnection(keyPair, conf, switchboard, router))

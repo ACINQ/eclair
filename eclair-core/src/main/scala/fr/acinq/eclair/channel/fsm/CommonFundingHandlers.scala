@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChan
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
 
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -40,17 +40,31 @@ trait CommonFundingHandlers extends CommonHandlers {
 
   this: Channel =>
 
-  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32] = Set.empty): Unit = {
+  /**
+   * @param delay_opt optional delay to reduce herd effect at startup.
+   */
+  def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[ByteVector32], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.commit.txid).toSet ++ additionalKnownSpendingTxs
-    blockchain ! WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+    val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+    delay_opt match {
+      case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
+      case None => blockchain ! watch
+    }
   }
 
-  def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long]): Unit = {
-    minDepth_opt match {
-      case Some(fundingMinDepth) => blockchain ! WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
+  /**
+   * @param delay_opt optional delay to reduce herd effect at startup.
+   */
+  def watchFundingConfirmed(fundingTxId: ByteVector32, minDepth_opt: Option[Long], delay_opt: Option[FiniteDuration]): Unit = {
+    val watch = minDepth_opt match {
+      case Some(fundingMinDepth) => WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
       // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk
       // of accidentally double-spending it later (e.g. restarting bitcoind would remove the utxo locks).
-      case None => blockchain ! WatchPublished(self, fundingTxId)
+      case None => WatchPublished(self, fundingTxId)
+    }
+    delay_opt match {
+      case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
+      case None => blockchain ! watch
     }
   }
 
@@ -75,7 +89,7 @@ trait CommonFundingHandlers extends CommonHandlers {
         // First of all, we watch the funding tx that is now confirmed.
         // Children splice transactions may already spend that confirmed funding transaction.
         val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-        watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet)
+        watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
         // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
         rollbackDualFundingTxs(d.commitments.active // note how we use the unpruned original commitments
           .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)

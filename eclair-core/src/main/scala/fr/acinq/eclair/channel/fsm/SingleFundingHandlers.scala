@@ -78,7 +78,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
           case Some(fundingTx) =>
             // if we are funder, we never give up
             // we cannot correctly set the fee, but it was correctly set when we initially published the transaction
-            log.info(s"republishing the funding tx...")
+            log.debug(s"republishing the funding tx...")
             txPublisher ! PublishFinalTx(fundingTx, fundingTx.txIn.head.outPoint, "funding", 0 sat, None)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
