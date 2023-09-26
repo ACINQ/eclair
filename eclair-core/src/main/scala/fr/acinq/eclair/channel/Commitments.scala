@@ -27,8 +27,8 @@ case class ChannelParams(channelId: ByteVector32,
                          channelFlags: ChannelFlags) {
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
-  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.requestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
-  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.requestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.initialRequestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
 
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
   val channelType: SupportedChannelType = channelFeatures.channelType
@@ -103,17 +103,17 @@ case class ChannelParams(channelId: ByteVector32,
   def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+  def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(remoteParams.dustLimit)
   } else {
-    remoteParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+    remoteParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserveForCapacity(capacity: Satoshi): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding)) {
+  def remoteChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
     (capacity / 100).max(localParams.dustLimit)
   } else {
-    localParams.requestedChannelReserve_opt.get // this is guarded by a require() in Params
+    localParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
   }
 
   /**
@@ -268,10 +268,10 @@ case class Commitment(fundingTxIndex: Long,
   val capacity: Satoshi = commitInput.txOut.amount
 
   /** Channel reserve that applies to our funds. */
-  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity)
+  def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity, fundingTxIndex > 0)
 
   /** Channel reserve that applies to our peer's funds. */
-  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity)
+  def remoteChannelReserve(params: ChannelParams): Satoshi = params.remoteChannelReserveForCapacity(capacity, fundingTxIndex > 0)
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the initiator keeps an extra buffer on
   // top of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see

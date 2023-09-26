@@ -159,6 +159,35 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
   }
 
+  test("recv CMD_SPLICE (splice-in, non dual-funded channel)") { () =>
+    val f = init(tags = Set(ChannelStateTestsTags.DualFunding, ChannelStateTestsTags.Splicing))
+    import f._
+
+    reachNormal(f, tags = Set(ChannelStateTestsTags.Splicing)) // we open a non dual-funded channel
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    awaitCond(alice.stateName == NORMAL && bob.stateName == NORMAL)
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(!initialState.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(initialState.commitments.latest.capacity == 1_000_000.sat)
+    assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
+    assert(initialState.commitments.latest.localCommit.spec.toRemote == 200_000_000.msat)
+    // The channel reserve is set by each participant when not using dual-funding.
+    assert(initialState.commitments.latest.localChannelReserve == 20_000.sat)
+    assert(initialState.commitments.latest.remoteChannelReserve == 10_000.sat)
+
+    // We can splice on top of a non dual-funded channel.
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val postSpliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(!postSpliceState.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(postSpliceState.commitments.latest.capacity == 1_500_000.sat)
+    assert(postSpliceState.commitments.latest.localCommit.spec.toLocal == 1_300_000_000.msat)
+    assert(postSpliceState.commitments.latest.localCommit.spec.toRemote == 200_000_000.msat)
+    // The channel reserve is now implicitly set to 1% of the channel capacity on both sides.
+    assert(postSpliceState.commitments.latest.localChannelReserve == 15_000.sat)
+    assert(postSpliceState.commitments.latest.remoteChannelReserve == 15_000.sat)
+  }
+
   test("recv CMD_SPLICE (splice-out)") { f =>
     import f._
 

@@ -148,7 +148,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = open.dustLimit,
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-            requestedChannelReserve_opt = None, // channel reserve will be computed based on channel capacity
+            initialRequestedChannelReserve_opt = None, // channel reserve will be computed based on channel capacity
             htlcMinimum = open.htlcMinimum,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
@@ -247,7 +247,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimit,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-            requestedChannelReserve_opt = None, // channel reserve will be computed based on channel capacity
+            initialRequestedChannelReserve_opt = None, // channel reserve will be computed based on channel capacity
             htlcMinimum = accept.htlcMinimum,
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,

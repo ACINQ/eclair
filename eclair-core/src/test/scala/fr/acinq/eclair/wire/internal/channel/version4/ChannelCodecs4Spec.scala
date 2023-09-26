@@ -86,8 +86,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       val remoteCodec = remoteParamsCodec(ChannelFeatures(Features.DualFunding))
       val decodedLocalParams = localCodec.decode(localCodec.encode(localParams).require).require.value
       val decodedRemoteParams = remoteCodec.decode(remoteCodec.encode(remoteParams).require).require.value
-      assert(decodedLocalParams == localParams.copy(requestedChannelReserve_opt = None))
-      assert(decodedRemoteParams == remoteParams.copy(requestedChannelReserve_opt = None))
+      assert(decodedLocalParams == localParams.copy(initialRequestedChannelReserve_opt = None))
+      assert(decodedRemoteParams == remoteParams.copy(initialRequestedChannelReserve_opt = None))
     }
   }
 
