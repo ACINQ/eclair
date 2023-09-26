@@ -254,7 +254,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
       // We watch all unconfirmed funding txs, whatever our state is.
       // There can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf.
-      // To avoid a herd effect on restart, we had a delay before watching funding txs.
+      // To avoid a herd effect on restart, we add a delay before watching funding txs.
       val herdDelay_opt = nodeParams.channelConf.maxRestartWatchDelay.toSeconds match {
         case maxRestartWatchDelay if maxRestartWatchDelay > 0 => Some((1 + Random.nextLong(maxRestartWatchDelay)).seconds)
         case _ => None
