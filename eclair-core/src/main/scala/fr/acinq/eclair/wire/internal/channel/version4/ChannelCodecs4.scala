@@ -9,6 +9,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -247,20 +248,44 @@ private[channel] object ChannelCodecs4 {
         ("targetFeerate" | feeratePerKw) ::
         ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
 
+    // This codec was used by a first prototype version of splicing that only worked without HTLCs.
+    private val sharedInteractiveTxInputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | provide(0 msat))).as[InteractiveTxBuilder.Input.Shared]
+
+    private val sharedInteractiveTxInputWithHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared]
+
     private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = discriminated[InteractiveTxBuilder.Input.Shared].by(byte)
-      .typecase(0x01, (
-        ("serialId" | uint64) ::
-          ("outPoint" | outPointCodec) ::
-          ("sequence" | uint32) ::
-          ("localAmount" | millisatoshi) ::
-          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared])
+      .typecase(0x02, sharedInteractiveTxInputWithHtlcsCodec)
+      .typecase(0x01, sharedInteractiveTxInputWithoutHtlcsCodec)
+
+    private val sharedInteractiveTxOutputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
+      ("serialId" | uint64) ::
+        ("scriptPubKey" | lengthDelimited(bytes)) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | provide(0 msat))).as[InteractiveTxBuilder.Output.Shared]
+
+    private val sharedInteractiveTxOutputWithHtlcsCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
+      ("serialId" | uint64) ::
+        ("scriptPubKey" | lengthDelimited(bytes)) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared]
 
     private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = discriminated[InteractiveTxBuilder.Output.Shared].by(byte)
-      .typecase(0x01, (
-        ("serialId" | uint64) ::
-          ("scriptPubKey" | lengthDelimited(bytes)) ::
-          ("localAmount" | millisatoshi) ::
-          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared])
+      .typecase(0x02, sharedInteractiveTxOutputWithHtlcsCodec)
+      .typecase(0x01, sharedInteractiveTxOutputWithoutHtlcsCodec)
 
     private val localOnlyInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Local] = (
       ("serialId" | uint64) ::

@@ -19,7 +19,9 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction}
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -33,6 +35,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFact
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFeeHtlcTxs, NoMaxHtlcValueInFlight, ZeroConf}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
+import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
 import fr.acinq.eclair.wire.protocol._
@@ -65,12 +68,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private val defaultSpliceOutScriptPubKey = hex"0020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
+  private def useQuiescence(f: FixtureParam): Boolean = f.alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.useQuiescence
+
   private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): TestProbe = {
     import f._
 
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt)
     alice ! cmd
+    if (useQuiescence(f)) {
+      exchangeStfu(f)
+    }
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -144,6 +152,101 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     exchangeSpliceSigs(f, sender)
   }
 
+  private def exchangeStfu(f: FixtureParam): Unit = {
+    import f._
+    alice2bob.expectMsgType[Stfu]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Stfu]
+    bob2alice.forward(alice)
+  }
+
+  case class TestHtlcs(aliceToBob: Seq[(ByteVector32, UpdateAddHtlc)], bobToAlice: Seq[(ByteVector32, UpdateAddHtlc)])
+
+  private def setupHtlcs(f: FixtureParam): TestHtlcs = {
+    import f._
+
+    if (useQuiescence(f)) {
+      // add htlcs in both directions
+      val htlcsAliceToBob = Seq(
+        addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice),
+        addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
+      )
+      crossSign(alice, bob, alice2bob, bob2alice)
+      val htlcsBobToAlice = Seq(
+        addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob),
+        addHtlc(15_000_000 msat, bob, alice, bob2alice, alice2bob)
+      )
+      crossSign(bob, alice, bob2alice, alice2bob)
+
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      assert(initialState.commitments.latest.capacity == 1_500_000.sat)
+      assert(initialState.commitments.latest.localCommit.spec.toLocal == 770_000_000.msat)
+      assert(initialState.commitments.latest.localCommit.spec.toRemote == 665_000_000.msat)
+
+      TestHtlcs(htlcsAliceToBob, htlcsBobToAlice)
+    } else {
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      assert(initialState.commitments.latest.capacity == 1_500_000.sat)
+      assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
+      assert(initialState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
+      TestHtlcs(Seq.empty, Seq.empty)
+    }
+  }
+
+  def spliceOutFee(f: FixtureParam, capacity: Satoshi): Satoshi = {
+    import f._
+
+    // When we only splice-out, the fees are paid by deducing them from the next funding amount.
+    val fundingTx = alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.localFundingStatus.signedTx_opt.get
+    val feerate = alice.nodeParams.onChainFeeConf.getFundingFeerate(alice.nodeParams.currentFeerates)
+    val expectedMiningFee = Transactions.weight2fee(feerate, fundingTx.weight())
+    val actualMiningFee = capacity - alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.capacity
+    // Fee computation is approximate (signature size isn't constant).
+    assert(actualMiningFee >= 0.sat && abs(actualMiningFee - expectedMiningFee) < 100.sat)
+    actualMiningFee
+  }
+
+  def checkPostSpliceState(f: FixtureParam, spliceOutFee: Satoshi): Unit = {
+    import f._
+
+    // if the swap includes a splice-in, swap-out fees will be paid from bitcoind so final capacity is predictable
+    val (outgoingHtlcs, incomingHtlcs) = if (useQuiescence(f)) (30_000_000.msat, 35_000_000.msat) else (0.msat, 0.msat)
+    val postSpliceState = alice.stateData.asInstanceOf[ChannelDataWithCommitments]
+    assert(postSpliceState.commitments.latest.capacity == 1_900_000.sat - spliceOutFee)
+    assert(postSpliceState.commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat - spliceOutFee - outgoingHtlcs)
+    assert(postSpliceState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - incomingHtlcs)
+    assert(postSpliceState.commitments.latest.localCommit.spec.htlcs.collect(incoming).toSeq.map(_.amountMsat).sum == incomingHtlcs)
+    assert(postSpliceState.commitments.latest.localCommit.spec.htlcs.collect(outgoing).toSeq.map(_.amountMsat).sum == outgoingHtlcs)
+  }
+
+  def resolveHtlcs(f: FixtureParam, htlcs: TestHtlcs, spliceOutFee: Satoshi): Unit = {
+    import f._
+
+    checkPostSpliceState(f, spliceOutFee)
+
+    if (useQuiescence(f)) {
+      // resolve pre-splice HTLCs after splice
+      val Seq((preimage1a, htlc1a), (preimage2a, htlc2a)) = htlcs.aliceToBob
+      val Seq((preimage1b, htlc1b), (preimage2b, htlc2b)) = htlcs.bobToAlice
+      fulfillHtlc(htlc1a.id, preimage1a, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(htlc2a.id, preimage2a, bob, alice, bob2alice, alice2bob)
+      crossSign(bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(htlc1b.id, preimage1b, alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(htlc2b.id, preimage2b, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
+    }
+
+    val settledHtlcs = if (useQuiescence(f)) 5_000_000.msat else 0.msat
+    val finalState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(finalState.commitments.latest.capacity == 1_900_000.sat - spliceOutFee)
+    assert(finalState.commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat - spliceOutFee + settledHtlcs)
+    assert(finalState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - settledHtlcs)
+  }
+
   test("recv CMD_SPLICE (splice-in)") { f =>
     import f._
 
@@ -198,28 +301,32 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
 
-    val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    val feerate = alice.nodeParams.onChainFeeConf.getFundingFeerate(alice.nodeParams.currentFeerates)
-    val expectedMiningFee = Transactions.weight2fee(feerate, fundingTx1.weight())
-    val actualMiningFee = 1_400_000.sat - alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity
-    // fee computation is approximate
-    assert(actualMiningFee - expectedMiningFee < 100.sat || expectedMiningFee - actualMiningFee < 100.sat)
     // initiator pays the fee
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 700_000_000.msat - actualMiningFee)
+    val fee = spliceOutFee(f, capacity = 1_400_000.sat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 700_000_000.msat - fee)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
   }
 
   test("recv CMD_SPLICE (splice-out, would go below reserve)") { f =>
     import f._
 
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.latest.capacity == 1_500_000.sat)
-    assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
-    assert(initialState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
+    setupHtlcs(f)
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(790_000 sat, defaultSpliceOutScriptPubKey)))
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(780_000.sat, defaultSpliceOutScriptPubKey)))
     alice ! cmd
+    sender.expectMsgType[RES_FAILURE[_, _]]
+  }
+
+  test("recv CMD_SPLICE (splice-out, would go below reserve, quiescent)", Tag(ChannelStateTestsTags.Quiescence), Tag(NoMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    setupHtlcs(f)
+
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(760_000 sat, defaultSpliceOutScriptPubKey)))
+    alice ! cmd
+    exchangeStfu(f)
     sender.expectMsgType[RES_FAILURE[_, _]]
   }
 
@@ -261,20 +368,20 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
 
-  test("recv CMD_SPLICE (splice-in + splice-out)") { f =>
-    import f._
-
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.latest.capacity == 1_500_000.sat)
-    assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
-    assert(initialState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
+  def testSpliceInAndOutCmd(f: FixtureParam): Unit = {
+    val htlcs = setupHtlcs(f)
 
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
 
-    // NB: since there is a splice-in, swap-out fees will be paid from bitcoind so final capacity is predictable
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 1_900_000.sat)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+  }
+
+  test("recv CMD_SPLICE (splice-in + splice-out)") { f =>
+    testSpliceInAndOutCmd(f)
+  }
+
+  test("recv CMD_SPLICE (splice-in + splice-out, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testSpliceInAndOutCmd(f)
   }
 
   test("recv TxAbort (before TxComplete)") { f =>
@@ -857,10 +964,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
 
-  test("disconnect (commit_sig not received)") { f =>
+  def testDisconnectCommitSigNotReceived(f: FixtureParam): Unit = {
     import f._
 
-    val sender = initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    val htlcs = setupHtlcs(f)
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
     bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
@@ -882,12 +991,24 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, 0.sat)
   }
 
-  test("disconnect (commit_sig received by alice)") { f =>
+  test("disconnect (commit_sig not received)") { f =>
+    testDisconnectCommitSigNotReceived(f)
+  }
+
+  test("disconnect (commit_sig not received, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testDisconnectCommitSigNotReceived(f)
+  }
+
+  def testDisconnectCommitSigReceivedByAlice(f: FixtureParam): Unit = {
     import f._
 
-    val sender = initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    val htlcs = setupHtlcs(f)
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
@@ -910,12 +1031,24 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (tx_signatures sent by bob)") { f =>
+  test("disconnect (commit_sig received by alice)") { f =>
+    testDisconnectCommitSigReceivedByAlice(f)
+  }
+
+  test("disconnect (commit_sig received by alice, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testDisconnectCommitSigReceivedByAlice(f)
+  }
+
+  def testDisconnectTxSignaturesSentByBob(f: FixtureParam): Unit = {
     import f._
 
-    val sender = initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    val htlcs = setupHtlcs(f)
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[CommitSig]
@@ -940,12 +1073,24 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (tx_signatures received by alice)") { f =>
+  test("disconnect (tx_signatures sent by bob)") { f =>
+    testDisconnectTxSignaturesSentByBob(f)
+  }
+
+  test("disconnect (tx_signatures sent by bob, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testDisconnectTxSignaturesSentByBob(f)
+  }
+
+  def testDisconnectTxSignaturesReceivedByAlice(f: FixtureParam): Unit = {
     import f._
 
-    initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    val htlcs = setupHtlcs(f)
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[CommitSig]
@@ -977,32 +1122,44 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (tx_signatures received by alice, zero-conf", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (tx_signatures received by alice)") { f =>
+    testDisconnectTxSignaturesReceivedByAlice(f)
+  }
+
+  test("disconnect (tx_signatures received by alice, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testDisconnectTxSignaturesReceivedByAlice(f)
+  }
+
+  def testDisconnectTxSignaturesReceivedByAliceZeroConf(f: FixtureParam): Unit = {
     import f._
 
-    initiateSpliceWithoutSigs(f, spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)))
+    val htlcs = setupHtlcs(f)
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     bob2alice.expectMsgType[TxSignatures]
     bob2alice.forward(alice)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    alice2bob.expectMsgType[TxSignatures] // Bob doesn't receive Alice's tx_signatures
+    val spliceTxId = alice2bob.expectMsgType[TxSignatures].txId // Bob doesn't receive Alice's tx_signatures
     alice2blockchain.expectMsgType[WatchPublished]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice ! WatchPublishedTriggered(spliceTx)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == spliceTx.txid) // Bob doesn't receive Alice's splice_locked
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == spliceTxId) // Bob doesn't receive Alice's splice_locked
 
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f, interceptFundingDeeplyBuried = false)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
-    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceTx.txid))
-    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
-    bob2blockchain.expectWatchPublished(spliceTx.txid)
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceTxId))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTxId)
+    bob2blockchain.expectWatchPublished(spliceTxId)
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
 
     alice2bob.expectMsgType[TxSignatures]
@@ -1015,7 +1172,18 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
+
+  test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectTxSignaturesReceivedByAliceZeroConf(f)
+  }
+
+  test("disconnect (tx_signatures received by alice, zero-conf, quiescence)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testDisconnectTxSignaturesReceivedByAliceZeroConf(f)
+  }
+
 
   test("disconnect (tx_signatures sent by alice, splice confirms while bob is offline)") { f =>
     import f._
@@ -1170,15 +1338,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("force-close with multiple splices (simple)") { f =>
+  def testForceCloseWithMultipleSplicesSimple(f: FixtureParam): Unit = {
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val htlcs = setupHtlcs(f)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    val watchConfirmed1 = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val watchConfirmed1 = alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
+    initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    val watchConfirmed2 = alice2blockchain.expectMsgType[WatchFundingConfirmed]
+    val watchConfirmed2 = alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
     alice2blockchain.expectNoMessage(100 millis)
@@ -1187,42 +1357,76 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_FORCECLOSE(ActorRef.noSender)
     alice2bob.expectMsgType[Error]
     val commitTx2 = assertPublished(alice2blockchain, "commit-tx")
+    Transaction.correctlySpends(commitTx2, Seq(fundingTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
-    val watchConfirmedCommit2 = alice2blockchain.expectMsgType[WatchTxConfirmed]
-    val watchConfirmedClaimMainDelayed2 = alice2blockchain.expectMsgType[WatchTxConfirmed]
-    alice ! WatchFundingSpentTriggered(commitTx2)
-    alice2blockchain.expectNoMessage(100 millis)
+    // alice publishes her htlc timeout transactions
+    val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
+    htlcsTxsOut.foreach(tx => Transaction.correctlySpends(tx, Seq(commitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+
+    val watchConfirmedCommit2 = alice2blockchain.expectWatchTxConfirmed(commitTx2.txid)
+    val watchConfirmedClaimMainDelayed2 = alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    // watch for all htlc outputs from local commit-tx to be spent
+    val watchHtlcsOut = htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
+    htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
     // splice 1 confirms
     watchConfirmed1.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     alice2bob.forward(bob)
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectNoMessage(100 millis)
 
     // splice 2 confirms
     watchConfirmed2.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     alice2bob.forward(bob)
     alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectNoMessage(100 millis)
 
     // commit tx confirms
     watchConfirmedCommit2.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, commitTx2)
-
     // claim-main-delayed tx confirms
     watchConfirmedClaimMainDelayed2.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMainDelayed2)
+    // alice's htlc-timeout txs confirm
+    watchHtlcsOut.zip(htlcsTxsOut).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(tx) }
+    htlcsTxsOut.foreach { tx =>
+      alice2blockchain.expectWatchTxConfirmed(tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx)
+    }
+
+    // alice publishes, watches and confirms their 2nd-stage htlc-delayed txs
+    htlcs.aliceToBob.foreach { _ =>
+      val tx = assertPublished(alice2blockchain, "htlc-delayed")
+      alice2blockchain.expectWatchTxConfirmed(tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx)
+    }
+
+    // confirm bob's htlc-timeout txs
+    val remoteOutpoints = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(rcp => rcp.htlcTxs.filter(_._2.isEmpty).keys).toSeq.flatten
+    assert(remoteOutpoints.size == htlcs.bobToAlice.size)
+    remoteOutpoints.foreach { out => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcsTxsOut.head.copy(txIn = Seq(TxIn(out, Nil, 0)))) }
+    alice2blockchain.expectNoMessage(100 millis)
+
+    checkPostSpliceState(f, spliceOutFee(f, capacity = 1_900_000.sat))
 
     // done
     awaitCond(alice.stateName == CLOSED)
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[LocalClose]))
   }
 
-  test("force-close with multiple splices (previous active remote)") { f =>
+  test("force-close with multiple splices (simple)") { f =>
+    testForceCloseWithMultipleSplicesSimple(f)
+  }
+
+  test("force-close with multiple splices (simple, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testForceCloseWithMultipleSplicesSimple(f)
+  }
+
+  def testForceCloseWithMultipleSplicesPreviousActiveRemote(f: FixtureParam): Unit = {
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val htlcs = setupHtlcs(f)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     val watchConfirmed1 = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     alice2blockchain.expectMsgType[WatchFundingConfirmed]
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
@@ -1233,48 +1437,78 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[Error]
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
     assertPublished(alice2blockchain, "local-main-delayed")
+    // alice publishes her htlc timeout transactions
+    val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
+    htlcsTxsOut.foreach(tx => Transaction.correctlySpends(tx, Seq(aliceCommitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+
     alice2blockchain.expectMsgType[WatchTxConfirmed]
     alice2blockchain.expectMsgType[WatchTxConfirmed]
-    alice ! WatchFundingSpentTriggered(aliceCommitTx2)
-    alice2blockchain.expectNoMessage(100 millis)
+    // watch for all htlc outputs from local commit-tx to be spent
+    htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
+    htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
     // splice 1 confirms
     watchConfirmed1.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    alice2bob.forward(bob)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
-    alice2blockchain.expectNoMessage(100 millis)
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
 
-    // oops! remote commit for splice 1 is published
-    val bobCommitTx1 = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.find(_.fundingTxIndex == 1).get.localCommit.commitTxAndRemoteSig.commitTx.tx
+    // bob publishes his commit tx for splice 1 (which double-spends splice 2)
+    val bobCommitment1 = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.find(_.fundingTxIndex == 1).get
+    val bobCommitTx1 = bobCommitment1.fullySignedLocalCommitTx(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params, bob.underlyingActor.keyManager).tx
+    Transaction.correctlySpends(bobCommitTx1, Seq(fundingTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     val watchAlternativeConfirmed = alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed]
     alice2blockchain.expectNoMessage(100 millis)
-
     // remote commit tx confirms
     watchAlternativeConfirmed.replyTo ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
 
     // we're back to the normal handling of remote commit
-    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val watchConfirmedRemoteCommit = alice2blockchain.expectMsgType[WatchTxConfirmed]
-    assert(watchConfirmedRemoteCommit.txId == bobCommitTx1.txid)
+    val claimMain = assertPublished(alice2blockchain, "remote-main")
+    val htlcsTxsOut1 = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "claim-htlc-timeout"))
+    htlcsTxsOut1.foreach(tx => Transaction.correctlySpends(tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    val watchConfirmedRemoteCommit = alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     // this one fires immediately, tx is already confirmed
     watchConfirmedRemoteCommit.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
-    val watchConfirmedClaimMain = alice2blockchain.expectMsgType[WatchTxConfirmed]
 
-    // claim-main tx confirms
+    val watchConfirmedClaimMain = alice2blockchain.expectWatchTxConfirmed(claimMain.txid)
     watchConfirmedClaimMain.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMain)
+
+    // alice's htlc-timeout transactions confirm
+    val watchHtlcsOut1 = htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
+    htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
+    watchHtlcsOut1.zip(htlcsTxsOut1).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(tx) }
+    htlcsTxsOut1.foreach { tx =>
+      alice2blockchain.expectWatchTxConfirmed(tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx)
+    }
+
+    // bob's htlc-timeout transactions confirm
+    bobCommitment1.localCommit.htlcTxsAndRemoteSigs.foreach(txAndSig => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, txAndSig.htlcTx.tx))
+    alice2blockchain.expectNoMessage(100 millis)
+
+    checkPostSpliceState(f, spliceOutFee = 0.sat)
 
     // done
     awaitCond(alice.stateName == CLOSED)
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
 
-  test("force-close with multiple splices (previous active revoked)") { f =>
+  test("force-close with multiple splices (previous active remote)") { f =>
+    testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
+  }
+
+  test("force-close with multiple splices (previous active remote, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
+  }
+
+  def testForceCloseWithMultipleSplicesPreviousActiveRevoked(f: FixtureParam): Unit = {
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val htlcs = setupHtlcs(f)
+
+    // pay 10_000_000 msat to bob that will be paid back to alice after the splices
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
+    alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
     // remember bob's commitment for later
     val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -1292,60 +1526,77 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // funding tx1 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    // alice puts a watch-spent
-    alice2blockchain.expectMsgType[WatchFundingSpent]
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     // bob publishes a revoked commitment for fundingTx1!
     val bobRevokedCommitTx = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
-    // alice watches bob's revoked commit tx, and force-closes with latest commitment
+    // alice watches bob's revoked commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobRevokedCommitTx.txid)
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainDelayed2.txid)
-    alice2blockchain.expectNoMessage(100 millis)
+    htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
+    alice2blockchain.expectWatchTxConfirmed(aliceCommitTx2.txid)
+    alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
+    htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
     // bob's revoked tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
     // alice reacts by punishing bob
-    val aliceClaimMain1 = assertPublished(alice2blockchain, "remote-main")
-    val aliceMainPenalty1 = assertPublished(alice2blockchain, "main-penalty")
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobRevokedCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceClaimMain1.txid)
+    val aliceClaimMain = assertPublished(alice2blockchain, "remote-main")
+    val aliceMainPenalty = assertPublished(alice2blockchain, "main-penalty")
+    val aliceHtlcsPenalty = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-penalty")) ++ htlcs.bobToAlice.map(_ => assertPublished(alice2blockchain, "htlc-penalty"))
+    aliceHtlcsPenalty.foreach(tx => Transaction.correctlySpends(tx, Seq(bobRevokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    alice2blockchain.expectWatchTxConfirmed(bobRevokedCommitTx.txid)
+    alice2blockchain.expectWatchTxConfirmed(aliceClaimMain.txid)
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobRevokedCommitTx.txid)
+    aliceHtlcsPenalty.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     alice2blockchain.expectNoMessage(100 millis)
 
-    // both tx confirm
+    // alice's main penalty txs confirm
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceClaimMain1)
-    alice ! WatchOutputSpentTriggered(aliceMainPenalty1)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceMainPenalty1.txid)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty1)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceClaimMain)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty)
+    // alice's htlc-penalty txs confirm
+    aliceHtlcsPenalty.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }
+
+    checkPostSpliceState(f, spliceOutFee = 0.sat)
 
     // done
     awaitCond(alice.stateName == CLOSED)
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
   }
 
-  test("force-close with multiple splices (inactive remote)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("force-close with multiple splices (previous active revoked)") { f =>
+    testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
+  }
+
+  test("force-close with multiple splices (previous active revoked, quiescent)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
+  }
+
+  def testForceCloseWithMultipleSplicesInactiveRemote(f: FixtureParam): Unit = {
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val htlcs = setupHtlcs(f)
+
+    // pay 10_000_000 msat to bob that will be paid back to alice after the splices
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice2blockchain.expectMsgType[WatchPublished]
-    bob2blockchain.expectMsgType[WatchPublished]
+    alice2blockchain.expectWatchPublished(fundingTx1.txid)
+    bob2blockchain.expectWatchPublished(fundingTx1.txid)
 
     // splice 1 gets published
     alice ! WatchPublishedTriggered(fundingTx1)
     bob ! WatchPublishedTriggered(fundingTx1)
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
+    alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
+    bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
 
-    // bob makes a payment
+    // bob makes a payment which is applied to splice 1
     val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
@@ -1354,25 +1605,22 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // remember bob's commitment for later
     val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice2blockchain.expectMsgType[WatchPublished]
-    bob2blockchain.expectMsgType[WatchPublished]
+    alice2blockchain.expectWatchPublished(fundingTx2.txid)
+    bob2blockchain.expectWatchPublished(fundingTx2.txid)
     // splice 2 gets published
     alice ! WatchPublishedTriggered(fundingTx2)
     bob ! WatchPublishedTriggered(fundingTx2)
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
+    alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
+    bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
     // splice 1 is now inactive
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectNoMessage(100 millis)
-    alice2blockchain.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
     // we now have two unconfirmed splices, one active and one inactive, and the inactive initial funding
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 2)
@@ -1382,20 +1630,25 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // funding tx1 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     // alice puts a watch-spent and prunes the initial funding
-    alice2blockchain.expectMsgType[WatchFundingSpent]
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 1)
-    // bob publishes his latest commitment for fundingTx1
+    // bob publishes his latest (inactive) commitment for fundingTx1
     val bobCommitTx1 = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
-    // alice watches bob's revoked commit tx, and force-closes with latest commitment
+    // alice watches bob's commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
     assertPublished(alice2blockchain, "local-anchor")
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainDelayed2.txid)
-    alice2blockchain.expectMsgType[WatchOutputSpent]
+    val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
+    htlcsTxsOut.foreach(tx => Transaction.correctlySpends(tx, Seq(aliceCommitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+
+    alice2blockchain.expectWatchTxConfirmed(aliceCommitTx2.txid)
+    alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    alice2blockchain.expectMsgType[WatchOutputSpent] // local-anchor
+    htlcs.aliceToBob.map(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == aliceCommitTx2.txid))
+    htlcs.bobToAlice.map(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == aliceCommitTx2.txid))
     alice2blockchain.expectNoMessage(100 millis)
 
     // bob's remote tx wins
@@ -1403,65 +1656,83 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // we're back to the normal handling of remote commit
     assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val watchConfirmedRemoteCommit = alice2blockchain.expectMsgType[WatchTxConfirmed]
-    assert(watchConfirmedRemoteCommit.txId == bobCommitTx1.txid)
+    val claimHtlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "claim-htlc-timeout"))
+    claimHtlcsTxsOut.foreach(tx => Transaction.correctlySpends(tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+
+    val watchConfirmedRemoteCommit = alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     // this one fires immediately, tx is already confirmed
     watchConfirmedRemoteCommit.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
-    val watchConfirmedClaimMain = alice2blockchain.expectMsgType[WatchTxConfirmed]
-
-    // claim-main tx confirms
+    val watchConfirmedClaimMain = alice2blockchain.expectWatchTxConfirmed(claimMain.txid)
     watchConfirmedClaimMain.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMain)
+    // watch alice and bob's htlcs and publish alice's htlcs-timeout txs
+    htlcs.aliceToBob.map(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobCommitTx1.txid))
+    htlcs.bobToAlice.map(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobCommitTx1.txid))
+    claimHtlcsTxsOut.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }
+
+    // publish bob's htlc-timeout txs
+    bobCommit1.localCommit.htlcTxsAndRemoteSigs.foreach(txAndSigs => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, txAndSigs.htlcTx.tx))
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // alice's final commitment includes the initial htlcs, but not bob's payment
+    checkPostSpliceState(f, spliceOutFee = 0.sat)
 
     // done
     awaitCond(alice.stateName == CLOSED)
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
 
-  test("force-close with multiple splices (inactive revoked)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("force-close with multiple splices (inactive remote)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testForceCloseWithMultipleSplicesInactiveRemote(f)
+  }
+
+  test("force-close with multiple splices (inactive remote, quiescence)", Tag(ChannelStateTestsTags.Quiescence), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testForceCloseWithMultipleSplicesInactiveRemote(f)
+  }
+
+  def testForceCloseWithMultipleSplicesInactiveRevoked(f: FixtureParam): Unit = {
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    val htlcs = setupHtlcs(f)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice2blockchain.expectMsgType[WatchPublished]
-    bob2blockchain.expectMsgType[WatchPublished]
+    alice2blockchain.expectWatchPublished(fundingTx1.txid)
+    bob2blockchain.expectWatchPublished(fundingTx1.txid)
     // remember bob's commitment for later
     val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
     // splice 1 gets published
     alice ! WatchPublishedTriggered(fundingTx1)
     bob ! WatchPublishedTriggered(fundingTx1)
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
+    alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
+    bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice2blockchain.expectMsgType[WatchPublished]
-    bob2blockchain.expectMsgType[WatchPublished]
+    alice2blockchain.expectWatchPublished(fundingTx2.txid)
+    bob2blockchain.expectWatchPublished(fundingTx2.txid)
     // splice 2 gets published
     alice ! WatchPublishedTriggered(fundingTx2)
     bob ! WatchPublishedTriggered(fundingTx2)
-    alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    bob2blockchain.expectMsgType[WatchFundingConfirmed]
+    alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
+    bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
     // splice 1 is now inactive
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectNoMessage(100 millis)
-    alice2blockchain.expectNoMessage(100 millis)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.exists(_.fundingTxId == fundingTx1.txid))
     // we now have two unconfirmed splices, one active and one inactive, and the inactive initial funding
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 2)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 2)
 
-    // bob makes a payment
+    // bob makes a payment that is only applied to splice 2
     val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
@@ -1470,49 +1741,67 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // funding tx1 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     // alice puts a watch-spent and prunes the initial funding
-    alice2blockchain.expectMsgType[WatchFundingSpent]
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 1)
-    // bob publishes a revoked commitment for fundingTx1!
+    // bob publishes his latest commitment for fundingTx1, which is now revoked
     val bobRevokedCommitTx = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
-    // alice watches bob's revoked commit tx, and force-closes with latest commitment
+    // alice watches bob's revoked commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobRevokedCommitTx.txid)
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
     assertPublished(alice2blockchain, "local-anchor")
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainDelayed2.txid)
-    alice2blockchain.expectMsgType[WatchOutputSpent]
+    htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
+
+    alice2blockchain.expectWatchTxConfirmed(aliceCommitTx2.txid)
+    alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    alice2blockchain.expectMsgType[WatchOutputSpent] // local-anchor
+    htlcs.aliceToBob.foreach(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == aliceCommitTx2.txid))
+    htlcs.bobToAlice.foreach(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == aliceCommitTx2.txid))
     alice2blockchain.expectNoMessage(100 millis)
 
     // bob's revoked tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
     // alice reacts by punishing bob
-    val aliceClaimMain1 = assertPublished(alice2blockchain, "remote-main-delayed")
-    val aliceMainPenalty1 = assertPublished(alice2blockchain, "main-penalty")
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobRevokedCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceClaimMain1.txid)
-    assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobRevokedCommitTx.txid)
+    val aliceClaimMain = assertPublished(alice2blockchain, "remote-main-delayed")
+    val aliceMainPenalty = assertPublished(alice2blockchain, "main-penalty")
+    val aliceHtlcsPenalty = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-penalty")) ++ htlcs.bobToAlice.map(_ => assertPublished(alice2blockchain, "htlc-penalty"))
+
+    alice2blockchain.expectWatchTxConfirmed(bobRevokedCommitTx.txid)
+    alice2blockchain.expectWatchTxConfirmed(aliceClaimMain.txid)
+    assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobRevokedCommitTx.txid) // main-penalty
+    aliceHtlcsPenalty.map(_ => assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobRevokedCommitTx.txid))
     alice2blockchain.expectNoMessage(100 millis)
 
-    // both tx confirm
+    // all penalty txs confirm
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceClaimMain1)
-    alice ! WatchOutputSpentTriggered(aliceMainPenalty1)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceMainPenalty1.txid)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty1)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceClaimMain)
+    alice ! WatchOutputSpentTriggered(aliceMainPenalty)
+    alice2blockchain.expectWatchTxConfirmed(aliceMainPenalty.txid)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty)
+    aliceHtlcsPenalty.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }
+
+    // alice's final commitment includes the initial htlcs, but not bob's payment
+    checkPostSpliceState(f, spliceOutFee = 0 sat)
 
     // done
     awaitCond(alice.stateName == CLOSED)
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
   }
 
+  test("force-close with multiple splices (inactive revoked)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testForceCloseWithMultipleSplicesInactiveRevoked(f)
+  }
+
+  test("force-close with multiple splices (inactive revoked, quiescence)", Tag(ChannelStateTestsTags.Quiescence), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testForceCloseWithMultipleSplicesInactiveRevoked(f)
+  }
+
   test("put back watches after restart") { f =>
     import f._
 
-    val commitments0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
-    val fundingTx0 = commitments0.localFundingStatus.signedTx_opt.get
+    val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     val (fundingTx1, fundingTx2) = setup2Splices(f)
 
     val (aliceNodeParams, bobNodeParams) = (alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams)
@@ -1532,7 +1821,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
+    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
     alice2blockchain.expectNoMessage(100 millis)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
@@ -1540,15 +1829,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
     bob2blockchain.expectNoMessage(100 millis)
   }
 
   test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
-    val commitments0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
-    val fundingTx0 = commitments0.localFundingStatus.signedTx_opt.get
+    val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
 
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx0)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx0)
@@ -1592,7 +1880,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchPublished(fundingTx2.txid)
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
+    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
     alice2blockchain.expectNoMessage(100 millis)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
@@ -1600,8 +1888,104 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchPublished(fundingTx2.txid)
     bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid, Some(Set(fundingTx1.txid, commitments0.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitments0.remoteCommit.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
     bob2blockchain.expectNoMessage(100 millis)
+  }
+
+  test("recv CMD_SPLICE (splice-in + splice-out) with pre and post splice htlcs", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    import f._
+    val htlcs = setupHtlcs(f)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+
+    // bob sends an HTLC that is applied to both commitments
+    val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    aliceCommitments1.active.foreach { c =>
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.params, alice.underlyingActor.keyManager).tx
+      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    bobCommitments1.active.foreach { c =>
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.params, bob.underlyingActor.keyManager).tx
+      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    // alice fulfills that HTLC in both commitments
+    fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    aliceCommitments2.active.foreach { c =>
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.params, alice.underlyingActor.keyManager).tx
+      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
+    bobCommitments2.active.foreach { c =>
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.params, bob.underlyingActor.keyManager).tx
+      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+  }
+
+  test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked", Tag(ChannelStateTestsTags.Quiescence), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+  }
+
+  test("recv multiple CMD_SPLICE (splice-in, splice-out, quiescence)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    val htlcs = setupHtlcs(f)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    initiateSplice(f, spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+
+    resolveHtlcs(f, htlcs, spliceOutFee = spliceOutFee(f, capacity = 1_900_000.sat))
+  }
+
+  test("recv invalid htlc signatures during splice-in", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val commitSigAlice = alice2bob.expectMsgType[CommitSig]
+    assert(commitSigAlice.htlcSignatures.size == 4)
+    val commitSigBob = bob2alice.expectMsgType[CommitSig]
+    assert(commitSigBob.htlcSignatures.size == 4)
+    bob2alice.forward(alice, commitSigBob)
+
+    alice2bob.forward(bob, commitSigAlice.copy(htlcSignatures = commitSigAlice.htlcSignatures.reverse))
+    val txAbortBob = bob2alice.expectMsgType[TxAbort]
+    bob2alice.forward(alice, txAbortBob)
+    val txAbortAlice = alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob, txAbortAlice)
+
+    // resolve pre-splice HTLCs after aborting the splice attempt
+    val Seq((preimage1a, htlc1a), (preimage2a, htlc2a)) = htlcs.aliceToBob
+    val Seq((preimage1b, htlc1b), (preimage2b, htlc2b)) = htlcs.bobToAlice
+    fulfillHtlc(htlc1a.id, preimage1a, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc2a.id, preimage2a, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc1b.id, preimage1b, alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc2b.id, preimage2b, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val finalState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(finalState.commitments.latest.localCommit.spec.toLocal == 805_000_000.msat)
+    assert(finalState.commitments.latest.localCommit.spec.toRemote == 695_000_000.msat)
   }
 
 }
