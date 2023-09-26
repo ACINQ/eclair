@@ -2020,7 +2020,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           if (d.commitments.params.localParams.isInitiator && !shutdownInProgress) {
             // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
             val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
-            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.channelType, d.commitments.latest.capacity)
+            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.commitmentFormat, d.commitments.latest.capacity)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
               self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
             }
@@ -2440,11 +2440,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.channelType, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.params.localParams.isInitiator && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !d.commitments.params.localParams.isInitiator &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.params.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.params.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -2466,11 +2466,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.channelType, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, d.commitments.params.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.params.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.params.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {

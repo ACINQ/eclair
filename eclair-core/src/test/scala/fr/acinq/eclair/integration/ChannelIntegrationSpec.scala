@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
@@ -636,7 +636,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   val commitmentFormat: AnchorOutputsCommitmentFormat
 
-  def connectNodes(expectedChannelType: SupportedChannelType): Unit = {
+  def connectNodes(expectedCommitmentFormat: CommitmentFormat): Unit = {
     // A --- C --- F
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
@@ -651,7 +651,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
         val stateEvent = eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds)
         if (stateEvent.currentState == NORMAL) {
           assert(stateEvent.commitments_opt.nonEmpty)
-          assert(stateEvent.commitments_opt.get.params.channelType == expectedChannelType)
+          assert(stateEvent.commitments_opt.get.params.commitmentFormat == expectedCommitmentFormat)
           count = count + 1
         }
       }
@@ -662,7 +662,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     awaitAnnouncements(1)
   }
 
-  def testOpenPayClose(expectedChannelType: SupportedChannelType): Unit = {
+  def testOpenPayClose(expectedCommitmentFormat: CommitmentFormat): Unit = {
     connect(nodes("C"), nodes("F"), 5000000 sat, 0 msat)
     generateBlocks(6)
     awaitAnnouncements(2)
@@ -675,7 +675,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(initialStateDataF.commitments.params.channelType == expectedChannelType)
+    assert(initialStateDataF.commitments.params.commitmentFormat == expectedCommitmentFormat)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
@@ -791,11 +791,11 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
   }
 
   test("connect nodes") {
-    connectNodes(ChannelTypes.StaticRemoteKey())
+    connectNodes(DefaultCommitmentFormat)
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs)") {
-    testOpenPayClose(ChannelTypes.AnchorOutputs())
+    testOpenPayClose(commitmentFormat)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
@@ -831,11 +831,11 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
   test("connect nodes") {
-    connectNodes(ChannelTypes.StaticRemoteKey())
+    connectNodes(DefaultCommitmentFormat)
   }
 
   test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
-    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    testOpenPayClose(commitmentFormat)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
