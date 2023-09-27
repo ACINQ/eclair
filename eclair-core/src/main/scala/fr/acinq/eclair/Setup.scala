@@ -134,13 +134,9 @@ class Setup(val datadir: File,
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
 
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      rpcAuthMethod = rpcAuthMethod,
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"),
-      wallet = wallet)
+    case class BitcoinStatus(version: Int, chainHash: ByteVector32, initialBlockDownload: Boolean, verificationProgress: Double, blockCount: Long, headerCount: Long, unspentAddresses: List[String])
 
-    val future = for {
+    def getBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
       wallets <- bitcoinClient.invoke("listwallets").recover { case e => throw BitcoinWalletDisabledException(e) }
@@ -165,20 +161,41 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
-    // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
-    logger.info(s"bitcoind version=$bitcoinVersion")
-    assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
-    assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
-    if (chainHash != Block.RegtestGenesisBlock.hash) {
-      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+    } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, unspentAddresses)
+
+    def pollBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = {
+      getBitcoinStatus(bitcoinClient).transformWith {
+        case Success(status) => Future.successful(status)
+        case Failure(e) =>
+          logger.warn(s"failed to connect to bitcoind (${e.getMessage}), retrying...")
+          after(5 seconds) {
+            pollBitcoinStatus(bitcoinClient)
+          }
+      }
     }
-    logger.info(s"current blockchain height=$blocks")
-    blockHeight.set(blocks)
-    (bitcoinClient, chainHash)
+
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      rpcAuthMethod = rpcAuthMethod,
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"),
+      wallet = wallet
+    )
+    val bitcoinStatus = if (config.getBoolean("bitcoind.wait-for-bitcoind-up")) {
+      await(pollBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind wasn't ready after 30 seconds")
+    } else {
+      await(getBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind did not respond after 30 seconds")
+    }
+    logger.info(s"bitcoind version=${bitcoinStatus.version}")
+    assert(bitcoinStatus.version >= 240100, "Eclair requires Bitcoin Core 24.1 or higher")
+    assert(bitcoinStatus.unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+    if (bitcoinStatus.chainHash != Block.RegtestGenesisBlock.hash) {
+      assert(!bitcoinStatus.initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=${bitcoinStatus.initialBlockDownload})")
+      assert(bitcoinStatus.verificationProgress > 0.999, s"bitcoind should be synchronized (progress=${bitcoinStatus.verificationProgress})")
+      assert(bitcoinStatus.headerCount - bitcoinStatus.blockCount <= 1, s"bitcoind should be synchronized (headers=${bitcoinStatus.headerCount} blocks=${bitcoinStatus.blockCount})")
+    }
+    logger.info(s"current blockchain height=${bitcoinStatus.blockCount}")
+    blockHeight.set(bitcoinStatus.blockCount)
+    (bitcoinClient, bitcoinStatus.chainHash)
   }
 
   val instanceId = UUID.randomUUID()
@@ -234,7 +251,7 @@ class Setup(val datadir: File,
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current feeratesPerKB=$feeratesPerKB feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")

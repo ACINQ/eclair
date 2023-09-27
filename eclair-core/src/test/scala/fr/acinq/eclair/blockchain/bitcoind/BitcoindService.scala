@@ -153,7 +153,7 @@ trait BitcoindService extends Logging {
     }
   }
 
-  private def waitForBitcoindUp(sender: TestProbe): Unit = {
+  def waitForBitcoindUp(sender: TestProbe): Unit = {
     logger.info(s"waiting for bitcoind to initialize...")
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
