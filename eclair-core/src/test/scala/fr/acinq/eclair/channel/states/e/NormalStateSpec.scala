@@ -882,11 +882,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo == Left(waitForRevocation))
   }
 
-  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AdaptMaxHtlcAmount)) { f =>
     import f._
     // channel starts with all funds on alice's side, so htlcMaximumMsat will be initially set to 1 on bob's side
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 1.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 0.msat)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500000000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     // alice will send enough funds to bob to make it go above the threshold to increase htlcMaximumMsat
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)

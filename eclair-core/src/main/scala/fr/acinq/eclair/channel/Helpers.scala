@@ -337,11 +337,11 @@ object Helpers {
       val localBalance = remoteCommit.spec.toRemote.truncateToSatoshi
       // NB: this is an approximation (we don't take network fees into account)
       val localReserve = commitment.localChannelReserve(commitments.params)
-      (localBalance - localReserve).toMilliSatoshi
+      localBalance - localReserve
     }).min
     for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
       if (availableToSend <= balanceThreshold.available) {
-        return balanceThreshold.maxHtlcAmount.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
+        return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
       }
     }
     commitments.params.maxHtlcAmount

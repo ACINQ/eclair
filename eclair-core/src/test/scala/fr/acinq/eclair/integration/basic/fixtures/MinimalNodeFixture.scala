@@ -80,6 +80,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
+      .modify(_.channelConf.balanceThresholds).setTo(Nil)
   }
 
   def apply(nodeParams: NodeParams, testName: String): MinimalNodeFixture = {

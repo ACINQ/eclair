@@ -67,10 +67,10 @@ object Channel {
   /**
    * @param available     When the amount available to send goes below this,
    * @param maxHtlcAmount set the maximum HTLC amount to this value.
-   *                      But never lower than the minimum HTLC amount, in case maxHtlcAmount is lower thqn the minimum
+   *                      But never lower than the minimum HTLC amount, in case maxHtlcAmount is lower than the minimum
    *                      HTLC amount, the minimum HTLC amount will be used instead.
    */
-  case class BalanceThreshold(available: MilliSatoshi, maxHtlcAmount: MilliSatoshi)
+  case class BalanceThreshold(available: Satoshi, maxHtlcAmount: Satoshi)
 
   case class ChannelConf(channelFlags: ChannelFlags,
                          dustLimit: Satoshi,
@@ -105,6 +105,7 @@ object Channel {
                          balanceThresholds: Seq[BalanceThreshold],
                         minTimeBetweenUpdates: FiniteDuration) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
+    require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
   }
@@ -841,6 +842,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           stay()
         case _ =>
           log.debug("refreshing channel_update announcement (reason={})", reason)
+          if (d.channelUpdate.htlcMaximumMsat != channelUpdate1.htlcMaximumMsat) {
+            log.info("updating maximum HTLC amount to {} (old={})", channelUpdate1.htlcMaximumMsat, d.channelUpdate.htlcMaximumMsat)
+          }
           // we use goto() instead of stay() because we want to fire transitions
           goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
       }

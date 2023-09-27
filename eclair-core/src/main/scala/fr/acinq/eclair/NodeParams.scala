@@ -520,8 +520,8 @@ object NodeParams extends Logging {
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
         remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks")),
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
-        balanceThresholds = config.getConfigList("channel.balance-thresholds").asScala.map(conf => BalanceThreshold(MilliSatoshi(conf.getLong("available-msat")), MilliSatoshi(conf.getLong("max-htlc-msat")))).toSeq,
-        minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
+        balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
+        minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
