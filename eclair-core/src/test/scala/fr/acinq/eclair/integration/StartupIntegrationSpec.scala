@@ -21,7 +21,9 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCError}
 import fr.acinq.eclair.{BitcoinDefaultWalletException, BitcoinWalletDisabledException, BitcoinWalletNotLoadedException, TestUtils}
+import org.json4s.JsonAST.JValue
 
+import scala.concurrent.Future
 import scala.jdk.CollectionConverters._
 
 /**
@@ -30,8 +32,8 @@ import scala.jdk.CollectionConverters._
 
 class StartupIntegrationSpec extends IntegrationSpec {
 
-  private def createConfig(wallet_opt: Option[String]): Config = {
-    val defaultConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.wait-for-bitcoind-up" -> "false", "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)
+  private def createConfig(wallet_opt: Option[String], waitForBitcoind: Boolean = false): Config = {
+    val defaultConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.wait-for-bitcoind-up" -> waitForBitcoind, "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)
     wallet_opt match {
       case Some(wallet) => ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> wallet).asJava).withFallback(defaultConfig)
       case None => defaultConfig.withoutPath("eclair.bitcoind.wallet")
@@ -75,5 +77,18 @@ class StartupIntegrationSpec extends IntegrationSpec {
       instantiateEclairNode("F", createConfig(wallet_opt = None))
     }
     assert(thrown == BitcoinWalletDisabledException(e = JsonRPCError(Error(-32601, "Method not found"))))
+  }
+
+  test("wait for bitcoind to be available") {
+    import scala.concurrent.ExecutionContext.Implicits.global
+    stopBitcoind()
+    val sender = TestProbe()
+    Future {
+      startBitcoind()
+      waitForBitcoindUp(sender)
+      sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
+      sender.expectMsgType[JValue]
+    }
+    instantiateEclairNode("G", createConfig(wallet_opt = None, waitForBitcoind = true))
   }
 }
