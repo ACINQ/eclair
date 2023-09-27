@@ -186,7 +186,7 @@ class Setup(val datadir: File,
       await(getBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind did not respond after 30 seconds")
     }
     logger.info(s"bitcoind version=${bitcoinStatus.version}")
-    assert(bitcoinStatus.version >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
+    assert(bitcoinStatus.version >= 240100, "Eclair requires Bitcoin Core 24.1 or higher")
     assert(bitcoinStatus.unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
     if (bitcoinStatus.chainHash != Block.RegtestGenesisBlock.hash) {
       assert(!bitcoinStatus.initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=${bitcoinStatus.initialBlockDownload})")
