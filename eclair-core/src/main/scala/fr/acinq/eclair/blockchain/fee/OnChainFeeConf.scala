@@ -19,8 +19,8 @@ package fr.acinq.eclair.blockchain.fee
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.BlockHeight
-import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 
 // @formatter:off
 sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
@@ -65,16 +65,16 @@ case class DustTolerance(maxExposure: Satoshi, closeOnUpdateFeeOverflow: Boolean
 
 case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw, dustTolerance: DustTolerance) {
   /**
-   * @param channelType     channel type
-   * @param networkFeerate  reference fee rate (value we estimate from our view of the network)
-   * @param proposedFeerate fee rate proposed (new proposal through update_fee or previous proposal used in our current commit tx)
+   * @param commitmentFormat commitment format (anchor outputs allows a much higher tolerance since fees can be adjusted after tx is published)
+   * @param networkFeerate   reference fee rate (value we estimate from our view of the network)
+   * @param proposedFeerate  fee rate proposed (new proposal through update_fee or previous proposal used in our current commit tx)
    * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(channelType: SupportedChannelType, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
-    channelType match {
-      case _: ChannelTypes.Standard | _: ChannelTypes.StaticRemoteKey =>
+  def isFeeDiffTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
+    commitmentFormat match {
+      case DefaultCommitmentFormat =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat =>
         // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
         false
     }
@@ -97,14 +97,14 @@ case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spend
    *  - otherwise we use a feerate that should get the commit tx confirmed within the configured block target
    *
    * @param remoteNodeId        nodeId of our channel peer
-   * @param channelType         channel type
+   * @param commitmentFormat    commitment format
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
-  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi): FeeratePerKw = {
+  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat, channelCapacity: Satoshi): FeeratePerKw = {
     val networkFeerate = feerates.fast
     val networkMinFee = feerates.minimum
 
-    channelType.commitmentFormat match {
+    commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)

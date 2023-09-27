@@ -31,7 +31,6 @@ case class ChannelParams(channelId: ByteVector32,
   require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
 
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
-  val channelType: SupportedChannelType = channelFeatures.channelType
   val announceChannel: Boolean = channelFlags.announceChannel
 
   val localNodeId: PublicKey = localParams.nodeId
@@ -442,9 +441,9 @@ case class Commitment(fundingTxIndex: Long,
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, capacity)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
+    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.commitmentFormat, localFeeratePerKw, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
       case None =>
     }
@@ -506,9 +505,9 @@ case class Commitment(fundingTxIndex: Long,
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, capacity)
     val remoteFeeratePerKw = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, feerate)) match {
+    remoteFeeratePerKw.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.commitmentFormat, localFeeratePerKw, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
       case None =>
     }
@@ -579,8 +578,8 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
-    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, capacity)
-    if (feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.channelType, localFeeratePerKw, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
+    val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, capacity)
+    if (feeConf.feerateToleranceFor(params.remoteNodeId).isFeeDiffTooHigh(params.commitmentFormat, localFeeratePerKw, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
       return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = targetFeerate))
     } else {
       // let's compute the current commitment *as seen by us* including this change
@@ -957,7 +956,7 @@ case class Commitments(params: ChannelParams,
       active.map(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
+          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, params.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
           Right(copy(changes = changes1), fee)
         }
     }
@@ -969,14 +968,14 @@ case class Commitments(params: ChannelParams,
     } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.channelType, active.head.capacity)
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, active.head.capacity)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
       active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feerates, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, params.channelType.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
+          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, params.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
           Right(copy(changes = changes1))
         }
     }
