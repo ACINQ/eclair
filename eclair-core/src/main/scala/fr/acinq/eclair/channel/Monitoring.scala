@@ -31,6 +31,7 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
+    val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
@@ -56,6 +57,7 @@ object Monitoring {
     val Origin = "origin"
     val State = "state"
     val CommitmentFormat = "commitment-format"
+    val SpliceType = "splice-type"
 
     object Events {
       val Created = "created"
@@ -71,6 +73,12 @@ object Monitoring {
     object Directions {
       val Incoming = "incoming"
       val Outgoing = "outgoing"
+    }
+
+    object SpliceTypes {
+      val SpliceIn = "splice-in"
+      val SpliceOut = "splice-out"
+      val SpliceCpfp = "splice-cpfp"
     }
   }
 
