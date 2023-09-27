@@ -183,12 +183,15 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)
     // we then generate enough blocks so that nodes get their main delayed output
     generateBlocks(25, Some(minerAddress))
-    // F should have 2 recv transactions: the redeemed htlc and its main output
-    // C should have 1 recv transaction: its main output
+    val expectedTxCountC = 1 // C should have 1 recv transaction: its main output
+    val expectedTxCountF = commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => 2 // F should have 2 recv transactions: the redeemed htlc and its main output
+      case Transactions.DefaultCommitmentFormat => 1 // F's main output uses static_remotekey
+    }
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF)
-      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -221,12 +224,15 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)
     // we then generate enough blocks so that F gets its htlc-success delayed output
     generateBlocks(25, Some(minerAddress))
-    // F should have 2 recv transactions: the redeemed htlc and its main output
-    // C should have 1 recv transaction: its main output
+    val expectedTxCountC = commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => 1 // C should have 1 recv transaction: its main output
+      case Transactions.DefaultCommitmentFormat => 0 // C's main output uses static_remotekey
+    }
+    val expectedTxCountF = 2 // F should have 2 recv transactions: the redeemed htlc and its main output
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      (receivedByF diff previouslyReceivedByF).size == 2 && (receivedByC diff previouslyReceivedByC).size == 1
+      (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -271,12 +277,15 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure()))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
-    // C should have 2 recv transactions: its main output and the htlc timeout
-    // F should have 1 recv transaction: its main output
+    val expectedTxCountC = 2 // C should have 2 recv transactions: its main output and the htlc timeout
+    val expectedTxCountF = commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => 1 // F should have 1 recv transaction: its main output
+      case Transactions.DefaultCommitmentFormat => 0 // F's main output uses static_remotekey
+    }
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2, Some(minerAddress))
@@ -324,12 +333,15 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure()))
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
-    // C should have 2 recv transactions: its main output and the htlc timeout
-    // F should have 1 recv transaction: its main output
+    val expectedTxCountC = commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => 2 // C should have 2 recv transactions: its main output and the htlc timeout
+      case Transactions.DefaultCommitmentFormat => 1 // C's main output uses static_remotekey
+    }
+    val expectedTxCountF = 1 // F should have 1 recv transaction: its main output
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
-      (receivedByF diff previouslyReceivedByF).size == 1 && (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make tx confirm
     generateBlocks(2, Some(minerAddress))
@@ -455,9 +467,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29840 else 29740), "eclair.api.port" -> (if (useEclairSigner) 28190 else 28090)).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29840 else 29740), "eclair.api.port" -> (if (useEclairSigner) 28190 else 28090)).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29841 else 29741), "eclair.api.port" -> (if (useEclairSigner) 28191 else 28091)).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29842 else 29742), "eclair.api.port" -> (if (useEclairSigner) 28192 else 28092)).asJava).withFallback(withDefaultCommitment).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29842 else 29742), "eclair.api.port" -> (if (useEclairSigner) 28192 else 28092)).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -614,10 +626,11 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.expectMsg(htlcSuccess.head.txid)
     bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
     sender.expectMsg(htlcTimeout.head.txid)
-    // at this point C should have 6 recv transactions: its previous main output, F's main output and all htlc outputs (taken as punishment)
+    // at this point C should have 5 recv transactions: F's main output and all htlc outputs (taken as punishment)
+    // C's main output uses static_remotekey, so C doesn't need to claim it
     awaitCond({
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
-      (receivedByC diff previouslyReceivedByC).size == 6
+      (receivedByC diff previouslyReceivedByC).size == 5
     }, max = 30 seconds, interval = 1 second)
     // we generate blocks to make txs confirm
     generateBlocks(2)
