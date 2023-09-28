@@ -1148,6 +1148,11 @@ case class Commitments(params: ChannelParams,
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
   }
 
+  /** Return the index of the first remote commitment we signed spending the given funding transaction. */
+  def firstCommitIndex(fundingTxId: TxId): Option[Long] = {
+    all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.firstCommitIndex_opt)
+  }
+
   /**
    * Update the local/remote funding status
    *

@@ -116,7 +116,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       }
 
       def migration89(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE TABLE local.closed_channels_to_clean_up (channel_id TEXT NOT NULL PRIMARY KEY)")
+        statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
       }
 
       getVersion(statement, DB_NAME) match {
@@ -125,7 +125,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
           statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
-          statement.executeUpdate("CREATE TABLE local.closed_channels_to_clean_up (channel_id TEXT NOT NULL PRIMARY KEY)")
+          statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
@@ -235,8 +235,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
       // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
       // We instead run an asynchronous job to clean up that data in small batches.
-      using(pg.prepareStatement("INSERT INTO local.closed_channels_to_clean_up VALUES (?) ON CONFLICT DO NOTHING")) { statement =>
+      using(pg.prepareStatement("INSERT INTO local.htlc_infos_to_remove (channel_id, before_commitment_number) VALUES(?, ?) ON CONFLICT (channel_id) DO UPDATE SET before_commitment_number = EXCLUDED.before_commitment_number")) { statement =>
         statement.setString(1, channelId.toHex)
+        statement.setLong(2, Long.MaxValue)
         statement.executeUpdate()
       }
 
@@ -248,27 +249,42 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
+  override def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO local.htlc_infos_to_remove (channel_id, before_commitment_number) VALUES(?, ?) ON CONFLICT (channel_id) DO UPDATE SET before_commitment_number = EXCLUDED.before_commitment_number")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setLong(2, beforeCommitIndex)
+        statement.executeUpdate()
+      }
+    }
+  }
+
   override def removeHtlcInfos(batchSize: Int): Unit = withMetrics("channels/remove-htlc-infos", DbBackends.Postgres) {
     withLock { pg =>
       // Check if there are channels that need to be cleaned up.
-      val channelId_opt = using(pg.prepareStatement("SELECT channel_id FROM local.closed_channels_to_clean_up LIMIT 1")) { statement =>
-        statement.executeQuery().map(rs => ByteVector32(rs.getByteVector32FromHex("channel_id"))).lastOption
+      val channelToCleanUp_opt = using(pg.prepareStatement("SELECT channel_id, before_commitment_number FROM local.htlc_infos_to_remove LIMIT 1")) { statement =>
+        statement.executeQuery().map(rs => {
+          val channelId = ByteVector32(rs.getByteVector32FromHex("channel_id"))
+          val beforeCommitmentNumber = rs.getLong("before_commitment_number")
+          (channelId, beforeCommitmentNumber)
+        }).lastOption
       }
       // Remove a batch of HTLC information for that channel.
-      channelId_opt.foreach(channelId => {
-        val deletedCount = using(pg.prepareStatement(s"DELETE FROM local.htlc_infos WHERE channel_id=? AND commitment_number IN (SELECT commitment_number FROM local.htlc_infos WHERE channel_id=? LIMIT $batchSize)")) { statement =>
+      channelToCleanUp_opt.foreach { case (channelId, beforeCommitmentNumber) =>
+        val deletedCount = using(pg.prepareStatement(s"DELETE FROM local.htlc_infos WHERE channel_id=? AND commitment_number IN (SELECT commitment_number FROM local.htlc_infos WHERE channel_id=? AND commitment_number<? LIMIT $batchSize)")) { statement =>
           statement.setString(1, channelId.toHex)
           statement.setString(2, channelId.toHex)
+          statement.setLong(3, beforeCommitmentNumber)
           statement.executeUpdate()
         }
         // If we've deleted all HTLC information for that channel, we can now remove it from the DB.
         if (deletedCount < batchSize) {
-          using(pg.prepareStatement("DELETE FROM local.closed_channels_to_clean_up WHERE channel_id=?")) { statement =>
+          using(pg.prepareStatement("DELETE FROM local.htlc_infos_to_remove WHERE channel_id=?")) { statement =>
             statement.setString(1, channelId.toHex)
             statement.executeUpdate()
           }
         }
-      })
+      }
     }
   }
 

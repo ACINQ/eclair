@@ -58,20 +58,18 @@ class ChannelsDbSpec extends AnyFunSuite {
   test("add/remove/list channels") {
     forAllDbs { dbs =>
       val db = dbs.channels
-      dbs.pendingCommands // needed by db.removeChannel
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
       val channel2b = channel2a.modify(_.shortIds.real).setTo(RealScidStatus.Final(RealShortChannelId(189371)))
 
-      val commitNumber1 = 42
-      val commitNumber2 = 43
+      val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes
       val cltvExpiry1 = CltvExpiry(123)
       val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
       val cltvExpiry2 = CltvExpiry(656)
 
-      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash1, cltvExpiry1)) // no related channel
+      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
       assert(db.listLocalChannels().isEmpty)
       db.addOrUpdateChannel(channel1)
@@ -85,13 +83,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() == List(channel1, channel2b))
       assert(db.getChannel(channel2b.channelId).contains(channel2b))
 
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).isEmpty)
-      db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash1, cltvExpiry1)
-      db.addHtlcInfo(channel1.channelId, commitNumber1, paymentHash2, cltvExpiry2)
-      db.addHtlcInfo(channel1.channelId, commitNumber2, paymentHash1, cltvExpiry1)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).toSet == Set((paymentHash1, cltvExpiry1)))
-      assert(db.listHtlcInfos(channel1.channelId, 44).isEmpty)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).isEmpty)
+      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)
+      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash2, cltvExpiry2)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber + 1).isEmpty)
 
       assert(db.listClosedChannels(None, None).isEmpty)
       db.removeChannel(channel1.channelId)
@@ -101,20 +97,67 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
       assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None).isEmpty)
 
-      // HTLC info is cleaned up asynchronously.
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).toSet == Set((paymentHash1, cltvExpiry1)))
-      db.removeHtlcInfos(1) // remove one of the commitment number (ordered not deterministic)
-      val remainingHtlcInfos = Seq(commitNumber1, commitNumber2).flatMap(commitNumber => db.listHtlcInfos(channel1.channelId, commitNumber))
-      assert(remainingHtlcInfos.nonEmpty)
-      db.removeHtlcInfos(1) // remove the remaining commitment number
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber1).isEmpty)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber2).isEmpty)
-      db.removeHtlcInfos(1) // noop
-
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)
       assert(db.listLocalChannels().isEmpty)
+    }
+  }
+
+  test("remove htlc infos") {
+    forAllDbs { dbs =>
+      val db = dbs.channels
+
+      val channel1 = ChannelCodecsSpec.normal
+      val channel2 = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
+      db.addOrUpdateChannel(channel1)
+      db.addOrUpdateChannel(channel2)
+
+      val commitNumberSplice1 = 50
+      val commitNumberSplice2 = 75
+
+      // The first channel has one splice transaction and is then closed.
+      db.addHtlcInfo(channel1.channelId, 49, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.forgetHtlcInfos(channel1.channelId, commitNumberSplice1)
+      db.addHtlcInfo(channel1.channelId, 51, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 52, randomBytes32(), CltvExpiry(561))
+      db.removeChannel(channel1.channelId)
+
+      // The second channel has two splice transactions.
+      db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 49, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.forgetHtlcInfos(channel2.channelId, commitNumberSplice1)
+      db.addHtlcInfo(channel2.channelId, 74, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 75, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 76, randomBytes32(), CltvExpiry(561))
+      db.forgetHtlcInfos(channel2.channelId, commitNumberSplice2)
+
+      // We asynchronously clean-up the HTLC data from the DB in small batches.
+      val obsoleteHtlcInfo = Seq(
+        (channel1.channelId, 49),
+        (channel1.channelId, 50),
+        (channel1.channelId, 51),
+        (channel1.channelId, 52),
+        (channel2.channelId, 48),
+        (channel2.channelId, 49),
+        (channel2.channelId, 50),
+        (channel2.channelId, 74),
+      )
+      db.removeHtlcInfos(10) // This should remove all the data for one of the two channels in one batch
+      db.removeHtlcInfos(3) // This should remove only part of the data for the remaining channel
+      assert(obsoleteHtlcInfo.exists { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber).nonEmpty })
+      db.removeHtlcInfos(3) // This should remove the rest of the data for the remaining channel
+      obsoleteHtlcInfo.foreach { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber).isEmpty }
+
+      // The remaining HTLC data shouldn't be removed.
+      assert(db.listHtlcInfos(channel2.channelId, 75).nonEmpty)
+      assert(db.listHtlcInfos(channel2.channelId, 76).nonEmpty)
+      db.removeHtlcInfos(10) // no-op
+      assert(db.listHtlcInfos(channel2.channelId, 75).nonEmpty)
+      assert(db.listHtlcInfos(channel2.channelId, 76).nonEmpty)
     }
   }
 

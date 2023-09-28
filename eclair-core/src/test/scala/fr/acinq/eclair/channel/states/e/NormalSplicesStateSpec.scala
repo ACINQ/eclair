@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFeeHtlcTxs, NoMaxHtlcValueInFlight, ZeroConf}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -780,9 +781,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val aliceEvents = TestProbe()
     val bobEvents = TestProbe()
+    systemA.eventStream.subscribe(aliceEvents.ref, classOf[ForgetHtlcInfos])
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[AvailableBalanceChanged])
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[LocalChannelUpdate])
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[LocalChannelDown])
+    systemB.eventStream.subscribe(bobEvents.ref, classOf[ForgetHtlcInfos])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[AvailableBalanceChanged])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[LocalChannelUpdate])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[LocalChannelDown])
@@ -796,6 +799,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
+    aliceEvents.expectMsg(ForgetHtlcInfos(initialState.channelId, initialState.commitments.remoteCommitIndex))
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
 
@@ -803,6 +807,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
     aliceEvents.expectAvailableBalanceChanged(balance = 1_300_000_000.msat, capacity = 2_000_000.sat)
+    bobEvents.expectMsg(ForgetHtlcInfos(initialState.channelId, initialState.commitments.localCommitIndex))
     bobEvents.expectAvailableBalanceChanged(balance = 700_000_000.msat, capacity = 2_000_000.sat)
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
@@ -811,11 +816,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
     aliceEvents.expectNoMessage(100 millis)
+    bobEvents.expectMsg(ForgetHtlcInfos(initialState.channelId, initialState.commitments.localCommitIndex))
     bobEvents.expectNoMessage(100 millis)
 
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     alice2bob.expectMsgType[SpliceLocked]
     alice2bob.forward(bob)
+    aliceEvents.expectMsg(ForgetHtlcInfos(initialState.channelId, initialState.commitments.remoteCommitIndex))
     aliceEvents.expectAvailableBalanceChanged(balance = 1_800_000_000.msat, capacity = 2_500_000.sat)
     bobEvents.expectAvailableBalanceChanged(balance = 700_000_000.msat, capacity = 2_500_000.sat)
     aliceEvents.expectNoMessage(100 millis)

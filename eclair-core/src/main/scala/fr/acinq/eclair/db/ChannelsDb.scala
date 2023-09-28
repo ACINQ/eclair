@@ -18,9 +18,9 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampSecond}
 import fr.acinq.eclair.channel.PersistentChannelData
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
+import fr.acinq.eclair.{CltvExpiry, Paginated}
 
 trait ChannelsDb {
 
@@ -30,8 +30,13 @@ trait ChannelsDb {
 
   def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit
 
+  /** Mark a channel as closed, but keep it in the DB. */
   def removeChannel(channelId: ByteVector32): Unit
 
+  /** Mark revoked HTLC information as obsolete. It will be removed from the DB once [[removeHtlcInfos]] is called. */
+  def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit
+
+  /** Remove up to batchSize obsolete revoked HTLC information. */
   def removeHtlcInfos(batchSize: Int): Unit
 
   def listLocalChannels(): Seq[PersistentChannelData]
