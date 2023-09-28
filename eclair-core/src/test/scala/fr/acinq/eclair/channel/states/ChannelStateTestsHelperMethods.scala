@@ -28,11 +28,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel.{ChannelData, ChannelState, _}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
@@ -452,7 +452,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       r2s.forward(s)
       sigr2s += 1
     } while (sigr2s < batchSize)
-    s2r.expectMsgType[RevokeAndAck]
+    s2r.fishForMessage() {
+      case _: RevokeAndAck => true
+      case _: ChannelUpdate => false
+    }
     s2r.forward(r)
     if (rHasChanges) {
       s2r.expectMsgType[CommitSig]

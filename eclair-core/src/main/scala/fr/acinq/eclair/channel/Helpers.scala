@@ -335,9 +335,14 @@ object Helpers {
     val availableToSend = commitments.active.map(commitment => {
       val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
       val localBalance = remoteCommit.spec.toRemote.truncateToSatoshi
-      // NB: this is an approximation (we don't take network fees into account)
       val localReserve = commitment.localChannelReserve(commitments.params)
-      localBalance - localReserve
+      val fee = if (commitments.params.localParams.isInitiator) {
+        (commitTxTotalCostMsat(commitments.params.remoteParams.dustLimit, remoteCommit.spec.copy(commitTxFeerate = remoteCommit.spec.commitTxFeerate * 2), commitments.params.commitmentFormat) +
+          htlcOutputFee(remoteCommit.spec.commitTxFeerate * 2, commitments.params.commitmentFormat) * 2).truncateToSatoshi
+      } else {
+        0 sat
+      }
+      localBalance - localReserve - fee
     }).min
     for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
       if (availableToSend <= balanceThreshold.available) {
