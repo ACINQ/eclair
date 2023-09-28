@@ -737,7 +737,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       fundingTxIndex = purpose.fundingTxIndex,
       fundingTx.hash, fundingOutputIndex,
       remotePerCommitmentPoint = purpose.remotePerCommitmentPoint, remoteFundingPubKey = fundingParams.remoteFundingPubKey,
-      commitmentIndex = purpose.localCommitIndex) match {
+      localCommitmentIndex = purpose.localCommitIndex, remoteCommitmentIndex = purpose.remoteCommitIndex) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)

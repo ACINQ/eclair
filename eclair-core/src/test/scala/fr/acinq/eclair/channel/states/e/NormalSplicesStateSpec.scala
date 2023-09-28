@@ -291,6 +291,54 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(postSpliceState.commitments.latest.remoteChannelReserve == 15_000.sat)
   }
 
+  test("recv CMD_SPLICE (splice-in, local and remote commit index mismatch)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+    import f._
+
+    // Alice and Bob asynchronously exchange HTLCs, which makes their commit indices diverge.
+    val (r1, add1) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    val (r2, add2) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.latest.capacity == 1_500_000.sat)
+    assert(initialState.commitments.latest.localCommit.spec.toLocal == 785_000_000.msat)
+    assert(initialState.commitments.latest.localCommit.spec.toRemote == 690_000_000.msat)
+    assert(initialState.commitments.latest.localCommit.index == 1)
+    assert(initialState.commitments.latest.remoteCommit.index == 2)
+
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_000_000.sat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 1_285_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 690_000_000.msat)
+
+    // Resolve pending HTLCs (we have two active commitments).
+    fulfillHtlc(add1.id, r1, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(add2.id, r2, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    val finalState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(finalState.commitments.latest.localCommit.spec.toLocal == 1_295_000_000.msat)
+    assert(finalState.commitments.latest.localCommit.spec.toRemote == 705_000_000.msat)
+    assert(finalState.commitments.latest.localCommit.index == 2)
+    assert(finalState.commitments.latest.remoteCommit.index == 4)
+  }
+
   test("recv CMD_SPLICE (splice-out)") { f =>
     import f._
 
