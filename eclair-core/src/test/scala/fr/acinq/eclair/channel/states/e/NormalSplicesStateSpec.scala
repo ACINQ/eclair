@@ -328,26 +328,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Resolve pending HTLCs (we have two active commitments).
     fulfillHtlc(add1.id, r1, bob, alice, bob2alice, alice2bob)
     fulfillHtlc(add2.id, r2, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SIGN()
-    (1 to 2).foreach { _ =>
-      alice2bob.expectMsgType[CommitSig]
-      alice2bob.forward(bob)
-    }
-    bob2alice.expectMsgType[RevokeAndAck]
-    bob2alice.forward(alice)
-    (1 to 2).foreach { _ =>
-      bob2alice.expectMsgType[CommitSig]
-      bob2alice.forward(alice)
-    }
-    alice2bob.expectMsgType[RevokeAndAck]
-    alice2bob.forward(bob)
-    (1 to 2).foreach { _ =>
-      alice2bob.expectMsgType[CommitSig]
-      alice2bob.forward(bob)
-    }
+    crossSign(alice, bob, alice2bob, bob2alice)
     alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectMsgType[RevokeAndAck]
-    bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
 
     val finalState = alice.stateData.asInstanceOf[DATA_NORMAL]
