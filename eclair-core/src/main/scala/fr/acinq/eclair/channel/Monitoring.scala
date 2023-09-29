@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SharedTransaction}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
 import kamon.Kamon
 
@@ -31,6 +33,7 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
+    val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
@@ -47,6 +50,27 @@ object Monitoring {
         HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment((value - previousValue).toDouble)
       }
     }
+
+    def recordSplice(fundingParams: InteractiveTxParams, sharedTx: SharedTransaction): Unit = {
+      if (fundingParams.localContribution > 0.sat) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.localContribution.toLong)
+      }
+      if (fundingParams.remoteContribution > 0.sat) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.remoteContribution.toLong)
+      }
+      if (sharedTx.localOutputs.nonEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.localOutputs.map(_.amount).sum.toLong)
+      }
+      if (sharedTx.remoteOutputs.nonEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.remoteOutputs.map(_.amount).sum.toLong)
+      }
+      if (fundingParams.localContribution < 0.sat && sharedTx.localOutputs.isEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(Math.abs(fundingParams.localContribution.toLong))
+      }
+      if (fundingParams.remoteContribution < 0.sat && sharedTx.remoteOutputs.isEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(Math.abs(fundingParams.remoteContribution.toLong))
+      }
+    }
   }
 
   object Tags {
@@ -56,6 +80,7 @@ object Monitoring {
     val Origin = "origin"
     val State = "state"
     val CommitmentFormat = "commitment-format"
+    val SpliceType = "splice-type"
 
     object Events {
       val Created = "created"
@@ -71,6 +96,12 @@ object Monitoring {
     object Directions {
       val Incoming = "incoming"
       val Outgoing = "outgoing"
+    }
+
+    object SpliceTypes {
+      val SpliceIn = "splice-in"
+      val SpliceOut = "splice-out"
+      val SpliceCpfp = "splice-cpfp"
     }
   }
 
