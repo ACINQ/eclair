@@ -332,20 +332,8 @@ object Helpers {
       // The channel is private, let's not change the channel update needlessly.
       return commitments.params.maxHtlcAmount
     }
-    val availableToSend = commitments.active.map(commitment => {
-      val remoteCommit = commitment.nextRemoteCommit_opt.map(_.commit).getOrElse(commitment.remoteCommit)
-      val localBalance = remoteCommit.spec.toRemote.truncateToSatoshi
-      val localReserve = commitment.localChannelReserve(commitments.params)
-      val fee = if (commitments.params.localParams.isInitiator) {
-        (commitTxTotalCostMsat(commitments.params.remoteParams.dustLimit, remoteCommit.spec.copy(commitTxFeerate = remoteCommit.spec.commitTxFeerate * 2), commitments.params.commitmentFormat) +
-          htlcOutputFee(remoteCommit.spec.commitTxFeerate * 2, commitments.params.commitmentFormat) * 2).truncateToSatoshi
-      } else {
-        0 sat
-      }
-      localBalance - localReserve - fee
-    }).min
     for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
-      if (availableToSend <= balanceThreshold.available) {
+      if (commitments.availableBalanceForSend <= balanceThreshold.available) {
         return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
       }
     }

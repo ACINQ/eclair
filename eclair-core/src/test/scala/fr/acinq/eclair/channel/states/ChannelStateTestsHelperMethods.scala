@@ -146,7 +146,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
-      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(10 sat, 0 sat), Channel.BalanceThreshold(100 sat, 50 sat), Channel.BalanceThreshold(10000 sat, 20000 sat)))
+      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val finalNodeParamsB = nodeParamsB
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
@@ -155,7 +155,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.RejectRbfAttempts))(0)
       .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.DelayRbfAttempts))(1)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
-      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(10 sat, 0 sat), Channel.BalanceThreshold(100 sat, 50 sat), Channel.BalanceThreshold(10000 sat, 20000 sat)))
+      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val wallet = wallet_opt match {
       case Some(wallet) => wallet
       case None => if (tags.contains(ChannelStateTestsTags.DualFunding) || tags.contains(ChannelStateTestsTags.Splicing)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
@@ -452,10 +452,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       r2s.forward(s)
       sigr2s += 1
     } while (sigr2s < batchSize)
-    s2r.fishForMessage() {
-      case _: RevokeAndAck => true
-      case _: ChannelUpdate => false
-    }
+    s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {
       s2r.expectMsgType[CommitSig]

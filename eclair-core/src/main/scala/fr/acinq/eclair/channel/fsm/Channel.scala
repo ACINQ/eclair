@@ -103,7 +103,7 @@ object Channel {
                          remoteRbfLimits: RemoteRbfLimits,
                          quiescenceTimeout: FiniteDuration,
                          balanceThresholds: Seq[BalanceThreshold],
-                        minTimeBetweenUpdates: FiniteDuration) {
+                         minTimeBetweenUpdates: FiniteDuration) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
     require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
@@ -542,7 +542,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.debug(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
-              maybeUpdateMaxHtlcAmount(d.commitments, commitments1)
+              maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.latest.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
@@ -1122,6 +1122,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.hash)
         case Left(_) => stay()
       }
@@ -1137,6 +1138,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             None
           }
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending toSend.toSeq
         case Left(_) => stay()
       }
@@ -1145,6 +1147,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.updateRemoteFundingStatus(msg.fundingTxid) match {
         case Right((commitments1, _)) =>
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing()
         case Left(_) => stay()
       }
@@ -2608,13 +2611,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     if (oldCommitments.availableBalanceForSend != newCommitments.availableBalanceForSend || oldCommitments.availableBalanceForReceive != newCommitments.availableBalanceForReceive) {
       context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, shortIds, newCommitments))
     }
-    maybeUpdateMaxHtlcAmount(oldCommitments, newCommitments)
   }
 
-  private def maybeUpdateMaxHtlcAmount(oldCommitments: Commitments, newCommitments: Commitments): Unit = {
-    val oldMaxHtlcAmount = Helpers.maxHtlcAmount(nodeParams, oldCommitments)
+  private def maybeUpdateMaxHtlcAmount(currentMaxHtlcAmount: MilliSatoshi, newCommitments: Commitments): Unit = {
     val newMaxHtlcAmount = Helpers.maxHtlcAmount(nodeParams, newCommitments)
-    if (oldMaxHtlcAmount != newMaxHtlcAmount) {
+    if (currentMaxHtlcAmount != newMaxHtlcAmount) {
       self ! BroadcastChannelUpdate(BalanceThresholdCrossed)
     }
   }
