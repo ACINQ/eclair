@@ -296,12 +296,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         case _ =>
           for {
             previousTx <- wallet.getTransaction(txIn.outPoint.txid)
+              // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
+              .map(_.modify(_.txIn.each.witness).setTo(ScriptWitness.empty))
             confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
           } yield {
             if (canUseInput(fundingParams, txIn, previousTx, confirmations_opt.getOrElse(0))) {
-              // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
-              val previousTxStripped = previousTx.modify(_.txIn.each.witness).setTo(ScriptWitness.empty)
-              Right(Input.Local(UInt64(0), previousTxStripped, txIn.outPoint.index, txIn.sequence))
+              Right(Input.Local(UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
             } else {
               Left(UnusableInput(txIn.outPoint))
             }
