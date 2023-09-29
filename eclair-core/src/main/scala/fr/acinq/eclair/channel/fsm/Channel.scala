@@ -1072,6 +1072,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               d.commitments.updateLocalFundingStatus(msg.txId, dfu1) match {
                 case Right((commitments1, _)) =>
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+                  Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
                   stay() using d.copy(commitments = commitments1) storing() calling publishFundingTx(dfu1)
                 case Left(_) =>
                   stay()
@@ -1091,26 +1092,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
-                  val fundingParams = signingSession1.fundingTx.fundingParams
-                  val sharedTx = signingSession1.fundingTx.sharedTx.tx
-                  if (fundingParams.localContribution > 0.sat) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.localContribution.toLong)
-                  }
-                  if (fundingParams.remoteContribution > 0.sat) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.remoteContribution.toLong)
-                  }
-                  if (sharedTx.localOutputs.nonEmpty) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.localOutputs.map(_.amount).sum.toLong)
-                  }
-                  if (sharedTx.remoteOutputs.nonEmpty) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.remoteOutputs.map(_.amount).sum.toLong)
-                  }
-                  if (fundingParams.localContribution < 0.sat && sharedTx.localOutputs.isEmpty) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(fundingParams.localContribution.toLong)
-                  }
-                  if (fundingParams.remoteContribution < 0.sat && sharedTx.remoteOutputs.isEmpty) {
-                    Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(fundingParams.remoteContribution.toLong)
-                  }
+                  Metrics.recordSplice(signingSession1.fundingTx.fundingParams, signingSession1.fundingTx.sharedTx.tx)
                   stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx) calling endQuiescence(d1)
               }
             case _ =>

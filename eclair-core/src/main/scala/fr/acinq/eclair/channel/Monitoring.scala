@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SharedTransaction}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
 import kamon.Kamon
 
@@ -46,6 +48,27 @@ object Monitoring {
         val (value, previousValue) = (htlcs.sum.truncateToSatoshi.toLong, previousHtlcs.sum.truncateToSatoshi.toLong)
         HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
         HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment((value - previousValue).toDouble)
+      }
+    }
+
+    def recordSplice(fundingParams: InteractiveTxParams, sharedTx: SharedTransaction): Unit = {
+      if (fundingParams.localContribution > 0.sat) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.localContribution.toLong)
+      }
+      if (fundingParams.remoteContribution > 0.sat) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.remoteContribution.toLong)
+      }
+      if (sharedTx.localOutputs.nonEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.localOutputs.map(_.amount).sum.toLong)
+      }
+      if (sharedTx.remoteOutputs.nonEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.remoteOutputs.map(_.amount).sum.toLong)
+      }
+      if (fundingParams.localContribution < 0.sat && sharedTx.localOutputs.isEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(Math.abs(fundingParams.localContribution.toLong))
+      }
+      if (fundingParams.remoteContribution < 0.sat && sharedTx.remoteOutputs.isEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(Math.abs(fundingParams.remoteContribution.toLong))
       }
     }
   }
