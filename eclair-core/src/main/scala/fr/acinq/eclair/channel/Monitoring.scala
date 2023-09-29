@@ -51,6 +51,10 @@ object Monitoring {
       }
     }
 
+    /**
+     * This is best effort! It is not possible to attribute a type to a splice in all cases. For example, if remote provides
+     * both inputs and outputs, it could be a splice-in (with change), or a combined splice-in + splice-out.
+     */
     def recordSplice(fundingParams: InteractiveTxParams, sharedTx: SharedTransaction): Unit = {
       if (fundingParams.localContribution > 0.sat) {
         Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.localContribution.toLong)
@@ -58,8 +62,8 @@ object Monitoring {
       if (fundingParams.remoteContribution > 0.sat) {
         Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceIn).record(fundingParams.remoteContribution.toLong)
       }
-      if (sharedTx.localOutputs.nonEmpty) {
-        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.localOutputs.map(_.amount).sum.toLong)
+      if (sharedTx.localOnlyNonChangeOutputs.nonEmpty) {
+        Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Local).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.localOnlyNonChangeOutputs.map(_.amount).sum.toLong)
       }
       if (sharedTx.remoteOutputs.nonEmpty) {
         Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceOut).record(sharedTx.remoteOutputs.map(_.amount).sum.toLong)
