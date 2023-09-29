@@ -81,25 +81,14 @@ case class ChannelParams(channelId: ByteVector32,
    * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
    *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
    *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
-   *
-   * @param fundingAmount         total funding amount of the channel.
-   * @param remoteContributes_opt true if the remote has the ability to double-spend the transaction (even if they're
-   *                              not contributing to the shared funding amount). Should be empty if we don't know yet
-   *                              if the remote will contribute to the shared transaction.
    */
-  def minDepthDualFunding(defaultMinDepth: Int, fundingAmount: Satoshi, remoteContributes_opt: Option[Boolean] = None): Option[Long] = {
+  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
+      Some(ChannelParams.minDepthScaled(defaultMinDepth, sharedTx.sharedOutput.amount))
     }
   }
-
-  /**
-   * When the shared transaction has been built and we know exactly how our peer is going to contribute, we can compute
-   * the real min_depth that we are going to actually use.
-   */
-  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = minDepthDualFunding(defaultMinDepth, sharedTx.sharedOutput.amount, Some(sharedTx.remoteInputs.nonEmpty))
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
