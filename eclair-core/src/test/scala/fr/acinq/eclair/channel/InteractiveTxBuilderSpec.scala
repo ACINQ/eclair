@@ -300,6 +300,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       bob2alice.expectNoMessage(100 millis)
       // Alice --- tx_add_input --> Bob
       val inputA1 = fwd.forwardAlice2Bob[TxAddInput]
+      assert(inputA1.previousTx_opt.exists(_.txIn.forall(_.witness == ScriptWitness.empty)), "witnesses must be removed from parent txs to save space")
       // Alice <-- tx_add_input --- Bob
       val inputB1 = fwd.forwardBob2Alice[TxAddInput]
       // Alice --- tx_add_input --> Bob
