@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, Output, SharedTransaction}
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SharedTransaction}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
 import kamon.Kamon
 
