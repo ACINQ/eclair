@@ -88,7 +88,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.channel.to-remote-delay-blocks" -> 24,
     "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
-    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
+    "eclair.multi-part-payment-expiry" -> "20 seconds",
+    "eclair.channel.channel-update.balance-thresholds" -> Nil.asJava,
+    "eclair.channel.channel-update.min-time-between-updates" -> java.time.Duration.ZERO).asJava).withFallback(ConfigFactory.load())
 
   private val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${DataLossProtect.rfcName}" -> "optional",

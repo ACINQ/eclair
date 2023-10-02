@@ -428,8 +428,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val id1 = ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff")
     val id2 = ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3")
     val id3 = ByteVector32(hex"74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8")
-    val res1 = RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), id1)
-    val res2 = RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), CommandUnavailableInThisState(id2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))
+    val res1 = RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986), id1)
+    val res2 = RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986), CommandUnavailableInThisState(id2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))
     val res3 = ApiTypes.ChannelNotFound(Left(id3))
     val map = Map(
       Left(id1) -> Right(res1),

@@ -26,7 +26,7 @@ import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerByte, FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel.RealScidStatus.Final
 import fr.acinq.eclair.channel._
@@ -882,27 +882,100 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo == Left(waitForRevocation))
   }
 
-  test("recv CMD_SIGN (going above reserve)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
+  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AdaptMaxHtlcAmount)) { f =>
     import f._
-    // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
-    assert(!bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
-    // alice will send enough funds to bob to make it go above reserve
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FULFILL_HTLC(htlc.id, r)
-    bob2alice.expectMsgType[UpdateFulfillHtlc]
-    // we listen to channel_update events
-    val listener = TestProbe()
-    bob.underlying.system.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
 
-    // actual test starts here
-    // when signing the fulfill, bob will have its main output go above reserve in alice's commitment tx
-    bob ! CMD_SIGN()
-    bob2alice.expectMsgType[CommitSig]
-    // it should update its channel_update
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
-    // and broadcast it
-    assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate == bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
+    val aliceListener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
+    val bobListener = TestProbe()
+    bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
+
+    // We make sure the funding transaction is deeply buried: before that, we won't broadcast channel updates to the network.
+    val fundingTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 0, fundingTx)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 0, fundingTx)
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+
+    // The channel starts with all funds on alice's side, so htlcMaximumMsat will be initially set to 0 on bob's side.
+    // A second channel update sets the scid after funding confirmation.
+    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 0.msat)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
+
+    // Alice and Bob use the following balance thresholds:
+    assert(alice.nodeParams.channelConf.balanceThresholds == Seq(BalanceThreshold(1_000 sat, 0 sat), BalanceThreshold(5_000 sat, 1_000 sat), BalanceThreshold(10_000 sat, 5_000 sat)))
+    assert(bob.nodeParams.channelConf.balanceThresholds == Seq(BalanceThreshold(1_000 sat, 0 sat), BalanceThreshold(5_000 sat, 1_000 sat), BalanceThreshold(10_000 sat, 5_000 sat)))
+
+    // Alice sends 1% of the channel capacity, corresponding to Bob's reserve.
+    // Bob still cannot relay payments, so he doesn't update his htlc_maximum_msat.
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 1_000_000_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 0.msat)
+    val (p1, htlc1) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc1.id, p1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 990_000_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 10_000_000.msat)
+    aliceListener.expectNoMessage(100 millis)
+    bobListener.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 0.msat)
+
+    // Alice sends more funds, reaching Bob's third balance bucket and causing him to update his htlc_maximum_msat.
+    val (p2, htlc2) = addHtlc(2_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc2.id, p2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 988_000_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 12_000_000.msat)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 1_000_000.msat)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 1_000_000.msat)
+    aliceListener.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+
+    // Bob sends back some funds and ends reaches another bucket, causing him to update his htlc_maximum_msat.
+    val (p3, htlc3) = addHtlc(1_500_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc3.id, p3, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 989_500_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 10_500_000.msat)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 0.msat)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 0.msat)
+    aliceListener.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+
+    // Alice sends a large amount, but her balance stays above her highest balance threshold.
+    val (p4, htlc4) = addHtlc(500_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc4.id, p4, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 489_500_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 510_500_000.msat)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+    aliceListener.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+
+    // Alice sends another large amount and goes below her balance threshold.
+    val (p5, htlc5) = addHtlc(439_500_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc5.id, p5, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 50_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend > 5_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend < 10_000_000.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 950_000_000.msat)
+    bobListener.expectNoMessage(100 millis)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 5_000_000.msat)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 5_000_000.msat)
   }
 
   test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
@@ -2338,14 +2411,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
-    val newCltvExpiryDelta = CltvExpiryDelta(145)
-    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = Some(newCltvExpiryDelta)))
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
-    assert(localUpdate.channelUpdate.cltvExpiryDelta == newCltvExpiryDelta)
     alice2relayer.expectNoMessage(1 seconds)
   }
 

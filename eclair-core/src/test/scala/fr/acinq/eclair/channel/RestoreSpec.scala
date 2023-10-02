@@ -224,7 +224,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       newAlice ! INPUT_RESTORED(oldStateData)
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
-      assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
+      assert(!Announcements.areSameRelayParams(u1.channelUpdate, oldStateData.channelUpdate))
       assert(u1.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
       assert(u1.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
       assert(u1.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)

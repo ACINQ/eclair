@@ -474,7 +474,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMessage(300 millis)
 
     // we make alice update here relay fee
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456, cltvExpiryDelta_opt = None)
+    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456)
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     // alice doesn't broadcast the new channel_update yet

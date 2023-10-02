@@ -64,6 +64,14 @@ object Channel {
 
   case class RemoteRbfLimits(maxAttempts: Int, attemptDeltaBlocks: Int)
 
+  /**
+   * @param available     When the amount available to send goes below this,
+   * @param maxHtlcAmount set the maximum HTLC amount to this value.
+   *                      But never lower than the minimum HTLC amount, in case maxHtlcAmount is lower than the minimum
+   *                      HTLC amount, the minimum HTLC amount will be used instead.
+   */
+  case class BalanceThreshold(available: Satoshi, maxHtlcAmount: Satoshi)
+
   case class ChannelConf(channelFlags: ChannelFlags,
                          dustLimit: Satoshi,
                          maxRemoteDustLimit: Satoshi,
@@ -93,8 +101,11 @@ object Channel {
                          maxPendingChannelsPerPeer: Int,
                          maxTotalPendingChannelsPrivateNodes: Int,
                          remoteRbfLimits: RemoteRbfLimits,
-                         quiescenceTimeout: FiniteDuration) {
+                         quiescenceTimeout: FiniteDuration,
+                         balanceThresholds: Seq[BalanceThreshold],
+                         minTimeBetweenUpdates: FiniteDuration) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
+    require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
     def minFundingSatoshis(announceChannel: Boolean): Satoshi = if (announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
   }
@@ -145,7 +156,7 @@ object Channel {
   sealed trait BroadcastReason
   case object PeriodicRefresh extends BroadcastReason
   case object Reconnected extends BroadcastReason
-  case object AboveReserve extends BroadcastReason
+  private case object BalanceThresholdCrossed extends BroadcastReason
 
   private[channel] sealed trait BitcoinEvent extends PossiblyHarmful
   private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
@@ -349,7 +360,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
             nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
             log.debug("refreshing channel_update due to configuration changes")
-            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(nodeParams.channelConf.expiryDelta))
+            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths)
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
@@ -531,11 +542,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.debug(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
-              if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
-                // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
-                log.debug("updating channel_update aboveReserve={}", Helpers.aboveReserve(commitments1))
-                self ! BroadcastChannelUpdate(AboveReserve)
-              }
+              maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.latest.remoteCommit.index, peer), nodeParams.channelConf.revocationTimeout)
@@ -758,7 +765,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val channelUpdate1 = if (d.channelUpdate.shortChannelId != scidForChannelUpdate) {
         log.info(s"using new scid in channel_update: old=${d.channelUpdate.shortChannelId} new=$scidForChannelUpdate")
         // we re-announce the channelUpdate for the same reason
-        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = Helpers.aboveReserve(d.commitments))
+        Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
       } else {
         d.channelUpdate
       }
@@ -790,7 +797,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               } else {
                 // we generate a new channel_update because the scid used may change if we were previously using an alias
                 val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds.localAlias)
-                val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = false, enable = Helpers.aboveReserve(d.commitments))
+                val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
                 // we use goto() instead of stay() because we want to fire transitions
                 goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
               }
@@ -812,7 +819,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = Helpers.aboveReserve(d.commitments))
+      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths))
       log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
@@ -821,14 +828,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = TimestampSecond.now() - d.channelUpdate.timestamp
-      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = Helpers.aboveReserve(d.commitments))
+      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees)
       reason match {
         case Reconnected if d.commitments.announceChannel && Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
           log.debug("not sending a new identical channel_update, current one was created {} days ago", age.toDays)
           stay()
+        case BalanceThresholdCrossed if d.channelUpdate.htlcMaximumMsat == channelUpdate1.htlcMaximumMsat =>
+          // The current channel update already uses the desired htlcMaximumMsat.
+          stay()
+        case BalanceThresholdCrossed if age < nodeParams.channelConf.minTimeBetweenUpdates =>
+          startSingleTimer(BalanceThresholdCrossed.toString, BroadcastChannelUpdate(BalanceThresholdCrossed), nodeParams.channelConf.minTimeBetweenUpdates - age)
+          stay()
         case _ =>
           log.debug("refreshing channel_update announcement (reason={})", reason)
+          if (d.channelUpdate.htlcMaximumMsat != channelUpdate1.htlcMaximumMsat) {
+            log.info("updating maximum HTLC amount to {} (old={})", channelUpdate1.htlcMaximumMsat, d.channelUpdate.htlcMaximumMsat)
+          }
           // we use goto() instead of stay() because we want to fire transitions
           goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
       }
@@ -1108,6 +1124,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.hash)
         case Left(_) => stay()
       }
@@ -1123,6 +1140,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             None
           }
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending toSend.toSeq
         case Left(_) => stay()
       }
@@ -1131,6 +1149,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.updateRemoteFundingStatus(msg.fundingTxid) match {
         case Right((commitments1, _)) =>
           maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing()
         case Left(_) => stay()
       }
@@ -1148,7 +1167,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       if (d.commitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
-        val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
+        val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
         // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.changes.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
@@ -2352,12 +2371,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // When we change our channel update parameters (e.g. relay fees), we want to advertise it to other actors.
       (stateData, nextStateData) match {
         // NORMAL->NORMAL, NORMAL->OFFLINE, SYNCING->NORMAL
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateParametersChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
         // WAIT_FOR_FUNDING_CONFIRMED->NORMAL, WAIT_FOR_CHANNEL_READY->NORMAL
-        case (_: DATA_WAIT_FOR_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
-        case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
-        case (_: DATA_WAIT_FOR_CHANNEL_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
-        case (_: DATA_WAIT_FOR_DUAL_FUNDING_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateParametersChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED, d2: DATA_NORMAL) => maybeEmitChannelUpdateParametersChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_CHANNEL_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateParametersChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
+        case (_: DATA_WAIT_FOR_DUAL_FUNDING_READY, d2: DATA_NORMAL) => maybeEmitChannelUpdateParametersChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
         case _ => ()
       }
 
@@ -2534,7 +2553,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     if (d.channelUpdate.channelFlags.isEnabled) {
       // if the channel isn't disabled we generate a new channel_update
       log.debug("updating channel_update announcement (reason=disabled)")
-      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
+      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
       // then we update the state and replay the request
       self forward c
       // we use goto() to fire transitions
@@ -2547,7 +2566,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
-    val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scidForChannelUpdate(d), c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.params.maxHtlcAmount, isPrivate = !d.commitments.announceChannel, enable = false)
+    val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false)
     log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, d.channelId)
@@ -2555,7 +2574,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // new update right away. The goal is to not emit superfluous updates when the channel is unusable. At reconnection
     // there will be a state transition SYNCING->NORMAL which will cause the update to be broadcast.
     // However, we still need to advertise that the channel_update parameters have changed, so we manually call the method
-    maybeEmitChannelUpdateChangedEvent(newUpdate = channelUpdate1, oldUpdate_opt = Some(d.channelUpdate), d)
+    maybeEmitChannelUpdateParametersChangedEvent(newUpdate = channelUpdate1, oldUpdate_opt = Some(d.channelUpdate), d)
     stay() using d.copy(channelUpdate = channelUpdate1) storing()
   }
 
@@ -2582,8 +2601,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     }
   }
 
-  private def maybeEmitChannelUpdateChangedEvent(newUpdate: ChannelUpdate, oldUpdate_opt: Option[ChannelUpdate], d: DATA_NORMAL): Unit = {
-    if (oldUpdate_opt.isEmpty || !Announcements.areSameIgnoreFlags(newUpdate, oldUpdate_opt.get)) {
+  private def maybeEmitChannelUpdateParametersChangedEvent(newUpdate: ChannelUpdate, oldUpdate_opt: Option[ChannelUpdate], d: DATA_NORMAL): Unit = {
+    if (oldUpdate_opt.isEmpty || !Announcements.areSameRelayParams(newUpdate, oldUpdate_opt.get)) {
       context.system.eventStream.publish(ChannelUpdateParametersChanged(self, d.channelId, d.commitments.remoteNodeId, newUpdate))
     }
   }
@@ -2594,10 +2613,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     if (oldCommitments.availableBalanceForSend != newCommitments.availableBalanceForSend || oldCommitments.availableBalanceForReceive != newCommitments.availableBalanceForReceive) {
       context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, shortIds, newCommitments))
     }
-    if (!Helpers.aboveReserve(oldCommitments) && Helpers.aboveReserve(newCommitments)) {
-      // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
-      log.debug("updating channel_update aboveReserve={}", Helpers.aboveReserve(newCommitments))
-      self ! BroadcastChannelUpdate(AboveReserve)
+  }
+
+  private def maybeUpdateMaxHtlcAmount(currentMaxHtlcAmount: MilliSatoshi, newCommitments: Commitments): Unit = {
+    val newMaxHtlcAmount = Helpers.maxHtlcAmount(nodeParams, newCommitments)
+    if (currentMaxHtlcAmount != newMaxHtlcAmount) {
+      self ! BroadcastChannelUpdate(BalanceThresholdCrossed)
     }
   }
 

@@ -29,6 +29,29 @@ You can now use Eclair to manage the private keys for on-chain funds monitored b
 
 See `docs/BitcoinCoreKeys.md` for more details.
 
+### Advertise low balance with htlc_maximum_msat
+
+Eclair used to disable a channel when there was no liquidity on our side so that other nodes stop trying to use it.
+However, other implementations use disabled channels as a sign that the other peer is offline.
+To be consistent with other implementations, we now only disable channels when our peer is offline and signal that a channel has very low balance by setting htlc_maximum_msat to a low value.
+The balance thresholds at which to update htlc_maximum_msat are configurable like this:
+
+```eclair.conf
+eclair.channel.channel-update {
+    balance-thresholds = [{
+        available-sat = 1000  // If our balance goes below this,
+        max-htlc-sat =  0     // set the maximum HTLC amount to this (or htlc-minimum-msat if it's higher).
+    },{
+        available-sat = 10000
+        max-htlc-sat =  1000
+    }]
+
+    min-time-between-updates = 1 hour // minimum time between channel updates because the balance changed
+}
+```
+
+This feature leaks a bit of information about the balance when the channel is almost empty, if you do not wish to use it, set `eclair.channel.channel-update.balance-thresholds = []`.
+
 ### API changes
 
 - `bumpforceclose` can be used to make a force-close confirm faster, by spending the anchor output (#2743)
