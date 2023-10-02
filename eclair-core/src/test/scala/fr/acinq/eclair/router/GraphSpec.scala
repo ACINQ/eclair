@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.{ActiveEdge, DirectedGraph, DisabledEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
@@ -116,7 +116,7 @@ class GraphSpec extends AnyFunSuite {
 
     assert(graph.vertexSet().size == 5)
     assert(graph.edgesOf(c).size == 1)
-    assert(graph.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.size == 2)
+    assert(graph.getIncomingEdgesOf(c).size == 2)
     assert(graph.edgeSet().size == 6)
   }
 
@@ -173,7 +173,7 @@ class GraphSpec extends AnyFunSuite {
     assert(edgesAB.head.desc.a == a)
     assert(edgesAB.head.desc.b == b)
 
-    val bIncoming = graph.getIncomingEdgesOf(b).collect{case e: ActiveEdge => e}
+    val bIncoming = graph.getIncomingEdgesOf(b)
     assert(bIncoming.size == 1)
     assert(bIncoming.exists(_.desc.a == a)) // there should be an edge a --> b
     assert(bIncoming.exists(_.desc.b == b))
@@ -228,23 +228,23 @@ class GraphSpec extends AnyFunSuite {
     val graph = DirectedGraph(Seq(edgeAB, edgeAD, edgeBC, edgeDC))
 
     assert(graph.edgesOf(a).toSet == Set(edgeAB, edgeAD))
-    assert(graph.getIncomingEdgesOf(a).collect{case e: ActiveEdge => e}.toSeq == Nil)
+    assert(graph.getIncomingEdgesOf(a).toSeq == Nil)
     assert(graph.edgesOf(c) == Nil)
-    assert(graph.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.toSet == Set(edgeBC, edgeDC))
+    assert(graph.getIncomingEdgesOf(c).toSet == Set(edgeBC, edgeDC))
 
     val edgeAB1 = edgeAB.copy(balance_opt = Some(200000 msat))
     val edgeBC1 = edgeBC.copy(balance_opt = Some(150000 msat))
     val graph1 = graph.addEdge(edgeAB1).addEdge(edgeBC1)
 
     assert(graph1.edgesOf(a).toSet == Set(edgeAB1, edgeAD))
-    assert(graph1.getIncomingEdgesOf(a).collect{case e: ActiveEdge => e}.toSeq == Nil)
+    assert(graph1.getIncomingEdgesOf(a).toSeq == Nil)
     assert(graph1.edgesOf(c) == Nil)
-    assert(graph1.getIncomingEdgesOf(c).collect{case e: ActiveEdge => e}.toSet == Set(edgeBC1, edgeDC))
+    assert(graph1.getIncomingEdgesOf(c).toSet == Set(edgeBC1, edgeDC))
   }
 
   def descFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ChannelDesc = makeEdge(shortChannelId, a, b, 0 msat, 0).desc
 
-  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): ActiveEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
+  def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
   test("amount with fees larger than channel capacity for C->D") {
     /*
@@ -419,14 +419,14 @@ class GraphSpec extends AnyFunSuite {
     {
       // All nodes can relay messages, same weight for each channel.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
       val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
     }
     {
       // Source and target don't relay messages but they can still emit and receive.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
         .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
@@ -435,105 +435,30 @@ class GraphSpec extends AnyFunSuite {
     {
       // E doesn't relay messages.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
       val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
-      // Message can take disabled edges.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
-      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
-        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
-      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
-    }
-    {
-      // Disabled edges are penalized.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 2.0)
-      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
-        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
-      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
-    }
-    {
-      // Disabled edges are penalized but we limit the maximum length of the path.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 2
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 2.0)
-      val g = graph.disableEdge(ChannelDesc(ShortChannelId(4L), a, e))
-        .disableEdge(ChannelDesc(ShortChannelId(5L), e, d))
-      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
-    }
-    {
       // Prefer high-capacity channels.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(0.0, 0.0, 1.0, 1.0)
+      val wr = MessagePath.WeightRatios(0.0, 0.0, 1.0)
       val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // We ignore E.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
       val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set(e), boundaries, BlockHeight(793397), wr)
       assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // Target not in graph.
       val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0, 1.0)
+      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
       assert(MessagePath.dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
     }
-  }
-
-  test("makeGraph with disabled channels") {
-    val scid1 = RealShortChannelId(BlockHeight(565643), 1216, 0)
-    val scid2 = RealShortChannelId(BlockHeight(542280), 2156, 0)
-    val scid3 = RealShortChannelId(BlockHeight(565779), 2711, 0)
-    val a = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
-    val b = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
-    val c = PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")
-    val updates = SortedMap(
-      scid1 -> PublicChannel(
-        ann = makeChannel(scid1.toLong, a, b),
-        fundingTxid = ByteVector32.Zeroes,
-        capacity = DEFAULT_CAPACITY,
-        // Both directions are enabled.
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid1, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = true), CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid1, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
-        meta_opt = None
-      ),
-      scid2 -> PublicChannel(
-        ann = makeChannel(scid2.toLong, b, c),
-        fundingTxid = ByteVector32.Zeroes,
-        capacity = DEFAULT_CAPACITY,
-        // Only one direction is enabled.
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid2, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true), CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid2, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
-        meta_opt = None
-      ),
-      scid3 -> PublicChannel(
-        ann = makeChannel(scid3.toLong, a, c),
-        fundingTxid = ByteVector32.Zeroes,
-        capacity = DEFAULT_CAPACITY,
-        // Both directions are disabled.
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid3, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, scid3, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
-        meta_opt = None
-      )
-    )
-    val g = DirectedGraph.makeGraph(updates, Seq.empty)
-    val edgesOfA = g.getIncomingEdgesOf(a).toSeq
-    assert(edgesOfA.size == 1)
-    assert(edgesOfA.head.isInstanceOf[ActiveEdge])
-    val edgesOfB = g.getIncomingEdgesOf(b).toSeq
-    assert(edgesOfB.size == 2)
-    assert(edgesOfB.forall(_.isInstanceOf[ActiveEdge]))
-    val edgesOfC = g.getIncomingEdgesOf(c).toSeq
-    assert(edgesOfC.size == 1)
-    assert(edgesOfC.head.isInstanceOf[DisabledEdge])
   }
 }

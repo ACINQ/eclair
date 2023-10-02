@@ -90,8 +90,7 @@ object EclairInternalsSerializer {
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
       ("ageFactor" | double) ::
-      ("capacityFactor" | double) ::
-      ("disabledMultiplier" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+      ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
