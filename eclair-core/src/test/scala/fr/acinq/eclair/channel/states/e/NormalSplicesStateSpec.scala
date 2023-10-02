@@ -68,97 +68,102 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private val defaultSpliceOutScriptPubKey = hex"0020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-  private def useQuiescence(f: FixtureParam): Boolean = f.alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.useQuiescence
+  private def useQuiescence(s: TestFSMRef[ChannelState, ChannelData, Channel]): Boolean = s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.useQuiescence
 
-  private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): TestProbe = {
-    import f._
+  private def useQuiescence(f: FixtureParam): Boolean = useQuiescence(f.alice)
 
+  private def initiateSpliceWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]): TestProbe = {
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt)
-    alice ! cmd
-    if (useQuiescence(f)) {
-      exchangeStfu(f)
+    s ! cmd
+    if (useQuiescence(s)) {
+      exchangeStfu(s, r, s2r, r2s)
     }
-    alice2bob.expectMsgType[SpliceInit]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[SpliceAck]
-    bob2alice.forward(alice)
+    s2r.expectMsgType[SpliceInit]
+    s2r.forward(r)
+    r2s.expectMsgType[SpliceAck]
+    r2s.forward(s)
 
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
+    s2r.expectMsgType[TxAddInput]
+    s2r.forward(r)
+    r2s.expectMsgType[TxComplete]
+    r2s.forward(s)
     if (spliceIn_opt.isDefined) {
-      alice2bob.expectMsgType[TxAddInput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxComplete]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[TxAddOutput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxComplete]
-      bob2alice.forward(alice)
+      s2r.expectMsgType[TxAddInput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
+      s2r.expectMsgType[TxAddOutput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
     }
     if (spliceOut_opt.isDefined) {
-      alice2bob.expectMsgType[TxAddOutput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxComplete]
-      bob2alice.forward(alice)
+      s2r.expectMsgType[TxAddOutput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
     }
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
+    s2r.expectMsgType[TxAddOutput]
+    s2r.forward(r)
+    r2s.expectMsgType[TxComplete]
+    r2s.forward(s)
+    s2r.expectMsgType[TxComplete]
+    s2r.forward(r)
     sender
   }
 
-  private def exchangeSpliceSigs(f: FixtureParam, sender: TestProbe): Transaction = {
-    import f._
+  private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): TestProbe = initiateSpliceWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt)
 
-    val commitSigBob = bob2alice.fishForMessage() {
+  private def exchangeSpliceSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, sender: TestProbe): Transaction = {
+    val commitSigR = r2s.fishForMessage() {
       case _: CommitSig => true
       case _: ChannelReady => false
     }
-    bob2alice.forward(alice, commitSigBob)
-    val commitSigAlice = alice2bob.fishForMessage() {
+    r2s.forward(s, commitSigR)
+    val commitSigS = s2r.fishForMessage() {
       case _: CommitSig => true
       case _: ChannelReady => false
     }
-    alice2bob.forward(bob, commitSigAlice)
+    s2r.forward(r, commitSigS)
 
-    val txSigsBob = bob2alice.fishForMessage() {
+    val txSigsR = r2s.fishForMessage() {
       case _: TxSignatures => true
       case _: ChannelUpdate => false
     }
-    bob2alice.forward(alice, txSigsBob)
-    val txSigsAlice = alice2bob.fishForMessage() {
+    r2s.forward(s, txSigsR)
+    val txSigsS = s2r.fishForMessage() {
       case _: TxSignatures => true
       case _: ChannelUpdate => false
     }
-    alice2bob.forward(bob, txSigsAlice)
+    s2r.forward(r, txSigsS)
 
     sender.expectMsgType[RES_SPLICE]
 
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    awaitCond(s.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(s.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.isInstanceOf[FullySignedSharedTransaction])
+    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.isInstanceOf[FullySignedSharedTransaction])
+    s.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
   }
 
-  private def initiateSplice(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): Transaction = {
-    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt, spliceOut_opt)
-    exchangeSpliceSigs(f, sender)
+  private def exchangeSpliceSigs(f: FixtureParam, sender: TestProbe): Transaction = exchangeSpliceSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, sender)
+
+  private def initiateSplice(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]): Transaction = {
+    val sender = initiateSpliceWithoutSigs(s, r, s2r, r2s, spliceIn_opt, spliceOut_opt)
+    exchangeSpliceSigs(s, r, s2r, r2s, sender)
   }
 
-  private def exchangeStfu(f: FixtureParam): Unit = {
-    import f._
-    alice2bob.expectMsgType[Stfu]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[Stfu]
-    bob2alice.forward(alice)
+  private def initiateSplice(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): Transaction = initiateSplice(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt)
+
+  private def exchangeStfu(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s2r.expectMsgType[Stfu]
+    s2r.forward(r)
+    r2s.expectMsgType[Stfu]
+    r2s.forward(s)
   }
+
+  private def exchangeStfu(f: FixtureParam): Unit = exchangeStfu(f.alice, f.bob, f.alice2bob, f.bob2alice)
 
   case class TestHtlcs(aliceToBob: Seq[(ByteVector32, UpdateAddHtlc)], bobToAlice: Seq[(ByteVector32, UpdateAddHtlc)])
 
@@ -414,6 +419,37 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     sender.expectMsgType[RES_FAILURE[_, _]]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+  }
+
+  test("recv CMD_SPLICE (remote splices in which takes us below reserve)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
+    val (r1, htlc1) = addHtlc(750_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc1.id, r1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+
+    // Bob makes a large splice: Alice doesn't meet the new reserve requirements, but she met the previous one, so we allow this.
+    initiateSplice(bob, alice, bob2alice, alice2bob, spliceIn_opt = Some(SpliceIn(4_000_000 sat)), spliceOut_opt = None)
+    val postSpliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(postSpliceState.commitments.latest.localCommit.spec.toLocal < postSpliceState.commitments.latest.localChannelReserve)
+
+    // Since Alice is below the reserve and most of the funds are on Bob's side, Alice cannot send HTLCs.
+    val probe = TestProbe()
+    val (_, cmd) = makeCmdAdd(5_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
+    alice ! cmd.copy(replyTo = probe.ref)
+    probe.expectMsgType[RES_ADD_FAILED[InsufficientFunds]]
+
+    // But Bob can send HTLCs to take Alice above the reserve.
+    val (r2, htlc2) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc2.id, r2, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // Alice can now send HTLCs as well.
+    addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
   }
 
   def testSpliceInAndOutCmd(f: FixtureParam): Unit = {
