@@ -72,6 +72,7 @@ case object WAIT_FOR_DUAL_FUNDING_READY extends ChannelState
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
+case object NEGOTIATING_SIMPLE extends ChannelState
 case object CLOSING extends ChannelState
 case object CLOSED extends ChannelState
 case object OFFLINE extends ChannelState
@@ -627,6 +628,15 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.params.localParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+}
+final case class DATA_NEGOTIATING_SIMPLE(commitments: Commitments,
+                                         localShutdown: Shutdown, remoteShutdown: Shutdown,
+                                         // Closing transactions we created, where we pay the fees (unsigned).
+                                         proposedClosingTxs: List[ClosingTxs],
+                                         // Closing transactions we published: this contains our local transactions for
+                                         // which they sent a signature, and their closing transactions that we signed.
+                                         publishedClosingTxs: List[ClosingTx]) extends ChannelDataWithCommitments {
+  def findClosingTx(tx: Transaction): Option[ClosingTx] = publishedClosingTxs.find(_.tx.txid == tx.txid).orElse(proposedClosingTxs.flatMap(_.all).find(_.tx.txid == tx.txid))
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing

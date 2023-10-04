@@ -733,10 +733,20 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             }
             // are there pending signed changes on either side? we need to have received their last revocation!
             if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
-              // there are no pending signed changes, let's go directly to NEGOTIATING
-              if (d.commitments.params.localParams.paysClosingFees) {
+              // there are no pending signed changes, let's directly negotiate a closing transaction
+              if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
+                val closingFeerate = d.closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+                MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, closingFeerate) match {
+                  case Left(f) =>
+                    log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+                    goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing() sending sendList
+                  case Right((closingTxs, closingComplete)) =>
+                    log.debug("signing local mutual close transactions: {}", closingTxs)
+                    goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, closingTxs :: Nil, Nil) storing() sending sendList :+ closingComplete
+                }
+              } else if (d.commitments.params.localParams.paysClosingFees) {
                 // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
-                val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.closingFeerates)
+                val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.closingFeerates)
                 goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
               } else {
                 // we are not the channel initiator, will wait for their closing_signed
@@ -1330,9 +1340,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               log.debug("received a new sig:\n{}", commitments1.latest.specs2String)
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
               if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
-                if (d.commitments.params.localParams.paysClosingFees) {
+                if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
+                  val closingFeerate = d.closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+                  MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
+                    case Left(f) =>
+                      log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+                      goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing() sending revocation
+                    case Right((closingTxs, closingComplete)) =>
+                      log.debug("signing local mutual close transactions: {}", closingTxs)
+                      goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, closingTxs :: Nil, Nil) storing() sending revocation :: closingComplete :: Nil
+                  }
+                } else if (d.commitments.params.localParams.paysClosingFees) {
                   // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
-                  val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates)
+                  val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates)
                   goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending revocation :: closingSigned :: Nil
                 } else {
                   // we are not the channel initiator, will wait for their closing_signed
@@ -1372,9 +1392,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           }
           if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", commitments1.latest.specs2String)
-            if (d.commitments.params.localParams.paysClosingFees) {
+            if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
+              val closingFeerate = d.closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+              MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
+                case Left(f) =>
+                  log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+                  goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing()
+                case Right((closingTxs, closingComplete)) =>
+                  log.debug("signing local mutual close transactions: {}", closingTxs)
+                  goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, closingTxs :: Nil, Nil) storing() sending closingComplete
+              }
+            } else if (d.commitments.params.localParams.paysClosingFees) {
               // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
-              val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates)
+              val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates)
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending closingSigned
             } else {
               // we are not the channel initiator, will wait for their closing_signed
@@ -1389,6 +1419,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Left(cause) => handleLocalError(cause, d, Some(revocation))
       }
 
+    case Event(shutdown: Shutdown, d: DATA_SHUTDOWN) =>
+      if (shutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
+        log.debug("our peer updated their shutdown script (previous={}, current={})", d.remoteShutdown.scriptPubKey, shutdown.scriptPubKey)
+        stay() using d.copy(remoteShutdown = shutdown) storing()
+      } else {
+        // This is a retransmission of their previous shutdown, we can ignore it.
+        stay()
+      }
+
     case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_SHUTDOWN) => handleNewBlock(c, d)
@@ -1396,17 +1435,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
     case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) =>
-      c.feerates match {
-        case Some(feerates) if c.feerates != d.closingFeerates =>
-          if (c.scriptPubKey.nonEmpty && !c.scriptPubKey.contains(d.localShutdown.scriptPubKey)) {
-            log.warning("cannot update closing script when closing is already in progress")
-            handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-          } else {
-            log.info("updating our closing feerates: {}", feerates)
-            handleCommandSuccess(c, d.copy(closingFeerates = c.feerates)) storing()
-          }
-        case _ =>
-          handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+      val useSimpleClose = Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)
+      val localShutdown_opt = c.scriptPubKey match {
+        case Some(scriptPubKey) if scriptPubKey != d.localShutdown.scriptPubKey && useSimpleClose => Some(Shutdown(d.channelId, scriptPubKey))
+        case _ => None
+      }
+      if (c.scriptPubKey.exists(_ != d.localShutdown.scriptPubKey) && !useSimpleClose) {
+        handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+      } else if (localShutdown_opt.nonEmpty || c.feerates.nonEmpty) {
+        val d1 = d.copy(localShutdown = localShutdown_opt.getOrElse(d.localShutdown), closingFeerates = c.feerates.orElse(d.closingFeerates))
+        handleCommandSuccess(c, d1) storing() sending localShutdown_opt.toSeq
+      } else {
+        handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       }
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
@@ -1414,17 +1454,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   })
 
   when(NEGOTIATING)(handleExceptions {
-    // Upon reconnection, nodes must re-transmit their shutdown message, so we may receive it now.
     case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING) =>
       if (remoteShutdown != d.remoteShutdown) {
-        // This is a spec violation: it will likely lead to a disagreement when exchanging closing_signed and a force-close.
-        log.warning("received unexpected shutdown={} (previous={})", remoteShutdown, d.remoteShutdown)
+        // This may lead to a signature mismatch if our peer changed their script without using option_simple_close.
+        stay() using d.copy(remoteShutdown = remoteShutdown) storing()
+      } else {
+        stay()
       }
-      stay()
 
     case Event(c: ClosingSigned, d: DATA_NEGOTIATING) =>
       val (remoteClosingFee, remoteSig) = (c.feeSatoshis, c.signature)
-      Closing.MutualClose.checkClosingSignature(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
+      MutualClose.checkClosingSignature(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
         case Right((signedClosingTx, closingSignedRemoteFees)) =>
           val lastLocalClosingSigned_opt = d.closingTxProposed.last.lastOption
           if (lastLocalClosingSigned_opt.exists(_.localClosingSigned.feeSatoshis == remoteClosingFee)) {
@@ -1447,7 +1487,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               case Some(ClosingSignedTlv.FeeRange(minFee, maxFee)) if !d.commitments.params.localParams.paysClosingFees =>
                 // if we are not paying the closing fees and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                 // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
-                val localClosingFees = Closing.MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf)
+                val localClosingFees = MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf)
                 if (maxFee < localClosingFees.min) {
                   log.warning("their highest closing fee is below our minimum fee: {} < {}", maxFee, localClosingFees.min)
                   stay() sending Warning(d.channelId, s"closing fee range must not be below ${localClosingFees.min}")
@@ -1462,7 +1502,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     log.info("accepting their closing fee={}", remoteClosingFee)
                     handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
                   } else {
-                    val (closingTx, closingSigned) = Closing.MutualClose.makeClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, ClosingFees(closingFee, minFee, maxFee))
+                    val (closingTx, closingSigned) = MutualClose.makeClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, ClosingFees(closingFee, minFee, maxFee))
                     log.info("proposing closing fee={} in their fee range (min={} max={})", closingSigned.feeSatoshis, minFee, maxFee)
                     val closingTxProposed1 = (d.closingTxProposed: @unchecked) match {
                       case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
@@ -1474,9 +1514,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 val lastLocalClosingFee_opt = lastLocalClosingSigned_opt.map(_.localClosingSigned.feeSatoshis)
                 val (closingTx, closingSigned) = {
                   // if we are not the channel initiator and we were waiting for them to send their first closing_signed, we don't have a lastLocalClosingFee, so we compute a firstClosingFee
-                  val localClosingFees = Closing.MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf)
-                  val nextPreferredFee = Closing.MutualClose.nextClosingFee(lastLocalClosingFee_opt.getOrElse(localClosingFees.preferred), remoteClosingFee)
-                  Closing.MutualClose.makeClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, localClosingFees.copy(preferred = nextPreferredFee))
+                  val localClosingFees = MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf)
+                  val nextPreferredFee = MutualClose.nextClosingFee(lastLocalClosingFee_opt.getOrElse(localClosingFees.preferred), remoteClosingFee)
+                  MutualClose.makeClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, localClosingFees.copy(preferred = nextPreferredFee))
                 }
                 val closingTxProposed1 = (d.closingTxProposed: @unchecked) match {
                   case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
@@ -1505,7 +1545,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
           } else {
             log.info("updating our closing feerates: {}", feerates)
-            val (closingTx, closingSigned) = Closing.MutualClose.makeFirstClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, Some(feerates))
+            val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, Some(feerates))
             val closingTxProposed1 = d.closingTxProposed match {
               case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
               case previousNegotiations => previousNegotiations :+ List(ClosingTxProposed(closingTx, closingSigned))
@@ -1516,7 +1556,93 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       }
 
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
+      // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
+      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.bestUnpublishedClosingTx_opt.exists(_.tx.txid == tx.txid) =>
+      log.warning(s"looks like a mutual close tx has been published from the outside of the channel: closingTxId=${tx.txid}")
+      // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+      handleMutualClose(d.bestUnpublishedClosingTx_opt.get, Left(d))
+
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
+
+  })
+
+  when(NEGOTIATING_SIMPLE)(handleExceptions {
+    case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING_SIMPLE) =>
+      // Our peer wants to create a new version of their closing transaction.
+      // We don't need to update our version of the closing transaction: we simply wait for their closing_complete.
+      stay() using d.copy(remoteShutdown = remoteShutdown) storing()
+
+    case Event(closingComplete: ClosingComplete, d: DATA_NEGOTIATING_SIMPLE) =>
+      MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingComplete) match {
+        case Left(f) =>
+          // This may happen if scripts were updated concurrently, so we simply ignore failures.
+          // Bolt 2:
+          //  - If the signature field is not valid for the corresponding closing transaction:
+          //    - MUST ignore `closing_complete`.
+          log.warning("invalid closing_complete: {}", f.getMessage)
+          stay()
+        case Right((signedClosingTx, closingSig)) =>
+          log.debug("signing remote mutual close transaction: {}", signedClosingTx.tx)
+          val d1 = d.copy(publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+          stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = false) sending closingSig
+      }
+
+    case Event(closingSig: ClosingSig, d: DATA_NEGOTIATING_SIMPLE) =>
+      MutualClose.receiveSimpleClosingSig(keyManager, d.commitments.latest, d.proposedClosingTxs.last, closingSig) match {
+        case Left(f) =>
+          // This may happen if scripts were updated concurrently, so we simply ignore failures.
+          // Bolt 2:
+          //  - If the signature field is not valid for the corresponding closing transaction:
+          //    - MUST ignore `closing_sig`.
+          log.warning("invalid closing_sig: {}", f.getMessage)
+          stay()
+        case Right(signedClosingTx) =>
+          log.debug("received signatures for local mutual close transaction: {}", signedClosingTx.tx)
+          val d1 = d.copy(publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
+          stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = true)
+      }
+
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING_SIMPLE) if d.findClosingTx(tx).nonEmpty =>
+      if (!d.publishedClosingTxs.exists(_.tx.txid == tx.txid)) {
+        // They published one of our closing transactions without sending us their signature.
+        // We need to publish it ourselves to record the fees and watch for confirmation.
+        val closingTx = d.findClosingTx(tx).get.copy(tx = tx)
+        stay() using d.copy(publishedClosingTxs = d.publishedClosingTxs :+ closingTx) storing() calling doPublish(closingTx, localPaysClosingFees = true)
+      } else {
+        // This is one of the transactions we published.
+        stay()
+      }
+
+    case Event(WatchTxConfirmedTriggered(_, _, tx), d: DATA_NEGOTIATING_SIMPLE) if d.findClosingTx(tx).nonEmpty =>
+      val closingType = MutualClose(d.findClosingTx(tx).get)
+      log.info("channel closed (type={})", EventType.Closed(closingType).label)
+      context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
+      goto(CLOSED) using d storing()
+
+    case Event(c: CMD_CLOSE, d: DATA_NEGOTIATING_SIMPLE) =>
+      val localShutdown_opt = c.scriptPubKey match {
+        case Some(scriptPubKey) if scriptPubKey != d.localShutdown.scriptPubKey => Some(Shutdown(d.channelId, scriptPubKey))
+        case _ => None
+      }
+      if (localShutdown_opt.nonEmpty || c.feerates.nonEmpty) {
+        val localScript = localShutdown_opt.map(_.scriptPubKey).getOrElse(d.localShutdown.scriptPubKey)
+        val feerate = c.feerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+        MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localScript, d.remoteShutdown.scriptPubKey, feerate) match {
+          case Left(f) => handleCommandError(f, c)
+          case Right((closingTxs, closingComplete)) =>
+            log.info("new closing transaction created with script={} fees={}", localScript, closingComplete.fees)
+            log.debug("signing local mutual close transactions: {}", closingTxs)
+            val d1 = d.copy(localShutdown = localShutdown_opt.getOrElse(d.localShutdown), proposedClosingTxs = d.proposedClosingTxs :+ closingTxs)
+            stay() using d1 storing() sending localShutdown_opt.toSeq :+ closingComplete
+        }
+      } else {
+        handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+      }
+
+    case Event(e: Error, d: DATA_NEGOTIATING_SIMPLE) => handleRemoteError(e, d)
 
   })
 
@@ -2169,6 +2295,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) sending d.localShutdown
       }
 
+    case Event(_: ChannelReestablish, d: DATA_NEGOTIATING_SIMPLE) =>
+      // We retransmit our shutdown: we may have updated our script and they may not have received it.
+      // We also sign a new round of closing transactions since network fees may have changed while we were offline.
+      val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates)
+      Closing.MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingFeerate) match {
+        case Left(_) => goto(NEGOTIATING_SIMPLE) using d sending d.localShutdown
+        case Right((closingTxs, closingComplete)) => goto(NEGOTIATING_SIMPLE) using d.copy(proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) sending Seq(d.localShutdown, closingComplete)
+      }
+
     // This handler is a workaround for an issue in lnd: starting with versions 0.10 / 0.11, they sometimes fail to send
     // a channel_reestablish when reconnecting a channel that recently got confirmed, and instead send a channel_ready
     // first and then go silent. This is due to a race condition on their side, so we trigger a reconnection, hoping that
@@ -2324,6 +2459,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               case d: DATA_NORMAL => d.copy(commitments = commitments1)
               case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
               case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
+              case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = commitments1)
               case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
               case d: DATA_CLOSING => d.copy(commitments = commitments1)
             }
@@ -2351,21 +2487,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case d: DATA_NORMAL => d.copy(commitments = commitments1)
             case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
             case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
+            case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = commitments1)
             case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
             case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
           }
           stay() using d1 storing()
         case Left(_) => stay()
       }
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
-      // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
-      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
-
-    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.bestUnpublishedClosingTx_opt.exists(_.tx.txid == tx.txid) =>
-      log.warning(s"looks like a mutual close tx has been published from the outside of the channel: closingTxId=${tx.txid}")
-      // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
-      handleMutualClose(d.bestUnpublishedClosingTx_opt.get, Left(d))
 
     case Event(WatchFundingSpentTriggered(tx), d: ChannelDataWithCommitments) =>
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
@@ -2440,7 +2568,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty))
         case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->offline", d2, sendToPeer = false))
         case (OFFLINE, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("offline->offline", d2, sendToPeer = false))
-        case (NORMAL | SYNCING | OFFLINE, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case (NORMAL | SYNCING | OFFLINE, SHUTDOWN | NEGOTIATING | NEGOTIATING_SIMPLE | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
         case _ => None
       }
       emitEvent_opt.foreach {
