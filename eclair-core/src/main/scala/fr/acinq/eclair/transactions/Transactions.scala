@@ -827,6 +827,58 @@ object Transactions {
     ClosingTx(commitTxInput, tx, toLocalOutput)
   }
 
+  // @formatter:off
+  sealed trait SimpleClosingTxFee
+  object SimpleClosingTxFee {
+    case class PaidByUs(fee: Satoshi) extends SimpleClosingTxFee
+    case class PaidByThem(fee: Satoshi) extends SimpleClosingTxFee
+  }
+  // @formatter:on
+
+  case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {
+    val preferred_opt: Option[ClosingTx] = localAndRemote_opt.orElse(localOnly_opt).orElse(remoteOnly_opt)
+    val all: Seq[ClosingTx] = Seq(localAndRemote_opt, localOnly_opt, remoteOnly_opt).flatten
+  }
+
+  def makeSimpleClosingTxs(input: InputInfo, spec: CommitmentSpec, fee: SimpleClosingTxFee, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector): ClosingTxs = {
+    require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
+
+    val txNoOutput = Transaction(2, Seq(TxIn(input.outPoint, ByteVector.empty, sequence = 0xFFFFFFFDL)), Nil, 0)
+
+    val (toLocalAmount, toRemoteAmount) = fee match {
+      case SimpleClosingTxFee.PaidByUs(fee) => (spec.toLocal.truncateToSatoshi - fee, spec.toRemote.truncateToSatoshi)
+      case SimpleClosingTxFee.PaidByThem(fee) => (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - fee)
+    }
+
+    val toLocalOutput_opt = if (toLocalAmount >= dustLimit(localScriptPubKey)) Some(TxOut(toLocalAmount, localScriptPubKey)) else None
+    val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit(remoteScriptPubKey)) Some(TxOut(toRemoteAmount, remoteScriptPubKey)) else None
+
+    (toLocalOutput_opt, toRemoteOutput_opt) match {
+      case (Some(toLocalOutput), Some(toRemoteOutput)) =>
+        val txLocalAndRemote = LexicographicalOrdering.sort(txNoOutput.copy(txOut = Seq(toLocalOutput, toRemoteOutput)))
+        val toLocalOutputInfo = findPubKeyScriptIndex(txLocalAndRemote, localScriptPubKey).map(index => OutputInfo(index, toLocalAmount, localScriptPubKey)).toOption
+        ClosingTxs(
+          localAndRemote_opt = Some(ClosingTx(input, txLocalAndRemote, toLocalOutputInfo)),
+          // We also provide a version of the transaction without the remote output, which they may want to omit if not economical to spend.
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalAmount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (Some(toLocalOutput), None) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalAmount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (None, Some(toRemoteOutput)) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = None,
+          remoteOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toRemoteOutput)), None))
+        )
+      case (None, None) => ClosingTxs(None, None, None)
+    }
+  }
+
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteVector): Either[TxGenerationSkipped, Int] = {
     val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == pubkeyScript)
     if (outputIndex >= 0) {
