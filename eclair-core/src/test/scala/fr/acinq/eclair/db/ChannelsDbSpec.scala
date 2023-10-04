@@ -147,8 +147,9 @@ class ChannelsDbSpec extends AnyFunSuite {
         (channel2.channelId, 74),
       )
       db.removeHtlcInfos(10) // This should remove all the data for one of the two channels in one batch
+      assert(obsoleteHtlcInfo.flatMap { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber) }.size == 5)
       db.removeHtlcInfos(3) // This should remove only part of the data for the remaining channel
-      assert(obsoleteHtlcInfo.exists { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber).nonEmpty })
+      assert(obsoleteHtlcInfo.flatMap { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber) }.size == 2)
       db.removeHtlcInfos(3) // This should remove the rest of the data for the remaining channel
       obsoleteHtlcInfo.foreach { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber).isEmpty }
 

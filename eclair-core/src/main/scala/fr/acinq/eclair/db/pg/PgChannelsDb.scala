@@ -235,11 +235,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
       // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
       // We instead run an asynchronous job to clean up that data in small batches.
-      using(pg.prepareStatement("INSERT INTO local.htlc_infos_to_remove (channel_id, before_commitment_number) VALUES(?, ?) ON CONFLICT (channel_id) DO UPDATE SET before_commitment_number = EXCLUDED.before_commitment_number")) { statement =>
-        statement.setString(1, channelId.toHex)
-        statement.setLong(2, Long.MaxValue)
-        statement.executeUpdate()
-      }
+      forgetHtlcInfos(channelId, Long.MaxValue)
 
       using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE, closed_timestamp=? WHERE channel_id=?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.now()))
