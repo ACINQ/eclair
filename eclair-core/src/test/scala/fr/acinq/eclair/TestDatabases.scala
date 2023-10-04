@@ -84,6 +84,7 @@ object TestDatabases {
         }
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 

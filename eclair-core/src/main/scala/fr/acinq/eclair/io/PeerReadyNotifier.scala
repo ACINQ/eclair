@@ -198,6 +198,7 @@ object PeerReadyNotifier {
     case channel.NORMAL => true
     case channel.SHUTDOWN => true
     case channel.NEGOTIATING => true
+    case channel.NEGOTIATING_SIMPLE => true
     case channel.CLOSING => true
     case channel.CLOSED => true
     case channel.WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true

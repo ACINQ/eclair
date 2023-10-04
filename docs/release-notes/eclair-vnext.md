@@ -4,7 +4,17 @@
 
 ## Major changes
 
-<insert changes>
+### Simplified mutual close
+
+This release includes support for the latest [mutual close protocol](https://github.com/lightning/bolts/pull/1096).
+This protocol allows both channel participants to decide exactly how much fees they're willing to pay to close the channel.
+Each participant obtains a channel closing transaction where they are paying the fees.
+
+Once closing transactions are broadcast, they can be RBF-ed by calling the `close` RPC again with a higher feerate:
+
+```sh
+./eclair-cli close --channelId=<channel_id> --preferredFeerateSatByte=<rbf_feerate>
+```
 
 ### API changes
 

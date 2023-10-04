@@ -274,6 +274,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       case _: DATA_NORMAL => false
       case _: DATA_SHUTDOWN => true
       case _: DATA_NEGOTIATING => true
+      case _: DATA_NEGOTIATING_SIMPLE => true
       case _: DATA_CLOSING => true
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
     }

@@ -106,6 +106,7 @@ trait CommonHandlers {
     case d: DATA_NORMAL if d.localShutdown.isDefined => d.localShutdown.get.scriptPubKey
     case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
     case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey
+    case d: DATA_NEGOTIATING_SIMPLE => d.localShutdown.scriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
     case d =>
       d.commitments.params.localParams.upfrontShutdownScript_opt match {

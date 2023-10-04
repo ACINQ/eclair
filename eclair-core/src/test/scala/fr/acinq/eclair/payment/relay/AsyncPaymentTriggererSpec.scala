@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.channel.NEGOTIATING
+import fr.acinq.eclair.channel.{NEGOTIATING, NEGOTIATING_SIMPLE}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.io.{Peer, PeerConnected, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer._
@@ -166,7 +166,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, Set(TestProbe().ref.toClassic))
-    peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING, null)))
+    peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING_SIMPLE, null)))
     probe.expectNoMessage(100 millis)
     probe2.expectMessage(AsyncPaymentTriggered)
   }

@@ -580,7 +580,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
-    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NEGOTIATING_SIMPLE, max = 60 seconds)
     // and close the channel
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     awaitCond({

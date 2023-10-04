@@ -213,6 +213,7 @@ object CheckBalance {
         case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.latest.localCommit))
+        case (r, d: DATA_NEGOTIATING_SIMPLE) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.latest.localCommit))
         case (r, d: DATA_CLOSING) =>
           Closing.isClosingTypeAlreadyKnown(d) match {
             case None if d.mutualClosePublished.nonEmpty && d.localCommitPublished.isEmpty && d.remoteCommitPublished.isEmpty && d.nextRemoteCommitPublished.isEmpty && d.revokedCommitPublished.isEmpty =>

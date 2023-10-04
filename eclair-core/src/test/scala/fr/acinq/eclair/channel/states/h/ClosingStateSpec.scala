@@ -335,6 +335,18 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv WatchTxConfirmedTriggered (mutual close, option_simple_close)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    val mutualCloseTx = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].publishedClosingTxs.last
+
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mutualCloseTx.tx)
+    awaitCond(alice.stateName == CLOSED)
+
+    bob ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mutualCloseTx.tx)
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv WatchFundingSpentTriggered (local commit)") { f =>
     import f._
     // an error occurs and alice publishes her commit tx
@@ -859,6 +871,18 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(!listener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
   }
 
+  test("recv WatchFundingSpentTriggered (remote commit, option_simple_close)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    // Bob publishes his last current commit tx, the one it had when entering NEGOTIATING state.
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
+    val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
+    assert(closingState.claimHtlcTxs.isEmpty)
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx == bobCommitTx)
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
+  }
+
   test("recv CMD_BUMP_FORCE_CLOSE_FEE (remote commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
@@ -904,10 +928,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv WatchTxConfirmedTriggered (remote commit, option_static_remotekey)", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit, option_static_remotekey)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.SimpleClose)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.channelFeatures == ChannelFeatures(Features.StaticRemoteKey))
+    assert(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].commitments.params.channelFeatures == ChannelFeatures(Features.StaticRemoteKey))
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
