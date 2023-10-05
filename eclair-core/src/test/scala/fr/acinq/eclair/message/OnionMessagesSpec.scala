@@ -27,7 +27,7 @@ import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage, OnionMessagePayloadTlv, OnionRoutingCodecs, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
-import fr.acinq.eclair.{UInt64, randomBytes, randomKey}
+import fr.acinq.eclair.{ShortChannelId, UInt64, randomBytes, randomKey}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.funsuite.AnyFunSuite
@@ -286,7 +286,7 @@ class OnionMessagesSpec extends AnyFunSuite {
       Recipient(nodeKey.publicKey, Some(ByteVector.fromValidHex((json \ "path_id").extract[String])), (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
 
     def makeIntermediateNode(nodeKey: PrivateKey, json: JValue): IntermediateNode =
-      IntermediateNode(nodeKey.publicKey, (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
+      IntermediateNode(nodeKey.publicKey, None, (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
 
     val blindingSecretBob = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(1) \ "blinding_secret").extract[String]))
     val pathId = ByteVector.fromValidHex(((testVector \ "generate" \ "hops")(3) \ "tlvs" \ "path_id").extract[String])
@@ -340,6 +340,35 @@ class OnionMessagesSpec extends AnyFunSuite {
                   case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
                   case x => fail(x.toString)
                 }
+              case x => fail(x.toString)
+            }
+          case x => fail(x.toString)
+        }
+      case x => fail(x.toString)
+    }
+  }
+
+  test("route with channel ids") {
+    val nodeKey = randomKey()
+    val alice = randomKey()
+    val alice2bob = ShortChannelId(1)
+    val bob = randomKey()
+    val bob2carol = ShortChannelId(2)
+    val carol = randomKey()
+    val sessionKey = randomKey()
+    val blindingSecret = randomKey()
+    val pathId = randomBytes(64)
+    val Right((_, messageForAlice)) = buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey, outgoingChannel_opt = Some(alice2bob)) :: IntermediateNode(bob.publicKey, outgoingChannel_opt = Some(bob2carol)) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
+
+    // Checking that the onion is relayed properly
+    process(alice, messageForAlice) match {
+      case SendMessage(Left(outgoingChannelId), onionForBob) =>
+        assert(outgoingChannelId == alice2bob)
+        process(bob, onionForBob) match {
+          case SendMessage(Left(outgoingChannelId), onionForCarol) =>
+            assert(outgoingChannelId == bob2carol)
+            process(carol, onionForCarol) match {
+              case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
               case x => fail(x.toString)
             }
           case x => fail(x.toString)
