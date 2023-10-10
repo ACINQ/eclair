@@ -126,7 +126,7 @@ object PeerReadyNotifier {
         context.log.debug("waiting for peer to connect at block {}", currentBlockHeight)
         Behaviors.same
       case Timeout =>
-        context.log.info("timed out waiting for peer to be ready")
+        context.log.info("timed out waiting for peer to connect")
         replyTo ! PeerUnavailable(remoteNodeId)
         Behaviors.stopped
     }
