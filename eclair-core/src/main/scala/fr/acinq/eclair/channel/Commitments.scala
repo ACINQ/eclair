@@ -506,7 +506,7 @@ case class Commitment(fundingTxIndex: Long,
     val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
 
     // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-    val fees = commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+    val fees = commitTxTotalCost(params.localParams.dustLimit, reduced, params.commitmentFormat)
     // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
     // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.isInitiator) 0.sat else fees)
