@@ -557,10 +557,14 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
   test("initiator and non-initiator splice-in") {
     val targetFeerate = FeeratePerKw(1000 sat)
-    val fundingA1 = 100_000 sat
-    val utxosA = Seq(350_000 sat, 150_000 sat)
-    val fundingB1 = 50_000 sat
-    val utxosB = Seq(175_000 sat, 90_000 sat)
+    // We chose those amounts to ensure that Bob always signs first:
+    //  - funding tx: Alice has one 380 000 sat input and Bob has one 350 000 sat input
+    //  - splice tx: Alice has the shared input (150 000 sat) and one 380 000 sat input, Bob has one 350 000 sat input
+    // It verifies that we don't split the shared input amount: if we did,
+    val fundingA1 = 50_000 sat
+    val utxosA = Seq(380_000 sat, 380_000 sat)
+    val fundingB1 = 100_000 sat
+    val utxosB = Seq(350_000 sat, 350_000 sat)
     withFixture(fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
@@ -625,6 +629,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successB2 = bob2alice.expectMsgType[Succeeded]
       assert(successB2.signingSession.fundingTx.localSigs.previousFundingTxSig_opt.nonEmpty)
       val (spliceTxA, commitmentA2, spliceTxB, commitmentB2) = fixtureParams.exchangeSigsBobFirst(spliceFixtureParams.fundingParamsB, successA2, successB2)
+      // Bob has more balance than Alice in the shared input, so its total contribution is greater than Alice.
+      // But Bob still signs first, because we don't split the shared input's balance when deciding who signs first.
+      assert(spliceTxA.tx.localAmountIn < spliceTxA.tx.remoteAmountIn)
       assert(spliceTxA.signedTx.txIn.exists(_.outPoint == commitmentA1.commitInput.outPoint))
       assert(0.msat < spliceTxA.tx.localFees)
       assert(0.msat < spliceTxA.tx.remoteFees)
