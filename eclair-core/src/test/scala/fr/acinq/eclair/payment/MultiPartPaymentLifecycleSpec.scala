@@ -351,7 +351,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
+    val extraEdge = ExtraEdge(Right(b), e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
@@ -374,7 +374,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // The B -> E channel is private and provided in the invoice routing hints.
-    val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
+    val extraEdge = ExtraEdge(Right(b), e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
@@ -417,9 +417,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("update routing hints") { () =>
     val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(
-      ExtraEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
-      ExtraEdge(b, c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24), 1 msat, None),
-      ExtraEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
+      ExtraEdge(Right(a), b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
+      ExtraEdge(Right(b), c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24), 1 msat, None),
+      ExtraEdge(Right(a), c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
     ))
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
@@ -433,9 +433,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         UnreadableRemoteFailure(finalAmount, Nil)
       )
       val extraEdges1 = Seq(
-        ExtraEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
-        ExtraEdge(b, c, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
-        ExtraEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
+        ExtraEdge(Right(a), b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
+        ExtraEdge(Right(b), c, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
+        ExtraEdge(Right(a), c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
       )
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, recipient).extraEdges).forall { case (e1, e2) => e1 == e2 })
     }
@@ -447,9 +447,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
         RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23))))),
       )
       val extraEdges1 = Seq(
-        ExtraEdge(a, b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
-        ExtraEdge(b, c, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
-        ExtraEdge(a, c, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat))
+        ExtraEdge(Right(a), b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
+        ExtraEdge(Right(b), c, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
+        ExtraEdge(Right(a), c, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat))
       )
       assert(extraEdges1.zip(PaymentFailure.updateExtraEdges(failures, recipient).extraEdges).forall { case (e1, e2) => e1 == e2 })
     }

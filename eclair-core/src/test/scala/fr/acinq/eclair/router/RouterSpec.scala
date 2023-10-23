@@ -541,8 +541,8 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     val r = randomKey().publicKey
     val hopsToRecipient = Seq(
-      ChannelHop(ShortChannelId(10000), b, r, HopRelayParams.FromHint(ExtraEdge(b, r, ShortChannelId(10000), 800 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
-      ChannelHop(ShortChannelId(10001), c, r, HopRelayParams.FromHint(ExtraEdge(c, r, ShortChannelId(10001), 500 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
+      ChannelHop(ShortChannelId(10000), b, r, HopRelayParams.FromHint(ExtraEdge(Right(b), r, ShortChannelId(10000), 800 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
+      ChannelHop(ShortChannelId(10001), c, r, HopRelayParams.FromHint(ExtraEdge(Right(c), r, ShortChannelId(10001), 500 msat, 0, CltvExpiryDelta(36), 1 msat, Some(400_000 msat)))) :: Nil,
     )
 
     {
@@ -551,14 +551,14 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, RouteRequest(a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true))
       val routes = sender.expectMsgType[RouteResponse].routes
       assert(routes.length == 2)
-      assert(routes.flatMap(_.finalHop_opt) == recipient.blindedHops)
+      assert(routes.flatMap(_.finalHop_opt) == recipient.blindedPaths.map{case (alias, blindedPath) => BlindedHop(alias, blindedPath.route.asInstanceOf[OfferTypes.BlindedPath].route, blindedPath.paymentInfo)})
       assert(routes.map(route => route2NodeIds(route)).toSet == Set(Seq(a, b), Seq(a, b, c)))
       assert(routes.map(route => route.blindedFee + route.channelFee(false)).toSet == Set(510 msat, 800 msat))
     }
     {
       // One blinded route is ignored, we use the other one:
       val (_, recipient) = blindedRoutesFromPaths(300_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
-      val ignored = Ignore(Set.empty, Set(ChannelDesc(recipient.extraEdges.last.shortChannelId, recipient.extraEdges.last.sourceNodeId, recipient.extraEdges.last.targetNodeId)))
+      val ignored = Ignore(Set.empty, Set(ChannelDesc(recipient.extraEdges.last.shortChannelId, recipient.extraEdges.last.sourceNodeId.toOption.get, recipient.extraEdges.last.targetNodeId)))
       sender.send(router, RouteRequest(a, recipient, DEFAULT_ROUTE_PARAMS, ignore = ignored))
       val routes = sender.expectMsgType[RouteResponse].routes
       assert(routes.length == 1)
@@ -569,7 +569,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // One blinded route is ignored, the other one doesn't have enough capacity:
       val (_, recipient) = blindedRoutesFromPaths(500_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
-      val ignored = Ignore(Set.empty, Set(ChannelDesc(recipient.extraEdges.last.shortChannelId, recipient.extraEdges.last.sourceNodeId, recipient.extraEdges.last.targetNodeId)))
+      val ignored = Ignore(Set.empty, Set(ChannelDesc(recipient.extraEdges.last.shortChannelId, recipient.extraEdges.last.sourceNodeId.toOption.get, recipient.extraEdges.last.targetNodeId)))
       sender.send(router, RouteRequest(a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true, ignore = ignored))
       sender.expectMsg(Failure(RouteNotFound))
     }
@@ -834,7 +834,7 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       val amount = 10_000.msat
-      val invoiceRoutingHint = Invoice.ExtraEdge(b, targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96), 1 msat, None)
+      val invoiceRoutingHint = Invoice.ExtraEdge(Right(b), targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96), 1 msat, None)
       val preComputedRoute = PredefinedChannelRoute(amount, targetNodeId, Seq(scid_ab, invoiceRoutingHint.shortChannelId))
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount < RoutingHeuristics.CAPACITY_CHANNEL_LOW)
@@ -850,7 +850,7 @@ class RouterSpec extends BaseRouterSpec {
     }
     {
       val amount = RoutingHeuristics.CAPACITY_CHANNEL_LOW * 2
-      val invoiceRoutingHint = Invoice.ExtraEdge(h, targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96), 1 msat, None)
+      val invoiceRoutingHint = Invoice.ExtraEdge(Right(h), targetNodeId, RealShortChannelId(BlockHeight(420000), 516, 1105), 10 msat, 150, CltvExpiryDelta(96), 1 msat, None)
       val preComputedRoute = PredefinedChannelRoute(amount, targetNodeId, Seq(scid_ag_private, scid_gh, invoiceRoutingHint.shortChannelId))
       // the amount affects the way we estimate the channel capacity of the hinted channel
       assert(amount > RoutingHeuristics.CAPACITY_CHANNEL_LOW)

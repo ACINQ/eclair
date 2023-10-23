@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import fr.acinq.eclair.wire.protocol.OfferTypes.ShortChannelIdDir
 import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.duration.FiniteDuration
@@ -41,7 +42,7 @@ trait Invoice {
 
 object Invoice {
   /** An extra edge that can be used to pay a given invoice and may not be part of the public graph. */
-  case class ExtraEdge(sourceNodeId: PublicKey,
+  case class ExtraEdge(sourceNodeId: Either[ShortChannelIdDir, PublicKey],
                        targetNodeId: PublicKey,
                        shortChannelId: ShortChannelId,
                        feeBase: MilliSatoshi,

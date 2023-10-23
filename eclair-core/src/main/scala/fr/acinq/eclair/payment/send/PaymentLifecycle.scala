@@ -300,7 +300,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", failure.update.shortChannelId, nodeId, failure.update.channelFlags.isEnabled, failure.update)
           if (failure.update.channelFlags.isEnabled) {
             data.recipient.extraEdges.map {
-              case edge: ExtraEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(failure.update)
+              case edge: ExtraEdge if edge.sourceNodeId == Right(nodeId) && edge.targetNodeId == hop.nextNodeId => edge.update(failure.update)
               case edge: ExtraEdge => edge
             }
           } else {
@@ -308,10 +308,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             // contain channel flags to indicate that it's disabled
             // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
             data.recipient.extraEdges
-              .find(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
-              .foreach(edge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)))
+              .find(edge => edge.sourceNodeId == Right(nodeId) && edge.targetNodeId == hop.nextNodeId)
+              .foreach(edge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, nodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)))
             // we remove this edge for our next payment attempt
-            data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
+            data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == Right(nodeId) && edge.targetNodeId == hop.nextNodeId)
           }
       }
       case None =>

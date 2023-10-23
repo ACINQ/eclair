@@ -197,7 +197,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val recipientNodeId = randomKey().publicKey
     val route = PredefinedNodeRoute(defaultAmountMsat, Seq(a, b, c, recipientNodeId))
-    val extraEdges = Seq(ExtraEdge(c, recipientNodeId, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144), 1 msat, None))
+    val extraEdges = Seq(ExtraEdge(Right(c), recipientNodeId, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144), 1 msat, None))
     val recipient = ClearRecipient(recipientNodeId, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, extraEdges)
     val request = SendPaymentToRoute(sender.ref, Left(route), recipient)
 
@@ -594,8 +594,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel bc and cd
     val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
-      ExtraEdge(b, c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta, 1 msat, None),
-      ExtraEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
+      ExtraEdge(Right(b), c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta, 1 msat, None),
+      ExtraEdge(Right(c), d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
     ))
     val request = SendPaymentToNode(sender.ref, recipient, 5, defaultRouteParams)
     sender.send(paymentFSM, request)
@@ -638,7 +638,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we build an assisted route for channel cd
     val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
-      ExtraEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
+      ExtraEdge(Right(c), d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
     ))
     val request = SendPaymentToNode(sender.ref, recipient, 1, defaultRouteParams)
     sender.send(paymentFSM, request)
