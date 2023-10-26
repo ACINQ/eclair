@@ -43,7 +43,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTra
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{CompactBlindedPath, Offer, OfferPaths, ShortChannelIdDir}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, OfferTypes}
 import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
@@ -821,6 +821,46 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentSent = sender.expectMsgType[PaymentSent]
     assert(paymentSent.recipientAmount == amount, paymentSent)
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
+
+    awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    assert(receivedAmount >= amount)
+  }
+
+  test("send to compact route") {
+    val recipientKey = randomKey()
+    val amount = 10_000_000 msat
+    val chain = nodes("C").nodeParams.chainHash
+    val pathId = randomBytes32()
+    val offerPath = OfferTypes.BlindedPath(buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId))))
+    val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("C").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
+    val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
+    nodes("C").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
+
+    val sender = TestProbe()
+    val alice = new EclairImpl(nodes("A"))
+    alice.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(30 seconds).pipeTo(sender.ref)
+
+    val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
+    val probe = TestProbe()
+    probe.send(nodes("C").router, Router.GetChannels)
+    val b = nodes("B").nodeParams.nodeId
+    val channelWithB = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => ann.nodeId1 == b || ann.nodeId2 == b).get
+    val receivingRoutes = Seq(
+      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(555), Seq(DummyBlindedHop(55 msat, 55, CltvExpiryDelta(55))), Some(ShortChannelIdDir(channelWithB.nodeId1 == b, channelWithB.shortChannelId)))
+    )
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"eff0"))
+
+    val handlePayment = offerHandler.expectMessageType[HandlePayment]
+    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.pluginData_opt.contains(hex"eff0"))
+    handlePayment.replyTo ! PaymentActor.AcceptPayment()
+
+    val paymentSent = sender.expectMsgType[PaymentSent]
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid >= 0.msat, paymentSent)
+    val Some(invoice: Bolt12Invoice) = nodes("A").nodeParams.db.payments.listOutgoingPaymentsToOffer(offer.offerId).head.invoice
+    assert(invoice.blindedPaths.forall(_.route.isInstanceOf[CompactBlindedPath]))
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
