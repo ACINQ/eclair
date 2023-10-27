@@ -17,7 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.scalacompat.{Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{BlockId, Transaction, TxId}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
@@ -32,7 +32,7 @@ class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreC
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
-  system.scheduler.scheduleWithFixedDelay(100 milliseconds, 100 milliseconds)(() => system.eventStream.publish(NewBlock(randomBytes32())))
+  system.scheduler.scheduleWithFixedDelay(100 milliseconds, 100 milliseconds)(() => system.eventStream.publish(NewBlock(BlockId(randomBytes32()))))
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
     system.eventStream.publish(NewTransaction(tx))

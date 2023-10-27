@@ -19,7 +19,7 @@ package fr.acinq.eclair.json
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{BlockHash, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
@@ -128,6 +128,14 @@ object TxIdKeySerializer extends MinimalKeySerializer({
 
 object TxIdKmpSerializer extends MinimalSerializer({
   case x: fr.acinq.bitcoin.TxId => JString(x.value.toHex)
+})
+
+object BlockIdSerializer extends MinimalSerializer({
+  case x: BlockId => JString(x.value.toHex)
+})
+
+object BlockIdKmpSerializer extends MinimalSerializer({
+  case x: fr.acinq.bitcoin.BlockId => JString(x.value.toHex)
 })
 
 object BlockHashSerializer extends MinimalSerializer({
@@ -655,6 +663,7 @@ object JsonSerializers {
     ByteVectorSerializer +
     ByteVector32Serializer +
     TxIdSerializer +
+    BlockIdSerializer +
     BlockHashSerializer +
     ByteVector64Serializer +
     ChannelEventSerializer +

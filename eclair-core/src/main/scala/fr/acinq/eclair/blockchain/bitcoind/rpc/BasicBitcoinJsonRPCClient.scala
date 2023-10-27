@@ -37,7 +37,8 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: S
   implicit val formats: Formats = DefaultFormats.withBigDecimal +
     ByteVector32Serializer + ByteVector32KmpSerializer +
     TxIdSerializer + TxIdKmpSerializer +
-    BlockHashSerializer + BlockHashKmpSerializer
+    BlockHashSerializer + BlockHashKmpSerializer +
+    BlockIdSerializer + BlockIdKmpSerializer
 
   private val scheme = if (ssl) "https" else "http"
   private val serviceUri = wallet match {

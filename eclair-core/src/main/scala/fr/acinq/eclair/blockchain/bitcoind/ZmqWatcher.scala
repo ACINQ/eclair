@@ -61,7 +61,7 @@ object ZmqWatcher {
   private case class GetBlockCountFailed(t: Throwable) extends Command
   private case class CheckBlockHeight(current: BlockHeight) extends Command
   private case class PublishBlockHeight(current: BlockHeight) extends Command
-  private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
+  private case class ProcessNewBlock(blockId: BlockId) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
@@ -171,7 +171,7 @@ object ZmqWatcher {
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count

@@ -88,9 +88,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       }
 
   /** Get the hash of the block containing a given transaction. */
-  private def getTxBlockHash(txid: TxId)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
+  private def getTxBlockId(txid: TxId)(implicit ec: ExecutionContext): Future[Option[BlockId]] =
     rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the block hash */)
-      .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
+      .map(json => (json \ "blockhash").extractOpt[String].map(b => BlockId(ByteVector32.fromValidHex(b))))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None // Invalid or non-wallet transaction id (code: -5)
       }
@@ -101,8 +101,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    */
   def getTransactionShortId(txid: TxId)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] =
     for {
-      Some(blockHash) <- getTxBlockHash(txid)
-      json <- rpcClient.invoke("getblock", blockHash)
+      Some(blockId) <- getTxBlockId(txid)
+      json <- rpcClient.invoke("getblock", blockId)
       JInt(height) = json \ "height"
       JArray(txs) = json \ "tx"
       index = txs.indexOf(JString(txid.value.toHex))
