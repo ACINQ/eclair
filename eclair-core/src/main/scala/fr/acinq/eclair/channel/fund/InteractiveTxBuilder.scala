@@ -419,7 +419,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             Behaviors.stopped
           }
         case fundingContributions: InteractiveTxFunder.FundingContributions =>
-          stash.unstashAll(buildTx(fundingContributions))
+          if (stash.contains(Abort)) {
+            // We immediately stop instead of relying on the stash to replay the Abort message, because we may otherwise
+            // send an obsolete tx_add_input message to our peer.
+            unlockAndStop(InteractiveTxSession(fundingContributions.inputs))
+          } else {
+            stash.unstashAll(buildTx(fundingContributions))
+          }
       }
       case msg: ReceiveMessage =>
         stash.stash(msg)
