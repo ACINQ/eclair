@@ -473,6 +473,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                   val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, RbfStatus.NoRbf, d.deferred)
                   stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx)
               }
+            case _ if d.commitments.all.exists(_.fundingTxId == txSigs.txId) =>
+              log.debug("ignoring tx_signatures that we already received for txId={}", txSigs.txId)
+              stay()
             case _ =>
               log.debug("rejecting unexpected tx_signatures for txId={}", txSigs.txId)
               reportRbfFailure(d.rbfStatus, UnexpectedFundingSignatures(d.channelId))

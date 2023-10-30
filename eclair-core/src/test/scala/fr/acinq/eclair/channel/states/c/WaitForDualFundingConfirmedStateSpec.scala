@@ -127,11 +127,30 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
     alice2bob.forward(bob, aliceSigs)
-    bob2alice.expectMsgType[TxAbort]
+    bob2alice.expectNoMessage(100 millis)
 
     val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
     bob2alice.forward(alice, bobSigs)
-    alice2bob.expectMsgType[TxAbort]
+    alice2bob.expectNoMessage(100 millis)
+
+    assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+  }
+
+  test("recv TxSignatures (duplicate, rbf attempt)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val aliceSigs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
+    val bobSigs = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.localSigs
+    val rbfTx = testBumpFundingFees(f)
+
+    alice2bob.forward(bob, aliceSigs)
+    alice2bob.forward(bob, rbfTx.localSigs)
+    bob2alice.expectNoMessage(100 millis)
+
+    bob2alice.forward(alice, bobSigs)
+    bob2alice.forward(alice, rbfTx.remoteSigs)
+    alice2bob.expectNoMessage(100 millis)
 
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
