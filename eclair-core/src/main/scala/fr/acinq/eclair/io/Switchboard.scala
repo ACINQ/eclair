@@ -20,18 +20,15 @@ import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
-import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.OnionMessage
-import fr.acinq.eclair.{NodeParams, ShortChannelId, SubscriptionsComplete}
+import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 
 /**
  * Ties network connections to peers.

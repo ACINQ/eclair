@@ -51,12 +51,6 @@ object Postman {
                          message: TlvStream[OnionMessagePayloadTlv],
                          expectsReply: Boolean,
                          replyTo: ActorRef[OnionMessageResponse]) extends Command
-  case class RelayMessage(messageId: ByteVector32,
-                          prevNodeId: Option[PublicKey],
-                          nextNode: Either[ShortChannelId, PublicKey],
-                          message: OnionMessage,
-                          relayPolicy: RelayPolicy,
-                          replyTo_opt: Option[ActorRef[MessageRelay.Status]]) extends Command
   case class Subscribe(pathId: ByteVector32, replyTo: ActorRef[OnionMessageResponse]) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
   case class WrappedMessage(finalPayload: FinalPayload) extends Command
@@ -92,12 +86,8 @@ object Postman {
           }
           Behaviors.same
         case SendMessage(destination, routingStrategy, messageContent, expectsReply, replyTo) =>
-          val child = context.spawnAnonymous(SendingMessage(nodeParams, router, context.self, destination, messageContent, routingStrategy, expectsReply, replyTo))
+          val child = context.spawnAnonymous(SendingMessage(nodeParams, router, context.self, switchboard, register, destination, messageContent, routingStrategy, expectsReply, replyTo))
           child ! SendingMessage.SendMessage
-          Behaviors.same
-        case RelayMessage(messageId, prevNodeId, nextNode, dataToRelay, relayPolicy, replyTo) =>
-          val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
-          relay ! MessageRelay.RelayMessage(messageId, switchboard, register, prevNodeId.getOrElse(nodeParams.nodeId), nextNode, dataToRelay, relayPolicy, replyTo)
           Behaviors.same
         case Subscribe(pathId, replyTo) =>
           subscribed += (pathId -> replyTo)
@@ -125,13 +115,15 @@ object SendingMessage {
   def apply(nodeParams: NodeParams,
             router: ActorRef[Router.MessageRouteRequest],
             postman: ActorRef[Postman.Command],
+            switchboard: akka.actor.ActorRef,
+            register: akka.actor.ActorRef,
             destination: Destination,
             message: TlvStream[OnionMessagePayloadTlv],
             routingStrategy: RoutingStrategy,
             expectsReply: Boolean,
             replyTo: ActorRef[Postman.OnionMessageResponse]): Behavior[Command] = {
     Behaviors.setup(context => {
-      val actor = new SendingMessage(nodeParams, router, postman, destination, message, routingStrategy, expectsReply, replyTo, context)
+      val actor = new SendingMessage(nodeParams, router, postman, switchboard, register, destination, message, routingStrategy, expectsReply, replyTo, context)
       actor.start()
     })
   }
@@ -140,6 +132,8 @@ object SendingMessage {
 private class SendingMessage(nodeParams: NodeParams,
                              router: ActorRef[Router.MessageRouteRequest],
                              postman: ActorRef[Postman.Command],
+                             switchboard: akka.actor.ActorRef,
+                             register: akka.actor.ActorRef,
                              destination: Destination,
                              message: TlvStream[OnionMessagePayloadTlv],
                              routingStrategy: RoutingStrategy,
@@ -202,7 +196,8 @@ private class SendingMessage(nodeParams: NodeParams,
         replyTo ! Postman.MessageFailed(failure.toString)
         Behaviors.stopped
       case Right((nextNodeId, message)) =>
-        postman ! Postman.RelayMessage(messageId, None, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
+        val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
+        relay ! MessageRelay.RelayMessage(messageId, switchboard, register, nodeParams.nodeId, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
         waitForSent()
     }
   }

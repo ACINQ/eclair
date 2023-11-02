@@ -75,9 +75,9 @@ object OnionMessages {
     if (intermediateNodes.isEmpty) {
       Nil
     } else {
-      (intermediateNodes.tail.zip(intermediateNodes.dropRight(1)).map { case (nextNode, hop) => hop.toTlvStream(nextNode.nodeId) } :+
-        intermediateNodes.last.toTlvStream(lastNodeId, lastBlinding_opt))
-        .map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes)
+      val intermediatePayloads = intermediateNodes.dropRight(1).zip(intermediateNodes.tail).map { case (hop, nextNode) => hop.toTlvStream(nextNode.nodeId) }
+      val lastPayload = intermediateNodes.last.toTlvStream(lastNodeId, lastBlinding_opt)
+      (intermediatePayloads :+ lastPayload).map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes)
     }
   }
 

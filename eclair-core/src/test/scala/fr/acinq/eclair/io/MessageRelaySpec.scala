@@ -23,13 +23,14 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.MessageRelay._
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerNotFound}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.wire.protocol.TlvStream
-import fr.acinq.eclair.{randomBytes32, randomKey}
+import fr.acinq.eclair.{ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -147,6 +148,24 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(getPeerInfo2.remoteNodeId == bobId)
     getPeerInfo2.replyTo ! PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, Set(0, 1).map(_ => TestProbe()(system.classicSystem).ref))
 
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
+  }
+
+  test("next node specified with channel id") { f =>
+    import f._
+
+    val Right((_, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Recipient(bobId, None), TlvStream.empty)
+    val messageId = randomBytes32()
+    val scid = ShortChannelId(123456L)
+    relay ! RelayMessage(messageId, switchboard.ref, register.ref, randomKey().publicKey, Left(scid), message, RelayAll, None)
+
+    val getNextNodeId = register.expectMsgType[Register.GetNextNodeId]
+    assert(getNextNodeId.shortChannelId == scid)
+    getNextNodeId.replyTo ! Some(bobId)
+
+    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
+    assert(connectToNextPeer.nodeId == bobId)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 }

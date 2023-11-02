@@ -22,6 +22,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Block
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.{Peer, PeerConnection}
@@ -57,6 +58,15 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     }
   }
 
+  private def expectRelayToConnected(switchboard: TestProbe[Any], recipientKey: PublicKey): Peer.RelayOnionMessage = {
+    val Peer.Connect(nextNodeId, _, replyTo, _) = switchboard.expectMessageType[Peer.Connect]
+    assert(nextNodeId == recipientKey)
+    val peerConnection = TestProbe[Any]()
+    val peer = TestProbe[Any]()
+    replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
+    peer.expectMessageType[Peer.RelayOnionMessage]
+  }
+
   test("message forwarded only once") { f =>
     import f._
 
@@ -69,12 +79,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == recipientKey.publicKey)
     waitingForRoute ! MessageRoute(Seq.empty, target)
 
-    val Peer.Connect(nextNodeId, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(nextNodeId == recipientKey.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
@@ -102,12 +107,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == recipientKey.publicKey)
     waitingForRoute ! MessageRoute(Seq.empty, target)
 
-    val Peer.Connect(nextNodeId, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(nextNodeId == recipientKey.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, _, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, _, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Disconnected(messageId)
 
     messageSender.expectMessage(MessageFailed("Peer is not connected"))
@@ -126,12 +126,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == recipientKey.publicKey)
     waitingForRoute ! MessageRoute(Seq.empty, target)
 
-    val Peer.Connect(nextNodeId, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(nextNodeId == recipientKey.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
@@ -158,12 +153,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == recipientKey.publicKey)
     waitingForRoute ! MessageRoute(Seq.empty, target)
 
-    val Peer.Connect(nextNodeId, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(nextNodeId == recipientKey.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
@@ -181,12 +171,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
     postman ! SendMessage(BlindedPath(blindedRoute), FindRoute, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), expectsReply = false, messageSender.ref)
 
-    val Peer.Connect(nextNodeId, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(nextNodeId == recipientKey.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
@@ -221,12 +206,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == d.publicKey)
     waitingForRoute ! MessageRoute(Seq(a.publicKey, b.publicKey, c.publicKey), target)
 
-    val Peer.Connect(next1, _, replyTo1, _) = switchboard.expectMessageType[Peer.Connect]
-    assert(next1 == a.publicKey)
-    val peerConnection = TestProbe[Any]()
-    val peer = TestProbe[Any]()
-    replyTo1 ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
-    val Peer.RelayOnionMessage(messageId, message1, Some(replyTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    val Peer.RelayOnionMessage(messageId, message1, Some(replyTo)) = expectRelayToConnected(switchboard, a.publicKey)
     replyTo ! Sent(messageId)
     val OnionMessages.SendMessage(Right(next2), message2) = OnionMessages.process(a, message1)
     assert(next2 == b.publicKey)
