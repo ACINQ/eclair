@@ -17,11 +17,13 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.wire.protocol.OnionMessage
@@ -29,9 +31,17 @@ import fr.acinq.eclair.wire.protocol.OnionMessage
 object MessageRelay {
   // @formatter:off
   sealed trait Command
-  case class RelayMessage(messageId: ByteVector32, switchboard: ActorRef, prevNodeId: PublicKey, nextNodeId: PublicKey, msg: OnionMessage, policy: RelayPolicy, replyTo_opt: Option[typed.ActorRef[Status]]) extends Command
+  case class RelayMessage(messageId: ByteVector32,
+                          switchboard: ActorRef,
+                          register: ActorRef,
+                          prevNodeId: PublicKey,
+                          nextNode: Either[ShortChannelId, PublicKey],
+                          msg: OnionMessage,
+                          policy: RelayPolicy,
+                          replyTo_opt: Option[typed.ActorRef[Status]]) extends Command
   case class WrappedPeerInfo(peerInfo: PeerInfoResponse) extends Command
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
+  case class WrappedOptionalNodeId(nodeId_opt: Option[PublicKey]) extends Command
 
   sealed trait Status {
     val messageId: ByteVector32
@@ -41,11 +51,14 @@ object MessageRelay {
   case class AgainstPolicy(messageId: ByteVector32, policy: RelayPolicy) extends Failure {
     override def toString: String = s"Relay prevented by policy $policy"
   }
-  case class ConnectionFailure(messageId: ByteVector32, failure: PeerConnection.ConnectionResult.Failure) extends Failure{
+  case class ConnectionFailure(messageId: ByteVector32, failure: PeerConnection.ConnectionResult.Failure) extends Failure {
     override def toString: String = s"Can't connect to peer: ${failure.toString}"
   }
-  case class Disconnected(messageId: ByteVector32) extends Failure{
+  case class Disconnected(messageId: ByteVector32) extends Failure {
     override def toString: String = "Peer is not connected"
+  }
+  case class UnknownOutgoingChannel(messageId: ByteVector32, outgoingChannelId: ShortChannelId) extends Failure {
+    override def toString: String = s"Unknown outgoing channel: $outgoingChannelId"
   }
 
   sealed trait RelayPolicy
@@ -55,7 +68,37 @@ object MessageRelay {
 
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
-      case (context, RelayMessage(messageId, switchboard, prevNodeId, nextNodeId, msg, policy, replyTo_opt)) =>
+      case (context, RelayMessage(messageId, switchboard, register, prevNodeId, Left(outgoingChannelId), msg, policy, replyTo_opt)) =>
+        register ! Register.GetNextNodeId(context.messageAdapter(WrappedOptionalNodeId), outgoingChannelId)
+        waitForNextNodeId(messageId, switchboard, prevNodeId, outgoingChannelId, msg, policy, replyTo_opt)
+      case (context, RelayMessage(messageId, switchboard, _, prevNodeId, Right(nextNodeId), msg, policy, replyTo_opt)) =>
+        withNextNodeId(context, messageId, switchboard, prevNodeId, nextNodeId, msg, policy, replyTo_opt)
+    }
+  }
+
+  def waitForNextNodeId(messageId: ByteVector32,
+                        switchboard: ActorRef,
+                        prevNodeId: PublicKey,
+                        outgoingChannelId: ShortChannelId,
+                        msg: OnionMessage,
+                        policy: RelayPolicy,
+                        replyTo_opt: Option[typed.ActorRef[Status]]): Behavior[Command] =
+    Behaviors.receivePartial {
+      case (_, WrappedOptionalNodeId(None)) =>
+        replyTo_opt.foreach(_ ! UnknownOutgoingChannel(messageId, outgoingChannelId))
+        Behaviors.stopped
+      case (context, WrappedOptionalNodeId(Some(nextNodeId))) =>
+        withNextNodeId(context, messageId, switchboard, prevNodeId, nextNodeId, msg, policy, replyTo_opt)
+    }
+
+  def withNextNodeId(context: ActorContext[Command],
+                     messageId: ByteVector32,
+                     switchboard: ActorRef,
+                     prevNodeId: PublicKey,
+                     nextNodeId: PublicKey,
+                     msg: OnionMessage,
+                     policy: RelayPolicy,
+                     replyTo_opt: Option[typed.ActorRef[Status]]): Behavior[Command] =
         policy match {
           case RelayChannelsOnly =>
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
@@ -64,8 +107,6 @@ object MessageRelay {
             switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
             waitForConnection(messageId, msg, replyTo_opt)
         }
-    }
-  }
 
   def waitForPreviousPeer(messageId: ByteVector32, switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]]): Behavior[Command] = {
     Behaviors.receivePartial {

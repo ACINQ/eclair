@@ -30,7 +30,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       assert(decoded == expected)
       val nextNodeId = randomKey().publicKey
       val Right(payload) = IntermediatePayload.validate(decoded, TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)), randomKey().publicKey)
-      assert(payload.nextNodeId == nextNodeId)
+      assert(payload.nextNode == Right(nextNodeId))
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
     }

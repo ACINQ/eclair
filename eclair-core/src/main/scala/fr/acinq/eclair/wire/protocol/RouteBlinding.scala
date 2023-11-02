@@ -73,7 +73,8 @@ object BlindedRouteData {
   import RouteBlindingEncryptedDataTlv._
 
   def validateMessageRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
-    if (records.get[OutgoingNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+    if (records.get[OutgoingNodeId].isEmpty && records.get[OutgoingChannelId].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+    if (records.get[OutgoingNodeId].isDefined && records.get[OutgoingChannelId].isDefined) return Left(ForbiddenTlv(UInt64(4)))
     if (records.get[PathId].isDefined) return Left(ForbiddenTlv(UInt64(6)))
     if (records.get[PaymentRelay].isDefined) return Left(ForbiddenTlv(UInt64(10)))
     if (records.get[PaymentConstraints].isDefined) return Left(ForbiddenTlv(UInt64(12)))
