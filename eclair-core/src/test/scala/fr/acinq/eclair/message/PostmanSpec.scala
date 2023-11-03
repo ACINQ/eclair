@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
+import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.RoutingStrategy.FindRoute
 import fr.acinq.eclair.message.OnionMessages.{BlindedPath, IntermediateNode, ReceiveMessage, Recipient, buildMessage, buildRoute}
@@ -256,9 +257,13 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(target == recipientKey.publicKey)
     waitingForRoute ! MessageRoute(Seq.empty, target)
 
-    val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
+    val Peer.Connect(nextNodeId, _, replyConnectedTo, _) = switchboard.expectMessageType[Peer.Connect]
     assert(nextNodeId == recipientKey.publicKey)
-    replyTo ! Sent(messageId)
+    val peerConnection = TestProbe[Any]("peerConnection")
+    val peer = TestProbe[Any]("peer")
+    replyConnectedTo ! ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
+    val Peer.RelayOnionMessage(messageId, message, Some(replySentTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    replySentTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
@@ -281,9 +286,13 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(getNodeId.shortChannelId == RealShortChannelId(1234))
     getNodeId.replyTo ! Some(nodeParams.nodeId)
 
-    val RelayMessage(messageId, _, nextNodeId, message, _, Some(replyTo)) = switchboard.expectMessageType[RelayMessage]
+    val Peer.Connect(nextNodeId, _, replyConnectedTo, _) = switchboard.expectMessageType[Peer.Connect]
     assert(nextNodeId == recipientKey.publicKey)
-    replyTo ! Sent(messageId)
+    val peerConnection = TestProbe[Any]("peerConnection")
+    val peer = TestProbe[Any]("peer")
+    replyConnectedTo ! ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
+    val Peer.RelayOnionMessage(messageId, message, Some(replySentTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
+    replySentTo ! Sent(messageId)
     val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
