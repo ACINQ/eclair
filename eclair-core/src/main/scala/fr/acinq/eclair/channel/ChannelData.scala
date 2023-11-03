@@ -480,7 +480,7 @@ object SpliceStatus {
   /** We told our peer we want to splice funds in the channel. */
   case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
   /** We both agreed to splice and are building the splice transaction. */
-  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
+  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
   /** The splice transaction has been negotiated, we're exchanging signatures. */
   case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
   /** The splice attempt was aborted by us, we're waiting for our peer to ack. */

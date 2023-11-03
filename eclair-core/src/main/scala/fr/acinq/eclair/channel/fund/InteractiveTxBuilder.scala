@@ -89,7 +89,7 @@ object InteractiveTxBuilder {
   private case object UtxosUnlocked extends Command
 
   sealed trait Response
-  case class SendMessage(msg: LightningMessage) extends Response
+  case class SendMessage(sessionId: ByteVector32, msg: LightningMessage) extends Response
   case class Succeeded(signingSession: InteractiveTxSigningSession.WaitingForSigs, commitSig: CommitSig) extends Response
   sealed trait Failed extends Response { def cause: ChannelException }
   case class LocalFailure(cause: ChannelException) extends Failed
@@ -336,7 +336,8 @@ object InteractiveTxBuilder {
   }
   // @formatter:on
 
-  def apply(nodeParams: NodeParams,
+  def apply(sessionId: ByteVector32,
+            nodeParams: NodeParams,
             fundingParams: InteractiveTxParams,
             channelParams: ChannelParams,
             purpose: Purpose,
@@ -361,7 +362,7 @@ object InteractiveTxBuilder {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped
               } else {
-                val actor = new InteractiveTxBuilder(replyTo, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
+                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
                 actor.start()
               }
             case Abort => Behaviors.stopped
@@ -377,6 +378,7 @@ object InteractiveTxBuilder {
 }
 
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
+                                   sessionId: ByteVector32,
                                    nodeParams: NodeParams,
                                    channelParams: ChannelParams,
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
@@ -419,13 +421,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             Behaviors.stopped
           }
         case fundingContributions: InteractiveTxFunder.FundingContributions =>
-          if (stash.contains(Abort)) {
-            // We immediately stop instead of relying on the stash to replay the Abort message, because we may otherwise
-            // send an obsolete tx_add_input message to our peer.
-            unlockAndStop(InteractiveTxSession(fundingContributions.inputs))
-          } else {
-            stash.unstashAll(buildTx(fundingContributions))
-          }
+          stash.unstashAll(buildTx(fundingContributions))
       }
       case msg: ReceiveMessage =>
         stash.stash(msg)
@@ -454,16 +450,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           case i: Input.Local => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence)
           case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
         }
-        replyTo ! SendMessage(message)
+        replyTo ! SendMessage(sessionId, message)
         val next = session.copy(toSend = tail, localInputs = session.localInputs :+ addInput, txCompleteSent = false)
         receive(next)
       case (addOutput: Output) +: tail =>
         val message = TxAddOutput(fundingParams.channelId, addOutput.serialId, addOutput.amount, addOutput.pubkeyScript)
-        replyTo ! SendMessage(message)
+        replyTo ! SendMessage(sessionId, message)
         val next = session.copy(toSend = tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = false)
         receive(next)
       case Nil =>
-        replyTo ! SendMessage(TxComplete(fundingParams.channelId))
+        replyTo ! SendMessage(sessionId, TxComplete(fundingParams.channelId))
         val next = session.copy(txCompleteSent = true)
         if (next.isComplete) {
           validateAndSign(next)
