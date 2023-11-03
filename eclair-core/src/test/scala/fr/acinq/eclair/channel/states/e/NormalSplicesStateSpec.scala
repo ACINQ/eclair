@@ -1232,7 +1232,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     testDisconnectTxSignaturesReceivedByAliceZeroConf(f)
   }
 
-
   test("disconnect (tx_signatures sent by alice, splice confirms while bob is offline)") { f =>
     import f._
 

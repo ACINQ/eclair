@@ -873,13 +873,19 @@ object InteractiveTxSigningSession {
   /** A local commitment for which we haven't received our peer's signatures. */
   case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, commitTx: CommitTx, htlcTxs: List[HtlcTx])
 
-  private def shouldSignFirst(channelParams: ChannelParams, tx: SharedTransaction): Boolean = {
-    if (tx.localAmountIn == tx.remoteAmountIn) {
+  private def shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean = {
+    val sharedAmountIn = tx.sharedInput_opt.map(i => i.localAmount + i.remoteAmount + i.htlcAmount).getOrElse(0 msat).truncateToSatoshi
+    val (localAmountIn, remoteAmountIn) = if (isInitiator) {
+      (sharedAmountIn + tx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum, tx.remoteInputs.map(i => i.txOut.amount).sum)
+    } else {
+      (tx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum, sharedAmountIn + tx.remoteInputs.map(i => i.txOut.amount).sum)
+    }
+    if (localAmountIn == remoteAmountIn) {
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
       LexicographicalOrdering.isLessThan(channelParams.localNodeId.value, channelParams.remoteNodeId.value)
     } else {
       // Otherwise, the peer with the lowest total of input amount must transmit its `tx_signatures` first.
-      tx.localAmountIn < tx.remoteAmountIn
+      localAmountIn < remoteAmountIn
     }
   }
 
@@ -944,7 +950,7 @@ object InteractiveTxSigningSession {
           val channelKeyPath = nodeParams.channelKeyManager.keyPath(channelParams.localParams, channelParams.channelConfig)
           val localPerCommitmentPoint = nodeParams.channelKeyManager.commitmentPoint(channelKeyPath, localCommitIndex)
           LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint).map { signedLocalCommit =>
-            if (shouldSignFirst(channelParams, fundingTx.tx)) {
+            if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, nodeParams.currentBlockHeight, fundingParams)
               val commitment = Commitment(fundingTxIndex, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
               SendingSigs(fundingStatus, commitment, fundingTx.localSigs)
