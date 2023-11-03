@@ -959,7 +959,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               targetFeerate = msg.feerate,
               requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
             )
+            val sessionId = randomBytes32()
             val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+              sessionId,
               nodeParams, fundingParams,
               channelParams = d.commitments.params,
               purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
@@ -967,7 +969,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               wallet
             ))
             txBuilder ! InteractiveTxBuilder.Start(self)
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, splice = txBuilder, remoteCommitSig = None)) sending spliceAck
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, sessionId, txBuilder, remoteCommitSig = None)) sending spliceAck
           }
         case SpliceStatus.SpliceAborted =>
           log.info("rejecting splice attempt: our previous tx_abort was not acked")
@@ -995,7 +997,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             targetFeerate = spliceInit.feerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
+          val sessionId = randomBytes32()
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+            sessionId,
             nodeParams, fundingParams,
             channelParams = d.commitments.params,
             purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
@@ -1003,7 +1007,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             wallet
           ))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = Some(cmd), splice = txBuilder, remoteCommitSig = None))
+          stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = Some(cmd), sessionId, txBuilder, remoteCommitSig = None))
         case _ =>
           log.info(s"ignoring unexpected splice_ack=$msg")
           stay()
@@ -1011,7 +1015,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: InteractiveTxConstructionMessage, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.SpliceInProgress(_, txBuilder, _) =>
+        case SpliceStatus.SpliceInProgress(_, _, txBuilder, _) =>
           txBuilder ! InteractiveTxBuilder.ReceiveMessage(msg)
           stay()
         case _ =>
@@ -1021,7 +1025,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: TxAbort, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
+        case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, SpliceAttemptAborted(d.channelId)))
           txBuilder ! InteractiveTxBuilder.Abort
@@ -1053,9 +1057,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.SpliceInProgress(cmd_opt, _, remoteCommitSig_opt) =>
+        case SpliceStatus.SpliceInProgress(cmd_opt, currentSessionId, _, remoteCommitSig_opt) =>
           msg match {
-            case InteractiveTxBuilder.SendMessage(msg) => stay() sending msg
+            case InteractiveTxBuilder.SendMessage(sessionId, msg) =>
+              if (sessionId == currentSessionId) {
+                stay() sending msg
+              } else {
+                log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getSimpleName)
+                stay()
+              }
             case InteractiveTxBuilder.Succeeded(signingSession, commitSig) =>
               log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
@@ -2729,7 +2739,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       case SpliceStatus.QuiescenceRequested(cmd) => Some(cmd)
       case SpliceStatus.InitiatorQuiescent(cmd) => Some(cmd)
       case SpliceStatus.SpliceRequested(cmd, _) => Some(cmd)
-      case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
+      case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt
       case _ => None
