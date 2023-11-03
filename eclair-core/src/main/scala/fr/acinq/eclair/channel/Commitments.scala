@@ -458,6 +458,19 @@ case class Commitment(fundingTxIndex: Long,
     } else if (missingForReceiver < 0.msat) {
       if (params.localParams.isInitiator) {
         // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
+      } else if (reduced.toLocal > fees && reduced.htlcs.size < 5) {
+        // Receiver is the channel initiator; we usually don't want to let them dip into their channel reserve, because
+        // that may give them a commitment transaction where they have nothing at stake, which would create an incentive
+        // for them to force-close using that commitment after it has been revoked.
+        // But we let them dip slightly into their channel reserve to pay the fees, to ensure that the channel is not
+        // stuck and unusable, because we can end up in that state in the following scenario:
+        //  - they were above their channel reserve
+        //  - we spliced a lot of funds into the channel, which increased the reserve requirements
+        //  - they are now below the new reserve, but if we don't allow htlcs to them, they have no way of increasing their balance
+        // Since we only allow a limited number of htlcs, that doesn't let them dip into their reserve much.
+        // We could also keep track of the previous channel reserve, but this is additional state that is awkward to
+        // store and not trivial to correctly keep up-to-date. This simpler solution has a similar result with less
+        // complexity.
       } else {
         return Left(RemoteCannotAffordFeesForNewHtlc(params.channelId, amount = amount, missing = -missingForReceiver.truncateToSatoshi, reserve = remoteChannelReserve(params), fees = fees))
       }
