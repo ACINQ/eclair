@@ -264,15 +264,15 @@ object Features {
     val mandatory = 28
   }
 
-  case object AttributableError extends Feature with InitFeature with NodeFeature with Bolt11Feature {
-    val rfcName = "option_attributable_error"
-    val mandatory = 30
-  }
-
   // TODO: this should also extend NodeFeature once the spec is finalized
   case object Quiescence extends Feature with InitFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
+  }
+
+  case object AttributableError extends Feature with InitFeature with NodeFeature with Bolt11Feature {
+    val rfcName = "option_attributable_error"
+    val mandatory = 36
   }
 
   case object OnionMessages extends Feature with InitFeature with NodeFeature {

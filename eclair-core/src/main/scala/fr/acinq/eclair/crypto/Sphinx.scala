@@ -376,7 +376,9 @@ object Sphinx extends Logging {
 
     def wrapOrCreate(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration): ByteVector =
       wrap(errorPacket, sharedSecret, holdTime, isSource = false) match {
-        case Failure(_) => create(sharedSecret, TemporaryNodeFailure(), holdTime)
+        case Failure(_) =>
+          // There is no failure message for this use-case, using TemporaryNodeFailure instead.
+          create(sharedSecret, TemporaryNodeFailure(), holdTime)
         case Success(value) => value
       }
 

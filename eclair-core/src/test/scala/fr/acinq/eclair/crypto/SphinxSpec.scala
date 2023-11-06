@@ -437,15 +437,15 @@ class SphinxSpec extends AnyFunSuite {
     ).map(ByteVector32(_))
 
     // publicKeys(2) creates an invalid random packet, or publicKeys(1) tries to shift blame by pretending to receive random data from publicKeys(2)
-    val packet1 = randomBytes(12599)
+    val packet1 = randomBytes(1200)
 
     val hopPayload2 = AttributableError.HopPayload(isPayloadSource = false, 50 millis)
     val Success(packet2) = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 50 millis, isSource = false)
-    assert(packet2.length == 12599)
+    assert(packet2.length == 1200)
 
     val hopPayload3 = AttributableError.HopPayload(isPayloadSource = false, 100 millis)
     val Success(packet3) = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 100 millis, isSource = false)
-    assert(packet3.length == 12599)
+    assert(packet3.length == 1200)
 
     val Left(decryptionError) = AttributableErrorPacket.decrypt(packet3, (0 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
     val expected = InvalidAttributableErrorPacket(Seq((publicKeys(0), hopPayload3), (publicKeys(1), hopPayload2)), publicKeys(2))
