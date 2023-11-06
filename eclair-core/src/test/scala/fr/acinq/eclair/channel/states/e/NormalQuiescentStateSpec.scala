@@ -115,7 +115,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("send stfu after pending local changes have been added") { f =>
     import f._
     // we have an unsigned htlc in our local changes
-    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None)
     alice2bob.expectNoMessage(100 millis)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -127,7 +127,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     initiateQuiescence(f, sendInitialStfu = false)
     // we're holding the stfu from alice so that bob can add a pending local change
-    addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     // bob will not reply to alice's stfu until bob has no pending local commitment changes
     alice2bob.forward(bob)
     bob2alice.expectNoMessage(100 millis)
@@ -187,8 +187,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   private def receiveSettlementCommand(f: FixtureParam, c: SettlementCommandEnum, sendInitialStfu: Boolean, resetConnection: Boolean = false): Unit = {
     import f._
 
-    val (preimage, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
-    val cmd = c match {
+    val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
+      val cmd = c match {
       case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage)
       case FailHtlc => CMD_FAIL_HTLC(add.id, Left(randomBytes32()))
     }
@@ -269,7 +269,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("recv second stfu while non-initiator waiting for local commitment to be signed") { f =>
     import f._
     initiateQuiescence(f, sendInitialStfu = false)
-    val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    val (_, _) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     alice2bob.forward(bob)
     // second stfu to bob is ignored
     bob ! Stfu(channelId(bob), initiator = true)
@@ -300,7 +300,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv (forbidden) UpdateFulfillHtlc message while quiescent") { f =>
     import f._
-    val (preimage, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     alice2relayer.expectMsg(RelayForward(add))
     initiateQuiescence(f, sendInitialStfu = true)
@@ -315,7 +315,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv (forbidden) UpdateFailHtlc message while quiescent") { f =>
     import f._
-    val (_, add) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    val (_, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f, sendInitialStfu = true)
     val forbiddenMsg = UpdateFailHtlc(channelId(bob), add.id, randomBytes32())
@@ -328,7 +328,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv (forbidden) UpdateFee message while quiescent") { f =>
     import f._
-    val (_, _) = addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    val (_, _) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f, sendInitialStfu = true)
     val forbiddenMsg = UpdateFee(channelId(bob), FeeratePerKw(500 sat))
@@ -353,7 +353,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv stfu from splice initiator that is not quiescent") { f =>
     import f._
-    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice2bob.forward(bob, Stfu(channelId(alice), initiator = true))
     bob2alice.expectMsg(Warning(channelId(bob), InvalidSpliceNotQuiescent(channelId(bob)).getMessage))
     // we should disconnect after giving alice time to receive the warning
@@ -365,7 +365,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv stfu from splice non-initiator that is not quiescent") { f =>
     import f._
-    addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     initiateQuiescence(f, sendInitialStfu = false)
     alice2bob.forward(bob)
     bob2alice.forward(alice, Stfu(channelId(bob), initiator = false))
@@ -396,7 +396,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("initiate quiescence concurrently (pending changes on initiator side)") { f =>
     import f._
 
-    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
@@ -415,7 +415,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   test("initiate quiescence concurrently (pending changes on non-initiator side)") { f =>
     import f._
 
-    addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
+    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
