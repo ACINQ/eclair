@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
-import scodec.Attempt
+import scodec.{Attempt, DecodeResult}
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -347,10 +347,10 @@ object Sphinx extends Logging {
 
     def create(sharedSecret: ByteVector32, failure: FailureMessage, holdTime: FiniteDuration): ByteVector = {
       val failurePayload = FailureMessageCodecs.failureOnionPayload(payloadAndPadLength).encode(failure).require.toByteVector
-      val zeroPayloads = Seq.fill(maxNumHop)(ByteVector.fill(hopPayloadLength)(0))
-      val zeroHmacs = (maxNumHop.to(1, -1)).map(Seq.fill(_)(ByteVector.low(4)))
+      val zeroPayloads = Seq.fill(maxNumHop)(ByteVector.low(hopPayloadLength))
+      val zeroHmacs = maxNumHop.to(1, -1).map(Seq.fill(_)(ByteVector.low(4)))
       val plainError = attributableErrorCodec(totalLength, hopPayloadLength, maxNumHop).encode(AttributableError(failurePayload, zeroPayloads, zeroHmacs)).require.bytes
-      wrap(plainError, sharedSecret, holdTime, isSource = true).get
+      wrap(plainError, sharedSecret, holdTime, isSource = true)
     }
 
     private def computeHmacs(mac: Mac32, failurePayload: ByteVector, hopPayloads: Seq[ByteVector], hmacs: Seq[Seq[ByteVector]], minNumHop: Int): Seq[ByteVector] = {
@@ -363,9 +363,12 @@ object Sphinx extends Logging {
       newHmacs
     }
 
-    def wrap(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration, isSource: Boolean): Try[ByteVector] = Try {
+    def wrap(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration, isSource: Boolean): ByteVector = {
       val um = generateKey("um", sharedSecret)
-      val error = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).decode(errorPacket.bits).require.value
+      val error = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).decode(errorPacket.bits) match {
+        case Attempt.Successful(DecodeResult(value, _)) => value
+        case Attempt.Failure(_) => AttributableError.zero(payloadAndPadLength, hopPayloadLength, maxNumHop)
+      }
       val hopPayloads = hopPayloadCodec.encode(HopPayload(isSource, holdTime)).require.bytes +: error.hopPayloads.dropRight(1)
       val hmacs = computeHmacs(Hmac256(um), error.failurePayload, hopPayloads, error.hmacs.map(_.drop(1)), 0) +: error.hmacs.dropRight(1).map(_.drop(1))
       val newError = attributableErrorCodec(errorPacket.length.toInt, hopPayloadLength, maxNumHop).encode(AttributableError(error.failurePayload, hopPayloads, hmacs)).require.bytes
@@ -373,14 +376,6 @@ object Sphinx extends Logging {
       val stream = generateStream(key, newError.length.toInt)
       newError xor stream
     }
-
-    def wrapOrCreate(errorPacket: ByteVector, sharedSecret: ByteVector32, holdTime: FiniteDuration): ByteVector =
-      wrap(errorPacket, sharedSecret, holdTime, isSource = false) match {
-        case Failure(_) =>
-          // There is no failure message for this use-case, using TemporaryNodeFailure instead.
-          create(sharedSecret, TemporaryNodeFailure(), holdTime)
-        case Success(value) => value
-      }
 
     private def unwrap(errorPacket: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Try[(ByteVector, HopPayload)] = Try {
       val key = generateKey("ammag", sharedSecret)

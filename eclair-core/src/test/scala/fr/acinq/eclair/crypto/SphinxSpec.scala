@@ -414,13 +414,13 @@ class SphinxSpec extends AnyFunSuite {
     val Right(decrypted1) = AttributableErrorPacket.decrypt(packet1, (2 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
     assert(decrypted1 == expected)
 
-    val Success(packet2) = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 5 millis, isSource = false)
+    val packet2 = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 5 millis, isSource = false)
     assert(packet2.length == 1200)
 
     val Right(decrypted2) = AttributableErrorPacket.decrypt(packet2, (1 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
     assert(decrypted2 == expected)
 
-    val Success(packet3) = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 9 millis, isSource = false)
+    val packet3 = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 9 millis, isSource = false)
     assert(packet3.length == 1200)
 
     val Right(decrypted3) = AttributableErrorPacket.decrypt(packet3, (0 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
@@ -440,11 +440,11 @@ class SphinxSpec extends AnyFunSuite {
     val packet1 = randomBytes(1200)
 
     val hopPayload2 = AttributableError.HopPayload(isPayloadSource = false, 50 millis)
-    val Success(packet2) = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 50 millis, isSource = false)
+    val packet2 = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 50 millis, isSource = false)
     assert(packet2.length == 1200)
 
     val hopPayload3 = AttributableError.HopPayload(isPayloadSource = false, 100 millis)
-    val Success(packet3) = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 100 millis, isSource = false)
+    val packet3 = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 100 millis, isSource = false)
     assert(packet3.length == 1200)
 
     val Left(decryptionError) = AttributableErrorPacket.decrypt(packet3, (0 to 4).map(i => (sharedSecrets(i), publicKeys(i))))

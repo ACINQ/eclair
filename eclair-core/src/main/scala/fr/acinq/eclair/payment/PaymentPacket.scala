@@ -314,7 +314,7 @@ object OutgoingPaymentPacket {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
-          case Left(forwarded) if useAttributableErrors => Sphinx.AttributableErrorPacket.wrapOrCreate(forwarded, sharedSecret, holdTime)
+          case Left(forwarded) if useAttributableErrors => Sphinx.AttributableErrorPacket.wrap(forwarded, sharedSecret, holdTime, isSource = false)
           case Right(failure) if useAttributableErrors => Sphinx.AttributableErrorPacket.create(sharedSecret, failure, holdTime)
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)

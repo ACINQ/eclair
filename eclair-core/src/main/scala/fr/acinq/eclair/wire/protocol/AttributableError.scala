@@ -48,4 +48,10 @@ object AttributableError {
     (("failure_payload" | bytes(totalLength - metadataLength)) ::
       ("hop_payloads" | listOfN(provide(maxNumHop), bytes(hopPayloadLength)).xmap[Seq[ByteVector]](_.toSeq, _.toList)) ::
       ("hmacs" | hmacsCodec(maxNumHop))).as[AttributableError].complete}
+
+  def zero(payloadAndPadLength: Int, hopPayloadLength: Int, maxNumHop: Int): AttributableError =
+    AttributableError(
+      ByteVector.low(payloadAndPadLength),
+      Seq.fill(maxNumHop)(ByteVector.low(hopPayloadLength)),
+      maxNumHop.to(1, -1).map(Seq.fill(_)(ByteVector.low(4))))
 }
