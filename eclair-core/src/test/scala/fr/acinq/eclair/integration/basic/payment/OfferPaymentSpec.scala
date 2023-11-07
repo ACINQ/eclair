@@ -24,7 +24,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{AttributableError, KeySend, RouteBlinding}
+import fr.acinq.eclair.Features.{KeySend, RouteBlinding}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getPeerChannels, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, watcherAutopilot}
@@ -61,19 +61,16 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val aliceParams = nodeParamsFor("alice", ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3"))
       .modify(_.onionMessageConfig.timeout).setTo(5 minutes)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
-      .modify(_.features.activated).using(_ - AttributableError)
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val bobParams = nodeParamsFor("bob", ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492"))
       .modify(_.onionMessageConfig.timeout).setTo(5 minutes)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
-      .modify(_.features.activated).using(_ - AttributableError)
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledBob))(_ - RouteBlinding)
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
     val carolParams = nodeParamsFor("carol", ByteVector32(hex"ebd5a5d3abfb3ef73731eb3418d918f247445183180522674666db98a66411cc"))
       .modify(_.onionMessageConfig.timeout).setTo(5 minutes)
       .modify(_.features.activated).using(_ + (RouteBlinding -> Optional))
       .modify(_.features.activated).using(_ + (KeySend -> Optional))
-      .modify(_.features.activated).using(_ - AttributableError)
       .modify(_.features.activated).usingIf(testData.tags.contains(RouteBlindingDisabledCarol))(_ - RouteBlinding)
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
 
