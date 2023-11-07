@@ -1408,7 +1408,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
   override def useEclairSigner = true
 
   private def createWallet(seed: ByteVector): (BitcoinCoreClient, LocalOnChainKeyManager) = {
-    val name = s"eclair_${seed.toString()}"
+    val name = s"eclair_${seed.toHex.take(16)}"
     val onChainKeyManager = new LocalOnChainKeyManager(name, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val jsonRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(name))
     (new BitcoinCoreClient(jsonRpcClient, Some(onChainKeyManager)), onChainKeyManager)
