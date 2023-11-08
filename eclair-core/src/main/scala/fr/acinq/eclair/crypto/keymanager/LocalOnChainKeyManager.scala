@@ -22,14 +22,10 @@ import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, computeBIP84Address}
 import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptor, Descriptors}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import grizzled.slf4j.Logging
-import org.json4s.{JArray, JBool}
 import scodec.bits.ByteVector
 
 import java.io.File
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
 import scala.util.{Failure, Success, Try}
 
@@ -68,8 +64,6 @@ object LocalOnChainKeyManager extends Logging {
  * This is an advanced feature particularly suited when Eclair runs in a secure runtime.
  */
 class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, val walletTimestamp: TimestampSecond, chainHash: ByteVector32) extends OnChainKeyManager with Logging {
-
-  import LocalOnChainKeyManager._
 
   // Master key derived from our seed. We use it to generate a BIP84 wallet that can be used:
   // - to generate a watch-only wallet with any BIP84-compatible bitcoin wallet
