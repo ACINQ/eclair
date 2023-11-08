@@ -98,7 +98,6 @@ case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spend
    *
    * @param remoteNodeId        nodeId of our channel peer
    * @param commitmentFormat    commitment format
-   * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
   def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat, channelCapacity: Satoshi): FeeratePerKw = {
     val networkFeerate = feerates.fast
