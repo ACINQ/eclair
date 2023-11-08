@@ -244,6 +244,14 @@ object Helpers {
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
+  /**
+   * @param remoteFeeratePerKw remote fee rate per kiloweight
+   * @return true if the remote fee rate is too small
+   */
+  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
+    remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+  }
+
   /** Compute the temporaryChannelId of a dual-funded channel. */
   def dualFundedTemporaryChannelId(nodeParams: NodeParams, localParams: LocalParams, channelConfig: ChannelConfig): ByteVector32 = {
     val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, channelConfig)
@@ -302,13 +310,23 @@ object Helpers {
     delay
   }
 
-  /**
-   * @param remoteFeeratePerKw remote fee rate per kiloweight
-   * @return true if the remote fee rate is too small
+  /** Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending payments that we can't relay.
    */
-  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
-    remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+  def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
+    if (!commitments.announceChannel) {
+      // The channel is private, let's not change the channel update needlessly.
+      return commitments.params.maxHtlcAmount
+    }
+    for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
+      if (commitments.availableBalanceForSend <= balanceThreshold.available) {
+        return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
+      }
+    }
+    commitments.params.maxHtlcAmount
   }
+
+  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
+    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
 
   def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: ChannelParams, remoteFundingPubKey: PublicKey, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
@@ -327,28 +345,10 @@ object Helpers {
     AnnouncementSignatures(channelParams.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
-  /** Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending payments that we can't relay.
-   */
-  def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
-    if (!commitments.announceChannel) {
-      // The channel is private, let's not change the channel update needlessly.
-      return commitments.params.maxHtlcAmount
-    }
-    for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
-      if (commitments.availableBalanceForSend <= balanceThreshold.available) {
-        return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
-      }
-    }
-    commitments.params.maxHtlcAmount
-  }
-
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
     nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
   }
-
-  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
-    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
 
   object Funding {
 
