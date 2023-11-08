@@ -19,11 +19,8 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Descriptors
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 
 trait OnChainKeyManager {
