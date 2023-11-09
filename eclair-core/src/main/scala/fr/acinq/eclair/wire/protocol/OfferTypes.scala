@@ -37,11 +37,16 @@ import scala.util.{Failure, Try}
 object OfferTypes {
   case class ShortChannelIdDir(isNode1: Boolean, scid: RealShortChannelId)
 
+  // @formatter:off
+  /** Data provided to reach the issuer of an offer or invoice. */
   sealed trait ContactInfo
+  /** If the offer or invoice issuer doesn't want to hide their identity, they can directly share their public nodeId. */
+  case class RecipientNodeId(nodeId: PublicKey) extends ContactInfo
+  /** If the offer or invoice issuer wants to hide their identity, they instead provide blinded paths. */
   sealed trait BlindedContactInfo extends ContactInfo
   case class BlindedPath(route: BlindedRoute) extends BlindedContactInfo
   case class CompactBlindedPath(introductionNode: ShortChannelIdDir, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) extends BlindedContactInfo
-  case class RecipientNodeId(nodeId: PublicKey) extends ContactInfo
+  // @formatter:on
 
   sealed trait Bolt12Tlv extends Tlv
 

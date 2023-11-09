@@ -65,13 +65,7 @@ object OfferCodecs {
       ("blinding" | publicKey) ::
       ("path" | blindedNodesCodec)).as[CompactBlindedPath]
 
-  private val pathCodec: Codec[BlindedContactInfo] = fallback(blindedPathCodec, compactBlindedPathCodec).xmap({
-    case Left(path) => path
-    case Right(compact) => compact
-  }, {
-    case path: BlindedPath => Left(path)
-    case compact: CompactBlindedPath => Right(compact)
-  })
+  private val pathCodec: Codec[BlindedContactInfo] = choice(compactBlindedPathCodec.upcast[BlindedContactInfo], blindedPathCodec.upcast[BlindedContactInfo])
 
   private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
 
