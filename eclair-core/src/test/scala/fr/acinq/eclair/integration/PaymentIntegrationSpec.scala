@@ -473,7 +473,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     // The first attempt should fail, but the second one should succeed.
     val attempts = (1210000 msat, CltvExpiryDelta(42)) :: (1210100 msat, CltvExpiryDelta(288)) :: Nil
-    val payment = SendTrampolinePayment(amount, invoice, nodes("G").nodeParams.nodeId, attempts, routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("G").nodeParams.nodeId, attempts, routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
@@ -520,7 +520,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // C -> B which would have a fee of 501000 if it could route the whole payment
     // C -> G -> B which would have a fee of 757061 if it was used to route the whole payment
     // The actual fee needed will be between these two values.
-    val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((750000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("C").nodeParams.nodeId, Seq((750000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("D").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
@@ -573,7 +573,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
     assert(invoice.paymentMetadata.nonEmpty)
 
-    val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((1500000 msat, CltvExpiryDelta(432))), routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("C").nodeParams.nodeId, Seq((1500000 msat, CltvExpiryDelta(432))), routeParams = integrationTestRouteParams)
     sender.send(nodes("F").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)
@@ -621,7 +621,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
-    val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("C").nodeParams.nodeId, Seq((250000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
@@ -642,7 +642,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
-    val payment = SendTrampolinePayment(amount, invoice, nodes("B").nodeParams.nodeId, Seq((450000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("B").nodeParams.nodeId, Seq((450000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
@@ -663,7 +663,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
-    val payment = SendTrampolinePayment(amount, invoice, nodes("C").nodeParams.nodeId, Seq((500000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
+    val payment = SendTrampolinePayment(sender.ref, amount, invoice, nodes("C").nodeParams.nodeId, Seq((500000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentSent = sender.expectMsgType[PaymentSent](max = 30 seconds)

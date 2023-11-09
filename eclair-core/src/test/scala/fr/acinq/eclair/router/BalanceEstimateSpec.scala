@@ -38,7 +38,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
   def makeEdge(nodeId1: PublicKey, nodeId2: PublicKey, channelId: Long, capacity: Satoshi): GraphEdge =
     GraphEdge(
       ChannelDesc(ShortChannelId(channelId), nodeId1, nodeId2),
-      HopRelayParams.FromHint(Invoice.ExtraEdge(Right(nodeId1), nodeId2, ShortChannelId(channelId), 0 msat, 0, CltvExpiryDelta(0), 0 msat, None)),
+      HopRelayParams.FromHint(Invoice.ExtraEdge(nodeId1, nodeId2, ShortChannelId(channelId), 0 msat, 0, CltvExpiryDelta(0), 0 msat, None)),
       capacity, None)
 
   def makeEdge(channelId: Long, capacity: Satoshi): GraphEdge =

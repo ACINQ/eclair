@@ -235,7 +235,7 @@ object OutgoingPaymentPacket {
   case class CannotDecryptBlindedRoute(message: String) extends OutgoingPaymentError { override def getMessage: String = message }
   case class InvalidRouteRecipient(expected: PublicKey, actual: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"expected route to $expected, got route to $actual" }
   case class MissingTrampolineHop(trampolineNodeId: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"expected route to trampoline node $trampolineNodeId" }
-  case object MissingBlindedHop extends OutgoingPaymentError { override def getMessage: String = s"expected blinded route as final hop" }
+  case class MissingBlindedHop(introductionNodeIds: Set[PublicKey]) extends OutgoingPaymentError { override def getMessage: String = s"expected blinded route using one of the following introduction nodes: ${introductionNodeIds.mkString(", ")}" }
   case object EmptyRoute extends OutgoingPaymentError { override def getMessage: String = "route cannot be empty" }
 
   sealed trait Upstream

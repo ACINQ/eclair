@@ -21,12 +21,11 @@ import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 
 object Graph {
@@ -613,23 +612,15 @@ object Graph {
         balance_opt = pc.getBalanceSameSideAs(u)
       )
 
-      def fromExtraEdge(e: Invoice.ExtraEdge, publicChannels: SortedMap[RealShortChannelId, PublicChannel]): Option[GraphEdge] = {
+      def apply(e: Invoice.ExtraEdge): GraphEdge = {
         val maxBtc = 21e6.btc
-        val sourceNodeId = e.sourceNodeId match {
-          case Left(scidDir) => publicChannels.get(scidDir.scid) match {
-            case Some(pc) if scidDir.isNode1 => pc.nodeId1
-            case Some(pc) => pc.nodeId2
-            case None => return None
-          }
-          case Right(publicKey) => publicKey
-        }
-        Some(GraphEdge(
-          desc = ChannelDesc(e.shortChannelId, sourceNodeId, e.targetNodeId),
+        GraphEdge(
+          desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
           params = HopRelayParams.FromHint(e),
           // Routing hints don't include the channel's capacity, so we assume it's big enough.
           capacity = maxBtc.toSatoshi,
           balance_opt = None,
-        ))
+        )
       }
     }
 

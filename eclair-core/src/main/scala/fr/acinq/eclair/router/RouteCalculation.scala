@@ -22,18 +22,16 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
+import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.OfferTypes
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
-import scala.collection.immutable.SortedMap
 import scala.collection.mutable
 import scala.util.{Failure, Random, Success, Try}
 
@@ -68,7 +66,7 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val extraEdges = fr.extraEdges.flatMap(GraphEdge.fromExtraEdge(_, d.channels))
+      val extraEdges = fr.extraEdges.map(GraphEdge(_))
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       fr.route match {
@@ -131,7 +129,7 @@ object RouteCalculation {
    *
    * The routes found must then be post-processed by calling [[addFinalHop]].
    */
-  private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc], publicChannels: SortedMap[RealShortChannelId, PublicChannel]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[GraphEdge]) = {
+  private def computeTarget(r: RouteRequest, ignoredEdges: Set[ChannelDesc]): (PublicKey, MilliSatoshi, MilliSatoshi, Set[GraphEdge]) = {
     val pendingAmount = r.pendingPayments.map(_.amount).sum
     val totalMaxFee = r.routeParams.getMaxFee(r.target.totalAmount)
     val pendingChannelFee = r.pendingPayments.map(_.channelFee(r.routeParams.includeLocalChannelCost)).sum
@@ -141,8 +139,8 @@ object RouteCalculation {
         val amountToSend = recipient.totalAmount - pendingAmount
         val maxFee = totalMaxFee - pendingChannelFee
         val extraEdges = recipient.extraEdges
-          .flatMap(GraphEdge.fromExtraEdge(_, publicChannels))
-          .filterNot(e => (e.desc.a == r.source) || (e.desc.b == r.source)) // we ignore routing hints for our own channels, we have more accurate information
+          .filter(_.sourceNodeId != r.source) // we ignore routing hints for our own channels, we have more accurate information
+          .map(GraphEdge(_))
           .filterNot(e => ignoredEdges.contains(e.desc))
           .toSet
         (targetNodeId, amountToSend, maxFee, extraEdges)
@@ -158,7 +156,7 @@ object RouteCalculation {
           .map(_.copy(targetNodeId = targetNodeId))
           .filterNot(e => ignoredEdges.exists(_.shortChannelId == e.shortChannelId))
           // For blinded routes, the maximum htlc field is used to indicate the maximum amount that can be sent through the route.
-          .flatMap(e => GraphEdge.fromExtraEdge(e, publicChannels).map(_.copy(balance_opt = e.htlcMaximum_opt)))
+          .map(e => GraphEdge(e).copy(balance_opt = e.htlcMaximum_opt))
           .toSet
         val amountToSend = recipient.totalAmount - pendingAmount
         // When we are the introduction node and includeLocalChannelCost is false, we cannot easily remove the fee for
@@ -184,16 +182,11 @@ object RouteCalculation {
         case _: SpontaneousRecipient => Some(route)
         case recipient: ClearTrampolineRecipient => Some(route.copy(finalHop_opt = Some(recipient.trampolineHop)))
         case recipient: BlindedRecipient =>
-          route.hops.lastOption.flatMap(lastHop =>{
-            val alias = Alias(lastHop.shortChannelId.toLong)
-            recipient.blindedPaths.get(alias).map(path => {
-              val blindedRoute = path.route match {
-                case OfferTypes.BlindedPath(blindedRoute) => blindedRoute
-                case OfferTypes.CompactBlindedPath(_, blindingKey, blindedNodes) => RouteBlinding.BlindedRoute(lastHop.nodeId, blindingKey, blindedNodes)
-              }
-              Route(route.amount, route.hops.dropRight(1), Some(BlindedHop(alias, blindedRoute, path.paymentInfo)))
-            })
-          })
+          route.hops.lastOption.flatMap {
+            hop => recipient.blindedHops.find(_.dummyId == hop.shortChannelId)
+          }.map {
+            blindedHop => Route(route.amount, route.hops.dropRight(1), Some(blindedHop))
+          }
       }
     })
   }
@@ -207,7 +200,7 @@ object RouteCalculation {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
-      val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges, d.channels)
+      val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges)
       val routesToFind = if (r.routeParams.randomize) DEFAULT_ROUTES_COUNT else 1
 
       log.info(s"finding routes ${r.source}->$targetNodeId with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", extraEdges.map(_.desc.shortChannelId).mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))

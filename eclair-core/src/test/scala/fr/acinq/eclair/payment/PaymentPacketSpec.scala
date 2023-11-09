@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalP
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, ClearTrampolineRecipient}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
-import fr.acinq.eclair.router.{BlindedRouteCreation, Router}
+import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.InputInfo
@@ -161,7 +161,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("build outgoing blinded payment") {
     val (invoice, route, recipient) = longBlindedHops(hex"deadbeef")
     assert(recipient.extraEdges.length == 1)
-    assert(recipient.extraEdges.head.sourceNodeId == Right(c))
+    assert(recipient.extraEdges.head.sourceNodeId == c)
     assert(recipient.extraEdges.head.targetNodeId == invoice.nodeId)
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
@@ -220,11 +220,9 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val blindedRoute = OfferTypes.BlindedPath(BlindedRouteCreation.createBlindedRouteWithoutHops(c, hex"deadbeef", 1 msat, CltvExpiry(500_000)).route)
     val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 1 msat, amount_bc, Features.empty)
     val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, recipientKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
-    val recipient = BlindedRecipient(invoice, amount_bc, expiry_bc, Set.empty)
+    val Some(recipient) = BlindedRecipient(invoice, amount_bc, expiry_bc, Set.empty)
     val hops = Seq(channelHopFromUpdate(a, b, channelUpdate_ab), channelHopFromUpdate(b, c, channelUpdate_bc))
-    val (alias, blindedPath) = recipient.blindedPaths.head
-    val finalHop = Router.BlindedHop(alias, blindedPath.route.asInstanceOf[OfferTypes.BlindedPath].route, blindedPath.paymentInfo)
-    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(amount_bc, hops, Some(finalHop)), recipient)
+    val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(amount_bc, hops, Some(recipient.blindedHops.head)), recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
     assert(payment.cmd.amount == amount_ab)
     assert(payment.cmd.cltvExpiry == expiry_ab)
@@ -252,7 +250,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   test("build outgoing blinded payment starting at our node") {
     val (route, recipient) = singleBlindedHop(hex"123456")
     assert(recipient.extraEdges.length == 1)
-    assert(recipient.extraEdges.head.sourceNodeId == Right(a))
+    assert(recipient.extraEdges.head.sourceNodeId == a)
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
     assert(payment.cmd.amount == finalAmount)
@@ -420,7 +418,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient).isRight)
     val routeMissingBlindedHop = route.copy(finalHop_opt = None)
     val Left(failure) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, routeMissingBlindedHop, recipient)
-    assert(failure == MissingBlindedHop)
+    assert(failure == MissingBlindedHop(Set(c)))
   }
 
   test("fail to decrypt when the onion is invalid") {
@@ -473,10 +471,8 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
       val blindedRoute = OfferTypes.BlindedPath(tmpBlindedRoute.copy(blindedNodes = tmpBlindedRoute.blindedNodes.reverse))
       val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, Features.empty)
       val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_c.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
-      val recipient = BlindedRecipient(invoice, amount_bc, expiry_bc, Set.empty)
-      val (alias, blindedPath) = recipient.blindedPaths.head
-      val finalHop = Router.BlindedHop(alias, blindedPath.route.asInstanceOf[OfferTypes.BlindedPath].route, blindedPath.paymentInfo)
-      val route = Route(amount_bc, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), Some(finalHop))
+      val Some(recipient) = BlindedRecipient(invoice, amount_bc, expiry_bc, Set.empty)
+      val route = Route(amount_bc, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), Some(recipient.blindedHops.head))
       (route, recipient)
     }
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)

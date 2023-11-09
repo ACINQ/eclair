@@ -21,11 +21,11 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, PaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferTypes, OnionRoutingPacket, PaymentOnionCodecs}
-import fr.acinq.eclair.{Alias, CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
 import scodec.bits.ByteVector
 
 /**
@@ -121,30 +121,18 @@ case class BlindedRecipient(nodeId: PublicKey,
                             features: Features[InvoiceFeature],
                             totalAmount: MilliSatoshi,
                             expiry: CltvExpiry,
-                            blindedPaths: Map[Alias, PaymentBlindedRoute],
+                            blindedHops: Seq[BlindedHop],
                             customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
-  require(blindedPaths.nonEmpty, "blinded routes must be provided")
+  require(blindedHops.nonEmpty, "blinded routes must be provided")
 
-  override val extraEdges = blindedPaths.map { case (scid, path) =>
-    val introductionNodeId = path.route match {
-      case OfferTypes.BlindedPath(route) => Right(route.introductionNodeId)
-      case OfferTypes.CompactBlindedPath(introductionNode, _, _) => Left(introductionNode)
-    }
-    ExtraEdge(
-      introductionNodeId,
-      nodeId,
-      scid,
-      path.paymentInfo.feeBase,
-      path.paymentInfo.feeProportionalMillionths,
-      path.paymentInfo.cltvExpiryDelta,
-      path.paymentInfo.minHtlc,
-      Some(path.paymentInfo.maxHtlc))
-  }.toSeq
+  override val extraEdges = blindedHops.map { h =>
+    ExtraEdge(h.route.introductionNodeId, nodeId, h.dummyId, h.paymentInfo.feeBase, h.paymentInfo.feeProportionalMillionths, h.paymentInfo.cltvExpiryDelta, h.paymentInfo.minHtlc, Some(h.paymentInfo.maxHtlc))
+  }
 
   private def validateRoute(route: Route): Either[OutgoingPaymentError, BlindedHop] = {
     route.finalHop_opt match {
       case Some(blindedHop: BlindedHop) => Right(blindedHop)
-      case _ => Left(MissingBlindedHop)
+      case _ => Left(MissingBlindedHop(blindedHops.map(_.route.introductionNodeId).toSet))
     }
   }
 
@@ -178,8 +166,18 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
-  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
-    BlindedRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.blindedPaths.map((ShortChannelId.generateLocalAlias(), _)).toMap, customTlvs)
+  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): Option[BlindedRecipient] = {
+    val blindedHops = invoice.blindedPaths.map(
+      path => {
+        // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
+        // given edge in the graph, so we create a dummy one for the duration of the payment attempt.
+        val dummyId = ShortChannelId.generateLocalAlias()
+        path.route match {
+          case OfferTypes.BlindedPath(route) => BlindedHop(dummyId, route, path.paymentInfo)
+          case _: OfferTypes.CompactBlindedPath => return None
+        }
+      })
+    Some(BlindedRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, blindedHops, customTlvs))
   }
 }
 
@@ -206,7 +204,7 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
 
   override val nodeId = invoice.nodeId
   override val features = invoice.features
-  override val extraEdges = Seq(ExtraEdge(Right(trampolineNodeId), nodeId, ShortChannelId.generateLocalAlias(), trampolineFee, 0, trampolineHop.cltvExpiryDelta, 1 msat, None))
+  override val extraEdges = Seq(ExtraEdge(trampolineNodeId, nodeId, ShortChannelId.generateLocalAlias(), trampolineFee, 0, trampolineHop.cltvExpiryDelta, 1 msat, None))
 
   private def validateRoute(route: Route): Either[OutgoingPaymentError, NodeHop] = {
     route.finalHop_opt match {

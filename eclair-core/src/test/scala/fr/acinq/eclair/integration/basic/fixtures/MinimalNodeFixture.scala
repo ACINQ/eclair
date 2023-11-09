@@ -103,7 +103,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory, pendingChannelsRateLimiter, register)
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
-    val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
+    val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory, router), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
     val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)

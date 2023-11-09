@@ -427,8 +427,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     } else {
       val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(route.amount))
       val trampoline_opt = trampolineFees_opt.map(fees => TrampolineAttempt(trampolineSecret_opt.getOrElse(randomBytes32()), fees, trampolineExpiryDelta_opt.get))
-      val sendPayment = SendPaymentToRoute(recipientAmount, invoice, route, externalId_opt, parentId_opt, trampoline_opt)
-      (appKit.paymentInitiator ? sendPayment).mapTo[SendPaymentToRouteResponse]
+      appKit.paymentInitiator.toTyped.ask(replyTo => SendPaymentToRoute(replyTo.toClassic, recipientAmount, invoice, route, externalId_opt, parentId_opt, trampoline_opt))
     }
   }
 

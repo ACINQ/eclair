@@ -559,7 +559,7 @@ object Bolt11Invoice {
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).map {
       case (extraHop, nextNodeId) =>
-        Invoice.ExtraEdge(Right(extraHop.nodeId), nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta, 1 msat, None)
+        Invoice.ExtraEdge(extraHop.nodeId, nextNodeId, extraHop.shortChannelId, extraHop.feeBase, extraHop.feeProportionalMillionths, extraHop.cltvExpiryDelta, 1 msat, None)
     }
   }
 }

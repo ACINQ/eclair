@@ -254,8 +254,7 @@ object BaseRouterSpec {
                            preimage: ByteVector32 = randomBytes32(),
                            pathId: ByteVector = randomBytes(32)): (Bolt12Invoice, BlindedHop, BlindedRecipient) = {
     val (invoice, recipient) = blindedRoutesFromPaths(amount, expiry, Seq(hops), routeExpiry, preimage, pathId)
-    val (alias, blindedPath) = recipient.blindedPaths.head
-    (invoice, BlindedHop(alias, blindedPath.route.asInstanceOf[OfferTypes.BlindedPath].route, blindedPath.paymentInfo), recipient)
+    (invoice, recipient.blindedHops.head, recipient)
   }
 
   def blindedRoutesFromPaths(amount: MilliSatoshi,
@@ -276,7 +275,7 @@ object BaseRouterSpec {
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
-    val recipient = BlindedRecipient(invoice, amount, expiry, Set.empty)
+    val Some(recipient) = BlindedRecipient(invoice, amount, expiry, Set.empty)
     (invoice, recipient)
   }
 

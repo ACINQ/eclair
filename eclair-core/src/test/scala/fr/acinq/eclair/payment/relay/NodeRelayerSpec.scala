@@ -733,7 +733,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
-    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(Right(hints.head.nodeId), outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
+    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
     assert(outgoingPayment.recipient.isInstanceOf[ClearRecipient])
     val recipient = outgoingPayment.recipient.asInstanceOf[ClearRecipient]
     assert(recipient.nextTrampolineOnion_opt.isEmpty)
@@ -777,7 +777,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.amount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
-    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(Right(hints.head.nodeId), outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
+    assert(outgoingPayment.recipient.extraEdges.head == ExtraEdge(hints.head.nodeId, outgoingNodeId, ShortChannelId(42), 10 msat, 1, CltvExpiryDelta(12), 1 msat, None))
     assert(outgoingPayment.recipient.isInstanceOf[ClearRecipient])
     val recipient = outgoingPayment.recipient.asInstanceOf[ClearRecipient]
     assert(recipient.nextTrampolineOnion_opt.isEmpty)
