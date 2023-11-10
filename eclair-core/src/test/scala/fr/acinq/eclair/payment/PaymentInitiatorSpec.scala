@@ -34,10 +34,10 @@ import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{BlindedRouteCreation, RouteNotFound}
+import fr.acinq.eclair.router.{BlindedRouteCreation, RouteNotFound, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, RealShortChannelId, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -370,6 +370,76 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id == id)
     assert(fail.failures == LocalFailure(finalAmount, Nil, UnsupportedFeatures(invoice.features)) :: Nil)
+  }
+
+  test("forward blinded payment to compact route") { f =>
+    import f._
+    val payerKey = randomKey()
+    val offer = Offer(None, "Bolt12 is compact", e, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, Features.empty, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
+    val compactRoute = OfferTypes.CompactBlindedPath(OfferTypes.ShortChannelIdDir(isNode1 = false, RealShortChannelId(987654)), blindedRoute.blindingKey, blindedRoute.blindedNodes)
+    val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
+    val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, Features.empty, Seq(PaymentBlindedRoute(compactRoute, paymentInfo)))
+    val req = SendPaymentToNode(sender.ref, finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    val getNodeId = router.expectMsgType[Router.GetNodeId]
+    assert(!getNodeId.isNode1)
+    assert(getNodeId.shortChannelId == RealShortChannelId(987654))
+    getNodeId.replyTo ! Some(a)
+    payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), Some(payerKey), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true))
+    val payment = payFsm.expectMsgType[PaymentLifecycle.SendPaymentToNode]
+    assert(payment.amount == finalAmount)
+    assert(payment.recipient.nodeId == invoice.nodeId)
+    assert(payment.recipient.totalAmount == finalAmount)
+    assert(payment.recipient.extraEdges.length == 1)
+    val extraEdge = payment.recipient.extraEdges.head
+    assert(extraEdge.sourceNodeId == a)
+    assert(payment.recipient.expiry == req.finalExpiry(nodeParams))
+    assert(payment.recipient.isInstanceOf[BlindedRecipient])
+
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    val pendingById = sender.expectMsgType[PaymentIsPending]
+    assert(pendingById.paymentId == id)
+    assert(pendingById.paymentHash == invoice.paymentHash)
+    assert(pendingById.pending.asInstanceOf[PendingPaymentToNode].sender == sender.ref)
+    val r = pendingById.pending.asInstanceOf[PendingPaymentToNode].request
+    assert(r.copy(invoice = req.invoice, paymentConfig_opt = None) == req)
+    assert(r.paymentConfig_opt.get.invoice.contains(req.invoice))
+
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
+    sender.expectMsg(pendingById)
+
+    val pf = PaymentFailed(id, invoice.paymentHash, Nil)
+    payFsm.send(initiator, pf)
+    sender.expectMsg(pf)
+    eventListener.expectNoMessage(100 millis)
+
+    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
+    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
+  }
+
+  test("reject payment to unknown compact route") { f =>
+    import f._
+    val payerKey = randomKey()
+    val offer = Offer(None, "Bolt12 is compact", e, Features.empty, Block.RegtestGenesisBlock.hash)
+    val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, Features.empty, randomKey(), Block.RegtestGenesisBlock.hash)
+    val blindedRoute = BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
+    val compactRoute = OfferTypes.CompactBlindedPath(OfferTypes.ShortChannelIdDir(isNode1 = true, RealShortChannelId(654321)), blindedRoute.blindingKey, blindedRoute.blindedNodes)
+    val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
+    val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, Features.empty, Seq(PaymentBlindedRoute(compactRoute, paymentInfo)))
+    val req = SendPaymentToNode(sender.ref, finalAmount, invoice, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    val getNodeId = router.expectMsgType[Router.GetNodeId]
+    assert(getNodeId.isNode1)
+    assert(getNodeId.shortChannelId == RealShortChannelId(654321))
+    getNodeId.replyTo ! None
+
+    val fail = sender.expectMsgType[PaymentFailed]
+    assert(fail.id == id)
+    assert(fail.failures == LocalFailure(finalAmount, Nil, RouteNotFound) :: Nil)
   }
 
   test("forward trampoline payment") { f =>

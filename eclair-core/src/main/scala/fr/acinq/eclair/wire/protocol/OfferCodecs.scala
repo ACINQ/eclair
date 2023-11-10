@@ -65,12 +65,11 @@ object OfferCodecs {
       ("blinding" | publicKey) ::
       ("path" | blindedNodesCodec)).as[CompactBlindedPath]
 
-  private val pathCodec: Codec[BlindedContactInfo] = choice(compactBlindedPathCodec.upcast[BlindedContactInfo], blindedPathCodec.upcast[BlindedContactInfo])
+  val pathCodec: Codec[BlindedContactInfo] = choice(compactBlindedPathCodec.upcast[BlindedContactInfo], blindedPathCodec.upcast[BlindedContactInfo])
 
   private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
 
   private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
-
 
   private val offerQuantityMax: Codec[OfferQuantityMax] = tlvField(tu64overflow)
 

@@ -47,7 +47,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     case r: SendPaymentToNode =>
       val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
       val paymentCfg = r.paymentConfig()
-      if (!r.blockUntilComplete) {
+      if (!r.blockUntilComplete && r.paymentConfig_opt.isEmpty) {
         // Immediately return the paymentId
         replyTo ! paymentCfg.id
       }
