@@ -2367,14 +2367,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       emitEvent_opt.foreach {
         case EmitLocalChannelUpdate(reason, d, sendToPeer) =>
           log.debug(s"emitting channel update event: reason=$reason enabled=${d.channelUpdate.channelFlags.isEnabled} sendToPeer=$sendToPeer realScid=${d.shortIds.real} channel_update={} channel_announcement={}", d.channelUpdate, d.channelAnnouncement.map(_ => "yes").getOrElse("no"))
-          val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, d.commitments.params.remoteParams.nodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
+          val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, remoteNodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
             send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, d.shortIds))
           }
         case EmitLocalChannelDown(d) =>
-          log.debug(s"emitting channel down event")
-          val lcd = LocalChannelDown(self, d.channelId, d.shortIds, d.commitments.params.remoteParams.nodeId)
+          log.debug("emitting channel down event")
+          if (d.channelAnnouncement.nonEmpty) {
+            // We tell the rest of the network that this channel shouldn't be used anymore.
+            val disabledUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, Helpers.scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+            context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.shortIds, remoteNodeId, d.channelAnnouncement, disabledUpdate, d.commitments))
+          }
+          val lcd = LocalChannelDown(self, d.channelId, d.shortIds, remoteNodeId)
           context.system.eventStream.publish(lcd)
       }
 
