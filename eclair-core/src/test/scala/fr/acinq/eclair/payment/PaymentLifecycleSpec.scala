@@ -499,8 +499,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(routerForwarder.expectMsgType[ChannelCouldNotRelay].hop.shortChannelId == update_bc.shortChannelId)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c), Some(nodeParams.routerConf.channelExcludeDuration)))
     routerForwarder.forward(routerFixture.router)
-    // payment lifecycle forwards the embedded channelUpdate to the router
-    routerForwarder.expectMsg(update_bc)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     routerForwarder.expectMsg(defaultRouteRequest(a, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(update_bc.shortChannelId, b, c)))))
     routerForwarder.forward(routerFixture.router)
@@ -530,8 +528,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
 
-    // payment lifecycle forwards the embedded channelUpdate to the router
-    routerForwarder.expectMsg(channelUpdate_bc_modified)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
     routerForwarder.expectMsg(defaultRouteRequest(a, cfg))
     routerForwarder.forward(routerFixture.router)
@@ -550,8 +546,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // this time the payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c), Some(nodeParams.routerConf.channelExcludeDuration)))
     routerForwarder.forward(routerFixture.router)
-    // but it will still forward the embedded channelUpdate to the router
-    routerForwarder.expectMsg(channelUpdate_bc_modified_2)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     routerForwarder.expectMsg(defaultRouteRequest(a, cfg))
     routerForwarder.forward(routerFixture.router)
@@ -581,7 +575,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // we should temporarily exclude that channel
     assert(routerForwarder.expectMsgType[ChannelCouldNotRelay].hop.shortChannelId == update_bc.shortChannelId)
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c), Some(nodeParams.routerConf.channelExcludeDuration)))
-    routerForwarder.expectMsg(update_bc)
 
     // this was a single attempt payment
     sender.expectMsgType[PaymentFailed]
@@ -614,8 +607,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
 
-    // payment lifecycle forwards the embedded channelUpdate to the router
-    routerForwarder.expectMsg(channelUpdate_bc_modified)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending)) // 1 failure but not final, the payment is still PENDING
     val extraEdges1 = Seq(
       recipient.extraEdges(0).update(channelUpdate_bc_modified),
@@ -658,7 +649,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     assert(routerForwarder.expectMsgType[RouteCouldRelay].route.hops.map(_.shortChannelId) == Seq(update_ab, update_bc).map(_.shortChannelId))
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_cd.shortChannelId, c, d), Some(nodeParams.routerConf.channelExcludeDuration)))
-    routerForwarder.expectMsg(channelUpdate_cd_disabled)
   }
 
   def testPermanentFailure(router: ActorRef, failure: FailureMessage): Unit = {
@@ -960,11 +950,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // and node replies with a failure containing a new channel update
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
 
-    // payment lifecycle forwards the embedded channelUpdate to the router
-    routerForwarder.expectMsg(channelUpdate_bc_modified)
-
     // The payment fails without retrying
     sender.expectMsgType[PaymentFailed]
+    routerForwarder.expectNoMessage(100 millis) // we don't forward the channel_update to the router
   }
 
 }
