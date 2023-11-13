@@ -298,14 +298,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoute = OfferTypes.BlindedPath(BlindedRouteCreation.createBlindedRouteWithoutHops(e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route)
     val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
-    Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
+    Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, features, Seq(PaymentBlindedContactInfo(blindedRoute, paymentInfo)))
   }
 
   test("forward single-part blinded payment") { f =>
     import f._
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features.empty, payerKey)
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
+    val resolvedPaths = invoice.blindedPaths.map(path => PaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -336,7 +336,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features(BasicMultiPartPayment -> Optional), payerKey)
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
+    val resolvedPaths = invoice.blindedPaths.map(path => PaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -365,7 +365,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject blinded payment when route blinding deactivated", Tag(Tags.DisableRouteBlinding)) { f =>
     import f._
     val invoice = createBolt12Invoice(Features(BasicMultiPartPayment -> Optional), randomKey())
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
+    val resolvedPaths = invoice.blindedPaths.map(path => PaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]

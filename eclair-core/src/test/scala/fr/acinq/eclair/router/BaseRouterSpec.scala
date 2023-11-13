@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.send.BlindedRecipient
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute, ResolvedPaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
@@ -272,10 +272,10 @@ object BaseRouterSpec {
     val blindedRoutes = paths.map(hops => {
       val blindedRoute = OfferTypes.BlindedPath(BlindedRouteCreation.createBlindedRouteFromHops(hops, pathId, 1 msat, routeExpiry).route)
       val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops, Channel.MIN_CLTV_EXPIRY_DELTA)
-      PaymentBlindedRoute(blindedRoute, paymentInfo)
+      PaymentBlindedContactInfo(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
+    val resolvedPaths = invoice.blindedPaths.map(path => PaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
     val recipient = BlindedRecipient(invoice, resolvedPaths, amount, expiry, Set.empty)
     (invoice, recipient)
   }

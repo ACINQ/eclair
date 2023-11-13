@@ -320,7 +320,7 @@ object PaymentInitiator {
   case class SendPaymentToNode(replyTo: ActorRef,
                                recipientAmount: MilliSatoshi,
                                invoice: Invoice,
-                               resolvedPaths: Seq[ResolvedPaymentBlindedRoute],
+                               resolvedPaths: Seq[PaymentBlindedRoute],
                                maxAttempts: Int,
                                externalId: Option[String] = None,
                                routeParams: RouteParams,
@@ -384,7 +384,7 @@ object PaymentInitiator {
    */
   case class SendPaymentToRoute(recipientAmount: MilliSatoshi,
                                 invoice: Invoice,
-                                resolvedPaths: Seq[ResolvedPaymentBlindedRoute],
+                                resolvedPaths: Seq[PaymentBlindedRoute],
                                 route: PredefinedRoute,
                                 externalId: Option[String],
                                 parentId: Option[UUID],

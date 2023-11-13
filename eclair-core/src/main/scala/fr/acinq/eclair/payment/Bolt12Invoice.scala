@@ -53,7 +53,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
     // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
     f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
   }
-  val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
+  val blindedPaths: Seq[PaymentBlindedContactInfo] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedContactInfo(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
 
@@ -87,9 +87,9 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
 }
 
-case class PaymentBlindedRoute(route: BlindedContactInfo, paymentInfo: PaymentInfo)
+case class PaymentBlindedContactInfo(route: BlindedContactInfo, paymentInfo: PaymentInfo)
 
-case class ResolvedPaymentBlindedRoute(route: BlindedRoute, paymentInfo: PaymentInfo)
+case class PaymentBlindedRoute(route: BlindedRoute, paymentInfo: PaymentInfo)
 
 object Bolt12Invoice {
   val hrp = "lni"
@@ -110,7 +110,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             invoiceExpiry: FiniteDuration,
             features: Features[Bolt12Feature],
-            paths: Seq[PaymentBlindedRoute],
+            paths: Seq[PaymentBlindedContactInfo],
             additionalTlvs: Set[InvoiceTlv] = Set.empty,
             customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
     require(request.amount.nonEmpty || request.offer.amount.nonEmpty)

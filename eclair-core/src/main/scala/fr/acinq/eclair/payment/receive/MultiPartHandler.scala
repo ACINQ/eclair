@@ -373,7 +373,7 @@ object MultiPartHandler {
                   case None => OfferTypes.BlindedPath(blindedRoute.route)
                 }
                 val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                Future.successful(PaymentBlindedRoute(contactInfo, paymentInfo))
+                Future.successful(PaymentBlindedContactInfo(contactInfo, paymentInfo))
               } else {
                 implicit val timeout: Timeout = 10.seconds
                 r.router.ask(Router.FinalizeRoute(Router.PredefinedNodeRoute(r.amount, route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
@@ -384,7 +384,7 @@ object MultiPartHandler {
                     case None => OfferTypes.BlindedPath(blindedRoute.route)
                   }
                   val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                  PaymentBlindedRoute(contactInfo, paymentInfo)
+                  PaymentBlindedContactInfo(contactInfo, paymentInfo)
                 })
               }
             })).map(paths => {

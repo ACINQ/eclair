@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, ResolvedPaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
@@ -166,7 +166,7 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
-  def apply(invoice: Bolt12Invoice, paths: Seq[ResolvedPaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
+  def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
     val blindedHops = paths.map(
       path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a

@@ -26,7 +26,7 @@ import fr.acinq.eclair.message.OnionMessages.RoutingStrategy.FindRoute
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.send.OfferPayment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.InvoicePayload
@@ -74,7 +74,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
 
     val preimage = randomBytes32()
-    val paymentRoute = PaymentBlindedRoute(OfferTypes.BlindedPath(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
+    val paymentRoute = PaymentBlindedContactInfo(OfferTypes.BlindedPath(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
     val invoice = Bolt12Invoice(invoiceRequest, preimage, merchantKey, 1 minute, Features.empty, Seq(paymentRoute))
     replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
@@ -121,7 +121,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
 
     val preimage = randomBytes32()
-    val paymentRoute = PaymentBlindedRoute(OfferTypes.BlindedPath(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
+    val paymentRoute = PaymentBlindedContactInfo(OfferTypes.BlindedPath(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
     val invoice = Bolt12Invoice(invoiceRequest, preimage, randomKey(), 1 minute, Features.empty, Seq(paymentRoute))
     replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
 
@@ -148,12 +148,12 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val preimage = randomBytes32()
     val blindedRoutes = Seq.fill(6)(RouteBlinding.create(randomKey(), Seq.fill(3)(randomKey().publicKey), Seq.fill(3)(randomBytes(10))).route)
     val paymentRoutes = Seq(
-      PaymentBlindedRoute(OfferTypes.BlindedPath(blindedRoutes(0)), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty)),
-      PaymentBlindedRoute(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = true, RealShortChannelId(11111)), blindedRoutes(1).blindingKey, blindedRoutes(1).blindedNodes), PaymentInfo(1 msat, 11, CltvExpiryDelta(111), 0 msat, 1_000_000_000 msat, Features.empty)),
-      PaymentBlindedRoute(OfferTypes.BlindedPath(blindedRoutes(2)), PaymentInfo(2 msat, 22, CltvExpiryDelta(222), 0 msat, 1_000_000_000 msat, Features.empty)),
-      PaymentBlindedRoute(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = false, RealShortChannelId(33333)), blindedRoutes(3).blindingKey, blindedRoutes(3).blindedNodes), PaymentInfo(3 msat, 33, CltvExpiryDelta(333), 0 msat, 1_000_000_000 msat, Features.empty)),
-      PaymentBlindedRoute(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = false, RealShortChannelId(44444)), blindedRoutes(4).blindingKey, blindedRoutes(4).blindedNodes), PaymentInfo(4 msat, 44, CltvExpiryDelta(444), 0 msat, 1_000_000_000 msat, Features.empty)),
-      PaymentBlindedRoute(OfferTypes.BlindedPath(blindedRoutes(5)), PaymentInfo(5 msat, 55, CltvExpiryDelta(555), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.BlindedPath(blindedRoutes(0)), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = true, RealShortChannelId(11111)), blindedRoutes(1).blindingKey, blindedRoutes(1).blindedNodes), PaymentInfo(1 msat, 11, CltvExpiryDelta(111), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.BlindedPath(blindedRoutes(2)), PaymentInfo(2 msat, 22, CltvExpiryDelta(222), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = false, RealShortChannelId(33333)), blindedRoutes(3).blindingKey, blindedRoutes(3).blindedNodes), PaymentInfo(3 msat, 33, CltvExpiryDelta(333), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.CompactBlindedPath(ShortChannelIdDir(isNode1 = false, RealShortChannelId(44444)), blindedRoutes(4).blindingKey, blindedRoutes(4).blindedNodes), PaymentInfo(4 msat, 44, CltvExpiryDelta(444), 0 msat, 1_000_000_000 msat, Features.empty)),
+      PaymentBlindedContactInfo(OfferTypes.BlindedPath(blindedRoutes(5)), PaymentInfo(5 msat, 55, CltvExpiryDelta(555), 0 msat, 1_000_000_000 msat, Features.empty)),
     )
     val invoice = Bolt12Invoice(invoiceRequest, preimage, merchantKey, 1 minute, Features.empty, paymentRoutes)
     replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))

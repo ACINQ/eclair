@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload, InvalidResponsePayload, InvoiceErrorPayload, InvoicePayload, InvoiceRequestPayload}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
@@ -95,7 +95,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
     val payerKey = randomKey()
     val request = OfferTypes.InvoiceRequest(offer, 100_000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(randomBytes32()), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
-    val route = PaymentBlindedRoute(OfferTypes.BlindedPath(Sphinx.RouteBlinding.create(randomKey(), Seq(nodeKey.publicKey), Seq(selfPayload)).route), PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
+    val route = PaymentBlindedContactInfo(OfferTypes.BlindedPath(Sphinx.RouteBlinding.create(randomKey(), Seq(nodeKey.publicKey), Seq(selfPayload)).route), PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(route))
 
     val testCasesInvalid = Seq[TlvStream[OnionMessagePayloadTlv]](
