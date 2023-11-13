@@ -431,7 +431,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     alice2bob.expectMsgType[SpliceInit]
   }
 
-  test("htlc timeout during quiescence negotiation") { f =>
+  test("outgoing htlc timeout during quiescence negotiation") { f =>
     import f._
     val (_, add) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -455,7 +455,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     channelUpdateListener.expectMsgType[LocalChannelDown]
   }
 
-  test("htlc timeout during quiescence negotiation (with pending preimage)") { f =>
+  test("incoming htlc timeout during quiescence negotiation (with pending preimage)") { f =>
     import f._
     val (preimage, add) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -465,6 +465,10 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val commitTx = bobCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommit.htlcTxsAndRemoteSigs.size == 1)
     val htlcSuccessTx = bobCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
+
+    // bob does not force-close unless there is a pending preimage for the incoming htlc
+    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
+    bob2blockchain.expectNoMessage(100 millis)
 
     // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
     val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage)
