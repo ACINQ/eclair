@@ -2705,7 +2705,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         spliceInAmount = cmd.additionalLocalFunding,
         spliceOut = cmd.spliceOutputs,
         targetFeerate = targetFeerate)
-      val commitTxFees = Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+      val commitTxFees = if (d.commitments.params.localParams.isInitiator) {
+        Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+      } else 0.sat
       if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params).max(commitTxFees)) {
         log.warning(s"cannot do splice: insufficient funds (commitTxFees=$commitTxFees reserve=${parentCommitment.localChannelReserve(d.commitments.params)})")
         Left(InvalidSpliceRequest(d.channelId))
