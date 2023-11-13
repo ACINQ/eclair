@@ -31,12 +31,12 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.send.BlindedRecipient
-import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute, ResolvedPaymentBlindedRoute}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{BlindedPath, InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -275,7 +275,8 @@ object BaseRouterSpec {
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
-    val Some(recipient) = BlindedRecipient(invoice, amount, expiry, Set.empty)
+    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPaymentBlindedRoute(path.route.asInstanceOf[BlindedPath].route, path.paymentInfo))
+    val recipient = BlindedRecipient(invoice, resolvedPaths, amount, expiry, Set.empty)
     (invoice, recipient)
   }
 

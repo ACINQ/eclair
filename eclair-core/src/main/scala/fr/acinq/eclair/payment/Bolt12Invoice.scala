@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferCodecs, OfferTypes, TlvStream}
@@ -87,6 +88,8 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 }
 
 case class PaymentBlindedRoute(route: BlindedContactInfo, paymentInfo: PaymentInfo)
+
+case class ResolvedPaymentBlindedRoute(route: BlindedRoute, paymentInfo: PaymentInfo)
 
 object Bolt12Invoice {
   val hrp = "lni"
