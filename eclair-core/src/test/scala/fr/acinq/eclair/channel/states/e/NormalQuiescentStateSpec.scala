@@ -402,7 +402,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
   }
 
-  test("initiate quiescence concurrently (pending changes on initiator side)") { f =>
+  test("initiate quiescence concurrently (pending changes on one side)") { f =>
     import f._
 
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
@@ -419,25 +419,6 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
     sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
     bob2alice.expectMsgType[SpliceInit]
-  }
-
-  test("initiate quiescence concurrently (pending changes on non-initiator side)") { f =>
-    import f._
-
-    addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
-    val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
-    alice ! cmd
-    alice2bob.expectMsgType[Stfu]
-    bob ! cmd
-    bob2alice.expectNoMessage(100 millis) // bob isn't quiescent yet
-    alice2bob.forward(bob)
-    crossSign(bob, alice, bob2alice, alice2bob)
-    bob2alice.expectMsgType[Stfu]
-    bob2alice.forward(alice)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NonInitiatorQuiescent)
-    sender.expectMsgType[RES_FAILURE[CMD_SPLICE, ConcurrentRemoteSplice]]
-    alice2bob.expectMsgType[SpliceInit]
   }
 
   test("outgoing htlc timeout during quiescence negotiation") { f =>
@@ -464,7 +445,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     channelUpdateListener.expectMsgType[LocalChannelDown]
   }
 
-  test("incoming htlc timeout during quiescence negotiation (with pending preimage)") { f =>
+  test("incoming htlc timeout during quiescence negotiation") { f =>
     import f._
     val (preimage, add) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
