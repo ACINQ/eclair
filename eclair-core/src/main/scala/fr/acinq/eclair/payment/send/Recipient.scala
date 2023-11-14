@@ -166,6 +166,7 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
+  /** @param paths the caller must resolve the scid of compact blinded paths, otherwise they will be ignored. */
   def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
     val blindedHops = paths.map(
       path => {

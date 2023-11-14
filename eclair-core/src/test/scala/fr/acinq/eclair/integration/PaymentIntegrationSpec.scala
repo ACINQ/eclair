@@ -828,11 +828,18 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send to compact route") {
+    val probe = TestProbe()
     val recipientKey = randomKey()
     val amount = 10_000_000 msat
     val chain = nodes("C").nodeParams.chainHash
     val pathId = randomBytes32()
-    val offerPath = OfferTypes.BlindedPath(buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId))))
+    val scidDirEB = {
+      probe.send(nodes("B").router, Router.GetChannels)
+      val Some(channelBE) = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("E").nodeParams.nodeId))
+      ShortChannelIdDir(channelBE.nodeId1 == nodes("B").nodeParams.nodeId, channelBE.shortChannelId)
+    }
+    val offerBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId)))
+    val offerPath = OfferTypes.CompactBlindedPath(scidDirEB, offerBlindedRoute.blindingKey, offerBlindedRoute.blindedNodes)
     val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("C").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
     nodes("C").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
@@ -842,18 +849,18 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     alice.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(30 seconds).pipeTo(sender.ref)
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
-    val probe = TestProbe()
-    probe.send(nodes("C").router, Router.GetChannels)
-    val b = nodes("B").nodeParams.nodeId
-    val channelWithB = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => ann.nodeId1 == b || ann.nodeId2 == b).get
+    val scidDirCB = {
+      probe.send(nodes("B").router, Router.GetChannels)
+      val Some(channelBC) = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      ShortChannelIdDir(channelBC.nodeId1 == nodes("B").nodeParams.nodeId, channelBC.shortChannelId)
+    }
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(555), Seq(DummyBlindedHop(55 msat, 55, CltvExpiryDelta(55))), Some(ShortChannelIdDir(channelWithB.nodeId1 == b, channelWithB.shortChannelId)))
+      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(555), Seq(DummyBlindedHop(55 msat, 55, CltvExpiryDelta(55))), Some(scidDirCB))
     )
-    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"eff0"))
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"eff0"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]

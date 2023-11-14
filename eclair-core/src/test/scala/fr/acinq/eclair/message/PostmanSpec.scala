@@ -41,6 +41,8 @@ import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
+import scala.concurrent.duration.DurationInt
+
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
   case class FixtureParam(postman: ActorRef[Command], nodeParams: NodeParams, messageSender: TestProbe[OnionMessageResponse], switchboard: TestProbe[Any], offerManager: TestProbe[RequestInvoice], router: TestProbe[Router.PostmanRequest])
@@ -94,7 +96,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
 
     messageSender.expectMessage(Response(replyPayload))
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("sending failure") { f =>
@@ -113,7 +115,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     replyTo ! Disconnected(messageId)
 
     messageSender.expectMessage(MessageFailed("Peer is not connected"))
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("timeout") { f =>
@@ -140,7 +142,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ReceiveMessage(replyPayload) = OnionMessages.process(nodeParams.privateKey, reply)
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
 
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("do not expect reply") { f =>
@@ -162,7 +164,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageSender.expectMessage(MessageSent)
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("send to route that starts at ourselves") { f =>
@@ -180,7 +182,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageSender.expectMessage(MessageSent)
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("forward invoice request to offer manager") { f =>
@@ -269,7 +271,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageSender.expectMessage(MessageSent)
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 
   test("send to compact route that starts at ourselves") { f =>
@@ -298,6 +300,6 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
     messageSender.expectMessage(MessageSent)
-    messageSender.expectNoMessage()
+    messageSender.expectNoMessage(10 millis)
   }
 }
