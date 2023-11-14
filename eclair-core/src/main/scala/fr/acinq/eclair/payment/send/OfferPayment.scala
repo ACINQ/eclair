@@ -154,7 +154,7 @@ private class OfferPayment(replyTo: ActorRef,
   private def resolveCompactBlindedPaths(invoice: Bolt12Invoice, toResolve: Seq[PaymentBlindedContactInfo], resolved: Seq[PaymentBlindedRoute]): Behavior[Command] = {
     if (toResolve.isEmpty) {
       if (resolved.isEmpty) {
-        // We don't know how to reach any of the blinded paths' introduction nodes.
+        // We couldn't identify any of the blinded paths' introduction nodes because the scids are unknown.
         val scids = invoice.blindedPaths.collect { case PaymentBlindedContactInfo(CompactBlindedPath(scdidDir, _, _), _) => scdidDir.scid }
         replyTo ! UnknownShortChannelIds(scids)
       } else {
