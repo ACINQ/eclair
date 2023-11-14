@@ -40,6 +40,8 @@ import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding, OfferTypes}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomBytes32, randomKey}
 import org.scalatest.concurrent.IntegrationPatience
 import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
@@ -126,7 +128,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offer = Offer(None, "test", recipient.nodeId, Features.empty, recipient.nodeParams.chainHash)
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
-    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
+    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
@@ -141,12 +143,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offerPaths = routes.map(route => {
       val ourNodeId = route.nodes.last
       val intermediateNodes = route.nodes.dropRight(1).map(IntermediateNode(_)) ++ route.dummyHops.map(_ => IntermediateNode(ourNodeId))
-      buildRoute(randomKey(), intermediateNodes, Recipient(ourNodeId, Some(pathId)))
+      OfferTypes.BlindedPath(buildRoute(randomKey(), intermediateNodes, Recipient(ourNodeId, Some(pathId))))
     })
     val offer = Offer(None, "test", recipientKey.publicKey, Features.empty, recipient.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(offerPaths)))
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipientKey, Some(pathId), handler)
-    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.paymentInitiator))
+    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
@@ -160,7 +162,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offer = Offer(None, "test", recipient.nodeId, Features.empty, recipient.nodeParams.chainHash)
     val handler = recipient.system.spawnAnonymous(offerHandler(recipientAmount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, recipient.nodeParams.privateKey, None, handler)
-    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, paymentInterceptor.ref))
+    val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, paymentInterceptor.ref))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, recipientAmount, 1, sendPaymentConfig)
     // We intercept the payment and modify it to use a different amount.
@@ -360,17 +362,17 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val recipientKey = randomKey()
     val pathId = randomBytes32()
 
-    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId), IntermediateNode(carol.nodeId)), Recipient(carol.nodeId, Some(pathId)))
+    val blindedRoute = OfferTypes.BlindedPath(buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId), IntermediateNode(carol.nodeId)), Recipient(carol.nodeId, Some(pathId))))
     val offer = Offer(None, "test", recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(blindedRoute))))
     val scid_bc = getPeerChannels(bob, carol.nodeId).head.data.asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get
-    val compactBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId, Some(scid_bc)), IntermediateNode(carol.nodeId, Some(ShortChannelId.toSelf))), Recipient(carol.nodeId, Some(pathId)))
+    val compactBlindedRoute = OfferTypes.BlindedPath(buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId, Some(scid_bc)), IntermediateNode(carol.nodeId, Some(ShortChannelId.toSelf))), Recipient(carol.nodeId, Some(pathId))))
     val compactOffer = Offer(None, "test", recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(compactBlindedRoute))))
     assert(compactOffer.toString.length < offer.toString.length)
 
     val receivingRoute = ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta)
     val handler = carol.system.spawnAnonymous(offerHandler(amount, Seq(receivingRoute)))
     carol.offerManager ! OfferManager.RegisterOffer(compactOffer, recipientKey, Some(pathId), handler)
-    val offerPayment = alice.system.spawnAnonymous(OfferPayment(alice.nodeParams, alice.postman, alice.paymentInitiator))
+    val offerPayment = alice.system.spawnAnonymous(OfferPayment(alice.nodeParams, alice.postman, alice.router, alice.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, alice.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(probe.ref, compactOffer, amount, 1, sendPaymentConfig)
     val payment = verifyPaymentSuccess(compactOffer, amount, probe.expectMsgType[PaymentEvent])

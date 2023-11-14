@@ -427,7 +427,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     } else {
       val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(route.amount))
       val trampoline_opt = trampolineFees_opt.map(fees => TrampolineAttempt(trampolineSecret_opt.getOrElse(randomBytes32()), fees, trampolineExpiryDelta_opt.get))
-      val sendPayment = SendPaymentToRoute(recipientAmount, invoice, route, externalId_opt, parentId_opt, trampoline_opt)
+      val sendPayment = SendPaymentToRoute(recipientAmount, invoice, Nil, route, externalId_opt, parentId_opt, trampoline_opt)
       (appKit.paymentInitiator ? sendPayment).mapTo[SendPaymentToRouteResponse]
     }
   }
@@ -442,7 +442,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
-          case _ => Right(SendPaymentToNode(ActorRef.noSender, amount, invoice, maxAttempts, externalId_opt, routeParams = routeParams))
+          case _ => Right(SendPaymentToNode(ActorRef.noSender, amount, invoice, Nil, maxAttempts, externalId_opt, routeParams = routeParams))
         }
       case Left(t) => Left(t)
     }
@@ -663,15 +663,15 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
     TlvCodecs.tlvStream(MessageOnionCodecs.onionTlvCodec).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userTlvs, _)) =>
-        val destination = recipient match {
-          case Left(key) => OnionMessages.Recipient(key, None)
-          case Right(route) => OnionMessages.BlindedPath(route)
+        val contactInfo = recipient match {
+          case Left(key) => OfferTypes.RecipientNodeId(key)
+          case Right(route) => OfferTypes.BlindedPath(route)
         }
         val routingStrategy = intermediateNodes_opt match {
           case Some(intermediateNodes) => OnionMessages.RoutingStrategy.UseRoute(intermediateNodes)
           case None => OnionMessages.RoutingStrategy.FindRoute
         }
-        appKit.postman.ask(ref => Postman.SendMessage(destination, routingStrategy, userTlvs, expectsReply, ref)).map {
+        appKit.postman.ask(ref => Postman.SendMessage(contactInfo, routingStrategy, userTlvs, expectsReply, ref)).map {
           case Postman.Response(payload) => SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(payload.records)))
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
           case Postman.MessageSent => SendOnionMessageResponse(sent = true, None, None)
@@ -702,7 +702,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       case Left(t) => return Future.failed(t)
     }
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking)
-    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.paymentInitiator))
+    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
       case x => Future.successful(x)

@@ -243,6 +243,10 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: MessageRouteRequest, d) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
+    case Event(GetNodeId(replyTo, shortChannelId, isNode1), d) =>
+      replyTo ! d.channels.get(shortChannelId).map(channel => if (isNode1) channel.nodeId1 else channel.nodeId2)
+      stay()
+
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
       sender() ! TransportHandler.ReadAck(routingMessage)
@@ -589,10 +593,16 @@ object Router {
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
+  sealed trait PostmanRequest
+
   case class MessageRouteRequest(replyTo: typed.ActorRef[MessageRouteResponse],
                                  source: PublicKey,
                                  target: PublicKey,
-                                 ignoredNodes: Set[PublicKey])
+                                 ignoredNodes: Set[PublicKey]) extends PostmanRequest
+
+  case class GetNodeId(replyTo: typed.ActorRef[Option[PublicKey]],
+                       shortChannelId: RealShortChannelId,
+                       isNode1: Boolean) extends PostmanRequest
 
   // @formatter:off
   sealed trait MessageRouteResponse { def target: PublicKey }

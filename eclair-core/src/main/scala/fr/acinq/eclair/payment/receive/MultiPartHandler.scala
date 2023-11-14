@@ -36,7 +36,7 @@ import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, ShortChannelIdDir}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}
@@ -276,7 +276,7 @@ object MultiPartHandler {
    * @param maxFinalExpiryDelta maximum expiry delta that senders can use: the route expiry will be computed based on this value.
    * @param dummyHops           (optional) dummy hops to add to the blinded route.
    */
-  case class ReceivingRoute(nodes: Seq[PublicKey], maxFinalExpiryDelta: CltvExpiryDelta, dummyHops: Seq[DummyBlindedHop] = Nil)
+  case class ReceivingRoute(nodes: Seq[PublicKey], maxFinalExpiryDelta: CltvExpiryDelta, dummyHops: Seq[DummyBlindedHop] = Nil, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None)
 
   /**
    * Use this message to create a Bolt 12 invoice to receive a payment for a given offer.
@@ -368,20 +368,28 @@ object MultiPartHandler {
                 } else {
                   createBlindedRouteFromHops(dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                 }
+                val contactInfo = route.shortChannelIdDir_opt match {
+                  case Some(shortChannelIdDir) => OfferTypes.CompactBlindedPath(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                  case None => OfferTypes.BlindedPath(blindedRoute.route)
+                }
                 val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                Future.successful((blindedRoute, paymentInfo, r.pathId))
+                Future.successful(PaymentBlindedContactInfo(contactInfo, paymentInfo))
               } else {
                 implicit val timeout: Timeout = 10.seconds
                 r.router.ask(Router.FinalizeRoute(Router.PredefinedNodeRoute(r.amount, route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
                   val clearRoute = routeResponse.routes.head
                   val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
+                  val contactInfo = route.shortChannelIdDir_opt match {
+                    case Some(shortChannelIdDir) => OfferTypes.CompactBlindedPath(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                    case None => OfferTypes.BlindedPath(blindedRoute.route)
+                  }
                   val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                  (blindedRoute, paymentInfo, r.pathId)
+                  PaymentBlindedContactInfo(contactInfo, paymentInfo)
                 })
               }
             })).map(paths => {
               val invoiceFeatures = nodeParams.features.bolt12Features()
-              val invoice = Bolt12Invoice(r.invoiceRequest, r.paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths.map { case (blindedRoute, paymentInfo, _) => PaymentBlindedRoute(blindedRoute.route, paymentInfo) }, r.additionalTlvs, r.customTlvs)
+              val invoice = Bolt12Invoice(r.invoiceRequest, r.paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths, r.additionalTlvs, r.customTlvs)
               log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
               invoice
             }))(WrappedInvoiceResult)

@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
@@ -122,7 +122,7 @@ case class BlindedRecipient(nodeId: PublicKey,
                             totalAmount: MilliSatoshi,
                             expiry: CltvExpiry,
                             blindedHops: Seq[BlindedHop],
-                            customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
+                            customTlvs: Set[GenericTlv]) extends Recipient {
   require(blindedHops.nonEmpty, "blinded routes must be provided")
 
   override val extraEdges = blindedHops.map { h =>
@@ -166,8 +166,12 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
-  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
-    val blindedHops = invoice.blindedPaths.map(
+  /**
+   * @param invoice Bolt invoice. Paths from the invoice must be passed as `paths` with compact paths expanded to include the node id.
+   * @param paths   Payment paths to use to reach the recipient.
+   */
+  def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
+    val blindedHops = paths.map(
       path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
         // given edge in the graph, so we create a dummy one for the duration of the payment attempt.

@@ -344,7 +344,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)))
-    paymentInitiator.expectMsg(SendPaymentToRoute(1200 msat, pr, route, Some("42"), Some(parentId), Some(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144)))))
+    val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
+    assert(sendPaymentToRoute.recipientAmount == 1200.msat)
+    assert(sendPaymentToRoute.invoice == pr)
+    assert(sendPaymentToRoute.route == route)
+    assert(sendPaymentToRoute.externalId.contains("42"))
+    assert(sendPaymentToRoute.parentId.contains(parentId))
+    assert(sendPaymentToRoute.trampoline_opt.contains(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144))))
   }
 
   test("find routes") { f =>
