@@ -153,7 +153,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -170,7 +170,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 

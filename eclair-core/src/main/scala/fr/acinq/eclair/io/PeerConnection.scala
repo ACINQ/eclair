@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -132,6 +132,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
+        val featuresCompatibilityResult = Features.testCompatible(d.localInit.features, remoteInit.features)
         if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
@@ -143,9 +144,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(featureGraphErr.message))
           d.transport ! PoisonPill
           stay()
-        } else if (!Features.areCompatible(d.localInit.features, remoteInit.features)) {
-          log.warning("incompatible features, disconnecting")
-          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
+        } else if (!featuresCompatibilityResult.areCompatible) {
+          log.warning(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")}), disconnecting")
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")})"))
           d.transport ! PoisonPill
           stay()
         } else {
