@@ -526,4 +526,13 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsg(Warning(channelId(bob), SpliceAttemptTimedOut(channelId(bob)).getMessage))
   }
 
+  test("receive SpliceInit when channel is not quiescent") { f =>
+    import f._
+    val spliceInit = SpliceInit(channelId(alice), 500_000.sat, FeeratePerKw(253.sat), 0, randomKey().publicKey)
+    alice ! spliceInit
+    // quiescence not negotiated
+    alice2bob.expectMsgType[TxAbort]
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.SpliceAborted)
+  }
+
 }

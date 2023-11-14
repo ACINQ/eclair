@@ -928,6 +928,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(_: QuiescenceTimeout, d: DATA_NORMAL) => handleQuiescenceTimeout(d)
 
+    case Event(_: SpliceInit, d: DATA_NORMAL) if d.spliceStatus == SpliceStatus.NoSplice && d.commitments.params.useQuiescence =>
+      log.info("rejecting splice attempt: quiescence not negotiated")
+      stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
+
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.NoSplice | SpliceStatus.NonInitiatorQuiescent =>
