@@ -878,6 +878,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         stay()
       }
 
+    case Event(_: Stfu, d: DATA_NORMAL) if d.localShutdown.isDefined =>
+      log.warning("our peer sent stfu but we sent shutdown first")
+      // We don't need to do anything, they should accept our shutdown.
+      stay()
+
     case Event(msg: Stfu, d: DATA_NORMAL) =>
       if (d.commitments.params.useQuiescence) {
         if (d.commitments.remoteIsQuiescent) {

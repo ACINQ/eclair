@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
@@ -278,12 +279,20 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
   test("recv Shutdown message before initiator receives stfu from remote") { f =>
     import f._
+    // Alice initiates quiescence.
     initiateQuiescence(f, sendInitialStfu = false)
-    val bobData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val forbiddenMsg = Shutdown(channelId(bob), bob.underlyingActor.getOrGenerateFinalScriptPubKey(bobData))
-    bob2alice.forward(alice, forbiddenMsg)
-    // handle Shutdown normally
-    alice2bob.expectMsgType[Shutdown]
+    val stfuAlice = Stfu(channelId(alice), initiator = true)
+    // But Bob is concurrently initiating a mutual close, which should "win".
+    bob ! CMD_CLOSE(ActorRef.noSender, None, None)
+    val shutdownBob = bob2alice.expectMsgType[Shutdown]
+    bob ! stfuAlice
+    bob2alice.expectNoMessage(100 millis)
+    alice ! shutdownBob
+    val shutdownAlice = alice2bob.expectMsgType[Shutdown]
+    awaitCond(alice.stateName == NEGOTIATING)
+    alice2bob.expectMsgType[ClosingSigned]
+    bob ! shutdownAlice
+    awaitCond(bob.stateName == NEGOTIATING)
   }
 
   test("recv (forbidden) Shutdown message while quiescent") { f =>
