@@ -100,12 +100,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), maxFundingFee_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeerate_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), maxFundingFee_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeerate_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
     assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
@@ -251,16 +251,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     // option_scid_alias is not compatible with public channels
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     assert(sender.expectMsgType[Status.Failure].cause.getMessage.contains("option_scid_alias is not compatible with public channels"))
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
   }
 

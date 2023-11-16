@@ -305,7 +305,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     }
   }
 
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw, maxFundingFee_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
 
     def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw): Future[MakeFundingTxResponse] = {
       import KotlinUtils._
@@ -321,6 +321,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         signed <- signPsbt(psbt, ourInputs, ourOutputs)
         extracted = signed.psbt.extract()
         _ = require(extracted.isRight, s"signing psbt failed with ${extracted.getLeft}")
+        _ = require(maxFundingFee_opt.forall(_ >= fees), s"funding fees $fees are higher than the maximum allowed ${maxFundingFee_opt.get}")
         actualFees = kmp2scala(signed.psbt.computeFees())
         _ = require(actualFees == fees, s"actual funding fees $actualFees do not match returned fees $fees: bitcoin core may be malicious")
         fundingTx = kmp2scala(extracted.getRight)

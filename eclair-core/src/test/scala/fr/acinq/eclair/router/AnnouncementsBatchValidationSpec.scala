@@ -93,7 +93,7 @@ object AnnouncementsBatchValidationSpec {
     val amount = 1000000 sat
     // first we publish the funding tx
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
-    val fundingTxFuture = bitcoinClient.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat))
+    val fundingTxFuture = bitcoinClient.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat), None)
     val res = Await.result(fundingTxFuture, 10 seconds)
     Await.result(bitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
