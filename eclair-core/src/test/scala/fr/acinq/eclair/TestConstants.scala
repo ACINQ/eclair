@@ -49,6 +49,7 @@ object TestConstants {
   val initiatorPushAmount: MilliSatoshi = 200_000_000L msat
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
+  val maxFundindFee = 100_000 sat
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 

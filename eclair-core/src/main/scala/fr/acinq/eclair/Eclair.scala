@@ -33,6 +33,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
+import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -208,6 +209,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], maxFundingFee_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
+    val maxFundingFee = maxFundingFee_opt.getOrElse{
+      val proportionalFee = getRelayFees(appKit.nodeParams, nodeId, announceChannel_opt.getOrElse(appKit.nodeParams.channelConf.channelFlags.announceChannel)).feeProportionalMillionths.toDouble / 1e6
+      fundingAmount * proportionalFee
+    }
     for {
       _ <- Future.successful(0)
       open = Peer.OpenChannel(
@@ -216,7 +221,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         channelType_opt = channelType_opt,
         pushAmount_opt = pushAmount_opt,
         fundingTxFeerate_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
-        maxFundingFee_opt = maxFundingFee_opt,
+        maxFundingFee = maxFundingFee,
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
         timeout_opt = Some(openTimeout))
       res <- (appKit.switchboard ? open).mapTo[OpenChannelResponse]

@@ -19,7 +19,7 @@ package fr.acinq.eclair.integration
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
@@ -180,7 +180,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       channelType_opt = None,
       pushAmount_opt = Some(pushMsat),
       fundingTxFeerate_opt = None,
-      maxFundingFee_opt = None,
+      maxFundingFee = 100000 sat,
       channelFlags_opt = None,
       timeout_opt = None))
     sender.expectMsgType[OpenChannelResponse.Created](10 seconds)

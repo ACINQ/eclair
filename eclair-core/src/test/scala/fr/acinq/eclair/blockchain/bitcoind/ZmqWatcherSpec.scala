@@ -173,7 +173,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchPublished(probe.ref, publishedTx.txid)
       probe.expectMsg(WatchPublishedTriggered(publishedTx))
 
-      bitcoinClient.makeFundingTx(Script.write(Script.pay2wpkh(randomKey().publicKey)), 150_000 sat, FeeratePerKw(2500 sat), None).pipeTo(probe.ref)
+      bitcoinClient.makeFundingTx(Script.write(Script.pay2wpkh(randomKey().publicKey)), 150_000 sat, FeeratePerKw(2500 sat), 100000 sat).pipeTo(probe.ref)
       val unpublishedTx = probe.expectMsgType[MakeFundingTxResponse].fundingTx
       watcher ! WatchPublished(probe.ref, unpublishedTx.txid)
       probe.expectNoMessage(100 millis)

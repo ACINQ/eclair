@@ -55,7 +55,7 @@ trait OnChainChannelFunder {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32]
 
   /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw, maxFundingFee_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw, maxFundingFee: Satoshi)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
   /**
    * Committing *must* include publishing the transaction on the network.
