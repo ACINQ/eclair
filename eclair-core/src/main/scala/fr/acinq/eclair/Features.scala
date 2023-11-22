@@ -195,7 +195,8 @@ object Features {
     ChannelRangeQueriesExtended,
     PaymentSecret,
     BasicMultiPartPayment,
-    Wumbo
+    Wumbo,
+    StaticRemoteKey
   )
 
   // Features may depend on other features, as specified in Bolt 9.
