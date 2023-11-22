@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, TxId}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, satoshiSigned, txIdAsHash, varint}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, txIdAsHash, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.codecs.discriminated
@@ -71,36 +71,6 @@ object TxSignaturesTlv {
 
   val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
     .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
-  )
-}
-
-sealed trait TxInitRbfTlv extends Tlv
-
-sealed trait TxAckRbfTlv extends Tlv
-
-object TxRbfTlv {
-  /**
-   * Amount that the peer will contribute to the transaction's shared output.
-   * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
-   */
-  case class SharedOutputContributionTlv(amount: Satoshi) extends TxInitRbfTlv with TxAckRbfTlv
-}
-
-object TxInitRbfTlv {
-
-  import TxRbfTlv._
-
-  val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
-    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
-  )
-}
-
-object TxAckRbfTlv {
-
-  import TxRbfTlv._
-
-  val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
-    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
   )
 }
 

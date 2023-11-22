@@ -33,6 +33,10 @@ sealed trait OpenDualFundedChannelTlv extends Tlv
 
 sealed trait AcceptDualFundedChannelTlv extends Tlv
 
+sealed trait TxInitRbfTlv extends Tlv
+
+sealed trait TxAckRbfTlv extends Tlv
+
 sealed trait SpliceInitTlv extends Tlv
 
 sealed trait SpliceAckTlv extends Tlv
@@ -56,7 +60,7 @@ object ChannelTlv {
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   ))
 
-  case class RequireConfirmedInputsTlv() extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with SpliceInitTlv with SpliceAckTlv
+  case class RequireConfirmedInputsTlv() extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with TxInitRbfTlv with TxAckRbfTlv with SpliceInitTlv with SpliceAckTlv
 
   val requireConfirmedInputsCodec: Codec[RequireConfirmedInputsTlv] = tlvField(provide(RequireConfirmedInputsTlv()))
 
@@ -96,6 +100,36 @@ object OpenDualFundedChannelTlv {
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
+  )
+}
+
+object TxRbfTlv {
+  /**
+   * Amount that the peer will contribute to the transaction's shared output.
+   * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
+   */
+  case class SharedOutputContributionTlv(amount: Satoshi) extends TxInitRbfTlv with TxAckRbfTlv
+}
+
+object TxInitRbfTlv {
+
+  import ChannelTlv._
+  import TxRbfTlv._
+
+  val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
+  )
+}
+
+object TxAckRbfTlv {
+
+  import ChannelTlv._
+  import TxRbfTlv._
+
+  val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
   )
 }
 
