@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -52,7 +52,7 @@ trait OnChainChannelFunder {
    * Publish a transaction on the bitcoin network.
    * This method must be idempotent: if the tx was already published, it must return a success.
    */
-  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32]
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId]
 
   /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
@@ -70,10 +70,10 @@ trait OnChainChannelFunder {
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /** Return the transaction if it exists, either in the blockchain or in the mempool. */
-  def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction]
+  def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction]
 
   /** Get the number of confirmations of a given transaction. */
-  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]]
+  def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]]
 
   /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
@@ -139,9 +139,9 @@ object OnChainWallet {
 
     /** Transaction with all available witnesses. */
     val partiallySignedTx: Transaction = {
-      var tx = psbt.getGlobal.getTx
-      for (i <- 0 until psbt.getInputs.size()) {
-        Option(psbt.getInputs.get(i).getScriptWitness).foreach { witness =>
+      var tx = psbt.global.tx
+      for (i <- 0 until psbt.inputs.size()) {
+        Option(psbt.inputs.get(i).getScriptWitness).foreach { witness =>
           tx = tx.updateWitness(i, witness)
         }
       }

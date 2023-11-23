@@ -4,6 +4,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
@@ -120,7 +121,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
 
   test("encode/decode rbf status") {
     val channelId = randomBytes32()
-    val fundingInput = InputInfo(OutPoint(randomBytes32(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
+    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
     val fundingTx = SharedTransaction(
       sharedInput_opt = None,
       sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat, 0 msat),
@@ -135,9 +136,9 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
       InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false)),
       fundingTxIndex = 0,
-      PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomBytes32(), Nil)),
+      PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomTxId(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomBytes32(), randomKey().publicKey)
+      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomTxId(), randomKey().publicKey)
     )
     val testCases = Map(
       RbfStatus.NoRbf -> RbfStatus.NoRbf,

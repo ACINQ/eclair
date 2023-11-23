@@ -61,14 +61,14 @@ object ZmqWatcher {
   private case class GetBlockCountFailed(t: Throwable) extends Command
   private case class CheckBlockHeight(current: BlockHeight) extends Command
   private case class PublishBlockHeight(current: BlockHeight) extends Command
-  private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
+  private case class ProcessNewBlock(blockId: BlockId) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
-  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: ByteVector32) extends Command
-  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: TimestampSecond)
+  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: TxId) extends Command
+  final case class GetTxWithMetaResponse(txid: TxId, tx_opt: Option[Transaction], lastBlockTimestamp: TimestampSecond)
 
   sealed trait UtxoStatus
   object UtxoStatus {
@@ -79,7 +79,7 @@ object ZmqWatcher {
   /** Watch for confirmation of a given transaction. */
   sealed trait WatchConfirmed[T <: WatchConfirmedTriggered] extends Watch[T] {
     /** TxId of the transaction to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Number of confirmations. */
     def minDepth: Long
   }
@@ -93,14 +93,14 @@ object ZmqWatcher {
    */
   sealed trait WatchSpent[T <: WatchSpentTriggered] extends Watch[T] {
     /** TxId of the outpoint to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
     /**
      * TxIds of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
      * This argument can safely be ignored by watcher implementations.
      */
-    def hints: Set[ByteVector32]
+    def hints: Set[TxId]
   }
 
   /**
@@ -112,7 +112,7 @@ object ZmqWatcher {
    */
   sealed trait WatchSpentBasic[T <: WatchSpentBasicTriggered] extends Watch[T] {
     /** TxId of the outpoint to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
   }
@@ -136,32 +136,32 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchSpentBasic]] condition is met. */
   sealed trait WatchSpentBasicTriggered extends WatchTriggered
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
   case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
 
-  case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchFundingSpentTriggered]
+  case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
-  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchOutputSpentTriggered]
+  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
   case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
   /** Waiting for a wallet transaction to be published guarantees that bitcoind won't double-spend it in the future, unless we explicitly call abandontransaction. */
-  case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: ByteVector32) extends Watch[WatchPublishedTriggered]
+  case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: TxId) extends Watch[WatchPublishedTriggered]
   case class WatchPublishedTriggered(tx: Transaction) extends WatchTriggered
 
-  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
+  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
+  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
   case class WatchFundingDeeplyBuriedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
+  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
   case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
+  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
   case class WatchParentTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
+  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
   case class WatchAlternativeCommitTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   private sealed trait AddWatchResult
@@ -171,7 +171,7 @@ object ZmqWatcher {
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
@@ -184,8 +184,8 @@ object ZmqWatcher {
 
   private def utxo(w: GenericWatch): Option[OutPoint] = {
     w match {
-      case w: WatchSpent[_] => Some(OutPoint(w.txId.reverse, w.outputIndex))
-      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case w: WatchSpent[_] => Some(OutPoint(w.txId, w.outputIndex))
+      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId, w.outputIndex))
       case _ => None
     }
   }

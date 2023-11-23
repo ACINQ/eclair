@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
@@ -65,7 +65,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode query_short_channel_ids (no optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
       TlvStream.empty)
 
@@ -76,7 +76,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode query_short_channel_ids (with optional data)") {
     val query_short_channel_id = QueryShortChannelIds(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
       TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte))))
 
@@ -87,7 +87,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode query_short_channel_ids (with optional data including unknown data)") {
     val query_short_channel_id = QueryShortChannelIds(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
       TlvStream(
         Set[QueryShortChannelIdsTlv](QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1.toByte, 2.toByte, 3.toByte, 4.toByte, 5.toByte))),
@@ -102,7 +102,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode reply_channel_range (no optional data)") {
     val replyChannelRange = ReplyChannelRange(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
@@ -115,7 +115,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode reply_channel_range (with optional timestamps)") {
     val replyChannelRange = ReplyChannelRange(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
@@ -129,7 +129,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("encode reply_channel_range (with optional timestamps, checksums, and unknown data)") {
     val replyChannelRange = ReplyChannelRange(
-      Block.RegtestGenesisBlock.blockId,
+      Block.RegtestGenesisBlock.hash,
       BlockHeight(1), 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(RealShortChannelId(142), RealShortChannelId(15465), RealShortChannelId(4564676))),
@@ -149,7 +149,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("compute checksums correctly") {
     val update = ChannelUpdate(
-      chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      chainHash = BlockHash(ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f")),
       signature = ByteVector64.fromValidHex("76df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c80293282"),
       shortChannelId = ShortChannelId.fromCoordinates("103x1x0").success.value,
       timestamp = TimestampSecond(1565587763L),
@@ -170,7 +170,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
 
   test("compute checksums correctly (cln test)") {
     val update = ChannelUpdate(
-      chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      chainHash = BlockHash(ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f")),
       signature = ByteVector64.fromValidHex("06737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c"),
       shortChannelId = ShortChannelId.fromCoordinates("109x1x0").success.value,
       timestamp = TimestampSecond(1565587765L),

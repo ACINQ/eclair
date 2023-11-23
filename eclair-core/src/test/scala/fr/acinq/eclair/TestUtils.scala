@@ -19,17 +19,17 @@ package fr.acinq.eclair
 import akka.actor.{ActorRef, ActorSystem}
 import akka.event.{DiagnosticLoggingAdapter, EventStream}
 import akka.testkit.{TestActor, TestProbe}
+import fr.acinq.bitcoin.scalacompat.TxId
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 import org.scalatest.concurrent.Eventually.eventually
-import org.scalatest.concurrent.PatienceConfiguration
 
 import java.io.File
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.util.UUID
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 
 object TestUtils {
 
@@ -109,5 +109,7 @@ object TestUtils {
   }
 
   def waitFor(duration: FiniteDuration): Unit = Thread.sleep(duration.toMillis)
+
+  def randomTxId(): TxId = TxId(randomBytes32())
 
 }

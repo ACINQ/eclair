@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
@@ -526,7 +526,7 @@ object Peer {
      * double-spend the funding transaction. Callers must wait for on-chain confirmations if they want guarantees that
      * the channel has been opened.
      */
-    case class Created(channelId: ByteVector32, fundingTxId: ByteVector32, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
+    case class Created(channelId: ByteVector32, fundingTxId: TxId, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
     case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
     case object Cancelled extends OpenChannelResponse { override def toString  = "channel creation cancelled" }
     case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }

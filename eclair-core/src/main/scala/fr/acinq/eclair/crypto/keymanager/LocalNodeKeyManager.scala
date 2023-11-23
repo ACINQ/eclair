@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.router.Announcements
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -27,7 +27,7 @@ object LocalNodeKeyManager {
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  def keyBasePath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
+  def keyBasePath(chainHash: BlockHash): List[Long] = (chainHash: @unchecked) match {
     case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
@@ -39,7 +39,7 @@ object LocalNodeKeyManager {
  *
  * @param seed seed from which the node key will be derived
  */
-class LocalNodeKeyManager(seed: ByteVector, chainHash: ByteVector32) extends NodeKeyManager with Logging {
+class LocalNodeKeyManager(seed: ByteVector, chainHash: BlockHash) extends NodeKeyManager with Logging {
   private val master = DeterministicWallet.generate(seed)
 
   override val nodeKey: ExtendedPrivateKey = DeterministicWallet.derivePrivateKey(master, LocalNodeKeyManager.keyBasePath(chainHash))

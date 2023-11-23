@@ -23,7 +23,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, computeBIP84Address}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, computeBIP84Address}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
@@ -70,7 +70,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
   }
 
   /** Wait for the given transaction to be either in the mempool or confirmed. */
-  def waitForTxBroadcastOrConfirmed(txid: ByteVector32, bitcoinClient: BitcoinCoreClient, sender: TestProbe): Unit = {
+  def waitForTxBroadcastOrConfirmed(txid: TxId, bitcoinClient: BitcoinCoreClient, sender: TestProbe): Unit = {
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
       val inMempool = sender.expectMsgType[Seq[Transaction]].exists(_.txid == txid)

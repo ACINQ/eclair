@@ -22,7 +22,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong, TxId}
 import fr.acinq.eclair.ApiTypes.{ChannelIdentifier, ChannelNotFound}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
@@ -235,7 +235,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
     ).map { case (ann, update) =>
-      update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
+      update.shortChannelId -> PublicChannel(ann, TxId(ByteVector32.Zeroes), 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
     }: _*)
 
     val eclair = new EclairImpl(kit)
@@ -361,8 +361,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val channel1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val channel2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val publicChannels = SortedMap(
-      channel1.shortChannelId -> PublicChannel(channel1, ByteVector32.Zeroes, 100_000 sat, None, None, None),
-      channel2.shortChannelId -> PublicChannel(channel2, ByteVector32.Zeroes, 150_000 sat, None, None, None),
+      channel1.shortChannelId -> PublicChannel(channel1, TxId(ByteVector32.Zeroes), 100_000 sat, None, None, None),
+      channel2.shortChannelId -> PublicChannel(channel2, TxId(ByteVector32.Zeroes), 150_000 sat, None, None, None),
     )
     val (channelId3, shortIds3) = (randomBytes32(), ShortIds(RealScidStatus.Unknown, Alias(13), None))
     val (channelId4, shortIds4) = (randomBytes32(), ShortIds(RealScidStatus.Final(RealShortChannelId(4)), Alias(14), None))

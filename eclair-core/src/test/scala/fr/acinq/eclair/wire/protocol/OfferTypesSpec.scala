@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
@@ -145,7 +145,7 @@ class OfferTypesSpec extends AnyFunSuite {
       assert(!otherChain.isValid)
     }
     {
-      val (chain1, chain2) = (randomBytes32(), randomBytes32())
+      val (chain1, chain2) = (BlockHash(randomBytes32()), BlockHash(randomBytes32()))
       val offer = Offer(TlvStream(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)

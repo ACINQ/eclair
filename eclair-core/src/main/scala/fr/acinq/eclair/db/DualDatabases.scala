@@ -2,7 +2,7 @@ package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, TxId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -11,7 +11,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.io.File
@@ -99,7 +99,7 @@ case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends Netwo
     primary.listNodes()
   }
 
-  override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
+  override def addChannel(c: ChannelAnnouncement, txid: TxId, capacity: Satoshi): Unit = {
     runAsync(secondary.addChannel(c, txid, capacity))
     primary.addChannel(c, txid, capacity)
   }

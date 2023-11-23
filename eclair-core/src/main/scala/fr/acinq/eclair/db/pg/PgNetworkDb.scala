@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.pg
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Crypto, Satoshi, TxId}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.NetworkDb
@@ -182,12 +182,12 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = withMetrics("network/add-channel", DbBackends.Postgres) {
+  override def addChannel(c: ChannelAnnouncement, txid: TxId, capacity: Satoshi): Unit = withMetrics("network/add-channel", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO network.public_channels (short_channel_id, txid, channel_announcement, capacity_sat, channel_announcement_json) VALUES (?, ?, ?, ?, ?::JSONB) ON CONFLICT DO NOTHING")) {
         statement =>
           statement.setLong(1, c.shortChannelId.toLong)
-          statement.setString(2, txid.toHex)
+          statement.setString(2, txid.value.toHex)
           statement.setBytes(3, channelAnnouncementCodec.encode(c).require.toByteArray)
           statement.setLong(4, capacity.toLong)
           statement.setString(5, serialization.write(c))
@@ -211,7 +211,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
   private def parseChannel(rs: ResultSet): PublicChannel = {
     val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
-    val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+    val txId = TxId.fromValidHex(rs.getString("txid"))
     val capacity = rs.getLong("capacity_sat")
     val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
     val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)

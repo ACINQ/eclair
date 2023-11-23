@@ -228,7 +228,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     )
 
     def toClosingTx(txOut: Seq[TxOut]): ClosingTx = {
-      ClosingTx(InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(1000 sat, Nil), Nil), Transaction(2, Nil, txOut, 0), None)
+      ClosingTx(InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000 sat, Nil), Nil), Transaction(2, Nil, txOut, 0), None)
     }
 
     assert(Closing.MutualClose.checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))

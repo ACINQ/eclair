@@ -653,10 +653,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 1 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx1.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx1.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
     alice2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(fundingTx2.txid, commitAlice1.txid, commitBob1.txid)))
     bob2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(fundingTx2.txid, commitAlice1.txid, commitBob1.txid)))
@@ -665,10 +665,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 2 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
     alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
     bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
@@ -689,9 +689,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
     bob2blockchain.expectNoMessage(100 millis)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
@@ -709,10 +709,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 2 confirms
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
     alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
     bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
@@ -737,10 +737,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 1 confirms on alice, splice 2 confirms on bob
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx1.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
     alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     bob2blockchain.expectWatchFundingSpent(fundingTx2.txid)
@@ -751,7 +751,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 2 confirms on bob, splice 1 confirms on alice
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxid == fundingTx2.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     bob2alice.expectNoMessage(100 millis)
@@ -1236,7 +1236,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice ! WatchPublishedTriggered(spliceTx)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == spliceTxId) // Bob doesn't receive Alice's splice_locked
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTxId) // Bob doesn't receive Alice's splice_locked
 
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f, interceptFundingDeeplyBuried = false)
@@ -1248,7 +1248,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     alice2bob.expectMsgType[TxSignatures]
     alice2bob.forward(bob)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == spliceTx.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
     alice2bob.forward(bob)
     bob2alice.expectNoMessage(100 millis)
     bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
@@ -1343,58 +1343,58 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // splice 1 confirms on alice's side
     watchConfirmed1a.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
     alice2blockchain.expectMsgType[WatchFundingSpent]
 
     disconnect(f)
     reconnect(f)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
 
     // splice 2 confirms on alice's side
     watchConfirmed2a.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
     alice2blockchain.expectMsgType[WatchFundingSpent]
 
     disconnect(f)
     reconnect(f)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
     // splice 1 confirms on bob's side
     watchConfirmed1b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchFundingSpent]
 
     disconnect(f)
     reconnect(f)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx1.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
     // splice 2 confirms on bob's side
     watchConfirmed2b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     bob2blockchain.expectMsgType[WatchFundingSpent]
 
     // NB: we disconnect *before* transmitting the splice_confirmed to alice
     disconnect(f)
     reconnect(f)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     // this time alice received the splice_confirmed for funding tx 2
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
@@ -1403,9 +1403,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     reconnect(f)
 
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxid == fundingTx2.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)

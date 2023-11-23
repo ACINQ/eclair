@@ -23,7 +23,8 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxOut, addressToPublicKeyScript}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utxo}
@@ -70,7 +71,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
     } yield txid
     f.pipeTo(probe.ref)
-    probe.expectMsgType[ByteVector32]
+    probe.expectMsgType[TxId]
   }
 
   private def createInput(channelId: ByteVector32, serialId: UInt64, amount: Satoshi): TxAddInput = {
@@ -105,7 +106,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
-      val inputInfo = InputInfo(OutPoint(randomBytes32(), 3), TxOut(amount, fundingPubkeyScript), Nil)
+      val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript), Nil)
       val fundingTxIndex = fundingParamsA.sharedInput_opt match {
         case Some(input: Multisig2of2Input) => input.fundingTxIndex + 1
         case _ => 0
@@ -1034,7 +1035,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         val Right(signedTx) = probe.expectMsgType[ProcessPsbtResponse].finalTx_opt
         assert(Transaction.write(signedTx).length >= 65_000)
         minerWallet.publishTransaction(signedTx).pipeTo(probe.ref)
-        probe.expectMsgType[ByteVector32]
+        probe.expectMsgType[TxId]
       }
       generateBlocks(1)
 
@@ -1805,7 +1806,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val probe = TestProbe()
       walletB.getP2wpkhPubkey().pipeTo(probe.ref)
       walletB.sendToPubkeyScript(Script.write(Script.pay2wpkh(probe.expectMsgType[PublicKey])), 75_000 sat, FeeratePerKw(FeeratePerByte(1.sat))).pipeTo(probe.ref)
-      probe.expectMsgType[ByteVector32]
+      probe.expectMsgType[TxId]
 
       alice ! Start(alice2bob.ref)
       bob ! Start(bob2alice.ref)
@@ -1841,7 +1842,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val probe = TestProbe()
       walletB.getReceiveAddress().pipeTo(probe.ref)
       walletB.sendToAddress(probe.expectMsgType[String], 75_000 sat, 1).pipeTo(probe.ref)
-      probe.expectMsgType[ByteVector32]
+      probe.expectMsgType[TxId]
 
       alice ! Start(alice2bob.ref)
       bob ! Start(bob2alice.ref)
@@ -2335,7 +2336,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
     // The input doesn't include the previous transaction but is not the shared input.
-    val nonSharedInput = TxAddInput(params.channelId, UInt64(0), OutPoint(randomBytes32(), 7), 0)
+    val nonSharedInput = TxAddInput(params.channelId, UInt64(0), OutPoint(randomTxId(), 7), 0)
     bob ! ReceiveMessage(nonSharedInput)
     assert(probe.expectMsgType[RemoteFailure].cause == PreviousTxMissing(params.channelId, UInt64(0)))
   }
@@ -2438,7 +2439,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       probe.expectMsg(txA1.txId)
 
       // we modify remote's input in previous txs, it won't be double spent
-      val fakeTxB2 = txB1.modify(_.tx.remoteInputs.at(0).outPoint.hash).setTo(randomBytes32())
+      val fakeTxB2 = txB1.modify(_.tx.remoteInputs.at(0).outPoint.hash).setTo(TxHash(randomBytes32()))
 
       val aliceRbf = fixtureParams.spawnTxBuilderRbfAlice(aliceParams.copy(targetFeerate = FeeratePerKw(10_000 sat)), commitmentA1, Seq(txA1), walletA)
       val bobRbf = fixtureParams.spawnTxBuilderRbfBob(bobParams.copy(targetFeerate = FeeratePerKw(10_000 sat)), commitmentB1, Seq(txB1, fakeTxB2), walletB)

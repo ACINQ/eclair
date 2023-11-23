@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
@@ -26,7 +26,7 @@ import scodec.{Attempt, Codec, Err}
 import scodec.codecs._
 
 object OfferCodecs {
-  private val offerChains: Codec[OfferChains] = tlvField(list(bytes32).xmap[Seq[ByteVector32]](_.toSeq, _.toList))
+  private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
 
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
@@ -91,7 +91,7 @@ object OfferCodecs {
 
   private val invoiceRequestMetadata: Codec[InvoiceRequestMetadata] = tlvField(bytes)
 
-  private val invoiceRequestChain: Codec[InvoiceRequestChain] = tlvField(bytes32)
+  private val invoiceRequestChain: Codec[InvoiceRequestChain] = tlvField(blockHash)
 
   private val invoiceRequestAmount: Codec[InvoiceRequestAmount] = tlvField(tmillisatoshi)
 

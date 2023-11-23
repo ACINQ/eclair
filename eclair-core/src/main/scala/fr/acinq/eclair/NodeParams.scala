@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelFlags
@@ -73,7 +73,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
-                      chainHash: ByteVector32,
+                      chainHash: BlockHash,
                       invoiceExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       peerConnectionConf: PeerConnection.Conf,
@@ -184,16 +184,16 @@ object NodeParams extends Logging {
     Seeds(nodeSeed, channelSeed)
   }
 
-  private val chain2Hash: Map[String, ByteVector32] = Map(
+  private val chain2Hash: Map[String, BlockHash] = Map(
     "regtest" -> Block.RegtestGenesisBlock.hash,
     "testnet" -> Block.TestnetGenesisBlock.hash,
     "signet" -> Block.SignetGenesisBlock.hash,
     "mainnet" -> Block.LivenetGenesisBlock.hash
   )
 
-  def hashFromChain(chain: String): ByteVector32 = chain2Hash.getOrElse(chain, throw new RuntimeException(s"invalid chain '$chain'"))
+  def hashFromChain(chain: String): BlockHash = chain2Hash.getOrElse(chain, throw new RuntimeException(s"invalid chain '$chain'"))
 
-  def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
+  def chainFromHash(chainHash: BlockHash): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def parseSocks5ProxyParams(config: Config): Option[Socks5ProxyParams] = {
     if (config.getBoolean("socks5.enabled")) {

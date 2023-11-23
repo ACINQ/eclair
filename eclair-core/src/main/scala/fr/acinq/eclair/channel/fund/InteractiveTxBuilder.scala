@@ -22,7 +22,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
@@ -308,13 +308,13 @@ object InteractiveTxBuilder {
 
   // @formatter:off
   sealed trait SignedSharedTransaction {
-    def txId: ByteVector32
+    def txId: TxId
     def tx: SharedTransaction
     def localSigs: TxSignatures
     def signedTx_opt: Option[Transaction]
   }
   case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction {
-    override val txId: ByteVector32 = tx.buildUnsignedTx().txid
+    override val txId: TxId = tx.buildUnsignedTx().txid
     override val signedTx_opt: Option[Transaction] = None
   }
   case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures, sharedSigs_opt: Option[ScriptWitness]) extends SignedSharedTransaction {
@@ -330,7 +330,7 @@ object InteractiveTxBuilder {
       val outputs = (Seq(sharedTxOut) ++ localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
       Transaction(2, inputs, outputs, lockTime)
     }
-    override val txId: ByteVector32 = signedTx.txid
+    override val txId: TxId = signedTx.txid
     override val signedTx_opt: Option[Transaction] = Some(signedTx)
     val feerate: FeeratePerKw = Transactions.fee2rate(tx.fees, signedTx.weight())
   }
@@ -746,7 +746,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       localHtlcs = purpose.localHtlcs,
       purpose.commitTxFeerate,
       fundingTxIndex = purpose.fundingTxIndex,
-      fundingTx.hash, fundingOutputIndex,
+      fundingTx.txid, fundingOutputIndex,
       remotePerCommitmentPoint = purpose.remotePerCommitmentPoint, remoteFundingPubKey = fundingParams.remoteFundingPubKey,
       localCommitmentIndex = purpose.localCommitIndex, remoteCommitmentIndex = purpose.remoteCommitIndex) match {
       case Left(cause) =>

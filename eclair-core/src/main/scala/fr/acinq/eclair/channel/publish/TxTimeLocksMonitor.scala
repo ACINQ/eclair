@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
@@ -47,7 +47,7 @@ object TxTimeLocksMonitor {
   case class CheckTx(replyTo: ActorRef[TimeLocksOk], tx: Transaction, desc: String) extends Command
   final case class WrappedCurrentBlockHeight(currentBlockHeight: BlockHeight) extends Command
   private case object CheckRelativeTimeLock extends Command
-  private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
+  private case class ParentTxConfirmed(parentTxId: TxId) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
@@ -112,7 +112,7 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
     }
   }
 
-  def waitForParentsToConfirm(parentTxIds: Set[ByteVector32]): Behavior[Command] = {
+  def waitForParentsToConfirm(parentTxIds: Set[TxId]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ParentTxConfirmed(parentTxId) =>
         log.debug("parent tx of {} has been confirmed (parent txid={})", cmd.desc, parentTxId)

@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.json.{ByteVector32KmpSerializer, ByteVector32Serializer}
+import fr.acinq.eclair.json._
 import org.json4s.JsonAST.JValue
 import org.json4s.jackson.{JacksonSerialization, Serialization}
 import org.json4s.{DefaultFormats, Formats}
@@ -34,7 +34,11 @@ import scala.util.{Failure, Success, Try}
 
 class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, override val wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
-  implicit val formats: Formats = DefaultFormats.withBigDecimal + ByteVector32Serializer + ByteVector32KmpSerializer
+  implicit val formats: Formats = DefaultFormats.withBigDecimal +
+    ByteVector32Serializer + ByteVector32KmpSerializer +
+    TxIdSerializer + TxIdKmpSerializer +
+    BlockHashSerializer + BlockHashKmpSerializer +
+    BlockIdSerializer + BlockIdKmpSerializer
 
   private val scheme = if (ssl) "https" else "http"
   private val serviceUri = wallet match {

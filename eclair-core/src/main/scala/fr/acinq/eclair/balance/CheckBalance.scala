@@ -1,7 +1,7 @@
 package fr.acinq.eclair.balance
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Satoshi, SatoshiLong, Script, TxId}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
@@ -51,11 +51,11 @@ object CheckBalance {
    * That's why we keep track of the id of each transaction that pays us any amount. It allows us to double check from
    * bitcoin core and remove any published transaction.
    */
-  case class PossiblyPublishedMainBalance(toLocal: Map[ByteVector32, Btc] = Map.empty) {
+  case class PossiblyPublishedMainBalance(toLocal: Map[TxId, Btc] = Map.empty) {
     val total: Btc = toLocal.values.map(_.toSatoshi).sum
   }
 
-  case class PossiblyPublishedMainAndHtlcBalance(toLocal: Map[ByteVector32, Btc] = Map.empty, htlcs: Map[ByteVector32, Btc] = Map.empty, htlcsUnpublished: Btc = 0.sat) {
+  case class PossiblyPublishedMainAndHtlcBalance(toLocal: Map[TxId, Btc] = Map.empty, htlcs: Map[TxId, Btc] = Map.empty, htlcsUnpublished: Btc = 0.sat) {
     val totalToLocal: Btc = toLocal.values.map(_.toSatoshi).sum
     val totalHtlcs: Btc = htlcs.values.map(_.toSatoshi).sum
     val total: Btc = totalToLocal + totalHtlcs + htlcsUnpublished
@@ -153,7 +153,7 @@ object CheckBalance {
       val finalScriptPubKey = Script.write(Script.pay2wpkh(c.params.localParams.walletStaticPaymentBasepoint.get))
       Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, finalScriptPubKey) match {
         case Right(outputIndex) => Map(remoteCommitPublished.commitTx.txid -> remoteCommitPublished.commitTx.txOut(outputIndex).amount.toBtc)
-        case _ => Map.empty[ByteVector32, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
+        case _ => Map.empty[TxId, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
       }
     } else {
       remoteCommitPublished.claimMainOutputTx.toSeq.map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
@@ -258,13 +258,13 @@ object CheckBalance {
    */
   def prunePublishedTransactions(br: OffChainBalance, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[OffChainBalance] = {
     for {
-      txs: Iterable[Option[(ByteVector32, Int)]] <- Future.sequence((br.closing.localCloseBalance.toLocal.keys ++
+      txs: Iterable[Option[(TxId, Int)]] <- Future.sequence((br.closing.localCloseBalance.toLocal.keys ++
         br.closing.localCloseBalance.htlcs.keys ++
         br.closing.remoteCloseBalance.toLocal.keys ++
         br.closing.remoteCloseBalance.htlcs.keys ++
         br.closing.mutualCloseBalance.toLocal.keys)
         .map(txid => bitcoinClient.getTxConfirmations(txid).map(_ map { confirmations => txid -> confirmations })))
-      txMap: Map[ByteVector32, Int] = txs.flatten.toMap
+      txMap: Map[TxId, Int] = txs.flatten.toMap
     } yield {
       br
         .modifyAll(

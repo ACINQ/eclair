@@ -8,7 +8,7 @@ import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -273,9 +273,9 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
    * Computes a deterministic [[RealShortChannelId]] based on a txid. We need this so that watchers can verify
    * transactions in a independent and stateless fashion, since there is no actual blockchain in those tests.
    */
-  def deterministicShortId(txId: ByteVector32): RealShortChannelId = {
-    val blockHeight = txId.take(3).toInt(signed = false)
-    val txIndex = txId.takeRight(2).toInt(signed = false)
+  def deterministicShortId(txId: TxId): RealShortChannelId = {
+    val blockHeight = txId.value.take(3).toInt(signed = false)
+    val txIndex = txId.value.takeRight(2).toInt(signed = false)
     val outputIndex = 0 // funding txs created by the dummy wallet used in tests only have one output
     RealShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
   }

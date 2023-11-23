@@ -20,15 +20,14 @@ import akka.Done
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, TxId}
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, ShortChannelId, getSimpleClassName}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, RealShortChannelId, getSimpleClassName}
 import kamon.Kamon
 import kamon.metric.Counter
 
@@ -265,7 +264,7 @@ object FrontRouter {
       case ChannelsDiscovered(channels) =>
         log.debug("adding {} channels", channels.size)
         val channels1 = channels.foldLeft(SortedMap.empty[RealShortChannelId, PublicChannel]) {
-          case (channels, sc) => channels + (sc.ann.shortChannelId -> PublicChannel(sc.ann, ByteVector32.Zeroes, sc.capacity, sc.u1_opt, sc.u2_opt, None))
+          case (channels, sc) => channels + (sc.ann.shortChannelId -> PublicChannel(sc.ann, TxId(ByteVector32.Zeroes), sc.capacity, sc.u1_opt, sc.u2_opt, None))
         }
         val d1 = d.copy(channels = d.channels ++ channels1)
         if (doRebroadcast) {

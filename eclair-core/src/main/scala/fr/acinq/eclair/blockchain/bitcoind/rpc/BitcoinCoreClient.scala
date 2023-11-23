@@ -64,15 +64,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
   //------------------------- TRANSACTIONS  -------------------------//
 
-  def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
+  def getTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txid).map(raw => Transaction.read(raw))
 
-  private def getRawTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[String] =
+  private def getRawTransaction(txid: TxId)(implicit ec: ExecutionContext): Future[String] =
     rpcClient.invoke("getrawtransaction", txid).collect {
       case JString(raw) => raw
     }
 
-  def getTransactionMeta(txid: ByteVector32)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
+  def getTransactionMeta(txid: TxId)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
       tx_opt <- getTransaction(txid).map(Some(_)).recover { case _ => None }
       blockchainInfo <- rpcClient.invoke("getblockchaininfo")
@@ -80,7 +80,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     } yield GetTxWithMetaResponse(txid, tx_opt, TimestampSecond(timestamp.toLong))
 
   /** Get the number of confirmations of a given transaction. */
-  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
+  def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] =
     rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the number of confirmations */)
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
@@ -88,9 +88,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       }
 
   /** Get the hash of the block containing a given transaction. */
-  private def getTxBlockHash(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[ByteVector32]] =
+  private def getTxBlockId(txid: TxId)(implicit ec: ExecutionContext): Future[Option[BlockId]] =
     rpcClient.invoke("getrawtransaction", txid, 1 /* verbose output is needed to get the block hash */)
-      .map(json => (json \ "blockhash").extractOpt[String].map(ByteVector32.fromValidHex))
+      .map(json => (json \ "blockhash").extractOpt[String].map(b => BlockId(ByteVector32.fromValidHex(b))))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None // Invalid or non-wallet transaction id (code: -5)
       }
@@ -99,13 +99,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * @return a Future[height, index] where height is the height of the block where this transaction was published, and
    *         index is the index of the transaction in that block.
    */
-  def getTransactionShortId(txid: ByteVector32)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] =
+  def getTransactionShortId(txid: TxId)(implicit ec: ExecutionContext): Future[(BlockHeight, Int)] =
     for {
-      Some(blockHash) <- getTxBlockHash(txid)
-      json <- rpcClient.invoke("getblock", blockHash)
+      Some(blockId) <- getTxBlockId(txid)
+      json <- rpcClient.invoke("getblock", blockId)
       JInt(height) = json \ "height"
       JArray(txs) = json \ "tx"
-      index = txs.indexOf(JString(txid.toHex))
+      index = txs.indexOf(JString(txid.value.toHex))
     } yield (BlockHeight(height.toInt), index)
 
   /**
@@ -115,7 +115,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * (not in the blockchain nor in the mempool) but could reappear later and be spendable at that point. If you want to
    * ensure that an output is not spendable anymore, you should use [[isTransactionOutputSpent]].
    */
-  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
       json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
     } yield json != JNull
@@ -124,7 +124,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * Return true if this output has already been spent by a confirmed transaction.
    * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
    */
-  private def isTransactionOutputSpent(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
+  private def isTransactionOutputSpent(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
     getTxConfirmations(txid).flatMap {
       case Some(confirmations) if confirmations > 0 =>
         // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
@@ -170,9 +170,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     } yield doubleSpent
 
   /** Search for mempool transaction spending a given output. */
-  def lookForMempoolSpendingTx(txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
+  def lookForMempoolSpendingTx(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
     rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(txid, outputIndex))).collect {
-      case JArray(results) => results.flatMap(result => (result \ "spendingtxid").extractOpt[String].map(ByteVector32.fromValidHex))
+      case JArray(results) => results.flatMap(result => (result \ "spendingtxid").extractOpt[String].map(TxId.fromValidHex))
     }.flatMap { spendingTxIds =>
       spendingTxIds.headOption match {
         case Some(spendingTxId) => getTransaction(spendingTxId)
@@ -186,31 +186,28 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * It isn't useful to look at the whole blockchain history: if the transaction was confirmed long ago, an attacker
    * will have already claimed all possible outputs and there's nothing we can do about it.
    *
-   * @param blockhash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
+   * @param blockHash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
    * @param txid          id of the transaction output that has been spent.
    * @param outputIndex   index of the transaction output that has been spent.
    * @param limit         maximum number of previous blocks to scan.
    * @return the transaction spending the given output.
    */
-  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    lookForSpendingTx(blockhash_opt.map(KotlinUtils.scala2kmp), KotlinUtils.scala2kmp(txid), outputIndex, limit)
-  }
-
-  def lookForSpendingTx(blockhash_opt: Option[fr.acinq.bitcoin.ByteVector32], txid: fr.acinq.bitcoin.ByteVector32, outputIndex: Int, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+  def lookForSpendingTx(blockHash_opt: Option[BlockHash], txid: TxId, outputIndex: Int, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
     for {
-      blockhash <- blockhash_opt match {
-        case Some(b) => Future.successful(b)
-        case None => rpcClient.invoke("getbestblockhash").collect { case JString(b) => ByteVector32.fromValidHex(b) }
+      blockId <- blockHash_opt match {
+        case Some(blockHash) => Future.successful(BlockId(blockHash))
+        // NB: bitcoind confusingly returns the blockId instead of the blockHash.
+        case None => rpcClient.invoke("getbestblockhash").collect { case JString(blockId) => BlockId(ByteVector32.fromValidHex(blockId)) }
       }
       // with a verbosity of 0, getblock returns the raw serialized block
-      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = block.header.hashPreviousBlock.reversed()
-      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+      block <- rpcClient.invoke("getblock", blockId, 0).collect { case JString(b) => Block.read(b) }
+      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == KotlinUtils.scala2kmp(txid) && i.outPoint.index == outputIndex)) match {
         case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
-        case None if limit > 0 => lookForSpendingTx(Some(prevblockhash), txid, outputIndex, limit - 1)
+        case None if limit > 0 => lookForSpendingTx(Some(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), txid, outputIndex, limit - 1)
         case None => Future.failed(new RuntimeException(s"couldn't find tx spending $txid:$outputIndex in the blockchain"))
       }
     } yield res
+  }
 
   def listTransactions(count: Int, skip: Int)(implicit ec: ExecutionContext): Future[List[WalletTx]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
     case JArray(txs) => txs.map(tx => {
@@ -222,14 +219,14 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         case _ => Satoshi(0)
       }
       val JInt(confirmations) = tx \ "confirmations"
-      // while transactions are still in the mempool, block hash will no be included
-      val blockHash = tx \ "blockhash" match {
-        case JString(blockHash) => ByteVector32.fromValidHex(blockHash)
-        case _ => ByteVector32.Zeroes
+      // while transactions are still in the mempool, blockId will not be included
+      val blockId_opt = tx \ "blockhash" match {
+        case JString(blockId) => Some(BlockId(ByteVector32.fromValidHex(blockId)))
+        case _ => None
       }
       val JString(txid) = tx \ "txid"
       val JInt(timestamp) = tx \ "time"
-      WalletTx(address, toSatoshi(amount), fee, blockHash, confirmations.toLong, ByteVector32.fromValidHex(txid), timestamp.toLong)
+      WalletTx(address, toSatoshi(amount), fee, blockId_opt, confirmations.toLong, TxId.fromValidHex(txid), timestamp.toLong)
     }).reverse
     case _ => Nil
   }
@@ -409,9 +406,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
   }
 
   /** Recursively fetch unconfirmed parents and return the complete unconfirmed ancestors tree. */
-  def getMempoolPackage(leaves: Set[ByteVector32])(implicit ec: ExecutionContext): Future[Map[ByteVector32, MempoolTx]] = getMempoolPackage(leaves, Map.empty)
+  def getMempoolPackage(leaves: Set[TxId])(implicit ec: ExecutionContext): Future[Map[TxId, MempoolTx]] = getMempoolPackage(leaves, Map.empty)
 
-  private def getMempoolPackage(leaves: Set[ByteVector32], current: Map[ByteVector32, MempoolTx])(implicit ec: ExecutionContext): Future[Map[ByteVector32, MempoolTx]] = {
+  private def getMempoolPackage(leaves: Set[TxId], current: Map[TxId, MempoolTx])(implicit ec: ExecutionContext): Future[Map[TxId, MempoolTx]] = {
     Future.sequence(leaves.map(txid => getMempoolTx(txid))).flatMap(txs => {
       val current2 = current.concat(txs.map(tx => tx.txid -> tx))
       val remainingParents = txs.flatMap(_.unconfirmedParents) -- current2.keySet
@@ -468,9 +465,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    *
    * @return the transaction id (txid)
    */
-  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32] =
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] =
     rpcClient.invoke("sendrawtransaction", tx.toString()).collect {
-      case JString(txid) => ByteVector32.fromValidHex(txid)
+      case JString(txid) => TxId.fromValidHex(txid)
     }.recoverWith {
       case JsonRPCError(Error(-27, _)) =>
         // "transaction already in block chain (code: -27)"
@@ -485,7 +482,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * This method can be used to replace "stuck" or evicted transactions.
    * It only works on transactions which are not included in a block and are not currently in the mempool.
    */
-  def abandonTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Boolean] = {
+  def abandonTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
 
@@ -495,7 +492,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       case JArray(locks) => locks.map(item => {
         val JString(txid) = item \ "txid"
         val JInt(vout) = item \ "vout"
-        OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
+        OutPoint(TxId.fromValidHex(txid), vout.toInt)
       }).toSet
     }
   }
@@ -544,9 +541,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       // and that the address and public key match
       onChainKeyManager_opt match {
         case Some(keyManager) =>
-          // TODO: bitcoin-kmp doesn't accept 'h' for hardened indexes, we should fix this.
-          val keyPath1 = keyPath.replace('h', '\'')
-          val computed = keyManager.derivePublicKey(DeterministicWallet.KeyPath(keyPath1))
+          val computed = keyManager.derivePublicKey(DeterministicWallet.KeyPath(keyPath))
           if (computed != (extracted, address)) return Future.failed(new RuntimeException("cannot recompute pubkey generated by bitcoin core"))
         case None => ()
       }
@@ -583,7 +578,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * @param feeratePerKw fee rate
    * @return the txid of the sending tx.
    */
-  def sendToPubkeyScript(pubkeyScript: ByteVector, amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+  def sendToPubkeyScript(pubkeyScript: ByteVector, amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[TxId] = {
     import KotlinUtils._
 
     val theirOutput = TxOut(amount, pubkeyScript)
@@ -603,10 +598,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     } yield txid
   }
 
-  def sendToPubkeyScript(pubkeyScript: Seq[ScriptElt], amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[ByteVector32] = sendToPubkeyScript(Script.write(pubkeyScript), amount, feeratePerKw)
+  def sendToPubkeyScript(pubkeyScript: Seq[ScriptElt], amount: Satoshi, feeratePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[TxId] = sendToPubkeyScript(Script.write(pubkeyScript), amount, feeratePerKw)
 
   /** Calls Bitcoin Core's sendtoaddress RPC call directly. Will fail if wallet is using an external signer. */
-  def sendToAddress(address: String, amount: Satoshi, confirmationTarget: Long)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+  def sendToAddress(address: String, amount: Satoshi, confirmationTarget: Long)(implicit ec: ExecutionContext): Future[TxId] = {
     rpcClient.invoke(
       "sendtoaddress",
       address,
@@ -616,7 +611,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       false, // subtractfeefromamount
       true, // replaceable
       confirmationTarget).collect {
-      case JString(txid) => ByteVector32.fromValidHex(txid)
+      case JString(txid) => TxId.fromValidHex(txid)
     }
   }
 
@@ -624,12 +619,12 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
-      txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]].map(ByteVector32.fromValidHex))
+      txids <- rpcClient.invoke("getrawmempool").map(json => json.extract[List[String]].map(TxId.fromValidHex))
       // NB: if a transaction is evicted before we've called getTransaction, we need to ignore it instead of failing.
       txs <- Future.sequence(txids.map(getTransaction(_).map(Some(_)).recover { case _ => None }))
     } yield txs.flatten
 
-  def getMempoolTx(txid: ByteVector32)(implicit ec: ExecutionContext): Future[MempoolTx] = {
+  def getMempoolTx(txid: TxId)(implicit ec: ExecutionContext): Future[MempoolTx] = {
     rpcClient.invoke("getmempoolentry", txid).map(json => {
       val JInt(vsize) = json \ "vsize"
       val JInt(weight) = json \ "weight"
@@ -639,7 +634,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       val JDecimal(ancestorFees) = json \ "fees" \ "ancestor"
       val JDecimal(descendantFees) = json \ "fees" \ "descendant"
       val JBool(replaceable) = json \ "bip125-replaceable"
-      val unconfirmedParents = (json \ "depends").extract[List[String]].map(ByteVector32.fromValidHex).toSet
+      val unconfirmedParents = (json \ "depends").extract[List[String]].map(TxId.fromValidHex).toSet
       // NB: bitcoind counts the transaction itself as its own ancestor and descendant, which is confusing: we fix that by decrementing these counters.
       MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees), unconfirmedParents)
     })
@@ -662,11 +657,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
     for {
-      blockHash <- rpcClient.invoke("getblockhash", blockHeight.toInt).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
-      txid: ByteVector32 <- rpcClient.invoke("getblock", blockHash).map(json => Try {
+      blockId <- rpcClient.invoke("getblockhash", blockHeight.toInt).map(_.extractOpt[String].map(b => BlockId(ByteVector32.fromValidHex(b))).getOrElse(BlockId(ByteVector32.Zeroes)))
+      txid <- rpcClient.invoke("getblock", blockId).map(json => Try {
         val JArray(txs) = json \ "tx"
-        ByteVector32.fromValidHex(txs(txIndex).extract[String])
-      }.getOrElse(ByteVector32.Zeroes))
+        TxId.fromValidHex(txs(txIndex).extract[String])
+      }.getOrElse(TxId(ByteVector32.Zeroes)))
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
       fundingTxStatus <- if (unspent) {
@@ -690,7 +685,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         case JString(label) => Some(label)
         case _ => None
       }
-      Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+      Utxo(TxId.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
     })
   }
 
@@ -705,7 +700,7 @@ object BitcoinCoreClient {
   case class InputWeight(txid: String, vout: Long, weight: Long)
 
   object InputWeight {
-    def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.toHex, outPoint.index, weight)
+    def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.value.toHex, outPoint.index, weight)
   }
 
   case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
@@ -744,14 +739,14 @@ object BitcoinCoreClient {
    * @param descendantFees     transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
    * @param unconfirmedParents unconfirmed transactions used as inputs for this transaction.
    */
-  case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi, unconfirmedParents: Set[ByteVector32])
+  case class MempoolTx(txid: TxId, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi, unconfirmedParents: Set[TxId])
 
-  case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
+  case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockId_opt: Option[BlockId], confirmations: Long, txid: TxId, timestamp: Long)
 
   /** Outpoint used as RPC argument. */
-  case class OutpointArg(txid: ByteVector32, vout: Long)
+  case class OutpointArg(txid: TxId, vout: Long)
 
-  case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
+  case class Utxo(txid: TxId, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
