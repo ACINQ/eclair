@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.pattern.after
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -164,9 +164,9 @@ object ExplorerApi {
             val JString(time) = block \ "time"
             val JInt(bits) = block \ "bits"
             val JInt(nonce) = block \ "nonce"
-            val previousBlockHash = (block \ "prev_block").extractOpt[String].map(h => BlockHash(ByteVector32.fromValidHex(h))).getOrElse(BlockHash(ByteVector32.Zeroes))
+            val previousBlockId = (block \ "prev_block").extractOpt[String].map(h => BlockId(ByteVector32.fromValidHex(h))).getOrElse(BlockId(ByteVector32.Zeroes))
             val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-            val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
+            val header = new BlockHeader(version.toLong, BlockHash(previousBlockId), merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
             Seq(BlockHeaderAt(BlockHeight(height.toLong), header))
         })
     } yield header
@@ -193,9 +193,9 @@ object ExplorerApi {
             val JInt(time) = block \ "timestamp"
             val JInt(bits) = block \ "bits"
             val JInt(nonce) = block \ "nonce"
-            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(h => BlockHash(ByteVector32.fromValidHex(h))).getOrElse(BlockHash(ByteVector32.Zeroes))
+            val previousBlockId = (block \ "previousblockhash").extractOpt[String].map(h => BlockId(ByteVector32.fromValidHex(h))).getOrElse(BlockId(ByteVector32.Zeroes))
             val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-            val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
+            val header = new BlockHeader(version.toLong, BlockHash(previousBlockId), merkleRoot, time.toLong, bits.toLong, nonce.toLong)
             BlockHeaderAt(BlockHeight(height.toLong), header)
           }))
           .map(headers => LatestHeaders(currentBlockHeight, headers.filter(_.blockHeight >= currentBlockHeight).toSet, name))

@@ -44,7 +44,8 @@ package object eclair {
 
   def toLongId(fundingTxId: TxId, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than 0xFFFF")
-    val channelId = ByteVector32(fundingTxId.value.reverse.take(30) :+ (fundingTxId.value(1) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxId.value(0) ^ fundingOutputIndex).toByte)
+    val fundingTxHash = TxHash(fundingTxId).value
+    val channelId = ByteVector32(fundingTxHash.take(30) :+ (fundingTxHash(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash(31) ^ fundingOutputIndex).toByte)
     channelId
   }
 

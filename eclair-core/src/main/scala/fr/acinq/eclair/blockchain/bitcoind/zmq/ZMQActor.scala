@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 import akka.Done
 import akka.actor.{Actor, ActorLogging}
-import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{BlockId, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
