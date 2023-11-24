@@ -22,7 +22,6 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -87,7 +86,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
       awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
+      val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.signedTx_opt.get
       if (test.tags.contains(ChannelStateTestsTags.ZeroConf)) {
         assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
         assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)

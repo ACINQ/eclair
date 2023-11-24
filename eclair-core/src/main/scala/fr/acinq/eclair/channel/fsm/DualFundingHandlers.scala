@@ -43,14 +43,14 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   this: Channel =>
 
   def publishFundingTx(dualFundedTx: DualFundedUnconfirmedFundingTx): Unit = {
-    dualFundedTx.sharedTx match {
-      case _: PartiallySignedSharedTransaction =>
+    dualFundedTx.signedTx_opt match {
+      case None =>
         log.info("we haven't received remote funding signatures yet: we cannot publish the funding transaction but our peer should publish it")
-      case fundingTx: FullySignedSharedTransaction =>
+      case Some(signedTx) =>
         // Note that we don't use wallet.commit because we don't want to rollback on failure, since our peer may be able
         // to publish and we may be able to RBF.
-        wallet.publishTransaction(fundingTx.signedTx).onComplete {
-          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees.truncateToSatoshi, "funding"))
+        wallet.publishTransaction(signedTx).onComplete {
+          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, signedTx, dualFundedTx.sharedTx.tx.localFees.truncateToSatoshi, "funding"))
           case Failure(t) => log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
         }
     }

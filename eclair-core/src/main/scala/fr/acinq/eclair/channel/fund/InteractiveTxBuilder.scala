@@ -311,14 +311,15 @@ object InteractiveTxBuilder {
     def txId: TxId
     def tx: SharedTransaction
     def localSigs: TxSignatures
-    def signedTx_opt: Option[Transaction]
+    def signedTx_opt(fundingParams: InteractiveTxParams): Option[Transaction]
   }
   case class PartiallySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures) extends SignedSharedTransaction {
     override val txId: TxId = tx.buildUnsignedTx().txid
-    override val signedTx_opt: Option[Transaction] = None
+    override def signedTx_opt(fundingParams: InteractiveTxParams): Option[Transaction] = None
   }
   case class FullySignedSharedTransaction(tx: SharedTransaction, localSigs: TxSignatures, remoteSigs: TxSignatures, sharedSigs_opt: Option[ScriptWitness]) extends SignedSharedTransaction {
-    val signedTx: Transaction = {
+    override val txId: TxId = localSigs.txId
+    override def signedTx_opt(fundingParams: InteractiveTxParams): Option[Transaction] = {
       import tx._
       val sharedTxIn = sharedInput_opt.map(i => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence, sharedSigs_opt.getOrElse(ScriptWitness.empty)))).toSeq
       val localTxIn = localInputs.sortBy(_.serialId).zip(localSigs.witnesses).map { case (i, w) => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence, w)) }
@@ -328,11 +329,8 @@ object InteractiveTxBuilder {
       val localTxOut = localOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
       val remoteTxOut = remoteOutputs.map(o => (o.serialId, TxOut(o.amount, o.pubkeyScript)))
       val outputs = (Seq(sharedTxOut) ++ localTxOut ++ remoteTxOut).sortBy(_._1).map(_._2)
-      Transaction(2, inputs, outputs, lockTime)
+      Some(Transaction(2, inputs, outputs, lockTime))
     }
-    override val txId: TxId = signedTx.txid
-    override val signedTx_opt: Option[Transaction] = Some(signedTx)
-    val feerate: FeeratePerKw = Transactions.fee2rate(tx.fees, signedTx.weight())
   }
   // @formatter:on
 
@@ -917,26 +915,33 @@ object InteractiveTxSigningSession {
         }
       case None => None
     }
-    val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
-    if (remoteSigs.txId != txWithSigs.signedTx.txid) {
-      log.info("invalid tx_signatures: txId mismatch (expected={}, got={})", txWithSigs.signedTx.txid, remoteSigs.txId)
+    if (remoteSigs.txId != partiallySignedTx.txId) {
+      log.info("invalid tx_signatures: txId mismatch (expected={}, got={})", partiallySignedTx.txId, remoteSigs.txId)
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
-    // We allow a 5% error margin since witness size prediction could be inaccurate.
-    if (fundingParams.localContribution != 0.sat && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
-      return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
-    }
-    val previousOutputs = {
-      val sharedOutput = fundingParams.sharedInput_opt.map(sharedInput => sharedInput.info.outPoint -> sharedInput.info.txOut).toMap
-      val localOutputs = txWithSigs.tx.localInputs.map(i => i.outPoint -> i.previousTx.txOut(i.previousTxOutput.toInt)).toMap
-      val remoteOutputs = txWithSigs.tx.remoteInputs.map(i => i.outPoint -> i.txOut).toMap
-      sharedOutput ++ localOutputs ++ remoteOutputs
-    }
-    Try(Transaction.correctlySpends(txWithSigs.signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-      case Failure(f) =>
-        log.info("invalid tx_signatures: {}", f.getMessage)
+    val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
+    txWithSigs.signedTx_opt(fundingParams) match {
+      case Some(signedTx) =>
+        val feerate = Transactions.fee2rate(txWithSigs.tx.fees, signedTx.weight())
+        // We allow a 5% error margin since witness size prediction could be inaccurate.
+        if (fundingParams.localContribution != 0.sat && feerate < fundingParams.targetFeerate * 0.95) {
+          return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, feerate))
+        }
+        val previousOutputs = {
+          val sharedOutput = fundingParams.sharedInput_opt.map(sharedInput => sharedInput.info.outPoint -> sharedInput.info.txOut).toMap
+          val localOutputs = txWithSigs.tx.localInputs.map(i => i.outPoint -> i.previousTx.txOut(i.previousTxOutput.toInt)).toMap
+          val remoteOutputs = txWithSigs.tx.remoteInputs.map(i => i.outPoint -> i.txOut).toMap
+          sharedOutput ++ localOutputs ++ remoteOutputs
+        }
+        Try(Transaction.correctlySpends(signedTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+          case Failure(f) =>
+            log.info("invalid tx_signatures: {}", f.getMessage)
+            Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+          case Success(_) => Right(txWithSigs)
+        }
+      case None =>
+        log.info("invalid tx_signatures: couldn't create signed transaction")
         Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
-      case Success(_) => Right(txWithSigs)
     }
   }
 

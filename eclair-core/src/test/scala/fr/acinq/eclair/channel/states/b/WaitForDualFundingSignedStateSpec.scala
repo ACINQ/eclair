@@ -123,7 +123,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
+    assert(aliceData.latestFundingTx.signedTx_opt.map(_.txid).contains(fundingTxId))
   }
 
   test("complete interactive-tx protocol (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -156,7 +156,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
-    assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
+    assert(aliceData.latestFundingTx.signedTx_opt.map(_.txid).contains(fundingTxId))
   }
 
   test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>

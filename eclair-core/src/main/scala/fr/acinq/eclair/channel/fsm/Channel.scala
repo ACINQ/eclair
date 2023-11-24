@@ -1097,7 +1097,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val dfu1 = dfu.copy(sharedTx = fundingTx)
               d.commitments.updateLocalFundingStatus(msg.txId, dfu1) match {
                 case Right((commitments1, _)) =>
-                  log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+                  log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.txId)
                   Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
                   stay() using d.copy(commitments = commitments1) storing() calling publishFundingTx(dfu1)
                 case Left(_) =>

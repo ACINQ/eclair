@@ -455,7 +455,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             // so we cannot close the channel yet.
             stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
           case Right(fundingTx) =>
-            log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+            log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.txId)
             val dfu1 = d.latestFundingTx.copy(sharedTx = fundingTx)
             val d1 = d.modify(_.commitments.active.at(0).localFundingStatus).setTo(dfu1)
             stay() using d1 storing() calling publishFundingTx(dfu1)

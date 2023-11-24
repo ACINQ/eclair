@@ -432,7 +432,7 @@ object LocalFundingStatus {
     override val localSigs_opt: Option[TxSignatures] = None
   }
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx with NotLocked {
-    override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+    override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt(fundingParams)
     override val localSigs_opt: Option[TxSignatures] = Some(sharedTx.localSigs)
   }
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures]) extends UnconfirmedFundingTx with Locked {
