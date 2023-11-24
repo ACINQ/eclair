@@ -446,24 +446,21 @@ object RouteCalculation {
         // this route doesn't have enough capacity left: we remove it and continue.
         split(amount, paths, usedCapacity, routeParams, selectedRoutes)
       } else {
-        val route = if (routeParams.randomize) {
-          // randomly choose the amount to be between 20% and 100% of the available capacity.
-          val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
-          if (randomizedAmount < routeParams.mpp.minPartAmount) {
-            candidate.copy(amount = routeParams.mpp.minPartAmount.min(amount))
-          } else {
-            candidate.copy(amount = randomizedAmount.min(amount))
-          }
-        } else {
-          candidate.copy(amount = candidate.amount.min(amount))
-        }
+        val route = candidate.copy(amount = (1 to 100).map(candidate.amount*_/100).foreach(i => (expectedValue(candidate, i, usedCapacity), i)).maxBy(_._1)._2.min(amount)
         updateUsedCapacity(route, usedCapacity)
         // NB: we re-enqueue the current path, it may still have capacity for a second HTLC.
         split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams, route +: selectedRoutes)
       }
     }
   }
-
+  private def expectedValue(route: Route, Integer testAmount, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Float{
+    route.path.drop(1).foldLeft(testAmount){ case (ev,edge) =>
+      val inflight = usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
+      val cap = edge.desc.capacity
+      (cap + 1.0 - inflight - testAmount) / (cap + 1 - inflight) * ev
+    }
+  }
+                                   
   /** Compute the maximum amount that we can send through the given route. */
   private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
     val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
