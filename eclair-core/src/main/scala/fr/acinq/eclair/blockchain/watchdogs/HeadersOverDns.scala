@@ -28,7 +28,7 @@ import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.BlockHeaderAt
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import org.slf4j.Logger
-import scodec.bits.BitVector
+import scodec.bits.ByteVector
 
 /**
  * Created by t-bast on 29/09/2020.
@@ -57,7 +57,7 @@ object HeadersOverDns {
           case Block.LivenetGenesisBlock.hash =>
             // We try to get the next 10 blocks; if we're late by more than 10 blocks, this is bad, no need to even look further.
             (currentBlockHeight.toLong until currentBlockHeight.toLong + 10).foreach(blockHeight => {
-              val hostname = s"$blockHeight.${blockHeight / 10000}.bitcoinheaders.net"
+              val hostname = s"v2.$blockHeight.${blockHeight / 10_000}.bitcoinheaders.net"
               IO(Dns)(context.system.classicSystem).tell(DnsProtocol.resolve(hostname, DnsProtocol.Ip(ipv4 = false, ipv6 = true)), dnsAdapters)
             })
             collect(replyTo, currentBlockHeight, Set.empty, 10)
@@ -75,7 +75,7 @@ object HeadersOverDns {
       Behaviors.receiveMessage {
         case WrappedDnsResolved(response) =>
           val blockHeader_opt = for {
-            blockHeight <- parseBlockCount(response)(context.log)
+            blockHeight <- parseBlockHeight(response)(context.log)
             blockHeader <- parseBlockHeader(response)(context.log)
           } yield BlockHeaderAt(blockHeight, blockHeader)
           val received1 = blockHeader_opt match {
@@ -103,42 +103,48 @@ object HeadersOverDns {
       collect(replyTo, currentBlockHeight, received, remaining)
   }
 
-  private def parseBlockCount(response: DnsProtocol.Resolved)(implicit log: Logger): Option[BlockHeight] = {
-    response.name.split('.').headOption match {
-      case Some(blockHeight) => blockHeight.toLongOption.map(l => BlockHeight(l))
-      case None =>
-        log.error("bitcoinheaders.net response did not contain block count: {}", response)
-        None
+  private def parseBlockHeight(response: DnsProtocol.Resolved)(implicit log: Logger): Option[BlockHeight] = {
+    // v2.height.(height / 10000).bitcoinheaders.net
+    val parts = response.name.split('.')
+    if (parts.length < 2) {
+      log.error("bitcoinheaders.net response did not contain block height: {}", response)
+      None
+    } else {
+      parts(1).toLongOption.map(l => BlockHeight(l))
     }
   }
 
   private def parseBlockHeader(response: DnsProtocol.Resolved)(implicit log: Logger): Option[BlockHeader] = {
     val addresses = response.records.collect { case record: AAAARecord => record.ip.getAddress }
     if (addresses.nonEmpty) {
-      val countOk = addresses.length == 6
-      // addresses must be prefixed with 0x2001
-      val prefixOk = addresses.forall(_.startsWith(Array(0x20.toByte, 0x01.toByte)))
-      // the first nibble after the prefix encodes the order since nameservers often reorder responses
-      val orderOk = addresses.map(a => a(2) & 0xf0).toSet == Set(0x00, 0x10, 0x20, 0x30, 0x40, 0x50)
-      if (countOk && prefixOk && orderOk) {
-        val header = addresses.sortBy(a => a(2)).foldLeft(BitVector.empty) {
-          case (current, address) =>
-            // The first address contains an additional 0x00 prefix
-            val toDrop = if (current.isEmpty) 28 else 20
-            current ++ BitVector(address).drop(toDrop)
-        }.bytes
-        header.length match {
-          case 80 => Some(BlockHeader.read(header.toArray))
-          case _ =>
-            log.error("bitcoinheaders.net response did not contain block header (invalid length): {}", response)
-            None
-        }
-      } else {
-        log.error("invalid response from bitcoinheaders.net: {}", response)
+      // From https://bitcoinheaders.net/:
+      // All headers are encoded with an arbitrary one byte prefix (which you must ignore, as it may change in the
+      // future), followed by a 0-indexed order byte (as nameservers often reorder responses). Entries are then prefixed
+      // by a single version byte (currently version 1) and placed into the remaining bytes of the IPv6 addresses.
+      // For example with the genesis block:
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2603:7b12:b27a:c72c:3e67:768f:617f:c81b
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2600:101::
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2601::
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2602::3b:a3ed:fd7a
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2605:ab5f:49ff:ff00:1d1d:ac2b:7c00:0
+      // v2.0.0.bitcoinheaders.net. 604800 IN	AAAA	2604:c388:8a51:323a:9fb8:aa4b:1e5e:4a29
+      // Which decodes to 0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c.
+      val data = addresses
+        .filter(_.length >= 2)
+        .map(_.tail) // the first byte is a prefix that we must ignore
+        .sortBy(_.head) // the second byte is a 0-indexed order byte
+        .flatMap(_.tail) // the remaining bytes contain the header chunks
+      if (data.length < 81) {
+        log.error("bitcoinheaders.net response did not contain a 1-byte version followed by a block header: {}", ByteVector(data).toHex)
         None
+      } else if (data.head != 0x01) {
+        log.error("bitcoinheaders.net response is not using version 1: version={}", data.head)
+        None
+      } else {
+        Some(BlockHeader.read(data.tail.take(80).toArray))
       }
     } else {
-      // Instead of not resolving the DNS request when block height is unknown, bitcoinheaders sometimes returns an empty response.
+      // When the block height is unknown, bitcoinheaders returns an empty response.
       None
     }
   }
