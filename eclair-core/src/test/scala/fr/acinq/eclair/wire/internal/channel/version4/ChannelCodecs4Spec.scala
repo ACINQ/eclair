@@ -1,22 +1,24 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
-import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
-import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs.{channelConfigCodec, localParamsCodec, rbfStatusCodec, remoteParamsCodec}
+import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.channelDataCodec
 import fr.acinq.eclair.wire.protocol.TxSignatures
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -154,4 +156,34 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     }
   }
 
+  test("decode unconfirmed dual funded") {
+    // data encoded with the previous version of eclair, when Shared.Input did not include a pubkey script
+    val raw = ByteVector.fromValidHex("0x020001ff02000000000000002a2400000000000000000000000000000000000000000000000000000000000000000000000000003039000000000000006400000000000000c8000000000000012c02000000000000002b04deadbeef000000000000006400000000000000c8000000000000012c00000000000000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e80000000000000000000000000000000000000000000000000000000000000000ff000000000000006400000000000000c8ff0001240000000000000000000000000000000000000000000000000000000000000000000000002be803000000000000220020eb72e573a9513d982a01f0e6a6b53e92764db81a0c26d2be94c5fc5b69a0db7d475221024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076621031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f52ae00000000024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f000000000000000000000000014a000002ee0000")
+    val decoded = fundingTxStatusCodec.decode(raw.bits).require.value.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]
+
+    // check that our codec will set the pubkeyscript using the one from the funding params
+    val channelId = ByteVector32.Zeroes
+    val script = Scripts.multiSig2of2(PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey, PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey)
+    val dualFundedUnconfirmedFundingTx = DualFundedUnconfirmedFundingTx(
+      PartiallySignedSharedTransaction(
+        SharedTransaction(
+          // we include the correct pubkey script here
+          Some(InteractiveTxBuilder.Input.Shared(UInt64(42), OutPoint(TxId(ByteVector32.Zeroes), 0), Script.write(Script.pay2wsh(script)), 12345L, MilliSatoshi(100), MilliSatoshi(200), MilliSatoshi(300))),
+          sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(43), ByteVector.fromValidHex("deadbeef"), MilliSatoshi(100), MilliSatoshi(200), MilliSatoshi(300)),
+          localInputs = Nil, remoteInputs = Nil, localOutputs = Nil, remoteOutputs = Nil, lockTime = 0
+        ),
+        localSigs = TxSignatures(channelId, TxId(ByteVector32.Zeroes), Nil)
+      ),
+      createdAt = BlockHeight(1000),
+      fundingParams = InteractiveTxParams(channelId = channelId, isInitiator = true, localContribution = 100.sat, remoteContribution = 200.sat,
+        sharedInput_opt = Some(InteractiveTxBuilder.Multisig2of2Input(
+          InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, Script.pay2wsh(script)), script),
+          0,
+          PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey
+        )),
+        remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
+        localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(false, false))
+    )
+    assert(decoded == dualFundedUnconfirmedFundingTx)
+  }
 }

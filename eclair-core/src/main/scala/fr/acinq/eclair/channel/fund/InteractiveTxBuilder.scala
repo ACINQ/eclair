@@ -216,11 +216,13 @@ object InteractiveTxBuilder {
     def serialId: UInt64
     def outPoint: OutPoint
     def sequence: Long
+    def txOut: TxOut
   }
   object Input {
     /** A local-only input that funds the interactive transaction. */
     case class Local(serialId: UInt64, previousTx: Transaction, previousTxOutput: Long, sequence: Long) extends Input with Outgoing {
       override val outPoint: OutPoint = OutPoint(previousTx, previousTxOutput.toInt)
+      override def txOut: TxOut = previousTx.txOut(previousTxOutput.toInt)
     }
 
     /**
@@ -230,7 +232,9 @@ object InteractiveTxBuilder {
     case class Remote(serialId: UInt64, outPoint: OutPoint, txOut: TxOut, sequence: Long) extends Input with Incoming
 
     /** The shared input can be added by us or by our peer, depending on who initiated the protocol. */
-    case class Shared(serialId: UInt64, outPoint: OutPoint, sequence: Long, localAmount: MilliSatoshi, remoteAmount: MilliSatoshi, htlcAmount: MilliSatoshi) extends Input with Incoming with Outgoing
+    case class Shared(serialId: UInt64, outPoint: OutPoint, publicKeyScript: ByteVector, sequence: Long, localAmount: MilliSatoshi, remoteAmount: MilliSatoshi, htlcAmount: MilliSatoshi) extends Input with Incoming with Outgoing {
+      override def txOut: TxOut = TxOut((localAmount + remoteAmount + htlcAmount).truncateToSatoshi, publicKeyScript)
+    }
   }
 
   sealed trait Output {
@@ -282,7 +286,7 @@ object InteractiveTxBuilder {
                                localInputs: List[Input.Local], remoteInputs: List[Input.Remote],
                                localOutputs: List[Output.Local], remoteOutputs: List[Output.Remote],
                                lockTime: Long) {
-    val localAmountIn: MilliSatoshi = sharedInput_opt.map(_.localAmount).getOrElse(0 msat) + localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
+    val localAmountIn: MilliSatoshi = sharedInput_opt.map(_.localAmount).getOrElse(0 msat) + localInputs.map(i => i.txOut.amount).sum
     val remoteAmountIn: MilliSatoshi = sharedInput_opt.map(_.remoteAmount).getOrElse(0 msat) + remoteInputs.map(_.txOut.amount).sum
     val localAmountOut: MilliSatoshi = sharedOutput.localAmount + localOutputs.map(_.amount).sum
     val remoteAmountOut: MilliSatoshi = sharedOutput.remoteAmount + remoteOutputs.map(_.amount).sum
@@ -489,7 +493,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case None =>
         (addInput.sharedInput_opt, fundingParams.sharedInput_opt) match {
           case (Some(outPoint), Some(sharedInput)) if outPoint == sharedInput.info.outPoint =>
-            Input.Shared(addInput.serialId, outPoint, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)
+            Input.Shared(addInput.serialId, outPoint, sharedInput.info.txOut.publicKeyScript, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)
           case _ =>
             return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
         }
@@ -810,7 +814,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           // Partially signed PSBT must include spent amounts for all inputs that were signed, and we can "trust" these amounts because they are included
           // in the hash that we signed (see BIP143). If our bitcoin node lied about them, then our signatures are invalid.
           val actualLocalAmountIn = ourWalletInputs.map(i => kmp2scala(response.psbt.getInput(i).getWitnessUtxo.amount)).sum
-          val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum
+          val expectedLocalAmountIn = unsignedTx.localInputs.map(i => i.txOut.amount).sum
           require(actualLocalAmountIn == expectedLocalAmountIn, s"local spent amount $actualLocalAmountIn does not match what we expect ($expectedLocalAmountIn): bitcoin core may be malicious")
           val actualLocalAmountOut = ourWalletOutputs.map(i => partiallySignedTx.txOut(i).amount).sum
           val expectedLocalAmountOut = unsignedTx.localOutputs.map {
@@ -884,9 +888,9 @@ object InteractiveTxSigningSession {
   private def shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean = {
     val sharedAmountIn = tx.sharedInput_opt.map(i => i.localAmount + i.remoteAmount + i.htlcAmount).getOrElse(0 msat).truncateToSatoshi
     val (localAmountIn, remoteAmountIn) = if (isInitiator) {
-      (sharedAmountIn + tx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum, tx.remoteInputs.map(i => i.txOut.amount).sum)
+      (sharedAmountIn + tx.localInputs.map(i => i.txOut.amount).sum, tx.remoteInputs.map(i => i.txOut.amount).sum)
     } else {
-      (tx.localInputs.map(i => i.previousTx.txOut(i.previousTxOutput.toInt).amount).sum, sharedAmountIn + tx.remoteInputs.map(i => i.txOut.amount).sum)
+      (tx.localInputs.map(i => i.txOut.amount).sum, sharedAmountIn + tx.remoteInputs.map(i => i.txOut.amount).sum)
     }
     if (localAmountIn == remoteAmountIn) {
       // When both peers contribute the same amount, the peer with the lowest pubkey must transmit its `tx_signatures` first.
@@ -928,7 +932,7 @@ object InteractiveTxSigningSession {
     }
     val previousOutputs = {
       val sharedOutput = fundingParams.sharedInput_opt.map(sharedInput => sharedInput.info.outPoint -> sharedInput.info.txOut).toMap
-      val localOutputs = txWithSigs.tx.localInputs.map(i => i.outPoint -> i.previousTx.txOut(i.previousTxOutput.toInt)).toMap
+      val localOutputs = txWithSigs.tx.localInputs.map(i => i.outPoint -> i.txOut).toMap
       val remoteOutputs = txWithSigs.tx.remoteInputs.map(i => i.outPoint -> i.txOut).toMap
       sharedOutput ++ localOutputs ++ remoteOutputs
     }
