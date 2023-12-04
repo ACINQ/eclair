@@ -111,8 +111,6 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
-    val foo = bobData.latestFundingTx.sharedTx
-    println(foo)
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
 
