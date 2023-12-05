@@ -302,7 +302,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       randomize = false,
       boundaries = SearchBoundaries(100 msat, 0.0, 20, CltvExpiryDelta(2016)),
       HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
-      MultiPartParams(10_000 msat, 5),
+      MultiPartParams(10_000 msat, 5, MultiPartParams.FullCapacity),
       "my-test-experiment",
       experimentPercentage = 100
     ).getDefaultRouteParams

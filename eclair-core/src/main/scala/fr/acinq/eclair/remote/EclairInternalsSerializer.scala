@@ -70,7 +70,17 @@ object EclairInternalsSerializer {
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
-      ("maxParts" | int32)).as[MultiPartParams]
+      ("maxParts" | int32) ::
+      ("splittingStrategy" | int8.narrow[MultiPartParams.SplittingStrategy]({
+        case 0 => Attempt.successful(MultiPartParams.FullCapacity)
+        case 1 => Attempt.successful(MultiPartParams.Randomize)
+        case 2 => Attempt.successful(MultiPartParams.MaxExpectedAmount)
+        case n => Attempt.failure(Err(s"Invalid value $n"))
+      }, {
+        case MultiPartParams.FullCapacity => 0
+        case MultiPartParams.Randomize => 1
+        case MultiPartParams.MaxExpectedAmount => 2
+      }))).as[MultiPartParams]
 
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::

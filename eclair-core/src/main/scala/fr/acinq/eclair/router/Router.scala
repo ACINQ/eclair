@@ -577,7 +577,20 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
+  object MultiPartParams {
+    sealed trait SplittingStrategy
+
+    /** Send the full capacity of the route */
+    object FullCapacity extends SplittingStrategy
+
+    /** Send between 20% and 100% of the capacity of the route */
+    object Randomize extends SplittingStrategy
+
+    /** Maximize the expected delivered amount */
+    object MaxExpectedAmount extends SplittingStrategy
+  }
+
+  case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int, splittingStrategy: MultiPartParams.SplittingStrategy)
 
   case class RouteParams(randomize: Boolean,
                          boundaries: SearchBoundaries,
