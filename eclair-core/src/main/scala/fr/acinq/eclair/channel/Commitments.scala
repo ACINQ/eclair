@@ -458,7 +458,7 @@ case class Commitment(fundingTxIndex: Long,
     } else if (missingForReceiver < 0.msat) {
       if (params.localParams.isInitiator) {
         // receiver is not the channel initiator; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
-      } else if (reduced.toLocal > fees && reduced.htlcs.size < 5) {
+      } else if (reduced.toLocal > fees && reduced.htlcs.size < 5 && fundingTxIndex > 0) {
         // Receiver is the channel initiator; we usually don't want to let them dip into their channel reserve, because
         // that may give them a commitment transaction where they have nothing at stake, which would create an incentive
         // for them to force-close using that commitment after it has been revoked.
