@@ -273,6 +273,35 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.proposed.size == proposedChanges + 1)
   }
 
+  test("recv CMD_ADD_HTLC (HTLC dips into remote funder channel reserve)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(758_640_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == 0.msat)
+    // We increase the feerate to get Alice's balance closer to her channel reserve.
+    bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(FeeratePerKw(17_500 sat)))
+    updateFee(FeeratePerKw(17_500 sat), alice, bob, alice2bob, bob2alice)
+
+    // At this point alice has the minimal amount to sustain a channel.
+    // Alice maintains an extra reserve to accommodate for a one more HTLCs, so the first few HTLCs should be allowed.
+    bob ! CMD_ADD_HTLC(sender.ref, 25_000_000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val add = bob2alice.expectMsgType[UpdateAddHtlc]
+    bob2alice.forward(alice, add)
+
+    // But this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more.
+    val failedAdd = CMD_ADD_HTLC(sender.ref, 25_000_000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    bob ! failedAdd
+    val error = RemoteCannotAffordFeesForNewHtlc(channelId(bob), failedAdd.amount, missing = 340 sat, 20_000 sat, 21_700 sat)
+    sender.expectMsg(RES_ADD_FAILED(failedAdd, error, Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)))
+
+    // If Bob had sent this HTLC, Alice would have accepted dipping into her reserve.
+    val proposedChanges = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.proposed.size
+    alice ! add.copy(id = add.id + 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.proposed.size == proposedChanges + 1)
+  }
+
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
