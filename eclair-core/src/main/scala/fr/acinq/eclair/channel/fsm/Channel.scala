@@ -972,7 +972,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   sessionId,
                   nodeParams, fundingParams,
                   channelParams = d.commitments.params,
-                  purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
+                  purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                   localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
                   liquidityPurchased_opt = liquidityLease_opt.map(_.lease),
                   wallet
@@ -1019,7 +1019,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 sessionId,
                 nodeParams, fundingParams,
                 channelParams = d.commitments.params,
-                purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
+                purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                 localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
                 liquidityLease_opt,
                 wallet

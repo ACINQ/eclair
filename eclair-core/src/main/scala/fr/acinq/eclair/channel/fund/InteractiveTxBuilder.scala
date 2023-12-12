@@ -165,6 +165,8 @@ object InteractiveTxBuilder {
     def previousFundingAmount: Satoshi
     def localCommitIndex: Long
     def remoteCommitIndex: Long
+    def localNextHtlcId: Long
+    def remoteNextHtlcId: Long
     def remotePerCommitmentPoint: PublicKey
     def commitTxFeerate: FeeratePerKw
     def fundingTxIndex: Long
@@ -177,15 +179,19 @@ object InteractiveTxBuilder {
     override val previousFundingAmount: Satoshi = 0 sat
     override val localCommitIndex: Long = 0
     override val remoteCommitIndex: Long = 0
+    override val localNextHtlcId: Long = 0
+    override val remoteNextHtlcId: Long = 0
     override val fundingTxIndex: Long = 0
     override val localHtlcs: Set[DirectedHtlc] = Set.empty
   }
-  case class SpliceTx(parentCommitment: Commitment) extends Purpose {
+  case class SpliceTx(parentCommitment: Commitment, changes: CommitmentChanges) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = parentCommitment.localCommit.spec.toLocal
     override val previousRemoteBalance: MilliSatoshi = parentCommitment.remoteCommit.spec.toLocal
     override val previousFundingAmount: Satoshi = parentCommitment.capacity
     override val localCommitIndex: Long = parentCommitment.localCommit.index
     override val remoteCommitIndex: Long = parentCommitment.remoteCommit.index
+    override val localNextHtlcId: Long = changes.localNextHtlcId
+    override val remoteNextHtlcId: Long = changes.remoteNextHtlcId
     override val remotePerCommitmentPoint: PublicKey = parentCommitment.remoteCommit.remotePerCommitmentPoint
     override val commitTxFeerate: FeeratePerKw = parentCommitment.localCommit.spec.commitTxFeerate
     override val fundingTxIndex: Long = parentCommitment.fundingTxIndex + 1
@@ -196,11 +202,13 @@ object InteractiveTxBuilder {
    *                             only one of them ends up confirming. We guarantee this by having the latest transaction
    *                             always double-spend all its predecessors.
    */
-  case class PreviousTxRbf(replacedCommitment: Commitment, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
+  case class PreviousTxRbf(replacedCommitment: Commitment, changes: CommitmentChanges, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
     // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
     override val previousFundingAmount: Satoshi = (previousLocalBalance + previousRemoteBalance).truncateToSatoshi
     override val localCommitIndex: Long = replacedCommitment.localCommit.index
     override val remoteCommitIndex: Long = replacedCommitment.remoteCommit.index
+    override val localNextHtlcId: Long = changes.localNextHtlcId
+    override val remoteNextHtlcId: Long = changes.remoteNextHtlcId
     override val remotePerCommitmentPoint: PublicKey = replacedCommitment.remoteCommit.remotePerCommitmentPoint
     override val commitTxFeerate: FeeratePerKw = replacedCommitment.localCommit.spec.commitTxFeerate
     override val fundingTxIndex: Long = replacedCommitment.fundingTxIndex
@@ -748,8 +756,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-    val localLiquidityFee = liquidityPurchased_opt.collect { case lease if fundingParams.isInitiator => lease.fees }.getOrElse(0 sat)
-    val remoteLiquidityFee = liquidityPurchased_opt.collect { case lease if !fundingParams.isInitiator => lease.fees }.getOrElse(0 sat)
+    val localLiquidityFee = liquidityPurchased_opt.collect { case lease if fundingParams.isInitiator => lease.fees.total }.getOrElse(0 sat)
+    val remoteLiquidityFee = liquidityPurchased_opt.collect { case lease if !fundingParams.isInitiator => lease.fees.total }.getOrElse(0 sat)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - localLiquidityFee + remoteLiquidityFee,
@@ -781,7 +789,22 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-        liquidityPurchased_opt.foreach(lease => context.system.eventStream ! EventStream.Publish(LiquidityPurchased(replyTo.toClassic, channelParams.channelId, remoteNodeId, signedTx.txId, isBuyer = fundingParams.isInitiator, lease)))
+        liquidityPurchased_opt.foreach { lease =>
+          val purchase = LiquidityPurchase(
+            fundingTxId = signedTx.txId,
+            fundingTxIndex = purpose.fundingTxIndex,
+            isBuyer = fundingParams.isInitiator,
+            lease = lease,
+            capacity = fundingParams.fundingAmount,
+            localContribution = fundingParams.localContribution,
+            remoteContribution = fundingParams.remoteContribution,
+            localBalance = localCommit.spec.toLocal,
+            remoteBalance = localCommit.spec.toRemote,
+            outgoingHtlcCount = purpose.localNextHtlcId,
+            incomingHtlcCount = purpose.remoteNextHtlcId,
+          )
+          context.system.eventStream ! EventStream.Publish(ChannelLiquidityPurchased(replyTo.toClassic, channelParams.channelId, remoteNodeId, purchase))
+        }
         replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, purpose.fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
         Behaviors.stopped
       case WalletFailure(t) =>

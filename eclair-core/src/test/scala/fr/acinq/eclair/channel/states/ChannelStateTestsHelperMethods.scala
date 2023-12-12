@@ -248,7 +248,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val liquidityAds = tags.contains(ChannelStateTestsTags.LiquidityAds)
     val initiatorRequestRemoteFunding_opt = if (liquidityAds) {
       val maxFee = TestConstants.defaultLiquidityRates.fees(TestConstants.feeratePerKw, TestConstants.nonInitiatorFundingSatoshis, TestConstants.nonInitiatorFundingSatoshis)
-      Some(LiquidityAds.RequestRemoteFunding(TestConstants.nonInitiatorFundingSatoshis, maxFee, BlockHeight(TestConstants.defaultBlockHeight), TestConstants.defaultLeaseDuration))
+      Some(LiquidityAds.RequestRemoteFunding(TestConstants.nonInitiatorFundingSatoshis, maxFee.total, BlockHeight(TestConstants.defaultBlockHeight), TestConstants.defaultLeaseDuration))
     } else {
       None
     }

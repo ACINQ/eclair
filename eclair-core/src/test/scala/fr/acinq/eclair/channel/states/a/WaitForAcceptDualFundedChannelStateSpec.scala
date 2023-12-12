@@ -58,7 +58,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates))) else None
     val requestFunding_opt = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) {
       val maxFee = TestConstants.defaultLiquidityRates.fees(TestConstants.feeratePerKw, TestConstants.nonInitiatorFundingSatoshis, TestConstants.nonInitiatorFundingSatoshis)
-      Some(LiquidityAds.RequestRemoteFunding(TestConstants.nonInitiatorFundingSatoshis, maxFee, BlockHeight(TestConstants.defaultBlockHeight), 1008))
+      Some(LiquidityAds.RequestRemoteFunding(TestConstants.nonInitiatorFundingSatoshis, maxFee.total, BlockHeight(TestConstants.defaultBlockHeight), 1008))
     } else {
       None
     }

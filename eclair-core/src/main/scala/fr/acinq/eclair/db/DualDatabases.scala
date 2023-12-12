@@ -150,7 +150,7 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.add(paymentRelayed)
   }
 
-  override def add(liquidityPurchase: LiquidityPurchased): Unit = {
+  override def add(liquidityPurchase: ChannelLiquidityPurchased): Unit = {
     runAsync(secondary.add(liquidityPurchase))
     primary.add(liquidityPurchase)
   }
@@ -195,7 +195,7 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.listRelayed(from, to, paginated_opt)
   }
 
-  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityAds.LiquidityPurchased] = {
+  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
     runAsync(secondary.listLiquidityPurchases(remoteNodeId))
     primary.listLiquidityPurchases(remoteNodeId)
   }

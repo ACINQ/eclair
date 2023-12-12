@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -112,7 +112,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration89(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, confirmed BOOLEAN NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, fee_sat INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, mining_fee_sat INTEGER NOT NULL, service_fee_sat INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, local_contribution_sat INTEGER NOT NULL, remote_contribution_sat INTEGER NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, outgoing_htlc_count INTEGER NOT NULL, incoming_htlc_count INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, created_at INTEGER NOT NULL, confirmed_at INTEGER)")
       statement.executeUpdate("CREATE INDEX liquidity_purchases_node_id_idx ON liquidity_purchases(node_id)")
     }
 
@@ -126,7 +126,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, confirmed BOOLEAN NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, fee_sat INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, mining_fee_sat INTEGER NOT NULL, service_fee_sat INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, local_contribution_sat INTEGER NOT NULL, remote_contribution_sat INTEGER NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, outgoing_htlc_count INTEGER NOT NULL, incoming_htlc_count INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, created_at INTEGER NOT NULL, confirmed_at INTEGER)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
@@ -255,18 +255,26 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: LiquidityPurchased): Unit = withMetrics("audit/add-liquidity-purchase", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO liquidity_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.fundingTxId.value.toArray)
+  override def add(e: ChannelLiquidityPurchased): Unit = withMetrics("audit/add-liquidity-purchase", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT INTO liquidity_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")) { statement =>
+      statement.setBytes(1, e.purchase.fundingTxId.value.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
-      statement.setBoolean(4, false) // transaction isn't confirmed yet, we just published it
-      statement.setBoolean(5, e.isBuyer)
-      statement.setLong(6, e.lease.amount.toLong)
-      statement.setLong(7, e.lease.fees.toLong)
-      statement.setBytes(8, e.lease.sellerSig.toArray)
-      statement.setBytes(9, LiquidityAds.LeaseWitness.codec.encode(e.lease.witness).require.bytes.toArray)
-      statement.setLong(10, TimestampMilli.now().toLong)
+      statement.setBoolean(4, e.purchase.isBuyer)
+      statement.setLong(5, e.purchase.lease.amount.toLong)
+      statement.setLong(6, e.purchase.lease.fees.miningFee.toLong)
+      statement.setLong(7, e.purchase.lease.fees.serviceFee.toLong)
+      statement.setLong(8, e.purchase.fundingTxIndex)
+      statement.setLong(9, e.purchase.capacity.toLong)
+      statement.setLong(10, e.purchase.localContribution.toLong)
+      statement.setLong(11, e.purchase.remoteContribution.toLong)
+      statement.setLong(12, e.purchase.localBalance.toLong)
+      statement.setLong(13, e.purchase.remoteBalance.toLong)
+      statement.setLong(14, e.purchase.outgoingHtlcCount)
+      statement.setLong(15, e.purchase.incomingHtlcCount)
+      statement.setBytes(16, e.purchase.lease.sellerSig.toArray)
+      statement.setBytes(17, LiquidityAds.LeaseWitness.codec.encode(e.purchase.lease.witness).require.bytes.toArray)
+      statement.setLong(18, TimestampMilli.now().toLong)
       statement.executeUpdate()
     }
   }
@@ -291,8 +299,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(4, TimestampMilli.now().toLong)
       statement.executeUpdate()
     }
-    using(sqlite.prepareStatement("UPDATE liquidity_purchases SET confirmed=? WHERE node_id=? AND tx_id=?")) { statement =>
-      statement.setBoolean(1, true)
+    using(sqlite.prepareStatement("UPDATE liquidity_purchases SET confirmed_at=? WHERE node_id=? AND tx_id=?")) { statement =>
+      statement.setLong(1, TimestampMilli.now().toLong)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setBytes(3, e.tx.txid.value.toArray)
       statement.executeUpdate()
@@ -448,19 +456,27 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityAds.LiquidityPurchased] = {
-    using(sqlite.prepareStatement("SELECT * FROM liquidity_purchases WHERE confirmed=? AND node_id=?")) { statement =>
-      statement.setBoolean(1, true)
-      statement.setBytes(2, remoteNodeId.value.toArray)
+  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
+    using(sqlite.prepareStatement("SELECT * FROM liquidity_purchases WHERE node_id=? AND confirmed_at IS NOT NULL")) { statement =>
+      statement.setBytes(1, remoteNodeId.value.toArray)
       statement.executeQuery().map { rs =>
-        LiquidityAds.LiquidityPurchased(
+        LiquidityPurchase(
+          fundingTxId = TxId(rs.getByteVector32("tx_id")),
+          fundingTxIndex = rs.getLong("funding_tx_index"),
           isBuyer = rs.getBoolean("is_buyer"),
           lease = LiquidityAds.Lease(
             amount = Satoshi(rs.getLong("amount_sat")),
-            fees = Satoshi(rs.getLong("fee_sat")),
+            fees = LiquidityAds.LeaseFees(miningFee = Satoshi(rs.getLong("mining_fee_sat")), serviceFee = Satoshi(rs.getLong("service_fee_sat"))),
             sellerSig = ByteVector64(rs.getByteVector("seller_sig")),
             witness = LiquidityAds.LeaseWitness.codec.decode(rs.getByteVector("witness").bits).require.value,
-          )
+          ),
+          capacity = Satoshi(rs.getLong("capacity_sat")),
+          localContribution = Satoshi(rs.getLong("local_contribution_sat")),
+          remoteContribution = Satoshi(rs.getLong("remote_contribution_sat")),
+          localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+          remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
+          outgoingHtlcCount = rs.getLong("outgoing_htlc_count"),
+          incomingHtlcCount = rs.getLong("incoming_htlc_count")
         )
       }.toSeq
     }

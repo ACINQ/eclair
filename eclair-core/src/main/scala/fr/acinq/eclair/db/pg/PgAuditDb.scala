@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -112,7 +112,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
 
       def migration1112(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE TABLE audit.liquidity_purchases (tx_id TEXT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, confirmed BOOLEAN NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat BIGINT NOT NULL, fee_sat BIGINT NOT NULL, seller_sig TEXT NOT NULL, witness TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.liquidity_purchases (tx_id TEXT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat BIGINT NOT NULL, mining_fee_sat BIGINT NOT NULL, service_fee_sat BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, capacity_sat BIGINT NOT NULL, local_contribution_sat BIGINT NOT NULL, remote_contribution_sat BIGINT NOT NULL, local_balance_msat BIGINT NOT NULL, remote_balance_msat BIGINT NOT NULL, outgoing_htlc_count BIGINT NOT NULL, incoming_htlc_count BIGINT NOT NULL, seller_sig TEXT NOT NULL, witness TEXT NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, confirmed_at TIMESTAMP WITH TIME ZONE)")
         statement.executeUpdate("CREATE INDEX liquidity_purchases_node_id_idx ON audit.liquidity_purchases(node_id)")
       }
 
@@ -127,7 +127,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL, payment_hash TEXT, routing_hints JSONB)")
-          statement.executeUpdate("CREATE TABLE audit.liquidity_purchases (tx_id TEXT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, confirmed BOOLEAN NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat BIGINT NOT NULL, fee_sat BIGINT NOT NULL, seller_sig TEXT NOT NULL, witness TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.liquidity_purchases (tx_id TEXT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat BIGINT NOT NULL, mining_fee_sat BIGINT NOT NULL, service_fee_sat BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, capacity_sat BIGINT NOT NULL, local_contribution_sat BIGINT NOT NULL, remote_contribution_sat BIGINT NOT NULL, local_balance_msat BIGINT NOT NULL, remote_balance_msat BIGINT NOT NULL, outgoing_htlc_count BIGINT NOT NULL, incoming_htlc_count BIGINT NOT NULL, seller_sig TEXT NOT NULL, witness TEXT NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, confirmed_at TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
@@ -267,19 +267,27 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: LiquidityPurchased): Unit = withMetrics("audit/add-liquidity-purchase", DbBackends.Postgres) {
+  override def add(e: ChannelLiquidityPurchased): Unit = withMetrics("audit/add-liquidity-purchase", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.liquidity_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, e.fundingTxId.value.toHex)
+      using(pg.prepareStatement("INSERT INTO audit.liquidity_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")) { statement =>
+        statement.setString(1, e.purchase.fundingTxId.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.toHex)
-        statement.setBoolean(4, false) // transaction isn't confirmed yet, we just published it
-        statement.setBoolean(5, e.isBuyer)
-        statement.setLong(6, e.lease.amount.toLong)
-        statement.setLong(7, e.lease.fees.toLong)
-        statement.setString(8, e.lease.sellerSig.toHex)
-        statement.setString(9, LiquidityAds.LeaseWitness.codec.encode(e.lease.witness).require.bytes.toHex)
-        statement.setTimestamp(10, Timestamp.from(Instant.now()))
+        statement.setBoolean(4, e.purchase.isBuyer)
+        statement.setLong(5, e.purchase.lease.amount.toLong)
+        statement.setLong(6, e.purchase.lease.fees.miningFee.toLong)
+        statement.setLong(7, e.purchase.lease.fees.serviceFee.toLong)
+        statement.setLong(8, e.purchase.fundingTxIndex)
+        statement.setLong(9, e.purchase.capacity.toLong)
+        statement.setLong(10, e.purchase.localContribution.toLong)
+        statement.setLong(11, e.purchase.remoteContribution.toLong)
+        statement.setLong(12, e.purchase.localBalance.toLong)
+        statement.setLong(13, e.purchase.remoteBalance.toLong)
+        statement.setLong(14, e.purchase.outgoingHtlcCount)
+        statement.setLong(15, e.purchase.incomingHtlcCount)
+        statement.setString(16, e.purchase.lease.sellerSig.toHex)
+        statement.setString(17, LiquidityAds.LeaseWitness.codec.encode(e.purchase.lease.witness).require.bytes.toHex)
+        statement.setTimestamp(18, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }
@@ -308,8 +316,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setTimestamp(4, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
-      using(pg.prepareStatement("UPDATE audit.liquidity_purchases SET confirmed=? WHERE node_id=? AND tx_id=?")) { statement =>
-        statement.setBoolean(1, true)
+      using(pg.prepareStatement("UPDATE audit.liquidity_purchases SET confirmed_at=? WHERE node_id=? AND tx_id=?")) { statement =>
+        statement.setTimestamp(1, Timestamp.from(Instant.now()))
         statement.setString(2, e.remoteNodeId.toHex)
         statement.setString(3, e.tx.txid.value.toHex)
         statement.executeUpdate()
@@ -478,20 +486,28 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityAds.LiquidityPurchased] = {
+  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.liquidity_purchases WHERE confirmed=? AND node_id=?")) { statement =>
-        statement.setBoolean(1, true)
-        statement.setString(2, remoteNodeId.toHex)
+      using(pg.prepareStatement("SELECT * FROM audit.liquidity_purchases WHERE node_id=? AND confirmed_at IS NOT NULL")) { statement =>
+        statement.setString(1, remoteNodeId.toHex)
         statement.executeQuery().map { rs =>
-          LiquidityAds.LiquidityPurchased(
+          LiquidityPurchase(
+            fundingTxId = TxId(rs.getByteVector32FromHex("tx_id")),
+            fundingTxIndex = rs.getLong("funding_tx_index"),
             isBuyer = rs.getBoolean("is_buyer"),
             lease = LiquidityAds.Lease(
               amount = Satoshi(rs.getLong("amount_sat")),
-              fees = Satoshi(rs.getLong("fee_sat")),
+              fees = LiquidityAds.LeaseFees(miningFee = Satoshi(rs.getLong("mining_fee_sat")), serviceFee = Satoshi(rs.getLong("service_fee_sat"))),
               sellerSig = ByteVector64.fromValidHex(rs.getString("seller_sig")),
               witness = LiquidityAds.LeaseWitness.codec.decode(rs.getByteVectorFromHex("witness").bits).require.value,
-            )
+            ),
+            capacity = Satoshi(rs.getLong("capacity_sat")),
+            localContribution = Satoshi(rs.getLong("local_contribution_sat")),
+            remoteContribution = Satoshi(rs.getLong("remote_contribution_sat")),
+            localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+            remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
+            outgoingHtlcCount = rs.getLong("outgoing_htlc_count"),
+            incomingHtlcCount = rs.getLong("incoming_htlc_count")
           )
         }.toSeq
       }

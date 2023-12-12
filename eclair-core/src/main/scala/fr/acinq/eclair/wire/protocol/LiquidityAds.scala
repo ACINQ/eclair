@@ -101,7 +101,7 @@ object LiquidityAds {
             Left(InvalidLiquidityAdsSig(channelId))
           } else if (remoteFundingAmount < fundingAmount) {
             Left(InvalidLiquidityAdsAmount(channelId, remoteFundingAmount, fundingAmount))
-          } else if (maxFee < fees) {
+          } else if (maxFee < fees.total) {
             Left(InvalidLiquidityRates(channelId))
           } else {
             val leaseAmount = fundingAmount.min(remoteFundingAmount)
@@ -158,11 +158,11 @@ object LiquidityAds {
      * Fees paid by the liquidity buyer: the resulting amount must be added to the seller's output in the corresponding
      * commitment transaction.
      */
-    def fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi): Satoshi = {
-      val onChainFees = Transactions.weight2feeMsat(feerate, fundingWeight)
+    def fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi): LeaseFees = {
+      val onChainFees = Transactions.weight2fee(feerate, fundingWeight)
       // If the seller adds more liquidity than requested, the buyer doesn't pay for that extra liquidity.
       val proportionalFee = requestedAmount.min(contributedAmount).toMilliSatoshi * leaseFeeProportional / 10_000
-      leaseFeeBase + (proportionalFee + onChainFees).truncateToSatoshi
+      LeaseFees(onChainFees, leaseFeeBase + proportionalFee.truncateToSatoshi)
     }
 
     /**
@@ -223,17 +223,19 @@ object LiquidityAds {
       ).as[LeaseWitness]
   }
 
+  case class LeaseFees(miningFee: Satoshi, serviceFee: Satoshi) {
+    val total: Satoshi = miningFee + serviceFee
+  }
+
   /**
    * Once a liquidity ads has been paid, we should keep track of the lease, and check that our peer doesn't raise their
    * routing fees above the values they signed up for.
    */
-  case class Lease(amount: Satoshi, fees: Satoshi, sellerSig: ByteVector64, witness: LeaseWitness) {
+  case class Lease(amount: Satoshi, fees: LeaseFees, sellerSig: ByteVector64, witness: LeaseWitness) {
     val expiry: BlockHeight = witness.leaseEnd
     val maxRelayFees: RelayFees = RelayFees(witness.maxRelayFeeBase, witness.maxRelayFeeProportional.toLong * 100)
   }
 
   case class WillFundLease(willFund: ChannelTlv.WillFund, lease: Lease)
-
-  case class LiquidityPurchased(isBuyer: Boolean, lease: Lease)
 
 }

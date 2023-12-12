@@ -561,7 +561,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     randomBytes32(),
                     nodeParams, fundingParams,
                     channelParams = d.commitments.params,
-                    purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+                    purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, d.commitments.changes, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                     localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                     liquidityPurchased_opt = liquidityLease_opt.map(_.lease),
                     wallet))
@@ -608,7 +608,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 randomBytes32(),
                 nodeParams, fundingParams,
                 channelParams = d.commitments.params,
-                purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
+                purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, d.commitments.changes, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
                 liquidityLease_opt,
                 wallet))

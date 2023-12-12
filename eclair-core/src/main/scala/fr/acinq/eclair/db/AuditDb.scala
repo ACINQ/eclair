@@ -22,7 +22,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.{PathFindingExperimentMetrics, PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.{Paginated, TimestampMilli}
 
 trait AuditDb {
@@ -35,7 +34,7 @@ trait AuditDb {
 
   def add(paymentRelayed: PaymentRelayed): Unit
 
-  def add(liquidityPurchase: LiquidityPurchased): Unit
+  def add(liquidityPurchase: ChannelLiquidityPurchased): Unit
 
   def add(txPublished: TransactionPublished): Unit
 
@@ -53,7 +52,7 @@ trait AuditDb {
 
   def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed]
 
-  def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityAds.LiquidityPurchased]
+  def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase]
 
   def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 

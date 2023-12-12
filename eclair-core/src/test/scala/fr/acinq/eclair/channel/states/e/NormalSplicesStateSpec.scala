@@ -300,9 +300,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val eventListenerA = TestProbe()
-    systemA.eventStream.subscribe(eventListenerA.ref, classOf[LiquidityPurchased])
+    systemA.eventStream.subscribe(eventListenerA.ref, classOf[ChannelLiquidityPurchased])
     val eventListenerB = TestProbe()
-    systemB.eventStream.subscribe(eventListenerB.ref, classOf[LiquidityPurchased])
+    systemB.eventStream.subscribe(eventListenerB.ref, classOf[ChannelLiquidityPurchased])
 
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestRemoteFunding(400_000 sat, 15_000 sat, alice.nodeParams.currentBlockHeight, TestConstants.defaultLeaseDuration)
@@ -339,14 +339,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal < 1_300_000_000.msat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote > 1_100_000_000.msat)
 
-    val eventA = eventListenerA.expectMsgType[LiquidityPurchased]
-    assert(eventA.fundingTxId == spliceTx.txid)
-    assert(eventA.isBuyer)
-    assert(eventA.lease.amount == fundingRequest.fundingAmount)
-    assert(eventA.lease.fees > 0.sat)
-    val eventB = eventListenerB.expectMsgType[LiquidityPurchased]
-    assert(!eventB.isBuyer)
-    assert(eventB.lease == eventA.lease)
+    val eventA = eventListenerA.expectMsgType[ChannelLiquidityPurchased]
+    assert(eventA.purchase.fundingTxId == spliceTx.txid)
+    assert(eventA.purchase.fundingTxIndex == 1)
+    assert(eventA.purchase.isBuyer)
+    assert(eventA.purchase.capacity == 2_400_000.sat)
+    assert(eventA.purchase.previousCapacity == 1_500_000.sat)
+    assert(eventA.purchase.lease.amount == fundingRequest.fundingAmount)
+    assert(eventA.purchase.lease.fees.total > 0.sat)
+    val eventB = eventListenerB.expectMsgType[ChannelLiquidityPurchased]
+    assert(!eventB.purchase.isBuyer)
+    assert(eventB.purchase.lease == eventA.purchase.lease)
   }
 
   test("recv CMD_SPLICE (splice-in, liquidity ads, fee too high)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
