@@ -426,6 +426,25 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
   }
 
+  test("recv CMD_SPLICE (splice-in, liquidity ads, cannot pay fees)", Tag(ChannelStateTestsTags.Quiescence), Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    val sender = TestProbe()
+    // Alice requests a lot of funding, but she doesn't have enough balance to pay the corresponding fee.
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
+    val fundingRequest = LiquidityAds.RequestRemoteFunding(5_000_000 sat, 250_000 sat, alice.nodeParams.currentBlockHeight, TestConstants.defaultLeaseDuration)
+    val cmd = CMD_SPLICE(sender.ref, None, Some(SpliceOut(750_000 sat, defaultSpliceOutScriptPubKey)), Some(fundingRequest))
+    alice ! cmd
+
+    exchangeStfu(alice, bob, alice2bob, bob2alice)
+    assert(alice2bob.expectMsgType[SpliceInit].requestFunds_opt.nonEmpty)
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[SpliceAck].willFund_opt.nonEmpty)
+    bob2alice.forward(alice)
+    assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("invalid balances"))
+    assert(bob2alice.expectMsgType[TxAbort].toAscii.contains("invalid balances"))
+  }
+
   test("recv CMD_SPLICE (splice-in, local and remote commit index mismatch)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
     import f._
 

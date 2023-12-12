@@ -367,9 +367,11 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelParams.remoteParams.nodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo) =>
+              // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
+              val liquidityFee = liquidityPurchased_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
               // Note that pending HTLCs are ignored: splices only affect the main outputs.
-              val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution
-              val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution
+              val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution - localPushAmount + remotePushAmount - liquidityFee
+              val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution - remotePushAmount + localPushAmount + liquidityFee
               if (fundingParams.fundingAmount < fundingParams.dustLimit) {
                 replyTo ! LocalFailure(FundingAmountTooLow(channelParams.channelId, fundingParams.fundingAmount, fundingParams.dustLimit))
                 Behaviors.stopped
@@ -756,12 +758,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-    val localLiquidityFee = liquidityPurchased_opt.collect { case lease if fundingParams.isInitiator => lease.fees.total }.getOrElse(0 sat)
-    val remoteLiquidityFee = liquidityPurchased_opt.collect { case lease if !fundingParams.isInitiator => lease.fees.total }.getOrElse(0 sat)
+    val liquidityFee = liquidityPurchased_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
-      toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - localLiquidityFee + remoteLiquidityFee,
-      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount - remoteLiquidityFee + localLiquidityFee,
+      toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
+      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount + liquidityFee,
       localHtlcs = purpose.localHtlcs,
       purpose.commitTxFeerate,
       fundingTxIndex = purpose.fundingTxIndex,
