@@ -232,6 +232,7 @@ object LiquidityAds {
    * routing fees above the values they signed up for.
    */
   case class Lease(amount: Satoshi, fees: LeaseFees, sellerSig: ByteVector64, witness: LeaseWitness) {
+    val start: BlockHeight = witness.leaseEnd - witness.leaseDuration
     val expiry: BlockHeight = witness.leaseEnd
     val maxRelayFees: RelayFees = RelayFees(witness.maxRelayFeeBase, witness.maxRelayFeeProportional.toLong * 100)
   }
