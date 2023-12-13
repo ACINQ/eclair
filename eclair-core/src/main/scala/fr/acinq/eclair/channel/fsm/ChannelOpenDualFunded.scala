@@ -222,7 +222,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             nodeParams, fundingParams,
             channelParams, purpose,
             localPushAmount = accept.pushAmount, remotePushAmount = open.pushAmount,
-            liquidityPurchased_opt = liquidityLease_opt.map(_.lease),
+            liquidityLease_opt = liquidityLease_opt.map(_.lease),
             wallet))
           txBuilder ! InteractiveTxBuilder.Start(self)
           goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, deferred = None, replyTo_opt = None) sending accept
@@ -563,7 +563,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     channelParams = d.commitments.params,
                     purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, d.commitments.changes, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx)),
                     localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
-                    liquidityPurchased_opt = liquidityLease_opt.map(_.lease),
+                    liquidityLease_opt = liquidityLease_opt.map(_.lease),
                     wallet))
                   txBuilder ! InteractiveTxBuilder.Start(self)
                   val toSend = Seq(

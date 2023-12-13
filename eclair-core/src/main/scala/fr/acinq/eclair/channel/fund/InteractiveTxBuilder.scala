@@ -357,7 +357,7 @@ object InteractiveTxBuilder {
             purpose: Purpose,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
-            liquidityPurchased_opt: Option[LiquidityAds.Lease],
+            liquidityLease_opt: Option[LiquidityAds.Lease],
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       // The stash is used to buffer messages that arrive while we're funding the transaction.
@@ -368,7 +368,7 @@ object InteractiveTxBuilder {
           Behaviors.receiveMessagePartial {
             case Start(replyTo) =>
               // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-              val liquidityFee = liquidityPurchased_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
+              val liquidityFee = liquidityLease_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
               // Note that pending HTLCs are ignored: splices only affect the main outputs.
               val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution - localPushAmount + remotePushAmount - liquidityFee
               val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution - remotePushAmount + localPushAmount + liquidityFee
@@ -379,7 +379,7 @@ object InteractiveTxBuilder {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped
               } else {
-                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, liquidityPurchased_opt, wallet, stash, context)
+                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, liquidityLease_opt, wallet, stash, context)
                 actor.start()
               }
             case Abort => Behaviors.stopped
@@ -402,7 +402,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    purpose: Purpose,
                                    localPushAmount: MilliSatoshi,
                                    remotePushAmount: MilliSatoshi,
-                                   liquidityPurchased_opt: Option[LiquidityAds.Lease],
+                                   liquidityLease_opt: Option[LiquidityAds.Lease],
                                    wallet: OnChainChannelFunder,
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
                                    context: ActorContext[InteractiveTxBuilder.Command])(implicit ec: ExecutionContext) {
@@ -758,7 +758,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-    val liquidityFee = liquidityPurchased_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
+    val liquidityFee = liquidityLease_opt.map(l => if (fundingParams.isInitiator) l.fees.total else -l.fees.total).getOrElse(0 sat)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
@@ -790,7 +790,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
-        liquidityPurchased_opt.foreach { lease =>
+        liquidityLease_opt.foreach { lease =>
           val purchase = LiquidityPurchase(
             fundingTxId = signedTx.txId,
             fundingTxIndex = purpose.fundingTxIndex,

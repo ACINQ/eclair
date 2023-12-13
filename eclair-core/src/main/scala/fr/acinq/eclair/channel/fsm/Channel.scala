@@ -974,7 +974,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   channelParams = d.commitments.params,
                   purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                   localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
-                  liquidityPurchased_opt = liquidityLease_opt.map(_.lease),
+                  liquidityLease_opt = liquidityLease_opt.map(_.lease),
                   wallet
                 ))
                 txBuilder ! InteractiveTxBuilder.Start(self)
