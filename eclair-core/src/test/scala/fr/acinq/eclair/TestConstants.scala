@@ -29,8 +29,8 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -51,6 +51,8 @@ object TestConstants {
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+  val defaultLeaseDuration: Int = 4032 // ~1 month
+  val defaultLiquidityRates: LiquidityAds.LeaseRate = LiquidityAds.LeaseRate(defaultLeaseDuration, 500, 100, 100 sat, 10, 200 msat)
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
@@ -224,7 +226,8 @@ object TestConstants {
         timeout = 200 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      liquidityAdsConfig_opt = Some(LiquidityAds.SellerConfig(Seq(LiquidityAds.LeaseRateConfig(defaultLiquidityRates, minAmount = 10_000 sat)))),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -389,7 +392,8 @@ object TestConstants {
         timeout = 100 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      liquidityAdsConfig_opt = Some(LiquidityAds.SellerConfig(Seq(LiquidityAds.LeaseRateConfig(defaultLiquidityRates, minAmount = 10_000 sat)))),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

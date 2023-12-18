@@ -10,7 +10,7 @@ import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
@@ -150,6 +150,11 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.add(paymentRelayed)
   }
 
+  override def add(liquidityPurchase: ChannelLiquidityPurchased): Unit = {
+    runAsync(secondary.add(liquidityPurchase))
+    primary.add(liquidityPurchase)
+  }
+
   override def add(txPublished: TransactionPublished): Unit = {
     runAsync(secondary.add(txPublished))
     primary.add(txPublished)
@@ -188,6 +193,11 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
   override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentRelayed] = {
     runAsync(secondary.listRelayed(from, to, paginated_opt))
     primary.listRelayed(from, to, paginated_opt)
+  }
+
+  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
+    runAsync(secondary.listLiquidityPurchases(remoteNodeId))
+    primary.listLiquidityPurchases(remoteNodeId)
   }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.NetworkFee] = {

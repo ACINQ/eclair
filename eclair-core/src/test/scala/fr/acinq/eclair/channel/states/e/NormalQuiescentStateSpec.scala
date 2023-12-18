@@ -96,7 +96,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val sender = TestProbe()
     val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)))
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)), requestRemoteFunding_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     if (!sendInitialStfu) {
@@ -116,7 +116,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     // we have an unsigned htlc in our local changes
     addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None)
+    alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestRemoteFunding_opt = None)
     alice2bob.expectNoMessage(100 millis)
     crossSign(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[Stfu]
@@ -381,7 +381,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestRemoteFunding_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -398,7 +398,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestRemoteFunding_opt = None)
     alice ! cmd
     alice2bob.expectNoMessage(100 millis) // alice isn't quiescent yet
     bob ! cmd
@@ -417,7 +417,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestRemoteFunding_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd

@@ -86,7 +86,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      liquidityAdsConfig_opt: Option[LiquidityAds.SellerConfig]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -604,7 +605,24 @@ object NodeParams extends Logging {
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
         maxAttempts = config.getInt("onion-messages.max-attempts"),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      liquidityAdsConfig_opt = if (config.getBoolean("liquidity-ads.enabled")) {
+        Some(LiquidityAds.SellerConfig(rates = config.getConfigList("liquidity-ads.rates").asScala.map { r =>
+          LiquidityAds.LeaseRateConfig(
+            rate = LiquidityAds.LeaseRate(
+              leaseDuration = r.getInt("duration-blocks"),
+              fundingWeight = r.getInt("funding-weight"),
+              leaseFeeProportional = r.getInt("fee-basis-points"),
+              leaseFeeBase = Satoshi(r.getLong("fee-base-satoshis")),
+              maxRelayFeeProportional = r.getInt("max-channel-relay-fee-basis-points"),
+              maxRelayFeeBase = MilliSatoshi(r.getLong("max-channel-relay-fee-base-msat")),
+            ),
+            minAmount = Satoshi(r.getLong("min-funding-amount-satoshis")),
+          )
+        }.toSeq))
+      } else {
+        None
+      },
     )
   }
 }

@@ -33,13 +33,14 @@ import fr.acinq.eclair.{Logs, NodeParams}
  */
 class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
-  val auditDb: AuditDb = nodeParams.db.audit
+  private val auditDb: AuditDb = nodeParams.db.audit
   val channelsDb: ChannelsDb = nodeParams.db.channels
 
   context.system.eventStream.subscribe(self, classOf[PaymentSent])
   context.system.eventStream.subscribe(self, classOf[PaymentFailed])
   context.system.eventStream.subscribe(self, classOf[PaymentReceived])
   context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
+  context.system.eventStream.subscribe(self, classOf[ChannelLiquidityPurchased])
   context.system.eventStream.subscribe(self, classOf[TransactionPublished])
   context.system.eventStream.subscribe(self, classOf[TransactionConfirmed])
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
@@ -86,6 +87,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
           channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
       }
       auditDb.add(e)
+
+    case e: ChannelLiquidityPurchased => auditDb.add(e)
 
     case e: TransactionPublished =>
       log.info(s"paying mining fee=${e.miningFee} for txid=${e.tx.txid} desc=${e.desc}")
