@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFeeHtlcTxs, NoMaxHtlcValueInFlight, ZeroConf}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
@@ -187,6 +188,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       assert(initialState.commitments.latest.capacity == 1_500_000.sat)
       assert(initialState.commitments.latest.localCommit.spec.toLocal == 770_000_000.msat)
       assert(initialState.commitments.latest.localCommit.spec.toRemote == 665_000_000.msat)
+
+      alice2relayer.expectMsgType[Relayer.RelayForward]
+      alice2relayer.expectMsgType[Relayer.RelayForward]
+      bob2relayer.expectMsgType[Relayer.RelayForward]
+      bob2relayer.expectMsgType[Relayer.RelayForward]
 
       TestHtlcs(htlcsAliceToBob, htlcsBobToAlice)
     } else {
@@ -1604,6 +1610,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // bob makes a payment
     val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+    alice2relayer.expectMsgType[Relayer.RelayForward]
     fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -1642,6 +1649,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty)
     // alice's htlc-penalty txs confirm
     aliceHtlcsPenalty.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }
+    val settledOutgoingHtlcs = htlcs.aliceToBob.map(_ => alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc).toSet
+    assert(settledOutgoingHtlcs == htlcs.aliceToBob.map(_._2).toSet)
 
     checkPostSpliceState(f, spliceOutFee = 0.sat)
 
@@ -1818,6 +1827,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // bob makes a payment that is only applied to splice 2
     val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
+    alice2relayer.expectMsgType[Relayer.RelayForward]
     fulfillHtlc(add.id, preimage, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -1850,7 +1860,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val aliceClaimMain = assertPublished(alice2blockchain, "remote-main-delayed")
     val aliceMainPenalty = assertPublished(alice2blockchain, "main-penalty")
     val aliceHtlcsPenalty = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-penalty")) ++ htlcs.bobToAlice.map(_ => assertPublished(alice2blockchain, "htlc-penalty"))
-
     alice2blockchain.expectWatchTxConfirmed(bobRevokedCommitTx.txid)
     alice2blockchain.expectWatchTxConfirmed(aliceClaimMain.txid)
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].txId == bobRevokedCommitTx.txid) // main-penalty
@@ -1864,6 +1873,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchTxConfirmed(aliceMainPenalty.txid)
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty)
     aliceHtlcsPenalty.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }
+    val settledOutgoingHtlcs = htlcs.aliceToBob.map(_ => alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc).toSet
+    assert(settledOutgoingHtlcs == htlcs.aliceToBob.map(_._2).toSet)
 
     // alice's final commitment includes the initial htlcs, but not bob's payment
     checkPostSpliceState(f, spliceOutFee = 0 sat)
