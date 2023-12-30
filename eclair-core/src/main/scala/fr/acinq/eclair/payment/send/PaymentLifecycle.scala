@@ -123,7 +123,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           // retry with another channel
           handleLocalFail(d, ChannelFailureException, isFatal = false)
         case HtlcResult.DisconnectedBeforeSigned(_) =>
-          // a disconnection occured before the outgoing htlc got signed
+          // a disconnection occurred before the outgoing htlc got signed
           // again, we consider it a local error and treat is as such
           handleLocalFail(d, DisconnectedException, isFatal = false)
       }

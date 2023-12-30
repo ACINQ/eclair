@@ -146,7 +146,7 @@ done;
 # jq filter parses response body for error message
 jq_filter='if type=="object" and .error != null then .error else .';
 
-# apply special jq filter if we are in "short" ouput mode -- only for specific commands such as 'channels'
+# apply special jq filter if we are in "short" output mode -- only for specific commands such as 'channels'
 if [ "$short" = true ]; then
   jq_channel_filter="{ nodeId, shortChannelId: .data.shortIds.real.realScid, channelId, state, commitments: (.data.commitments.active | map({balanceSat: (try (.localCommit.spec.toLocal / 1000 | floor) catch null), capacitySat: .fundingTx.amountSatoshis, fundingTxIndex: .fundingTxIndex, channelPoint: .fundingTx.outPoint})) }";
   case $api_endpoint in
