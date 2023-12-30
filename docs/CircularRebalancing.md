@@ -15,7 +15,7 @@ In this example we assume that there are 4 participants in the Lighting Network:
             3x3x3  
 ```
 
-`Alice` has two channels `1x1x1` with outbound liquidity of 5M stats, and `4x4x4` with inbound liquidity of 5M sats.
+`Alice` has two channels `1x1x1` with outbound liquidity of 5M sats, and `4x4x4` with inbound liquidity of 5M sats.
 Now `Alice` wants to send some sats from channel `1x1x1` to channel `4x4x4` to be able to receive and forward payments 
 via both channels.
 
@@ -42,12 +42,12 @@ eclair-cli sendtoroute --shortChannelIds=1x1x1,2x2x2,3x3x3,4x4x4 \
 This command will send 1M sats from channel `1x1x1` to channel `4x4x4`.
 
 In real life its not always easy to find the most economically viable route manually, but Eclair is here to help.
-Similarly to `payinvoice`, `findroute` CLI command cannot find routes to self. But `Alice` can use a little trick with 
+Similarly to `payinvoice`, `findroute` CLI command cannot find routes to self, but `Alice` can use a little trick with 
 `findroutebetweennodes`, which allows finding routes between arbitrary nodes. 
 
 To rebalance channels `1x1x1` and `4x4x4`, `Alice` wants to find a route from `Bob` (as a source node) to `Diana` (as a 
-target node). In our example there's at least one route from `Bob` to `Diana` via `Alice`, and in real life there can be 
-many more such routes, bacause `Alice` can have way more than two channels, so `Alice`'s node should be excluded from 
+target node). In our example there's at least one route from `Bob` to `Diana` via `Alice`. In real life there can be 
+many more such routes, because `Alice` can have way more than two channels, so `Alice`'s node should be excluded from 
 path-finding using `--ignoreNodeIds` parameter:
 
 ```shell
@@ -58,6 +58,6 @@ eclair-cli findroutebetweennodes --sourceNodeId=<Bob`s node ID> \
 ```
 
 Then `Alice` simply appends the outgoing channel ID to the beginning of the found route and the incoming channel ID to 
-the end: `1x1x1,<found route>,4x4x4`. In our example the found route is `2x2x2,3x3x3`, so the full route will be 
+the end: `1x1x1,<found route>,4x4x4`. In our example, the found route is `2x2x2,3x3x3`, so the full route will be 
 `1x1x1,2x2x2,3x3x3,4x4x4`. `Alice` can use this route with `sendtoroute` command to perform rebalancing. 
 
