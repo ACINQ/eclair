@@ -166,4 +166,5 @@ else
 fi
 
 # we're now ready to execute the API call
+set -o pipefail # ensures we preserve curl error code in case of HTTP issue
 eval curl "--user $auth --silent --show-error -X POST -H \"Content-Type: application/x-www-form-urlencoded\" $api_payload $api_url/$api_endpoint" | jq -r "$jq_filter"
