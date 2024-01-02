@@ -1342,6 +1342,12 @@ object Helpers {
         val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
         htlcsInRemoteCommit.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
+      } else if (d.revokedCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
+        // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment:
+        //  - outgoing htlcs that are in the local commitment but not in remote/nextRemote have already been fulfilled/failed so we don't care about them
+        //  - outgoing htlcs that are in the remote/nextRemote commitment may not really be overridden, but since we are going to claim their output as a
+        //    punishment we will never get the preimage and may as well consider them failed in the context of relaying htlcs
+        nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(incoming)
       } else if (remoteCommit.txid == tx.txid) {
         // their commit got confirmed
         nextRemoteCommit_opt match {
@@ -1354,24 +1360,27 @@ object Helpers {
             Set.empty
         }
       } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
-        // incoming htlcs that have been removed from their commitment are either fulfilled or failed:
-        //  - if they were fulfilled, we already relayed the preimage upstream
-        //  - if they were failed, we need to relay the failure upstream since those htlcs will never reach the chain
-        val settledHtlcs = remoteCommit.spec.htlcs.collect(incoming) -- nextRemoteCommit_opt.map(_.spec.htlcs.collect(incoming)).getOrElse(Set.empty)
-        val failedHtlcs = d.commitments.latest.changes.remoteChanges.all.collect {
-          case f: UpdateFailHtlc => f.id
-          case f: UpdateFailMalformedHtlc => f.id
-        }.toSet
-        settledHtlcs.filter(htlc => failedHtlcs.contains(htlc.id))
-      } else if (d.revokedCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
-        // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment:
-        //  - outgoing htlcs that are in the local commitment but not in remote/nextRemote have already been fulfilled/failed so we don't care about them
-        //  - outgoing htlcs that are in the remote/nextRemote commitment may not really be overridden, but since we are going to claim their output as a
-        //    punishment we will never get the preimage and may as well consider them failed in the context of relaying htlcs
-        nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(incoming)
+        // we must fail htlcs that have been removed from the next commitment
+        recentlyFailedHtlcs(remoteCommit, nextRemoteCommit_opt, d.commitments.changes)
       } else {
         Set.empty
       }
+    }
+
+    /**
+     * Returns HTLCs that have been failed and removed from the next remote commitment.
+     * We need to propagate their failure upstream if we don't receive the remote signature to remove them from our local commitment.
+     */
+    def recentlyFailedHtlcs(remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], changes: CommitmentChanges): Set[UpdateAddHtlc] = {
+      // Incoming htlcs that have been removed from their commitment are either fulfilled or failed:
+      //  - if they were fulfilled, we already relayed the preimage upstream
+      //  - if they were failed, we need to relay the failure upstream since those htlcs will never reach the chain
+      val settledHtlcs = remoteCommit.spec.htlcs.collect(incoming) -- nextRemoteCommit_opt.map(_.spec.htlcs.collect(incoming)).getOrElse(Set.empty)
+      val failedHtlcs = changes.remoteChanges.all.collect {
+        case f: UpdateFailHtlc => f.id
+        case f: UpdateFailMalformedHtlc => f.id
+      }.toSet
+      settledHtlcs.filter(htlc => failedHtlcs.contains(htlc.id))
     }
 
     /**

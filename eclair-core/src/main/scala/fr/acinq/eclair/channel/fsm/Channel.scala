@@ -1617,20 +1617,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             active = commitment +: Nil,
             inactive = Nil
           )
-          // we reset the state
+          // We reset the state to match the commitment that confirmed.
           val d1 = d.copy(commitments = commitments1)
           // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
           if (commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
-            // our local commit has been published from the outside, it's unexpected but let's deal with it anyway
+            // Our local commit has been published from the outside, it's unexpected but let's deal with it anyway.
             spendLocalCurrent(d1)
           } else if (commitment.remoteCommit.txid == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex) {
-            // counterparty may attempt to spend its last commit tx at any time
             handleRemoteSpentCurrent(tx, d1)
           } else if (commitment.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
-            // counterparty may attempt to spend its last commit tx at any time
             handleRemoteSpentNext(tx, d1)
           } else {
-            // counterparty may attempt to spend a revoked commit tx at any time
+            // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
+            // We need to fail pending outgoing HTLCs: we must do it here because we're overwriting the commitments data, so we won't be able to do it afterwards.
+            val remoteCommit = d.commitments.latest.remoteCommit
+            val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
+            val pendingOutgoingHtlcs = nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(DirectedHtlc.incoming)
+            val failedHtlcs = Closing.recentlyFailedHtlcs(remoteCommit, nextRemoteCommit_opt, d.commitments.changes)
+            (pendingOutgoingHtlcs ++ failedHtlcs).foreach { add =>
+              d.commitments.originChannels.get(add.id) match {
+                case Some(origin) =>
+                  log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by revoked remote commit")
+                  relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
+                case None => ()
+              }
+            }
             handleRemoteSpentOther(tx, d1)
           }
         case None =>
