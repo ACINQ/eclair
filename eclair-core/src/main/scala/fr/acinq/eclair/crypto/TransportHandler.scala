@@ -189,10 +189,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
 
       case Event(ReadAck(msg: T), d: NormalData[T@unchecked]) =>
-        // how many occurences of this message are still unacked?
+        // how many occurrences of this message are still unacked?
         val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
         log.debug("acking message {}", msg)
-        // if all occurences have been acked then we remove the entry from the map
+        // if all occurrences have been acked then we remove the entry from the map
         val unackedReceived1 = if (remaining > 0) d.unackedReceived + (msg -> remaining) else d.unackedReceived - msg
         if (unackedReceived1.isEmpty) {
           log.debug("last incoming message was acked, resuming reading")
