@@ -1360,18 +1360,27 @@ object Helpers {
             Set.empty
         }
       } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
-        // incoming htlcs that have been removed from their commitment are either fulfilled or failed:
-        //  - if they were fulfilled, we already relayed the preimage upstream
-        //  - if they were failed, we need to relay the failure upstream since those htlcs will never reach the chain
-        val settledHtlcs = remoteCommit.spec.htlcs.collect(incoming) -- nextRemoteCommit_opt.map(_.spec.htlcs.collect(incoming)).getOrElse(Set.empty)
-        val failedHtlcs = d.commitments.latest.changes.remoteChanges.all.collect {
-          case f: UpdateFailHtlc => f.id
-          case f: UpdateFailMalformedHtlc => f.id
-        }.toSet
-        settledHtlcs.filter(htlc => failedHtlcs.contains(htlc.id))
+        // we must fail htlcs that have been removed from the next commitment
+        recentlyFailedHtlcs(remoteCommit, nextRemoteCommit_opt, d.commitments.changes)
       } else {
         Set.empty
       }
+    }
+
+    /**
+     * Returns HTLCs that have been failed and removed from the next remote commitment.
+     * We need to propagate their failure upstream if we don't receive the remote signature to remove them from our local commitment.
+     */
+    def recentlyFailedHtlcs(remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], changes: CommitmentChanges): Set[UpdateAddHtlc] = {
+      // Incoming htlcs that have been removed from their commitment are either fulfilled or failed:
+      //  - if they were fulfilled, we already relayed the preimage upstream
+      //  - if they were failed, we need to relay the failure upstream since those htlcs will never reach the chain
+      val settledHtlcs = remoteCommit.spec.htlcs.collect(incoming) -- nextRemoteCommit_opt.map(_.spec.htlcs.collect(incoming)).getOrElse(Set.empty)
+      val failedHtlcs = changes.remoteChanges.all.collect {
+        case f: UpdateFailHtlc => f.id
+        case f: UpdateFailMalformedHtlc => f.id
+      }.toSet
+      settledHtlcs.filter(htlc => failedHtlcs.contains(htlc.id))
     }
 
     /**
