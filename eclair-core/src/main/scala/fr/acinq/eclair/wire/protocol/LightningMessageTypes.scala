@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
@@ -95,6 +95,11 @@ case class TxAddInput(channelId: ByteVector32,
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
     TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+  }
+
+  /** This constructor should only be used for inputs that use segwit v1 or higher. */
+  def apply(channelId: ByteVector32, serialId: UInt64, input: OutPoint, txOut: TxOut, sequence: Long): TxAddInput = {
+    TxAddInput(channelId, serialId, None, input.index, sequence, TlvStream(TxAddInputTlv.PreviousTxOut(input.txid, txOut.amount, txOut.publicKeyScript)))
   }
 }
 

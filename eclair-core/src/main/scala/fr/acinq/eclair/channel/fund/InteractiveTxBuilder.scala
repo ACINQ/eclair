@@ -451,7 +451,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     session.toSend match {
       case (addInput: Input) +: tail =>
         val message = addInput match {
-          case i: Input.Local => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence)
+          case i: Input.Local => Script.getWitnessVersion(i.txOut.publicKeyScript) match {
+            // When using segwit v1 or higher, we don't need to include the whole previous transaction.
+            case Some(n) if n > 0 => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.txOut, i.sequence)
+            case _ => TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence)
+          }
           case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
         }
         replyTo ! SendMessage(sessionId, message)
@@ -481,16 +485,22 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
     }
     // We check whether this is the shared input or a remote input.
-    val input = addInput.previousTx_opt match {
-      case Some(previousTx) if previousTx.txOut.length <= addInput.previousTxOutput =>
+    val input = (addInput.previousTx_opt, addInput.tlvStream.get[TxAddInputTlv.PreviousTxOut]) match {
+      case (Some(previousTx), _) if previousTx.txOut.length <= addInput.previousTxOutput =>
         return Left(InputOutOfBounds(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
-      case Some(previousTx) if fundingParams.sharedInput_opt.exists(_.info.outPoint == OutPoint(previousTx, addInput.previousTxOutput.toInt)) =>
+      case (Some(previousTx), _) if fundingParams.sharedInput_opt.exists(_.info.outPoint == OutPoint(previousTx, addInput.previousTxOutput.toInt)) =>
         return Left(InvalidSharedInput(fundingParams.channelId, addInput.serialId))
-      case Some(previousTx) if !Script.isNativeWitnessScript(previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript) =>
+      case (Some(previousTx), _) if !Script.isNativeWitnessScript(previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript) =>
         return Left(NonSegwitInput(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
-      case Some(previousTx) =>
+      case (Some(previousTx), _) =>
         Input.Remote(addInput.serialId, OutPoint(previousTx, addInput.previousTxOutput.toInt), previousTx.txOut(addInput.previousTxOutput.toInt), addInput.sequence)
-      case None =>
+      case (None, Some(previousTxOut)) =>
+        Script.getWitnessVersion(previousTxOut.publicKeyScript) match {
+          case None => return Left(NonSegwitInput(fundingParams.channelId, addInput.serialId, previousTxOut.txId, addInput.previousTxOutput))
+          case Some(0) => return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
+          case Some(_) => Input.Remote(addInput.serialId, OutPoint(previousTxOut.txId, addInput.previousTxOutput), TxOut(previousTxOut.amount, previousTxOut.publicKeyScript), addInput.sequence)
+        }
+      case (None, None) =>
         (addInput.sharedInput_opt, fundingParams.sharedInput_opt) match {
           case (Some(outPoint), Some(sharedInput)) if outPoint == sharedInput.info.outPoint =>
             Input.Shared(addInput.serialId, outPoint, sharedInput.info.txOut.publicKeyScript, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)

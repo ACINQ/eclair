@@ -18,10 +18,11 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, satoshiSigned, txIdAsHash, varint}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
-import scodec.codecs.discriminated
+import scodec.bits.ByteVector
+import scodec.codecs._
 
 /**
  * Created by t-bast on 08/04/2022.
@@ -30,11 +31,17 @@ import scodec.codecs.discriminated
 sealed trait TxAddInputTlv extends Tlv
 
 object TxAddInputTlv {
+  /** When inputs use segwit v1+, we only need to include the previous txOut instead of the whole transaction. */
+  case class PreviousTxOut(txId: TxId, amount: Satoshi, publicKeyScript: ByteVector) extends TxAddInputTlv
+
   /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
   case class SharedInputTxId(txId: TxId) extends TxAddInputTlv
 
+  private val previousTxOutCodec: Codec[PreviousTxOut] = tlvField(("txId" | txIdAsHash) :: ("amount" | satoshi) :: ("publicKeyScript" | bytes))
+
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
+    .typecase(UInt64(0), previousTxOutCodec)
     .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
   )
 }

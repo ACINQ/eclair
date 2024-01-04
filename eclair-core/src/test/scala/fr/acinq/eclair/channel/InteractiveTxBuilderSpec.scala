@@ -564,6 +564,44 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("initiator uses taproot inputs") {
+    withFixture(100_000 sat, Seq(200_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+      import f._
+
+      // We send most of Alice's funds to a taproot address.
+      val probe = TestProbe()
+      val tx = sendToAddress(getNewAddress(probe, rpcClientA, Some("bech32m")), 175_000 sat, probe, rpcClientA)
+      generateBlocks(1)
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      val inputA = fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+
+      // Alice doesn't include the previous transaction: with segwit v1+, we only need the txOut.
+      assert(inputA.previousTx_opt.isEmpty)
+      assert(inputA.tlvStream.get[TxAddInputTlv.PreviousTxOut].map(_.txId).contains(tx.txid))
+
+      val successA = alice2bob.expectMsgType[Succeeded]
+      val successB = bob2alice.expectMsgType[Succeeded]
+      val (txA, _, _, _) = fixtureParams.exchangeSigsBobFirst(bobParams, successA, successB)
+      txA.signedTx.txIn.foreach(txIn => assert(txIn.outPoint.txid == tx.txid))
+    }
+  }
+
   test("initiator and non-initiator splice-in") {
     val targetFeerate = FeeratePerKw(1000 sat)
     // We chose those amounts to ensure that Bob always signs first:

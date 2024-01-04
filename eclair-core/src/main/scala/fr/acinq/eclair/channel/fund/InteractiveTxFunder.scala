@@ -95,13 +95,14 @@ object InteractiveTxFunder {
   }
 
   private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
-    // Wallet input transaction must fit inside the tx_add_input message.
-    val previousTxSizeOk = Transaction.write(previousTx).length <= 65000
-    // Wallet input must be a native segwit input.
-    val isNativeSegwit = Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)
+    val previousTxOk = Script.getWitnessVersion(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript) match {
+      case None => false // Wallet input must be a native segwit input.
+      case Some(0) => Transaction.write(previousTx).length <= 65_000 // Wallet input transaction must fit inside the tx_add_input message.
+      case Some(_) => true // When using segwit v1 or higher, we don't need to include the whole input transaction.
+    }
     // Wallet input must be confirmed if our peer requested it.
     val confirmationsOk = !fundingParams.requireConfirmedInputs.forLocal || confirmations > 0
-    previousTxSizeOk && isNativeSegwit && confirmationsOk
+    previousTxOk && confirmationsOk
   }
 
   private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
