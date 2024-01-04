@@ -197,15 +197,16 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val bobCommitSig = bob2alice.expectMsgType[CommitSig]
     val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
 
+    val fundingTxA = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
     bob2alice.forward(alice, bobCommitSig.copy(signature = ByteVector64.Zeroes))
     alice2bob.expectMsgType[Error]
-    awaitCond(wallet.rolledback.length == 1)
+    awaitCond(fundingTxA.tx.localInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
     alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
     bob2alice.expectMsgType[Error]
-    awaitCond(wallet.rolledback.length == 2)
+    awaitCond(fundingTxA.tx.remoteInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -213,6 +214,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
   test("recv invalid TxSignatures", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
+    val fundingTxA = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[CommitSig]
@@ -222,7 +224,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob2blockchain.expectMsgType[WatchFundingConfirmed]
     bob2alice.forward(alice, bobSigs.copy(txId = randomTxId(), witnesses = Nil))
     alice2bob.expectMsgType[Error]
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(fundingTxA.tx.localInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
@@ -246,7 +248,9 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob2alice.forward(alice, TxInitRbf(channelId(bob), 0, FeeratePerKw(15_000 sat)))
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
-    assert(wallet.rolledback.isEmpty)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
+    fundingTx.tx.localInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
+    fundingTx.tx.remoteInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
   }
 
   test("recv TxAckRbf", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -262,20 +266,23 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob2alice.forward(alice, TxAckRbf(channelId(bob)))
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
-    assert(wallet.rolledback.isEmpty)
+    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
+    fundingTx.tx.localInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
+    fundingTx.tx.remoteInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     val finalChannelId = channelId(alice)
+    val fundingTxA = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
     alice ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(fundingTxA.tx.localInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
     bob ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(fundingTxA.tx.remoteInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -284,18 +291,19 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     import f._
 
     val finalChannelId = channelId(alice)
+    val fundingTxA = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
     val sender = TestProbe()
     val c = CMD_CLOSE(sender.ref, None, None)
 
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(fundingTxA.tx.localInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
     bob ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(fundingTxA.tx.remoteInputs.forall(i => wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -304,6 +312,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     import f._
 
     val aliceData = alice.stateData
+    val fundingTx = aliceData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
     assert(alice.stateData == aliceData)
@@ -314,7 +323,8 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     awaitCond(bob.stateName == OFFLINE)
     assert(bob.stateData == bobData)
     bobListener.expectNoMessage(100 millis)
-    assert(wallet.rolledback.isEmpty)
+    fundingTx.tx.localInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
+    fundingTx.tx.remoteInputs.foreach(i => assert(!wallet.rolledback.exists(_.txIn.map(_.outPoint).contains(i.outPoint))))
   }
 
   test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
