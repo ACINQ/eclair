@@ -31,6 +31,7 @@ import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.reputation.Reputation.ReputationConfig
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Router._
@@ -86,7 +87,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      localReputationConfig: ReputationConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -604,7 +606,12 @@ object NodeParams extends Logging {
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
         maxAttempts = config.getInt("onion-messages.max-attempts"),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      localReputationConfig = ReputationConfig(MilliSatoshi(
+        config.getLong("local-reputation.max-weight-msat")),
+        FiniteDuration(config.getDuration("local-reputation.min-duration").getSeconds, TimeUnit.SECONDS),
+        config.getDouble("local-reputation.pending-multiplier")
+      ),
     )
   }
 }

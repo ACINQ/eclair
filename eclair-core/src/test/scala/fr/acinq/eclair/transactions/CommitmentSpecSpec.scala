@@ -29,11 +29,11 @@ class CommitmentSpecSpec extends AnyFunSuite {
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, 1.0)
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
     assert(spec1 == spec.copy(htlcs = Set(OutgoingHtlc(add1)), toLocal = 3000000 msat))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, 1.0)
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
     assert(spec2 == spec1.copy(htlcs = Set(OutgoingHtlc(add1), OutgoingHtlc(add2)), toLocal = 2000000 msat))
 
@@ -51,11 +51,11 @@ class CommitmentSpecSpec extends AnyFunSuite {
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, 1.0)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
     assert(spec1 == spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = 3000 * 1000 msat))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, 1.0)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
     assert(spec2 == spec1.copy(htlcs = Set(IncomingHtlc(add1), IncomingHtlc(add2)), toRemote = (2000 * 1000) msat))
 
@@ -76,7 +76,7 @@ class CommitmentSpecSpec extends AnyFunSuite {
   }
 
   def createHtlc(amount: MilliSatoshi): UpdateAddHtlc = {
-    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None)
+    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, 1.0)
   }
 
 }

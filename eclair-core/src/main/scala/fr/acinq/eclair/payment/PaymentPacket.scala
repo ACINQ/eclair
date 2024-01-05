@@ -246,7 +246,7 @@ object OutgoingPaymentPacket {
       val expiryIn: CltvExpiry = adds.map(_.add.cltvExpiry).min
     }
 
-    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli)
+    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey)
   }
   // @formatter:on
 
@@ -293,13 +293,13 @@ object OutgoingPaymentPacket {
   }
 
   /** Build the command to add an HTLC for the given recipient using the provided route. */
-  def buildOutgoingPayment(replyTo: ActorRef, privateKey: PrivateKey, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
+  def buildOutgoingPayment(replyTo: ActorRef, privateKey: PrivateKey, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient, confidence: Double): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
     for {
       paymentTmp <- recipient.buildPayloads(paymentHash, route)
       outgoing <- getOutgoingChannel(privateKey, paymentTmp, route)
       onion <- buildOnion(PaymentOnionCodecs.paymentOnionPayloadLength, outgoing.payment.payloads, paymentHash) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(replyTo, outgoing.payment.amount, paymentHash, outgoing.payment.expiry, onion.packet, outgoing.nextBlinding_opt, Origin.Hot(replyTo, upstream), commit = true)
+      val cmd = CMD_ADD_HTLC(replyTo, outgoing.payment.amount, paymentHash, outgoing.payment.expiry, onion.packet, outgoing.nextBlinding_opt, confidence, Origin.Hot(replyTo, upstream), commit = true)
       OutgoingPaymentPacket(cmd, outgoing.shortChannelId, onion.sharedSecrets)
     }
   }
