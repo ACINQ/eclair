@@ -164,7 +164,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -505,6 +505,7 @@ object Peer {
                          channelType_opt: Option[SupportedChannelType],
                          pushAmount_opt: Option[MilliSatoshi],
                          fundingTxFeerate_opt: Option[FeeratePerKw],
+                         fundingTxFeeBudget_opt: Option[Satoshi],
                          channelFlags_opt: Option[ChannelFlags],
                          timeout_opt: Option[Timeout],
                          requireConfirmedInputsOverride_opt: Option[Boolean] = None,

@@ -212,7 +212,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             targetFeerate = open.fundingFeerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
           )
-          val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint)
+          val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint, feeBudget_opt = None)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             randomBytes32(),
             nodeParams, fundingParams,
@@ -275,7 +275,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             targetFeerate = d.lastSent.fundingFeerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
           )
-          val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint)
+          val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint, feeBudget_opt = d.init.fundingTxFeeBudget_opt)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
             randomBytes32(),
             nodeParams, fundingParams,

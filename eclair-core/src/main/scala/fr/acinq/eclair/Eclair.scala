@@ -87,7 +87,7 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
 
   def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
@@ -205,9 +205,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[Peer.DisconnectResponse].map(_.toString)
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
+    val fundingFeeBudget = fundingFeeBudget_opt.getOrElse{
+      val proportionalFee = Helpers.getRelayFees(appKit.nodeParams, nodeId, announceChannel_opt.getOrElse(appKit.nodeParams.channelConf.channelFlags.announceChannel)).feeProportionalMillionths.toDouble / 1e6
+      fundingAmount * proportionalFee
+    }
     for {
       _ <- Future.successful(0)
       open = Peer.OpenChannel(
@@ -215,7 +219,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         fundingAmount = fundingAmount,
         channelType_opt = channelType_opt,
         pushAmount_opt = pushAmount_opt,
-        fundingTxFeerate_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
+        fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
+        fundingTxFeeBudget_opt = Some(fundingFeeBudget),
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
         timeout_opt = Some(openTimeout))
       res <- (appKit.switchboard ? open).mapTo[OpenChannelResponse]

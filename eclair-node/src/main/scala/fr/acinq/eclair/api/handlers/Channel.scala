@@ -52,8 +52,8 @@ trait Channel {
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "fundingFeeBudgetSatoshis".as[Satoshi].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt) =>
         val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
           case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
             case Some(channelType) => (true, Some(channelType))
@@ -64,7 +64,7 @@ trait Channel {
         if (!channelTypeOk) {
           reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
         } else {
-          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt))
+          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt))
         }
     }
   }

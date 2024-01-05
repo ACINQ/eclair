@@ -125,7 +125,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderAlice(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsA): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      FundingTx(commitFeerate, firstPerCommitmentPointB),
+      FundingTx(commitFeerate, firstPerCommitmentPointB, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 
@@ -153,7 +153,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      FundingTx(commitFeerate, firstPerCommitmentPointA),
+      FundingTx(commitFeerate, firstPerCommitmentPointA, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 

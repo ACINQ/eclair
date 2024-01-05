@@ -169,7 +169,7 @@ object InteractiveTxBuilder {
     def localHtlcs: Set[DirectedHtlc]
     def htlcBalance: MilliSatoshi = localHtlcs.toSeq.map(_.add.amountMsat).sum
   }
-  case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey) extends Purpose {
+  case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey, feeBudget_opt: Option[Satoshi]) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = 0 msat
     override val previousRemoteBalance: MilliSatoshi = 0 msat
     override val previousFundingAmount: Satoshi = 0 sat

@@ -438,7 +438,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // The anchor transaction is paying for the weight of the commitment transaction.
     // We remove the weight of the artificially added change output, because we will remove that output after funding.
     val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTxWeight - KotlinUtils.scala2kmp(dummyChangeOutput).weight()))
-    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight)).flatMap { fundTxResponse =>
+    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight), feeBudget_opt = None).flatMap { fundTxResponse =>
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
       // The commitment transaction was already paying some fees that we're paying again in the anchor transaction since
@@ -464,7 +464,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessInputWeight
       case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutInputWeight
     })
-    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight))).map(fundTxResponse => {
+    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight)), feeBudget_opt = None).map(fundTxResponse => {
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the htlc is the first input.
       val fundedTx = fundTxResponse.tx.copy(txIn = htlcTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == htlcTx.txInfo.input.outPoint))
       (htlcTx.updateTx(fundedTx), fundTxResponse.amountIn)
