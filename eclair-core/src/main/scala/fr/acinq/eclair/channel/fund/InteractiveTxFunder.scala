@@ -21,8 +21,8 @@ import akka.actor.typed.{ActorRef, Behavior}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensEach}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.{OnChainChannelFunder, OnChainWallet}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.TxAddInput
@@ -30,7 +30,7 @@ import fr.acinq.eclair.{Logs, UInt64}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Random, Success}
+import scala.util.{Failure, Random, Success, Try}
 
 /**
  * Created by t-bast on 05/01/2023.
@@ -183,13 +183,43 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   /**
+   * We don't have any control over bitcoind's coin selection: it sometimes ends up creating transactions with a large
+   * number of inputs (and thus a high fee), which we want to avoid. We run multiple coin selection attempts in parallel
+   * and use the best result.
+   *
+   * We should get rid of this hack if in practice it doesn't significantly improve the fees we pay, or if bitcoind
+   * provides better configuration hooks for the coin selection algorithm.
+   */
+  private def fundTransaction(txNotFunded: Transaction): Future[OnChainWallet.FundTransactionResponse] = {
+    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
+    val fundingAttempts = (1 to 3).map { _ =>
+      wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)
+        .map(Success(_))
+        .recover { case f => Failure(f) }
+    }
+    Future.foldLeft(fundingAttempts)(Try(Seq.empty[OnChainWallet.FundTransactionResponse])) {
+      case (current, Success(next)) => Success(current.getOrElse(Nil) :+ next)
+      case (Success(current), Failure(_)) if current.nonEmpty => Success(current)
+      case (_, Failure(f)) => Failure(f)
+    }.flatMap {
+      case Failure(f) => Future.failed(f)
+      case Success(candidates) =>
+        if (candidates.size > 1) log.info("multiple funding candidates found: {}", candidates.map(r => s"${r.fee} fees with ${r.tx.txIn.size} inputs").mkString(", "))
+        val sorted = candidates.sortBy(_.fee)
+        // We must unlock the inputs used by the other result that don't appear in the selected result.
+        val unusedInputs = sorted.tail.flatMap(_.tx.txIn.map(_.outPoint)).toSet -- sorted.head.tx.txIn.map(_.outPoint).toSet
+        val dummyTx = Transaction(2, unusedInputs.toSeq.map(o => TxIn(o, Nil, 0)), Nil, 0)
+        wallet.rollback(dummyTx).transformWith(_ => Future.successful(sorted.head))
+    }
+  }
+
+  /**
    * We (ab)use bitcoind's `fundrawtransaction` to select available utxos from our wallet. Not all utxos are suitable
    * for dual funding though (e.g. they need to use segwit), so we filter them and iterate until we have a valid set of
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
+    context.pipeToSelf(fundTransaction(txNotFunded)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }
