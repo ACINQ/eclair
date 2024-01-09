@@ -24,14 +24,14 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoicePayload}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
 
 import scala.annotation.tailrec
 
@@ -74,7 +74,10 @@ object OfferPayment {
                                connectDirectly: Boolean,
                                maxAttempts: Int,
                                routeParams: RouteParams,
-                               blocking: Boolean)
+                               blocking: Boolean,
+                               trampoline: Option[TrampolineConfig] = None)
+
+  case class TrampolineConfig(nodeId: PublicKey, attempts: Seq[(MilliSatoshi, CltvExpiryDelta)])
 
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
@@ -131,7 +134,12 @@ private class OfferPayment(replyTo: ActorRef,
   private def waitForInvoice(attemptNumber: Int): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(invoiceRequest).isRight =>
-        resolveCompactBlindedPaths(payload.invoice, payload.invoice.blindedPaths, Nil)
+        sendPaymentConfig.trampoline match {
+          case Some(trampoline) =>
+            paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)
+            Behaviors.stopped
+          case None => resolveCompactBlindedPaths(payload.invoice, payload.invoice.blindedPaths, Nil)
+        }
       case WrappedMessageResponse(Postman.Response(payload)) =>
         // We've received a response but it is not an invoice as we expected or it is an invalid invoice.
         replyTo ! InvalidInvoiceResponse(invoiceRequest, payload)

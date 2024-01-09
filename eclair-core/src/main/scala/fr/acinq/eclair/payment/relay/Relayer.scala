@@ -58,7 +58,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
   private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register)).onFailure(SupervisorStrategy.resume), "channel-relayer")
-  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register), triggerer)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
+  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register), triggerer, router)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init
@@ -70,9 +70,16 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           paymentHandler forward p
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
           channelRelayer ! ChannelRelayer.Relay(r)
-        case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
+        case Right(r: IncomingPaymentPacket.RelayToTrampolinePacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
+            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing()), commit = true))
+          } else {
+            nodeRelayer ! NodeRelayer.Relay(r)
+          }
+        case Right(r: IncomingPaymentPacket.RelayToBlindedPathsPacket) =>
+          if (!nodeParams.enableTrampolinePayment) {
+            log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to blinded paths reason=trampoline disabled")
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing()), commit = true))
           } else {
             nodeRelayer ! NodeRelayer.Relay(r)

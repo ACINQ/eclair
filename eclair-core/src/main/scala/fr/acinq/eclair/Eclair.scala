@@ -180,6 +180,8 @@ trait Eclair {
 
   def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
 
+  def payOfferTrampoline(offer: Offer, amount: MilliSatoshi, quantity: Long, trampolineNodeId: PublicKey, trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)], externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[UUID]
+
   def getOnChainMasterPubKey(account: Long): String
 
   def getDescriptors(account: Long): Descriptors
@@ -686,6 +688,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   private def payOfferInternal(offer: Offer,
                                amount: MilliSatoshi,
                                quantity: Long,
+                               trampolineNodeId_opt: Option[PublicKey],
+                               trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)],
                                externalId_opt: Option[String],
                                maxAttempts_opt: Option[Int],
                                maxFeeFlat_opt: Option[Satoshi],
@@ -703,7 +707,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
       case Left(t) => return Future.failed(t)
     }
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking)
+    val trampoline = trampolineNodeId_opt.map(trampolineNodeId => OfferPayment.TrampolineConfig(trampolineNodeId, trampolineAttempts))
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking, trampoline)
     val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
@@ -720,7 +725,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                         maxFeePct_opt: Option[Double],
                         pathFindingExperimentName_opt: Option[String],
                         connectDirectly: Boolean)(implicit timeout: Timeout): Future[UUID] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
+    payOfferInternal(offer, amount, quantity, None, Nil, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
   }
 
   override def payOfferBlocking(offer: Offer,
@@ -732,7 +737,21 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 maxFeePct_opt: Option[Double],
                                 pathFindingExperimentName_opt: Option[String],
                                 connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+    payOfferInternal(offer, amount, quantity, None, Nil, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+  }
+
+  override def payOfferTrampoline(offer: Offer,
+                                  amount: MilliSatoshi,
+                                  quantity: Long,
+                                  trampolineNodeId: PublicKey,
+                                  trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)],
+                                  externalId_opt: Option[String],
+                                  maxAttempts_opt: Option[Int],
+                                  maxFeeFlat_opt: Option[Satoshi],
+                                  maxFeePct_opt: Option[Double],
+                                  pathFindingExperimentName_opt: Option[String],
+                                  connectDirectly: Boolean)(implicit timeout: Timeout): Future[UUID] = {
+    payOfferInternal(offer, amount, quantity, Some(trampolineNodeId), trampolineAttempts, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
   }
 
   override def getDescriptors(account: Long): Descriptors = appKit.nodeParams.onChainKeyManager_opt match {
