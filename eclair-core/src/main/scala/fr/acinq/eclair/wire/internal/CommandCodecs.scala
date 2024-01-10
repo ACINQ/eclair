@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.internal
 
 import akka.actor.ActorRef
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
@@ -24,7 +25,7 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.Codec
 import scodec.codecs._
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 object CommandCodecs {
 
@@ -33,6 +34,8 @@ object CommandCodecs {
   private val legacyCmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | either(bool, varsizebinarydata, provide(TemporaryNodeFailure()).upcast[FailureMessage])) ::
+      ("useAttributableErrors" | provide(false)) ::
+      ("startHoldTime" | provide(TimestampMilli.min)) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
@@ -46,6 +49,8 @@ object CommandCodecs {
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | either(bool8, varsizebinarydata, variableSizeBytes(uint16, failureMessageCodec))) ::
+      ("useAttributableErrors" | bool8) ::
+      ("startHoldTime" | uint64overflow.xmapc(TimestampMilli(_))(_.toLong)) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::

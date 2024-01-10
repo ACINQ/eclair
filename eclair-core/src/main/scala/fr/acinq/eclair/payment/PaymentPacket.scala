@@ -23,13 +23,15 @@ import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractShared
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Route}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.UseAttributableError
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
 /**
@@ -114,6 +116,10 @@ object IncomingPaymentPacket {
       case None => privateKey
     }
     decryptOnion(add.paymentHash, outerOnionDecryptionKey, add.onionRoutingPacket).flatMap {
+      case DecodedOnionPacket(payload, _) if payload.get[UseAttributableError].isDefined && !features.hasFeature(Features.AttributableError) =>
+        Left(InvalidOnionPayload(UInt64(20), 0))
+      case DecodedOnionPacket(payload, _) if payload.get[UseAttributableError].isEmpty && features.hasFeature(Features.AttributableError, Some(FeatureSupport.Mandatory)) =>
+        Left(InvalidOnionPayload(UInt64(20), 0))
       case DecodedOnionPacket(payload, Some(nextPacket)) =>
         payload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
           case Some(_) if !features.hasFeature(Features.RouteBlinding) => Left(InvalidOnionPayload(UInt64(10), 0))
@@ -246,7 +252,7 @@ object OutgoingPaymentPacket {
       val expiryIn: CltvExpiry = adds.map(_.add.cltvExpiry).min
     }
 
-    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli)
+    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli, useAttributableErrors: Boolean)
   }
   // @formatter:on
 
@@ -304,10 +310,12 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc, useAttributableErrors: Boolean, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, ByteVector] = {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
+          case Left(forwarded) if useAttributableErrors => Sphinx.AttributableErrorPacket.wrap(forwarded, sharedSecret, holdTime, isSource = false)
+          case Right(failure) if useAttributableErrors => Sphinx.AttributableErrorPacket.create(sharedSecret, failure, holdTime)
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
         }
@@ -323,7 +331,7 @@ object OutgoingPaymentPacket {
         val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
-        buildHtlcFailure(nodeSecret, cmd.reason, add).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
+        buildHtlcFailure(nodeSecret, cmd.reason, add, cmd.useAttributableErrors, TimestampMilli.now() - cmd.startHoldTime).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
     }
   }
 

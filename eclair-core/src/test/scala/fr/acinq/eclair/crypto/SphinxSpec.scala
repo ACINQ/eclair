@@ -21,10 +21,15 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedRoute, BlindedRouteDetails}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomBytes, randomKey}
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
+import java.io.File
+import scala.concurrent.duration.DurationInt
+import scala.io.Source
 import scala.util.Success
 
 /**
@@ -390,6 +395,79 @@ class SphinxSpec extends AnyFunSuite {
     val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error2, sharedSecrets)
     assert(pubkey == publicKeys(2))
     assert(failure == InvalidRealm())
+  }
+
+  test("decrypt fat error") {
+    val sharedSecrets = Seq(
+      hex"0101010101010101010101010101010101010101010101010101010101010101",
+      hex"0202020202020202020202020202020202020202020202020202020202020202",
+      hex"0303030303030303030303030303030303030303030303030303030303030303",
+      hex"0404040404040404040404040404040404040404040404040404040404040404",
+      hex"0505050505050505050505050505050505050505050505050505050505050505",
+    ).map(ByteVector32(_))
+
+    val expected = DecryptedFailurePacket(publicKeys(2), InvalidOnionKey(ByteVector32.One))
+
+    val packet1 = AttributableErrorPacket.create(sharedSecrets(2), expected.failureMessage, 3 millis)
+    assert(packet1.length == 1200)
+
+    val Right(decrypted1) = AttributableErrorPacket.decrypt(packet1, (2 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
+    assert(decrypted1 == expected)
+
+    val packet2 = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 5 millis, isSource = false)
+    assert(packet2.length == 1200)
+
+    val Right(decrypted2) = AttributableErrorPacket.decrypt(packet2, (1 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
+    assert(decrypted2 == expected)
+
+    val packet3 = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 9 millis, isSource = false)
+    assert(packet3.length == 1200)
+
+    val Right(decrypted3) = AttributableErrorPacket.decrypt(packet3, (0 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
+    assert(decrypted3 == expected)
+  }
+
+  test("decrypt fat error with random data") {
+    val sharedSecrets = Seq(
+      hex"0101010101010101010101010101010101010101010101010101010101010101",
+      hex"0202020202020202020202020202020202020202020202020202020202020202",
+      hex"0303030303030303030303030303030303030303030303030303030303030303",
+      hex"0404040404040404040404040404040404040404040404040404040404040404",
+      hex"0505050505050505050505050505050505050505050505050505050505050505",
+    ).map(ByteVector32(_))
+
+    // publicKeys(2) creates an invalid random packet, or publicKeys(1) tries to shift blame by pretending to receive random data from publicKeys(2)
+    val packet1 = randomBytes(1200)
+
+    val hopPayload2 = AttributableError.HopPayload(isPayloadSource = false, 50 millis)
+    val packet2 = AttributableErrorPacket.wrap(packet1, sharedSecrets(1), 50 millis, isSource = false)
+    assert(packet2.length == 1200)
+
+    val hopPayload3 = AttributableError.HopPayload(isPayloadSource = false, 100 millis)
+    val packet3 = AttributableErrorPacket.wrap(packet2, sharedSecrets(0), 100 millis, isSource = false)
+    assert(packet3.length == 1200)
+
+    val Left(decryptionError) = AttributableErrorPacket.decrypt(packet3, (0 to 4).map(i => (sharedSecrets(i), publicKeys(i))))
+    val expected = InvalidAttributableErrorPacket(Seq((publicKeys(0), hopPayload3), (publicKeys(1), hopPayload2)), publicKeys(2))
+    assert(decryptionError == expected)
+  }
+
+  case class TestVector(encodedFailureMessage: String, hops: Seq[TestHop])
+  case class TestHop(sharedSecret: String, encryptedMessage: String)
+  implicit val formats: DefaultFormats.type = DefaultFormats
+
+  test("attributable error test vector") {
+    val src = Source.fromFile(new File(getClass.getResource(s"/attributable_error.json").getFile))
+    val testVector = JsonMethods.parse(src.mkString).extract[TestVector]
+    src.close()
+    val encodedFailureMessage = ByteVector.fromValidHex(testVector.encodedFailureMessage)
+    val expected = FailureMessageCodecs.failureOnionPayload(0).decode(encodedFailureMessage.bits).require.value
+    val sharedSecrets = testVector.hops.map(hop => ByteVector32(ByteVector.fromValidHex(hop.sharedSecret))).reverse
+    val encryptedMessage = testVector.hops.map(hop => ByteVector.fromValidHex(hop.encryptedMessage)).last
+    val nodeIds = (1 to testVector.hops.length).map(_ => randomKey().publicKey)
+    val Right(DecryptedFailurePacket(originNode, failureMessage)) = AttributableErrorPacket.decrypt(encryptedMessage, sharedSecrets.zip(nodeIds))
+    assert(originNode == nodeIds.last)
+    assert(failureMessage == expected)
   }
 
   test("create blinded route (reference test vector)") {

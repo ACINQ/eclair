@@ -26,6 +26,7 @@ import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParam
 
 import java.util.concurrent.TimeUnit
 import scala.collection.immutable.Queue
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -134,7 +135,7 @@ object MultiPartPaymentFSM {
     def totalAmount: MilliSatoshi
   }
   /** An incoming HTLC. */
-  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart {
+  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc, useAttributableErrors: Boolean, startTime: TimestampMilli = TimestampMilli.now()) extends PaymentPart {
     override def paymentHash: ByteVector32  = htlc.paymentHash
     override def amount: MilliSatoshi  = htlc.amountMsat
   }
