@@ -55,6 +55,8 @@ This feature leaks a bit of information about the balance when the channel is al
 ### API changes
 
 - `bumpforceclose` can be used to make a force-close confirm faster, by spending the anchor output (#2743)
+- `open` now takes an optional parameter `--fundingFeeBudgetSatoshis` to define the maximum acceptable value for the mining fee of the funding transaction. This mining fee can sometimes be unexpectedly high depending on available UTXOs in the wallet. Default value is 0.1% of the funding amount (#2808)
+- `rbfopen` now takes a mandatory parameter `--fundingFeeBudgetSatoshis`, with the same semantics as for `open` (#2808)
 
 ### Miscellaneous improvements and bug fixes
 

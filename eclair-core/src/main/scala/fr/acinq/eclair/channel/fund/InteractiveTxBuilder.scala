@@ -169,7 +169,7 @@ object InteractiveTxBuilder {
     def localHtlcs: Set[DirectedHtlc]
     def htlcBalance: MilliSatoshi = localHtlcs.toSeq.map(_.add.amountMsat).sum
   }
-  case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey) extends Purpose {
+  case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey, feeBudget_opt: Option[Satoshi]) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = 0 msat
     override val previousRemoteBalance: MilliSatoshi = 0 msat
     override val previousFundingAmount: Satoshi = 0 sat
@@ -194,7 +194,7 @@ object InteractiveTxBuilder {
    *                             only one of them ends up confirming. We guarantee this by having the latest transaction
    *                             always double-spend all its predecessors.
    */
-  case class PreviousTxRbf(replacedCommitment: Commitment, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction]) extends Purpose {
+  case class PreviousTxRbf(replacedCommitment: Commitment, previousLocalBalance: MilliSatoshi, previousRemoteBalance: MilliSatoshi, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], feeBudget_opt: Option[Satoshi]) extends Purpose {
     // Note that the truncation is a no-op: the sum of balances in a channel must be a satoshi amount.
     override val previousFundingAmount: Satoshi = (previousLocalBalance + previousRemoteBalance).truncateToSatoshi
     override val localCommitIndex: Long = replacedCommitment.localCommit.index

@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFu
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
+import fr.acinq.eclair.json.SatoshiSerializer
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -233,7 +234,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
   //------------------------- FUNDING  -------------------------//
 
-  def fundTransaction(tx: Transaction, options: FundTransactionOptions)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+  /**
+   * @param feeBudget max allowed fee, if the transaction returned by bitcoin core has a higher fee a funding error is returned.
+   */
+  def fundTransaction(tx: Transaction, options: FundTransactionOptions, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     rpcClient.invoke("fundrawtransaction", tx.toString(), options).flatMap(json => {
       val JString(hex) = json \ "hex"
       val JInt(changePos) = json \ "changepos"
@@ -243,12 +247,14 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
       val walletInputs = fundedTx.txIn.map(_.outPoint).toSet -- tx.txIn.map(_.outPoint).toSet
       val addedOutputs = fundedTx.txOut.size - tx.txOut.size
+      val feeSat = toSatoshi(fee)
       Try {
         require(addedOutputs <= 1, "more than one change output added")
         require(addedOutputs == 0 || changePos >= 0, "change output added, but position not returned")
         require(options.changePosition.isEmpty || changePos_opt.isEmpty || changePos_opt == options.changePosition, "change output added at wrong position")
+        feeBudget_opt.foreach(feeBudget => require(feeSat <= feeBudget, s"mining fee is higher than budget ($feeSat > $feeBudget)"))
 
-        FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
+        FundTransactionResponse(fundedTx, feeSat, changePos_opt)
       } match {
         case Success(response) => Future.successful(response)
         case Failure(error) => unlockOutpoints(walletInputs.toSeq).flatMap(_ => Future.failed(error))
@@ -256,8 +262,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq))
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq), feeBudget_opt = feeBudget_opt)
   }
 
   private def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
@@ -302,7 +308,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     }
   }
 
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
 
     def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw): Future[MakeFundingTxResponse] = {
       import KotlinUtils._
@@ -338,7 +344,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
       // TODO: we should check that mempoolMinFee is not dangerously high
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate))
+      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate), feeBudget_opt = feeBudget_opt)
       lockedUtxos = tx.txIn.map(_.outPoint)
       signedTx <- unlockIfFails(lockedUtxos)(verifyAndSign(tx, fee, feerate))
     } yield signedTx

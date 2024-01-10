@@ -144,7 +144,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     )
     val testCases = Map(
       RbfStatus.NoRbf -> RbfStatus.NoRbf,
-      RbfStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), 0)) -> RbfStatus.NoRbf,
+      RbfStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), fundingFeeBudget = 100_000.sat, 0)) -> RbfStatus.NoRbf,
       RbfStatus.RbfInProgress(None, null, None) -> RbfStatus.NoRbf,
       RbfStatus.RbfWaitingForSigs(waitingForSigs) -> RbfStatus.RbfWaitingForSigs(waitingForSigs),
       RbfStatus.RbfAborted -> RbfStatus.NoRbf,
