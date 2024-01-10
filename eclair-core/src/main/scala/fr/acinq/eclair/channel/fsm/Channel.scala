@@ -878,6 +878,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         stay()
       }
 
+    case Event(_: Stfu, d: DATA_NORMAL) if d.localShutdown.isDefined =>
+      log.warning("our peer sent stfu but we sent shutdown first")
+      // We don't need to do anything, they should accept our shutdown.
+      stay()
+
     case Event(msg: Stfu, d: DATA_NORMAL) =>
       if (d.commitments.params.useQuiescence) {
         if (d.commitments.remoteIsQuiescent) {
@@ -927,6 +932,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(_: QuiescenceTimeout, d: DATA_NORMAL) => handleQuiescenceTimeout(d)
+
+    case Event(_: SpliceInit, d: DATA_NORMAL) if d.spliceStatus == SpliceStatus.NoSplice && d.commitments.params.useQuiescence =>
+      log.info("rejecting splice attempt: quiescence not negotiated")
+      stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
 
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
@@ -2705,7 +2714,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         spliceInAmount = cmd.additionalLocalFunding,
         spliceOut = cmd.spliceOutputs,
         targetFeerate = targetFeerate)
-      val commitTxFees = Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+      val commitTxFees = if (d.commitments.params.localParams.isInitiator) {
+        Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+      } else 0.sat
       if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params).max(commitTxFees)) {
         log.warning(s"cannot do splice: insufficient funds (commitTxFees=$commitTxFees reserve=${parentCommitment.localChannelReserve(d.commitments.params)})")
         Left(InvalidSpliceRequest(d.channelId))
