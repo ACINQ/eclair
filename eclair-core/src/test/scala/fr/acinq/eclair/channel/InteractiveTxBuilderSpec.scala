@@ -132,7 +132,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions),
+      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 
@@ -146,7 +146,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions),
+      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 
@@ -160,7 +160,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions),
+      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 
@@ -174,7 +174,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions),
+      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat,
       wallet))
 

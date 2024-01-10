@@ -191,6 +191,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
     val feeBudget_opt = purpose match {
       case p: FundingTx => p.feeBudget_opt
+      case p: PreviousTxRbf => p.feeBudget_opt
       case _ => None
     }
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {

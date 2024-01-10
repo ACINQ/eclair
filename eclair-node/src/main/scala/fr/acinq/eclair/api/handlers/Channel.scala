@@ -70,8 +70,8 @@ trait Channel {
   }
 
   val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
-    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "lockTime".as[Long].?) {
-      (channelId, targetFeerateSatByte, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), lockTime_opt))
+    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
+      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
     }
   }
 

@@ -147,11 +147,16 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
       txOut = tx.txOut :+ TxOut(inputAmount, Script.pay2wpkh(pubkey)),
     )
     val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight() + externalInputsWeight.values.sum.toInt)
-    val fundedTx = tx.copy(
-      txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), Nil, 0),
-      txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, Script.pay2wpkh(pubkey)),
-    )
-    Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
+    feeBudget_opt match {
+      case Some(feeBudget) if fee > feeBudget =>
+        Future.failed(new RuntimeException(s"mining fee is higher than budget ($fee > $feeBudget)"))
+      case _ =>
+        val fundedTx = tx.copy(
+          txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), Nil, 0),
+          txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, Script.pay2wpkh(pubkey)),
+        )
+        Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
+    }
   }
 
   private def signTransaction(tx: Transaction): Future[SignTransactionResponse] = {

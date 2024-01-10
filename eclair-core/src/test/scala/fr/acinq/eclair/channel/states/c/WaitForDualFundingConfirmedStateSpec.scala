@@ -236,7 +236,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val probe = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
-    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 10_000.sat, 0)
     alice2bob.expectMsgType[TxInitRbf]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxAckRbf]
@@ -309,7 +309,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val probe = TestProbe()
     val currentFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
     val previousFundingTxs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs
-    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, currentFundingTx.feerate * 1.1, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, currentFundingTx.feerate * 1.1, fundingFeeBudget = 10_000.sat, 0)
     assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
     alice2bob.forward(bob)
     assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
@@ -373,7 +373,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val probe = TestProbe()
     val fundingTxAlice = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
     val fundingTxBob = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 10_000.sat, 0)
     assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
     alice2bob.forward(bob)
     assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
@@ -384,6 +384,35 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.forward(bob)
     val bobInput = bob2alice.expectMsgType[TxAddInput]
     bob2alice.forward(alice, bobInput.copy(previousTxOutput = 42))
+    alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob)
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.RbfAborted))
+    bob2alice.expectMsgType[TxAbort] // bob acks alice's tx_abort
+    bob2alice.forward(alice)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Alice and Bob clear RBF data from their state.
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.NoRbf)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx == fundingTxAlice)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.NoRbf)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx == fundingTxBob)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.isEmpty)
+  }
+
+  test("recv CMD_BUMP_FUNDING_FEE (over fee budget)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    val fundingTxAlice = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    val fundingTxBob = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 100.sat, 0)
+    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
+    bob2alice.forward(alice)
+
+    // Alice and Bob build a new version of the funding transaction.
     alice2bob.expectMsgType[TxAbort]
     alice2bob.forward(bob)
     awaitAssert(assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].rbfStatus == RbfStatus.RbfAborted))
@@ -429,7 +458,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   test("recv TxAckRbf (invalid push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
     import f._
 
-    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.25, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.25, fundingFeeBudget = 10_000.sat, 0)
     alice2bob.expectMsgType[TxInitRbf]
     val fundingBelowPushAmount = 99_000.sat
     alice ! TxAckRbf(channelId(alice), fundingBelowPushAmount)
@@ -719,7 +748,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   test("recv INPUT_DISCONNECTED (unsigned rbf attempt)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
-    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.1, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 10_000.sat, 0)
     alice2bob.expectMsgType[TxInitRbf]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxAckRbf]
@@ -778,7 +807,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     import f._
 
     val currentFundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
-    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.1, 0)
+    alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 10_000.sat, 0)
     alice2bob.expectMsgType[TxInitRbf]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxAckRbf]
