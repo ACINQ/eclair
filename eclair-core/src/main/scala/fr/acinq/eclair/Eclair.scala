@@ -30,9 +30,8 @@ import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -208,10 +207,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
-    val fundingFeeBudget = fundingFeeBudget_opt.getOrElse{
-      val proportionalFee = Helpers.getRelayFees(appKit.nodeParams, nodeId, announceChannel_opt.getOrElse(appKit.nodeParams.channelConf.channelFlags.announceChannel)).feeProportionalMillionths.toDouble / 1e6
-      fundingAmount * proportionalFee
-    }
+    // if no budget is provided for the mining fee of the funding tx, we use a default of 0.1% of the funding amount as a safety measure
+    val fundingFeeBudget = fundingFeeBudget_opt.getOrElse(fundingAmount * 0.001)
     for {
       _ <- Future.successful(0)
       open = Peer.OpenChannel(
