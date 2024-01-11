@@ -227,15 +227,17 @@ object Sphinx extends Logging {
    * Create an encrypted onion packet that contains payloads for all nodes in the list.
    *
    * @param sessionKey          session key.
-   * @param packetPayloadLength length of the packet's encrypted onion payload (e.g. 1300 for standard payment onions).
+   * @param minPacketLength     minimum length of the packet's encrypted onion payload (e.g. 1300 for standard payment onions).
+   * @param maxPacketLength     maximum length of the packet's encrypted onion payload (e.g. 1300 for standard payment onions).
    * @param publicKeys          node public keys (one per node).
    * @param payloads            payloads (one per node).
    * @param associatedData      associated data.
    * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
    *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
    */
-  def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): Try[PacketAndSecrets] = Try {
-    require(payloads.map(_.length + MacLength).sum <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
+  def create(sessionKey: PrivateKey, minPacketLength: Int, maxPacketLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): Try[PacketAndSecrets] = Try {
+    val packetPayloadLength = minPacketLength max payloads.map(_.length + MacLength).sum.toInt
+    require(packetPayloadLength <= maxPacketLength, s"packet per-hop payloads cannot exceed $maxPacketLength bytes")
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", packetPayloadLength, sharedsecrets.dropRight(1), payloads.dropRight(1))
 
