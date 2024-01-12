@@ -157,7 +157,7 @@ object OnionMessages {
           payloadSize.toInt
         }
         // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
-        val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
+        val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
         Right((route.introductionNodeId, OnionMessage(route.blindingKey, packet)))
     }
   }

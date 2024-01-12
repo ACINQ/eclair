@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv, variableSizeOnionRoutingPacketCodec}
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -215,10 +215,6 @@ object PaymentOnion {
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
   sealed trait PerHopPayload {
     def records: TlvStream[OnionPaymentPayloadTlv]
-  }
-
-  case object EmptyPayload extends PerHopPayload {
-    override def records: TlvStream[OnionPaymentPayloadTlv] = TlvStream.empty
   }
 
   /** Per-hop payload for an intermediate node. */
@@ -478,9 +474,7 @@ object PaymentOnionCodecs {
   import scodec.{Codec, DecodeResult, Decoder}
 
   val paymentOnionPayloadLength = 1300
-  val trampolineOnionPayloadLength = 400
   val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(paymentOnionPayloadLength)
-  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(trampolineOnionPayloadLength)
 
   /**
    * The 1.1 BOLT spec changed the payment onion frame format to use variable-length per-hop payloads.
@@ -513,7 +507,7 @@ object PaymentOnionCodecs {
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = tlvField(list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec)))
 
-  private val trampolineOnion: Codec[TrampolineOnion] = variableSizeOnionRoutingPacketCodec.as[TrampolineOnion]
+  private val trampolineOnion: Codec[TrampolineOnion] = tlvField(OnionRoutingCodecs.variableSizeOnionRoutingPacketCodec)
 
   private val keySend: Codec[KeySend] = tlvField(bytes32)
 

@@ -25,6 +25,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice
@@ -37,7 +38,6 @@ import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFr
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair._
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -119,7 +119,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // We simulate a payment split between multiple trampoline routes.
     val totalAmount = finalAmount * 3
     val finalTrampolinePayload = NodePayload(b, FinalPayload.Standard.createPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
-    val Right(trampolineOnion) = buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, PaymentOnionCodecs.trampolineOnionPayloadLength, Seq(finalTrampolinePayload), paymentHash)
+    val Right(trampolineOnion) = buildOnion(Seq(finalTrampolinePayload), paymentHash, None)
     val recipient = ClearRecipient(b, nodeParams.features.invoiceFeatures(), finalAmount, finalExpiry, randomBytes32(), nextTrampolineOnion_opt = Some(trampolineOnion.packet))
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, priv_a.privateKey, Upstream.Local(UUID.randomUUID()), paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), None), recipient)
     assert(payment.cmd.amount == finalAmount)

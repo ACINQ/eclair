@@ -23,8 +23,8 @@ import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.PaymentOnion.{EmptyPayload, FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket}
 import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
 import scodec.bits.ByteVector
 
@@ -230,14 +230,14 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createPayload(totalAmount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, customTlvs))
       val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, nodeId))
       val payloads = Seq(trampolinePayload, finalPayload)
-      OutgoingPaymentPacket.buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, PaymentOnionCodecs.paymentOnionPayloadLength, payloads, paymentHash)
+      OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
     } else {
       // The recipient doesn't support trampoline: the trampoline node will convert the payment to a non-trampoline payment.
       // The final payload will thus never reach the recipient, so we create the smallest payload possible to avoid overflowing the trampoline onion size.
-      val dummyFinalPayload = NodePayload(nodeId, EmptyPayload)
+      val dummyFinalPayload = NodePayload(nodeId, IntermediatePayload.ChannelRelay.Standard(ShortChannelId(0), 0 msat, CltvExpiry(0)))
       val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(totalAmount, totalAmount, expiry, nodeId, invoice))
       val payloads = Seq(trampolinePayload, dummyFinalPayload)
-      OutgoingPaymentPacket.buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, PaymentOnionCodecs.paymentOnionPayloadLength, payloads, paymentHash)
+      OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
     }
   }
 }

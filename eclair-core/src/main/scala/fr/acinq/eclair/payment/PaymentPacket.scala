@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
-import fr.acinq.eclair.router.Router.{BlindedHop, ChannelHop, Route}
+import fr.acinq.eclair.router.Router.{BlindedHop, Route}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
@@ -250,8 +250,12 @@ object OutgoingPaymentPacket {
   }
   // @formatter:on
 
-  /** Build an encrypted onion packet from onion payloads and node public keys. */
-  def buildOnion(minPacketLength: Int, maxPacketLength: Int, payloads: Seq[NodePayload], associatedData: ByteVector32): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
+  /**
+   * Build an encrypted onion packet from onion payloads and node public keys.
+   * If packetPayloadLength_opt is provided, the onion will be padded to the requested length.
+   * In that case, packetPayloadLength_opt must be greater than the actual onion's content.
+   */
+  def buildOnion(payloads: Seq[NodePayload], associatedData: ByteVector32, packetPayloadLength_opt: Option[Int]): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
     val sessionKey = randomKey()
     val nodeIds = payloads.map(_.nodeId)
     val payloadsBin = payloads
@@ -260,7 +264,8 @@ object OutgoingPaymentPacket {
         case Attempt.Successful(bits) => bits.bytes
         case Attempt.Failure(cause) => return Left(CannotCreateOnion(cause.message))
       }
-    Sphinx.create(sessionKey, minPacketLength, maxPacketLength, nodeIds, payloadsBin, Some(associatedData)) match {
+    val packetPayloadLength = packetPayloadLength_opt.getOrElse(Sphinx.payloadsTotalSize(payloadsBin))
+    Sphinx.create(sessionKey, packetPayloadLength, nodeIds, payloadsBin, Some(associatedData)) match {
       case Failure(f) => Left(CannotCreateOnion(f.getMessage))
       case Success(packet) => Right(packet)
     }
@@ -297,7 +302,7 @@ object OutgoingPaymentPacket {
     for {
       paymentTmp <- recipient.buildPayloads(paymentHash, route)
       outgoing <- getOutgoingChannel(privateKey, paymentTmp, route)
-      onion <- buildOnion(PaymentOnionCodecs.paymentOnionPayloadLength, PaymentOnionCodecs.paymentOnionPayloadLength, outgoing.payment.payloads, paymentHash) // BOLT 2 requires that associatedData == paymentHash
+      onion <- buildOnion(outgoing.payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
       val cmd = CMD_ADD_HTLC(replyTo, outgoing.payment.amount, paymentHash, outgoing.payment.expiry, onion.packet, outgoing.nextBlinding_opt, Origin.Hot(replyTo, upstream), commit = true)
       OutgoingPaymentPacket(cmd, outgoing.shortChannelId, onion.sharedSecrets)

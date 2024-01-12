@@ -18,11 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, varintoverflow}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.bytes32
 import scodec.Codec
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import shapeless.HNil
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -47,17 +46,18 @@ object OnionRoutingCodecs {
       ("onionPayload" | bytes(payloadLength)) ::
       ("hmac" | bytes32)).as[OnionRoutingPacket]
 
-
+  /**
+   * This codec encodes onion packets of variable sizes, and decodes the whole input byte stream into an onion packet.
+   * When decoding, the caller must ensure that they provide only the bytes that contain the onion packet.
+   */
   val variableSizeOnionRoutingPacketCodec: Codec[OnionRoutingPacket] = (
-    variableSizePrefixedBytesLong(varintoverflow.xmap(l => l - 66, l => l + 66),
-      ("version" | uint8) ::
-        ("publicKey" | bytes(33)),
-      ("onionPayload" | bytes)) ::
-      ("hmac" | bytes32)).xmap[OnionRoutingPacket](
-    {
-      case shapeless.::((shapeless.::(version, shapeless.::(publicKey, HNil)), payload), shapeless.::(hmac, HNil)) => OnionRoutingPacket(version, publicKey, payload, hmac)
-    }, {
-      case OnionRoutingPacket(version, publicKey, payload, hmac) => shapeless.::((shapeless.::(version, shapeless.::(publicKey, HNil)), payload), shapeless.::(hmac, HNil))
-    }
-  )
+    ("version" | uint8) ::
+      ("publicKey" | bytes(33)) ::
+      ("onionPayload" | Codec(
+        // We simply encode the whole payload, nothing fancy here.
+        (payload: ByteVector) => bytes(payload.length.toInt).encode(payload),
+        // We stop 32 bytes before the end to avoid reading the hmac.
+        (bin: BitVector) => bytes((bin.length.toInt / 8) - 32).decode(bin))) ::
+      ("hmac" | bytes32)).as[OnionRoutingPacket]
+
 }

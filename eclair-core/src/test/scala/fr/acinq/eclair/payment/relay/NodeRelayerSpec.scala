@@ -863,7 +863,7 @@ object NodeRelayerSpec {
 
   // This is the result of decrypting the incoming trampoline onion packet.
   // It should be forwarded to the next trampoline node.
-  val nextTrampolinePacket = OnionRoutingPacket(0, hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619", randomBytes(PaymentOnionCodecs.trampolineOnionPayloadLength), randomBytes32())
+  val nextTrampolinePacket = OnionRoutingPacket(0, hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619", randomBytes(400), randomBytes32())
 
   val outgoingAmount = 40_000_000 msat
   val outgoingExpiry = CltvExpiry(490000)
