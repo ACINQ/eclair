@@ -206,10 +206,11 @@ object IncomingPaymentPacket {
   private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, NodeRelayPacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
-      IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
+      IntermediatePayload.NodeRelay.validate(innerPayload).left.map(_.failureMessage).flatMap {
         case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
         case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload => Right(NodeRelayPacket(add, outerPayload, innerPayload, next))
+        case innerPayload: IntermediatePayload.NodeRelay.Standard => Right(NodeRelayPacket(add, outerPayload, innerPayload, next))
+        case _: IntermediatePayload.NodeRelay.ToBlindedPaths => Left(InvalidOnionPayload(UInt64(66102), 0)) // Relay to blinded paths is not yet supported.
       }
     }
   }

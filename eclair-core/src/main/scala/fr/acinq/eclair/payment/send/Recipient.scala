@@ -235,7 +235,7 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
       // The recipient doesn't support trampoline: the trampoline node will convert the payment to a non-trampoline payment.
       // The final payload will thus never reach the recipient, so we create the smallest payload possible to avoid overflowing the trampoline onion size.
       val dummyFinalPayload = NodePayload(nodeId, IntermediatePayload.ChannelRelay.Standard(ShortChannelId(0), 0 msat, CltvExpiry(0)))
-      val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(totalAmount, totalAmount, expiry, nodeId, invoice))
+      val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.createNodeRelayToNonTrampolinePayload(totalAmount, totalAmount, expiry, invoice))
       val payloads = Seq(trampolinePayload, dummyFinalPayload)
       OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
     }
