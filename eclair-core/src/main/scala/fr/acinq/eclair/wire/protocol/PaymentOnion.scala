@@ -474,9 +474,7 @@ object PaymentOnionCodecs {
   import scodec.{Codec, DecodeResult, Decoder}
 
   val paymentOnionPayloadLength = 1300
-  val trampolineOnionPayloadLength = 400
   val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(paymentOnionPayloadLength)
-  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(trampolineOnionPayloadLength)
 
   /**
    * The 1.1 BOLT spec changed the payment onion frame format to use variable-length per-hop payloads.
@@ -509,7 +507,7 @@ object PaymentOnionCodecs {
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = tlvField(list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec)))
 
-  private val trampolineOnion: Codec[TrampolineOnion] = tlvField(trampolineOnionPacketCodec)
+  private val trampolineOnion: Codec[TrampolineOnion] = tlvField(OnionRoutingCodecs.variableSizeOnionRoutingPacketCodec)
 
   private val keySend: Codec[KeySend] = tlvField(bytes32)
 

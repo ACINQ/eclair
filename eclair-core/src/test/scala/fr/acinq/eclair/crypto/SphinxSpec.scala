@@ -595,7 +595,7 @@ object SphinxSpec {
     PaymentOnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
 
   def serializeTrampolineOnion(onion: OnionRoutingPacket): ByteVector =
-    PaymentOnionCodecs.trampolineOnionPacketCodec.encode(onion).require.toByteVector
+    OnionRoutingCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector
 
   def createCustomLengthFailurePacket(failure: FailureMessage, sharedSecret: ByteVector32, length: Int): ByteVector = {
     val um = Sphinx.generateKey("um", sharedSecret)
