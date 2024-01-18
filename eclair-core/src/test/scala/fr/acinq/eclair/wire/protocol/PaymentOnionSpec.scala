@@ -125,7 +125,7 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     val decoded = perHopPayloadCodec.decode(bin.bits).require.value
     assert(decoded == expected)
-    val Right(payload: IntermediatePayload.NodeRelay.Standard) = IntermediatePayload.NodeRelay.validate(decoded)
+    val Right(payload) = IntermediatePayload.NodeRelay.Standard.validate(decoded)
     assert(payload.amountToForward == 561.msat)
     assert(payload.totalAmount == 561.msat)
     assert(payload.outgoingCltv == CltvExpiry(42))
@@ -151,7 +151,7 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     val decoded = perHopPayloadCodec.decode(bin.bits).require.value
     assert(decoded == expected)
-    val Right(payload: IntermediatePayload.NodeRelay.Standard) = IntermediatePayload.NodeRelay.validate(decoded)
+    val Right(payload) = IntermediatePayload.NodeRelay.Standard.validate(decoded)
     assert(payload.amountToForward == 561.msat)
     assert(payload.totalAmount == 1105.msat)
     assert(payload.paymentSecret.contains(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
@@ -172,14 +172,13 @@ class PaymentOnionSpec extends AnyFunSuite {
       Seq(RouteBlinding.BlindedNode(PublicKey(hex"03823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac980"), hex""))
     )
     val path = PaymentBlindedContactInfo(blindedRoute, OfferTypes.PaymentInfo(1000 msat, 678, CltvExpiryDelta(82), 300 msat, 4000000 msat, Features.empty))
-    val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(341 msat), OutgoingCltv(CltvExpiry(826483)), TotalAmount(1678 msat), OutgoingBlindedPaths(Seq(path)), InvoiceFeatures(features))
-    val bin = hex"86 02020155 04030c9c73 1202068efe000 1023103020000fe000 102366a0100000000000001d40232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e0103823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac9800000000003e8000002a60052000000000000012c00000000003d09000000"
+    val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(341 msat), OutgoingCltv(CltvExpiry(826483)), OutgoingBlindedPaths(Seq(path)), InvoiceFeatures(features))
+    val bin = hex"82 02020155 04030c9c73 fe0001023103020000 fe000102366a0100000000000001d40232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e0103823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac9800000000003e8000002a60052000000000000012c00000000003d09000000"
 
     val decoded = perHopPayloadCodec.decode(bin.bits).require.value
     assert(decoded == expected)
-    val Right(payload: IntermediatePayload.NodeRelay.ToBlindedPaths) = IntermediatePayload.NodeRelay.validate(decoded)
+    val Right(payload) = IntermediatePayload.NodeRelay.ToBlindedPaths.validate(decoded)
     assert(payload.amountToForward == 341.msat)
-    assert(payload.totalAmount == 1678.msat)
     assert(payload.outgoingCltv == CltvExpiry(826483))
     assert(payload.outgoingBlindedPaths == Seq(path))
     assert(payload.invoiceFeatures == features)
@@ -316,7 +315,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     )
 
     for ((expectedErr, bin) <- testCases) {
-      assert(IntermediatePayload.NodeRelay.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
+      assert(IntermediatePayload.NodeRelay.Standard.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
     }
   }
 

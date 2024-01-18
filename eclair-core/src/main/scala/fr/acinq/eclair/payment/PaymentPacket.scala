@@ -23,6 +23,7 @@ import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractShared
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.{BlindedHop, Route}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.OutgoingBlindedPaths
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
@@ -147,7 +148,12 @@ object IncomingPaymentPacket {
                 // blinding point and use it to derive the decryption key for the blinded trampoline onion.
                 decryptOnion(add.paymentHash, privateKey, trampolinePacket).flatMap {
                   case DecodedOnionPacket(innerPayload, Some(next)) => validateNodeRelay(add, payload, innerPayload, next)
-                  case DecodedOnionPacket(innerPayload, None) => validateTrampolineFinalPayload(add, payload, innerPayload)
+                  case DecodedOnionPacket(innerPayload, None) =>
+                    if (innerPayload.get[OutgoingBlindedPaths].isDefined) {
+                      Left(InvalidOnionPayload(UInt64(66102), 0)) // Trampoline to blinded paths is not yet supported.
+                    } else {
+                      validateTrampolineFinalPayload(add, payload, innerPayload)
+                    }
                 }
               case None => validateFinalPayload(add, payload)
             }
@@ -206,11 +212,10 @@ object IncomingPaymentPacket {
   private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, NodeRelayPacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
-      IntermediatePayload.NodeRelay.validate(innerPayload).left.map(_.failureMessage).flatMap {
+      IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
         case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
         case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload: IntermediatePayload.NodeRelay.Standard => Right(NodeRelayPacket(add, outerPayload, innerPayload, next))
-        case _: IntermediatePayload.NodeRelay.ToBlindedPaths => Left(InvalidOnionPayload(UInt64(66102), 0)) // Relay to blinded paths is not yet supported.
+        case innerPayload => Right(NodeRelayPacket(add, outerPayload, innerPayload, next))
       }
     }
   }
