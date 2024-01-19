@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, Invoice, PaymentBlindedContactInfo}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, PaymentBlindedContactInfo}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -324,6 +324,20 @@ object PaymentOnion {
           Right(Standard(records))
         }
 
+        /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
+        def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): Standard = {
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+            Some(AmountToForward(amount)),
+            Some(OutgoingCltv(expiry)),
+            Some(PaymentData(invoice.paymentSecret, totalAmount)),
+            invoice.paymentMetadata.map(m => PaymentMetadata(m)),
+            Some(OutgoingNodeId(targetNodeId)),
+            Some(InvoiceFeatures(invoice.features.toByteVector)),
+            Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+          ).flatten
+          Standard(TlvStream(tlvs))
+        }
+
         /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
         def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
           Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId), AsyncPayment()))
@@ -336,40 +350,24 @@ object PaymentOnion {
       }
 
       object ToBlindedPaths {
+        def apply(amount: MilliSatoshi, expiry: CltvExpiry, invoice: Bolt12Invoice): ToBlindedPaths = {
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+            Some(AmountToForward(amount)),
+            Some(OutgoingCltv(expiry)),
+            Some(OutgoingBlindedPaths(invoice.blindedPaths)),
+            Some(InvoiceFeatures(invoice.features.toByteVector)),
+          ).flatten
+          ToBlindedPaths(TlvStream(tlvs))
+        }
+
         def validate(records: TlvStream[OnionPaymentPayloadTlv]): Either[InvalidTlvPayload, ToBlindedPaths] = {
           if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
           if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+          if (records.get[OutgoingBlindedPaths].isEmpty) return Left(MissingRequiredTlv(UInt64(66102)))
+          if (records.get[InvoiceFeatures].isEmpty) return Left(MissingRequiredTlv(UInt64(66097)))
           if (records.get[EncryptedRecipientData].nonEmpty) return Left(ForbiddenTlv(UInt64(10)))
           if (records.get[BlindingPoint].nonEmpty) return Left(ForbiddenTlv(UInt64(12)))
-          if (records.get[OutgoingNodeId].isEmpty && records.get[OutgoingBlindedPaths].isEmpty) return Left(MissingRequiredTlv(UInt64(66098)))
-          if (records.get[InvoiceFeatures].isEmpty) return Left(MissingRequiredTlv(UInt64(66097)))
           Right(ToBlindedPaths(records))
-        }
-      }
-
-      /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-      def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, invoice: Invoice): NodeRelay = {
-        invoice match {
-          case invoice: Bolt11Invoice =>
-            val tlvs: Set[OnionPaymentPayloadTlv] = Set(
-              Some(AmountToForward(amount)),
-              Some(OutgoingCltv(expiry)),
-              Some(PaymentData(invoice.paymentSecret, totalAmount)),
-              invoice.paymentMetadata.map(m => PaymentMetadata(m)),
-              Some(OutgoingNodeId(invoice.nodeId)),
-              Some(InvoiceFeatures(invoice.features.toByteVector)),
-              Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
-            ).flatten
-            Standard(TlvStream(tlvs))
-          case invoice: Bolt12Invoice =>
-            val tlvs: Set[OnionPaymentPayloadTlv] = Set(
-              Some(AmountToForward(amount)),
-              Some(OutgoingCltv(expiry)),
-              Some(OutgoingBlindedPaths(invoice.blindedPaths)),
-              Some(InvoiceFeatures(invoice.features.toByteVector)),
-            ).flatten
-            ToBlindedPaths(TlvStream(tlvs))
-          case invoice => throw new Exception(s"Unexpected invoice type: ${invoice.getClass.getName}")
         }
       }
     }
