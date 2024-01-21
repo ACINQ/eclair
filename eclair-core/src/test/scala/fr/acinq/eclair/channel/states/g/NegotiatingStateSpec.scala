@@ -29,8 +29,8 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
-import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown, TlvStream, Warning}
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, Error, Shutdown, TlvStream, Warning}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -88,6 +88,35 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   def buildFeerates(feerate: FeeratePerKw, minFeerate: FeeratePerKw = FeeratePerKw(250 sat)): FeeratesPerKw =
     FeeratesPerKw.single(feerate).copy(minimum = minFeerate, slow = minFeerate)
+
+  test("emit disabled channel update", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    val aliceListener = TestProbe()
+    systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
+    val bobListener = TestProbe()
+    systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
+
+    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+
+    alice ! CMD_CLOSE(TestProbe().ref, None, None)
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == NEGOTIATING)
+    awaitCond(bob.stateName == NEGOTIATING)
+
+    assert(!aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+    assert(!bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+  }
 
   test("recv CMD_ADD_HTLC") { f =>
     import f._

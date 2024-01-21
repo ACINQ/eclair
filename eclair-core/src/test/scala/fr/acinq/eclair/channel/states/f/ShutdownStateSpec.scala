@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
-import fr.acinq.eclair.wire.protocol.{ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -100,6 +100,42 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       channelUpdateListener.expectMsgType[LocalChannelDown]
       channelUpdateListener.expectMsgType[LocalChannelDown]
       withFixture(test.toNoArgTest(setup))
+    }
+  }
+
+  test("emit disabled channel update", Tag(ChannelStateTestsTags.ChannelsPublic)) { () =>
+    val setup = init()
+    import setup._
+    within(30 seconds) {
+      reachNormal(setup, Set(ChannelStateTestsTags.ChannelsPublic))
+
+      val aliceListener = TestProbe()
+      systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
+      val bobListener = TestProbe()
+      systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
+
+      alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+      alice2bob.expectMsgType[AnnouncementSignatures]
+      alice2bob.forward(bob)
+      bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+      bob2alice.expectMsgType[AnnouncementSignatures]
+      bob2alice.forward(alice)
+      assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+      assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+
+      addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      alice ! CMD_CLOSE(TestProbe().ref, None, None)
+      alice2bob.expectMsgType[Shutdown]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Shutdown]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateName == SHUTDOWN)
+      awaitCond(bob.stateName == SHUTDOWN)
+
+      assert(!aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+      assert(!bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
     }
   }
 
@@ -600,7 +636,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = None)
+    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth)
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
     alice2relayer.expectNoMessage(1 seconds)
   }
@@ -630,7 +666,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val event = CurrentFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
     alice.setFeerates(event.feeratesPerKw)
     alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.channelType, initialState.commitments.latest.capacity)))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

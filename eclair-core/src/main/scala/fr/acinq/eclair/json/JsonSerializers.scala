@@ -19,7 +19,7 @@ package fr.acinq.eclair.json
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
@@ -116,6 +116,34 @@ object ByteVector32KeySerializer extends MinimalKeySerializer({
 
 object ByteVector32KmpSerializer extends MinimalSerializer({
   case x: fr.acinq.bitcoin.ByteVector32 => JString(x.toHex)
+})
+
+object TxIdSerializer extends MinimalSerializer({
+  case x: TxId => JString(x.value.toHex)
+})
+
+object TxIdKeySerializer extends MinimalKeySerializer({
+  case x: TxId => x.value.toHex
+})
+
+object TxIdKmpSerializer extends MinimalSerializer({
+  case x: fr.acinq.bitcoin.TxId => JString(x.value.toHex)
+})
+
+object BlockIdSerializer extends MinimalSerializer({
+  case x: BlockId => JString(x.value.toHex)
+})
+
+object BlockIdKmpSerializer extends MinimalSerializer({
+  case x: fr.acinq.bitcoin.BlockId => JString(x.value.toHex)
+})
+
+object BlockHashSerializer extends MinimalSerializer({
+  case x: BlockHash => JString(x.value.toHex)
+})
+
+object BlockHashKmpSerializer extends MinimalSerializer({
+  case x: fr.acinq.bitcoin.BlockHash => JString(x.value.toHex)
 })
 
 object ByteVector64Serializer extends MinimalSerializer({
@@ -217,7 +245,7 @@ object CommandResponseSerializer extends MinimalSerializer({
 
 object TransactionSerializer extends MinimalSerializer({
   case x: Transaction => JObject(List(
-    JField("txid", JString(x.txid.toHex)),
+    JField("txid", JString(x.txid.value.toHex)),
     JField("tx", JString(x.toString()))
   ))
 })
@@ -228,34 +256,34 @@ object KeyPathSerializer extends MinimalSerializer({
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
   case x: HtlcSuccessTx => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
     JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: HtlcTimeoutTx => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("htlcId", JLong(x.htlcId)),
     JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClaimHtlcSuccessTx => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
     JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("htlcId", JLong(x.htlcId)),
     JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
-      JField("txid", JString(x.tx.txid.toHex)),
+      JField("txid", JString(x.tx.txid.value.toHex)),
       JField("tx", JString(x.tx.toString()))
     )
     x.toLocalOutput match {
@@ -269,7 +297,7 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
       case None => JObject(txFields)
     }
   case x: ReplaceableTransactionWithInputInfo => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     x.confirmationTarget match {
       case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
@@ -278,7 +306,7 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
 
   ))
   case x: TransactionWithInputInfo => JObject(List(
-    JField("txid", JString(x.tx.txid.toHex)),
+    JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString()))
   ))
 })
@@ -440,9 +468,17 @@ object InvoiceSerializer extends MinimalSerializer({
           UnknownFeatureSerializer
       )),
       JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+        val introductionNode = path.route match {
+          case OfferTypes.BlindedPath(route) => route.introductionNodeId.toString
+          case OfferTypes.CompactBlindedPath(shortIdDir, _, _) => s"${if (shortIdDir.isNode1) '0' else '1'}x${shortIdDir.scid.toString}"
+        }
+        val blindedNodes = path.route match {
+          case OfferTypes.BlindedPath(route) => route.blindedNodes
+          case OfferTypes.CompactBlindedPath(_, _, nodes) => nodes
+        }
         JObject(List(
-          JField("introductionNodeId", JString(path.route.introductionNodeId.toString())),
-          JField("blindedNodeIds", JArray(path.route.blindedNodes.map(n => JString(n.blindedPublicKey.toString())).toList))
+          JField("introductionNodeId", JString(introductionNode)),
+          JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))
         ))
       }).toList)),
       JField("createdAt", JLong(p.createdAt.toLong)),
@@ -520,7 +556,7 @@ object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIds
 // @formatter:on
 
 // @formatter:off
-private case class FundingTxStatusJson(status: String, txid: Option[ByteVector32])
+private case class FundingTxStatusJson(status: String, txid: Option[TxId])
 object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStatus]({
   case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid))
   case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid))
@@ -626,6 +662,9 @@ object JsonSerializers {
     TypedActorRefSerializer +
     ByteVectorSerializer +
     ByteVector32Serializer +
+    TxIdSerializer +
+    BlockIdSerializer +
+    BlockHashSerializer +
     ByteVector64Serializer +
     ChannelEventSerializer +
     UInt64Serializer +
@@ -668,6 +707,7 @@ object JsonSerializers {
     JavaUUIDSerializer +
     OriginSerializer +
     ByteVector32KeySerializer +
+    TxIdKeySerializer +
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +

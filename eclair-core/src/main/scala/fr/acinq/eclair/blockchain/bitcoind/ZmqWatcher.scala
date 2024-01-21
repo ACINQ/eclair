@@ -61,14 +61,14 @@ object ZmqWatcher {
   private case class GetBlockCountFailed(t: Throwable) extends Command
   private case class CheckBlockHeight(current: BlockHeight) extends Command
   private case class PublishBlockHeight(current: BlockHeight) extends Command
-  private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
+  private case class ProcessNewBlock(blockId: BlockId) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
-  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: ByteVector32) extends Command
-  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: TimestampSecond)
+  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: TxId) extends Command
+  final case class GetTxWithMetaResponse(txid: TxId, tx_opt: Option[Transaction], lastBlockTimestamp: TimestampSecond)
 
   sealed trait UtxoStatus
   object UtxoStatus {
@@ -79,7 +79,7 @@ object ZmqWatcher {
   /** Watch for confirmation of a given transaction. */
   sealed trait WatchConfirmed[T <: WatchConfirmedTriggered] extends Watch[T] {
     /** TxId of the transaction to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Number of confirmations. */
     def minDepth: Long
   }
@@ -93,14 +93,14 @@ object ZmqWatcher {
    */
   sealed trait WatchSpent[T <: WatchSpentTriggered] extends Watch[T] {
     /** TxId of the outpoint to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
     /**
      * TxIds of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
      * This argument can safely be ignored by watcher implementations.
      */
-    def hints: Set[ByteVector32]
+    def hints: Set[TxId]
   }
 
   /**
@@ -112,7 +112,7 @@ object ZmqWatcher {
    */
   sealed trait WatchSpentBasic[T <: WatchSpentBasicTriggered] extends Watch[T] {
     /** TxId of the outpoint to watch. */
-    def txId: ByteVector32
+    def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
   }
@@ -136,32 +136,32 @@ object ZmqWatcher {
   /** This event is sent when a [[WatchSpentBasic]] condition is met. */
   sealed trait WatchSpentBasicTriggered extends WatchTriggered
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: ByteVector32, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
   case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
 
-  case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchFundingSpentTriggered]
+  case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
-  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: ByteVector32, outputIndex: Int, hints: Set[ByteVector32]) extends WatchSpent[WatchOutputSpentTriggered]
+  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
   case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
   /** Waiting for a wallet transaction to be published guarantees that bitcoind won't double-spend it in the future, unless we explicitly call abandontransaction. */
-  case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: ByteVector32) extends Watch[WatchPublishedTriggered]
+  case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: TxId) extends Watch[WatchPublishedTriggered]
   case class WatchPublishedTriggered(tx: Transaction) extends WatchTriggered
 
-  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
+  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
+  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
   case class WatchFundingDeeplyBuriedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
+  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
   case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
+  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
   case class WatchParentTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: ByteVector32, minDepth: Long) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
+  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
   case class WatchAlternativeCommitTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   private sealed trait AddWatchResult
@@ -171,7 +171,7 @@ object ZmqWatcher {
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
@@ -184,8 +184,8 @@ object ZmqWatcher {
 
   private def utxo(w: GenericWatch): Option[OutPoint] = {
     w match {
-      case w: WatchSpent[_] => Some(OutPoint(w.txId.reverse, w.outputIndex))
-      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case w: WatchSpent[_] => Some(OutPoint(w.txId, w.outputIndex))
+      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId, w.outputIndex))
       case _ => None
     }
   }
@@ -380,29 +380,30 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
             // the output has been spent, let's find the spending tx
             // if we know some potential spending txs, we try to fetch them directly
             Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
-              .map(_
-                .flatten // filter out errors
-                .find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                case Some(spendingTx) =>
-                  // there can be only one spending tx for an utxo
-                  log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
-                  context.self ! ProcessNewTransaction(spendingTx)
-                case None =>
-                  // no luck, we have to do it the hard way...
-                  log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                      case Nil =>
+              .map(_.flatten) // filter out errors and hint transactions that can't be found
+              .map(hintTxs => {
+                hintTxs.find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                  case Some(spendingTx) =>
+                    log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
+                    context.self ! ProcessNewTransaction(spendingTx)
+                  case None =>
+                    // The hints didn't help us, let's search for the spending transaction.
+                    log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
+                    client.lookForMempoolSpendingTx(w.txId, w.outputIndex).map(Some(_)).recover { case _ => None }.map {
+                      case Some(spendingTx) =>
+                        log.info(s"found tx spending ${w.txId}:${w.outputIndex} in the mempool: txid=${spendingTx.txid}")
+                        context.self ! ProcessNewTransaction(spendingTx)
+                      case None =>
+                        // no luck, we have to do it the hard way...
                         log.warn(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, w.txId, w.outputIndex).map { tx =>
-                          log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
-                          context.self ! ProcessNewTransaction(tx)
+                        client.lookForSpendingTx(None, w.txId, w.outputIndex, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
+                          log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${spendingTx.txid}")
+                          context.self ! ProcessNewTransaction(spendingTx)
+                        }.recover {
+                          case _ => log.warn(s"could not find the spending tx of ${w.txId}:${w.outputIndex} in the blockchain, funds are at risk")
                         }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending ${w.txId}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => context.self ! ProcessNewTransaction(tx))
                     }
-                  }
+                }
               })
         }
     }

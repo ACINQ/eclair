@@ -18,10 +18,10 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.json.{ByteVector32KmpSerializer, ByteVector32Serializer}
-import org.json4s.DefaultFormats
+import fr.acinq.eclair.json._
 import org.json4s.JsonAST.JValue
-import org.json4s.jackson.Serialization
+import org.json4s.jackson.{JacksonSerialization, Serialization}
+import org.json4s.{DefaultFormats, Formats}
 import sttp.client3._
 import sttp.client3.json4s._
 import sttp.model.StatusCode
@@ -32,9 +32,13 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
-class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, override val wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
-  implicit val formats = DefaultFormats.withBigDecimal + ByteVector32Serializer + ByteVector32KmpSerializer
+  implicit val formats: Formats = DefaultFormats.withBigDecimal +
+    ByteVector32Serializer + ByteVector32KmpSerializer +
+    TxIdSerializer + TxIdKmpSerializer +
+    BlockHashSerializer + BlockHashKmpSerializer +
+    BlockIdSerializer + BlockIdKmpSerializer
 
   private val scheme = if (ssl) "https" else "http"
   private val serviceUri = wallet match {
@@ -42,7 +46,7 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: S
     case None => uri"$scheme://$host:$port"
   }
   private val credentials = new AtomicReference[BitcoinJsonRPCCredentials](rpcAuthMethod.credentials)
-  implicit val serialization = Serialization
+  implicit val serialization: JacksonSerialization = Serialization
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     invoke(Seq(JsonRPCRequest(method = method, params = params))).map(l => jsonResponse2Exception(l.head).result)
@@ -54,10 +58,10 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: S
 
   private def send(requests: Seq[JsonRPCRequest], user: String, password: String)(implicit ec: ExecutionContext): Future[Response[Either[ResponseException[String, Exception], Seq[JsonRPCResponse]]]] = {
     requests.groupBy(_.method).foreach {
-      case (method, calls) => Metrics.RpcBasicInvokeCount.withTag(Tags.Method, method).increment(calls.size)
+      case (method, calls) => Metrics.RpcBasicInvokeCount.withTag(Tags.Method, method).withTag(Tags.Wallet, wallet.getOrElse("default")).increment(calls.size)
     }
     // for the duration metric, we use a "mixed" method for batched requests
-    KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withTag(Tags.Method, if (requests.size == 1) requests.head.method else "mixed")) {
+    KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withTag(Tags.Method, if (requests.size == 1) requests.head.method else "mixed").withTag(Tags.Wallet, wallet.getOrElse("default"))) {
       for {
         response <- basicRequest
           .post(serviceUri)

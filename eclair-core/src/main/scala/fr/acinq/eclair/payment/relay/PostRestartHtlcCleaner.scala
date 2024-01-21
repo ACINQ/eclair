@@ -28,7 +28,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.wire.protocol.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{FailureMessage, InvalidOnionBlinding, TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{CustomCommitmentsPlugin, Feature, Features, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import scala.concurrent.Promise
@@ -124,7 +124,16 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSING && e.currentState != CLOSED) {
                   log.info(s"failing not relayed htlc=$htlc")
-                  channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), commit = true)
+                  val cmd = htlc.blinding_opt match {
+                    case Some(_) =>
+                      // The incoming HTLC contains a blinding point: we must be an intermediate node in a blinded path,
+                      // and we thus need to return an update_fail_malformed_htlc.
+                      val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
+                      CMD_FAIL_MALFORMED_HTLC(htlc.id, failure.onionHash, failure.code, commit = true)
+                    case None =>
+                      CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), commit = true)
+                  }
+                  channel ! cmd
                 } else {
                   log.info(s"would fail but upstream channel is closed for htlc=$htlc")
                 }
@@ -190,7 +199,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             log.error(s"unexpected channel relay downstream HTLCs: expected (${fulfilledHtlc.channelId},${fulfilledHtlc.id}), found $relayedOut")
           }
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, commit = true))
-          context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, fulfilledHtlc.paymentHash, originChannelId, fulfilledHtlc.channelId))
+          // We don't know when we received this HTLC so we just pretend that we received it just now.
+          context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, fulfilledHtlc.paymentHash, originChannelId, fulfilledHtlc.channelId, TimestampMilli.now(), TimestampMilli.now()))
           Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
 
@@ -243,7 +253,16 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               case Origin.ChannelRelayedCold(originChannelId, originHtlcId, _, _) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing 1 HTLC upstream")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
-                val cmd = ChannelRelay.translateRelayFailure(originHtlcId, fail)
+                val cmd = failedHtlc.blinding_opt match {
+                  case Some(_) =>
+                    // If we are inside a blinded path, we cannot know whether we're the introduction node or not since
+                    // we don't have access to the incoming onion: to avoid leaking information, we act as if we were an
+                    // intermediate node and send invalid_onion_blinding in an update_fail_malformed_htlc message.
+                    val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
+                    CMD_FAIL_MALFORMED_HTLC(originHtlcId, failure.onionHash, failure.code, commit = true)
+                  case None =>
+                    ChannelRelay.translateRelayFailure(originHtlcId, fail)
+                }
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
               case Origin.TrampolineRelayedCold(origins) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} HTLCs upstream")
@@ -335,7 +354,7 @@ object PostRestartHtlcCleaner {
       case _ => None
     })
 
-  def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPaymentPacket], IncomingHtlc] = {
+  private def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPaymentPacket], IncomingHtlc] = {
     // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
     case Right(p: IncomingPaymentPacket.ChannelRelayPacket) => IncomingHtlc(p.add, None)
     case Right(p: IncomingPaymentPacket.NodeRelayPacket) => IncomingHtlc(p.add, None)
@@ -360,7 +379,7 @@ object PostRestartHtlcCleaner {
   private def isPendingUpstream(channelId: ByteVector32, htlcId: Long, htlcsIn: Seq[IncomingHtlc]): Boolean =
     htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
 
-  def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] =
+  private def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] =
     htlcsOut
       .groupBy { case (origin, _, _) => origin }
       .view

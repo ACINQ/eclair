@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
 import fr.acinq.eclair.crypto.Mac32
@@ -106,6 +106,13 @@ object CommonCodecs {
   val bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
 
   val sha256: Codec[ByteVector32] = bytes32
+
+  val blockHash: Codec[BlockHash] = bytes32.as[BlockHash]
+
+  val txId: Codec[TxId] = bytes32.as[TxId]
+
+  /** In lightning messages, transaction IDs are usually encoded as a tx_hash, which reverses the endianness. */
+  val txIdAsHash: Codec[TxId] = bytes32.xmap(b => TxId(TxHash(b)), txId => TxHash(txId).value)
 
   val varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
 

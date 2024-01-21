@@ -18,8 +18,9 @@ package fr.acinq.eclair.channel.fund
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import com.softwaremill.quicklens.{ModifyPimp, QuicklensEach}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -156,8 +157,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       // force us to add wallet inputs. The caller may manually decrease the output amounts if it wants to actually
       // contribute to the RBF attempt.
       if (fundingParams.isInitiator) {
-        val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => Input.Shared(UInt64(0), sharedInput.info.outPoint, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance))
-        val sharedOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution)
+        val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => Input.Shared(UInt64(0), sharedInput.info.outPoint, sharedInput.info.txOut.publicKeyScript, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance))
+        val sharedOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution, purpose.htlcBalance)
         val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
         val fundingContributions = sortFundingContributions(fundingParams, sharedInput ++ previousWalletInputs, sharedOutput +: nonChangeOutputs)
         replyTo ! fundingContributions
@@ -188,7 +189,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight)) {
+    val feeBudget_opt = purpose match {
+      case p: FundingTx => p.feeBudget_opt
+      case p: PreviousTxRbf => p.feeBudget_opt
+      case _ => None
+    }
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }
@@ -232,7 +238,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           val fundingContributions = if (fundingParams.isInitiator) {
             // The initiator is responsible for adding the shared output and the shared input.
             val inputs = inputDetails.usableInputs
-            val fundingOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution)
+            val fundingOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution, purpose.htlcBalance)
             val outputs = Seq(fundingOutput) ++ nonChangeOutputs ++ changeOutput_opt.toSeq
             sortFundingContributions(fundingParams, inputs, outputs)
           } else {
@@ -291,10 +297,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case None => fundingParams.sharedInput_opt match {
         case Some(sharedInput) if sharedInput.info.outPoint == txIn.outPoint =>
           // We don't need to validate the shared input, it comes from a valid lightning channel.
-          Future.successful(Right(Input.Shared(UInt64(0), sharedInput.info.outPoint, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance)))
+          Future.successful(Right(Input.Shared(UInt64(0), sharedInput.info.outPoint, sharedInput.info.txOut.publicKeyScript, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)))
         case _ =>
           for {
             previousTx <- wallet.getTransaction(txIn.outPoint.txid)
+              // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
+              .map(_.modify(_.txIn.each.witness).setTo(ScriptWitness.empty))
             confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
           } yield {
             if (canUseInput(fundingParams, txIn, previousTx, confirmations_opt.getOrElse(0))) {

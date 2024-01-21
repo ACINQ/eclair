@@ -69,7 +69,7 @@ object LightningMessageCodecs {
       ("tlvStream" | ChannelReestablishTlv.channelReestablishTlvCodec)).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingSatoshis" | satoshi) ::
       ("pushMsat" | millisatoshi) ::
@@ -90,7 +90,7 @@ object LightningMessageCodecs {
       ("tlvStream" | OpenChannelTlv.openTlvCodec)).as[OpenChannel]
 
   val openDualFundedChannelCodec: Codec[OpenDualFundedChannel] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("temporaryChannelId" | bytes32) ::
       ("fundingFeerate" | feeratePerKw) ::
       ("commitmentFeerate" | feeratePerKw) ::
@@ -148,7 +148,7 @@ object LightningMessageCodecs {
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | bytes32) ::
-      ("fundingTxid" | bytes32) ::
+      ("fundingTxHash" | txIdAsHash) ::
       ("fundingOutputIndex" | uint16) ::
       ("signature" | bytes64) ::
       ("tlvStream" | FundingCreatedTlv.fundingCreatedTlvCodec)).as[FundingCreated]
@@ -197,7 +197,7 @@ object LightningMessageCodecs {
 
   val txSignaturesCodec: Codec[TxSignatures] = (
     ("channelId" | bytes32) ::
-      ("txHash" | sha256) ::
+      ("txHash" | txIdAsHash) ::
       ("witnesses" | witnessesCodec) ::
       ("tlvStream" | TxSignaturesTlv.txSignaturesTlvCodec)).as[TxSignatures]
 
@@ -281,7 +281,7 @@ object LightningMessageCodecs {
 
   val channelAnnouncementWitnessCodec =
     ("features" | lengthPrefixedFeaturesCodec) ::
-      ("chainHash" | bytes32) ::
+      ("chainHash" | blockHash) ::
       ("shortChannelId" | realshortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
@@ -317,7 +317,7 @@ object LightningMessageCodecs {
   val channelFlagsCodec = ("channelFlags" | (ignore(6) :: reverseBool :: reverseBool)).as[ChannelUpdate.ChannelFlags]
 
   val channelUpdateChecksumCodec =
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("shortChannelId" | shortchannelid) ::
       messageFlagsCodec ::
       channelFlagsCodec ::
@@ -328,7 +328,7 @@ object LightningMessageCodecs {
       ("htlcMaximumMsat" | millisatoshi)
 
   val channelUpdateWitnessCodec =
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | timestampSecond) ::
       messageFlagsCodec ::
@@ -355,23 +355,23 @@ object LightningMessageCodecs {
       }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(realshortchannelid))).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("shortChannelIds" | variableSizeBytes(uint16, encodedShortChannelIdsCodec)) ::
       ("tlvStream" | QueryShortChannelIdsTlv.codec)).as[QueryShortChannelIds]
 
   val replyShortChannelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("complete" | byte) ::
       ("tlvStream" | ReplyShortChannelIdsEndTlv.replyShortChannelIdsEndTlvCodec)).as[ReplyShortChannelIdsEnd]
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("firstBlock" | blockHeight) ::
       ("numberOfBlocks" | uint32) ::
       ("tlvStream" | QueryChannelRangeTlv.codec)).as[QueryChannelRange]
 
   val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("firstBlock" | blockHeight) ::
       ("numberOfBlocks" | uint32) ::
       ("complete" | byte) ::
@@ -379,7 +379,7 @@ object LightningMessageCodecs {
       ("tlvStream" | ReplyChannelRangeTlv.codec)).as[ReplyChannelRange]
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
-    ("chainHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("firstTimestamp" | timestampSecond) ::
       ("timestampRange" | uint32) ::
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
@@ -418,8 +418,13 @@ object LightningMessageCodecs {
 
   val spliceLockedCodec: Codec[SpliceLocked] = (
     ("channelId" | bytes32) ::
-      ("fundingTxid" | bytes32) ::
+      ("fundingTxHash" | txIdAsHash) ::
       ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
+
+  val stfuCodec: Codec[Stfu] = (
+    ("channelId" | bytes32) ::
+      ("initiator" | byte.xmap[Boolean](b => b != 0, b => if (b) 1 else 0))).as[Stfu]
+
   //
 
   //
@@ -431,6 +436,7 @@ object LightningMessageCodecs {
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
+    .typecase(2, stfuCodec)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)

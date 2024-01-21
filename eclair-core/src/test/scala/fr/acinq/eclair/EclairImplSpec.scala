@@ -22,11 +22,11 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong, TxId}
 import fr.acinq.eclair.ApiTypes.{ChannelIdentifier, ChannelNotFound}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer
@@ -100,12 +100,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeerate_opt = Some(FeeratePerByte(5 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeerate_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeerate_opt = Some(FeeratePerByte(1 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeerate_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
     assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
@@ -235,7 +235,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
     ).map { case (ann, update) =>
-      update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
+      update.shortChannelId -> PublicChannel(ann, TxId(ByteVector32.Zeroes), 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
     }: _*)
 
     val eclair = new EclairImpl(kit)
@@ -251,16 +251,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     // option_scid_alias is not compatible with public channels
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     assert(sender.expectMsgType[Status.Failure].cause.getMessage.contains("option_scid_alias is not compatible with public channels"))
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
   }
 
@@ -272,8 +272,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
     register.expectMsg(Register.Forward(null, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
+    eclair.bumpForceCloseFee(Left(ByteVector32.Zeroes) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
+    register.expectMsgType[Register.Forward[CMD_BUMP_FORCE_CLOSE_FEE]]
+
     eclair.forceClose(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsg(Register.ForwardShortId(null, ShortChannelId.fromCoordinates("568749x2597x0").success.value, CMD_FORCECLOSE(ActorRef.noSender)))
+
+    eclair.bumpForceCloseFee(Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
+    register.expectMsgType[Register.ForwardShortId[CMD_BUMP_FORCE_CLOSE_FEE]]
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId.fromCoordinates("568749x2597x0").success.value) :: Nil)
     register.expectMsgAllOf(
@@ -315,7 +321,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress_opt.contains(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalStateException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -338,7 +344,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)))
-    paymentInitiator.expectMsg(SendPaymentToRoute(1200 msat, pr, route, Some("42"), Some(parentId), Some(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144)))))
+    val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
+    assert(sendPaymentToRoute.recipientAmount == 1200.msat)
+    assert(sendPaymentToRoute.invoice == pr)
+    assert(sendPaymentToRoute.route == route)
+    assert(sendPaymentToRoute.externalId.contains("42"))
+    assert(sendPaymentToRoute.parentId.contains(parentId))
+    assert(sendPaymentToRoute.trampoline_opt.contains(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144))))
   }
 
   test("find routes") { f =>
@@ -349,8 +361,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val channel1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(1), a, b, a, b, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val channel2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(2), b, c, b, c, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val publicChannels = SortedMap(
-      channel1.shortChannelId -> PublicChannel(channel1, ByteVector32.Zeroes, 100_000 sat, None, None, None),
-      channel2.shortChannelId -> PublicChannel(channel2, ByteVector32.Zeroes, 150_000 sat, None, None, None),
+      channel1.shortChannelId -> PublicChannel(channel1, TxId(ByteVector32.Zeroes), 100_000 sat, None, None, None),
+      channel2.shortChannelId -> PublicChannel(channel2, TxId(ByteVector32.Zeroes), 150_000 sat, None, None, None),
     )
     val (channelId3, shortIds3) = (randomBytes32(), ShortIds(RealScidStatus.Unknown, Alias(13), None))
     val (channelId4, shortIds4) = (randomBytes32(), ShortIds(RealScidStatus.Final(RealShortChannelId(4)), Alias(14), None))
@@ -676,8 +688,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.expectNoMessage()
 
     assert(sender.expectMsgType[Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] == Map(
-      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), a1)),
-      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
+      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234), a1)),
+      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
       Left(b1) -> Left(ChannelNotFound(Left(b1)))
     ))
 

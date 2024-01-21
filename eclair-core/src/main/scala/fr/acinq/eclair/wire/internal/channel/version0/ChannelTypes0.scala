@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version0
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -51,10 +51,10 @@ private[channel] object ChannelTypes0 {
     InputInfo(input, parentTx.txOut(input.index.toInt), Nil)
   }
 
-  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
+  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
       val htlcTxs = htlcSuccessTxs ++ htlcTimeoutTxs
-      val knownTxs: Map[ByteVector32, Transaction] = (commitTx :: claimMainDelayedOutputTx.toList ::: htlcTxs ::: claimHtlcDelayedTxs).map(tx => tx.txid -> tx).toMap
+      val knownTxs: Map[TxId, Transaction] = (commitTx :: claimMainDelayedOutputTx.toList ::: htlcTxs ::: claimHtlcDelayedTxs).map(tx => tx.txid -> tx).toMap
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
@@ -71,10 +71,10 @@ private[channel] object ChannelTypes0 {
     }
   }
 
-  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
+  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.RemoteCommitPublished = {
       val claimHtlcTxs = claimHtlcSuccessTxs ::: claimHtlcTimeoutTxs
-      val knownTxs: Map[ByteVector32, Transaction] = (commitTx :: claimMainOutputTx.toList ::: claimHtlcTxs).map(tx => tx.txid -> tx).toMap
+      val knownTxs: Map[TxId, Transaction] = (commitTx :: claimMainOutputTx.toList ::: claimHtlcTxs).map(tx => tx.txid -> tx).toMap
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
@@ -86,9 +86,9 @@ private[channel] object ChannelTypes0 {
     }
   }
 
-  case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
+  case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.RevokedCommitPublished = {
-      val knownTxs: Map[ByteVector32, Transaction] = (commitTx :: claimMainOutputTx.toList ::: mainPenaltyTx.toList ::: htlcPenaltyTxs ::: claimHtlcDelayedPenaltyTxs).map(tx => tx.txid -> tx).toMap
+      val knownTxs: Map[TxId, Transaction] = (commitTx :: claimMainOutputTx.toList ::: mainPenaltyTx.toList ::: htlcPenaltyTxs ::: claimHtlcDelayedPenaltyTxs).map(tx => tx.txid -> tx).toMap
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
@@ -199,7 +199,7 @@ private[channel] object ChannelTypes0 {
       nodeId = nodeId,
       dustLimit = dustLimit,
       maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
-      requestedChannelReserve_opt = requestedChannelReserve_opt,
+      initialRequestedChannelReserve_opt = requestedChannelReserve_opt,
       htlcMinimum = htlcMinimum,
       toSelfDelay = toSelfDelay,
       maxAcceptedHtlcs = maxAcceptedHtlcs,

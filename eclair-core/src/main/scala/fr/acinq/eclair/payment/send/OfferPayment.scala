@@ -19,23 +19,28 @@ package fr.acinq.eclair.payment.send
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.BlockHash
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
+import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo, PaymentBlindedRoute}
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoicePayload}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, TimestampSecond, randomKey}
+import fr.acinq.eclair.{Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
+
+import scala.annotation.tailrec
 
 object OfferPayment {
   sealed trait Failure
 
   case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends Failure
 
-  case class UnsupportedChains(chains: Seq[ByteVector32]) extends Failure
+  case class UnsupportedChains(chains: Seq[BlockHash]) extends Failure
 
   case class ExpiredOffer(expiryDate: TimestampSecond) extends Failure
 
@@ -49,6 +54,10 @@ object OfferPayment {
     override def toString: String = s"Invalid invoice response: $response, invoice request: $request"
   }
 
+  case class UnknownShortChannelIds(scids: Seq[RealShortChannelId]) extends Failure {
+    override def toString: String = s"Unknown short channel ids: ${scids.mkString(",")}"
+  }
+
   sealed trait Command
 
   case class PayOffer(replyTo: ActorRef,
@@ -59,6 +68,8 @@ object OfferPayment {
 
   case class WrappedMessageResponse(response: OnionMessageResponse) extends Command
 
+  private case class WrappedNodeId(nodeId_opt: Option[PublicKey]) extends Command
+
   case class SendPaymentConfig(externalId_opt: Option[String],
                                connectDirectly: Boolean,
                                maxAttempts: Int,
@@ -67,6 +78,7 @@ object OfferPayment {
 
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
+            router: ActorRef,
             paymentInitiator: ActorRef): Behavior[Command] = {
     Behaviors.setup(context =>
       Behaviors.receiveMessagePartial {
@@ -89,58 +101,88 @@ object OfferPayment {
           } else {
             val payerKey = randomKey()
             val request = InvoiceRequest(offer, amount, quantity, nodeParams.features.bolt12Features(), payerKey, nodeParams.chainHash)
-            sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, 0, sendPaymentConfig)
+            val offerPayment = new OfferPayment(replyTo, nodeParams, postman, router, paymentInitiator, payerKey, request, sendPaymentConfig, context)
+            offerPayment.sendInvoiceRequest(attemptNumber = 0)
           }
       })
   }
+}
 
-  def sendInvoiceRequest(nodeParams: NodeParams,
-                         postman: typed.ActorRef[Postman.Command],
-                         paymentInitiator: ActorRef,
-                         context: ActorContext[Command],
-                         request: InvoiceRequest,
-                         payerKey: PrivateKey,
-                         replyTo: ActorRef,
-                         attemptNumber: Int,
-                         sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
-    val destination = request.offer.contactInfo match {
-      case Left(blindedRoutes) =>
-        val blindedRoute = blindedRoutes(attemptNumber % blindedRoutes.length)
-        OnionMessages.BlindedPath(blindedRoute)
-      case Right(nodeId) =>
-        OnionMessages.Recipient(nodeId, None, None)
-    }
-    val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(request.records))
+private class OfferPayment(replyTo: ActorRef,
+                           nodeParams: NodeParams,
+                           postman: typed.ActorRef[Postman.Command],
+                           router: ActorRef,
+                           paymentInitiator: ActorRef,
+                           payerKey: PrivateKey,
+                           invoiceRequest: InvoiceRequest,
+                           sendPaymentConfig: OfferPayment.SendPaymentConfig,
+                           context: ActorContext[OfferPayment.Command]) {
+
+  import OfferPayment._
+
+  def sendInvoiceRequest(attemptNumber: Int): Behavior[Command] = {
+    val contactInfo = invoiceRequest.offer.contactInfos(attemptNumber % invoiceRequest.offer.contactInfos.length)
+    val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(invoiceRequest.records))
     val routingStrategy = if (sendPaymentConfig.connectDirectly) OnionMessages.RoutingStrategy.connectDirectly else OnionMessages.RoutingStrategy.FindRoute
-    postman ! SendMessage(destination, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
-    waitForInvoice(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber + 1, sendPaymentConfig)
+    postman ! SendMessage(contactInfo, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
+    waitForInvoice(attemptNumber + 1)
   }
 
-  def waitForInvoice(nodeParams: NodeParams,
-                     postman: typed.ActorRef[Postman.Command],
-                     paymentInitiator: ActorRef,
-                     context: ActorContext[Command],
-                     request: InvoiceRequest,
-                     payerKey: PrivateKey,
-                     replyTo: ActorRef,
-                     attemptNumber: Int,
-                     sendPaymentConfig: SendPaymentConfig): Behavior[Command] = {
+  private def waitForInvoice(attemptNumber: Int): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(request).isRight =>
-        val recipientAmount = payload.invoice.amount
-        paymentInitiator ! SendPaymentToNode(replyTo, recipientAmount, payload.invoice, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
-        Behaviors.stopped
+      case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(invoiceRequest).isRight =>
+        resolveCompactBlindedPaths(payload.invoice, payload.invoice.blindedPaths, Nil)
       case WrappedMessageResponse(Postman.Response(payload)) =>
         // We've received a response but it is not an invoice as we expected or it is an invalid invoice.
-        replyTo ! InvalidInvoiceResponse(request, payload)
+        replyTo ! InvalidInvoiceResponse(invoiceRequest, payload)
         Behaviors.stopped
       case WrappedMessageResponse(Postman.NoReply) if attemptNumber < nodeParams.onionMessageConfig.maxAttempts =>
         // We didn't get a response, let's retry.
-        sendInvoiceRequest(nodeParams, postman, paymentInitiator, context, request, payerKey, replyTo, attemptNumber, sendPaymentConfig)
+        sendInvoiceRequest(attemptNumber)
       case WrappedMessageResponse(_) =>
         // We can't reach the offer node or the offer node can't reach us.
         replyTo ! NoInvoiceResponse
         Behaviors.stopped
     }
   }
+
+  /**
+   * Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to resolve
+   * that to a nodeId in order to reach that introduction node and use the blinded path.
+   */
+  @tailrec
+  private def resolveCompactBlindedPaths(invoice: Bolt12Invoice, toResolve: Seq[PaymentBlindedContactInfo], resolved: Seq[PaymentBlindedRoute]): Behavior[Command] = {
+    if (toResolve.isEmpty) {
+      if (resolved.isEmpty) {
+        // We couldn't identify any of the blinded paths' introduction nodes because the scids are unknown.
+        val scids = invoice.blindedPaths.collect { case PaymentBlindedContactInfo(CompactBlindedPath(scdidDir, _, _), _) => scdidDir.scid }
+        replyTo ! UnknownShortChannelIds(scids)
+      } else {
+        paymentInitiator ! SendPaymentToNode(replyTo, invoice.amount, invoice, resolved, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+      }
+      Behaviors.stopped
+    } else {
+      toResolve.head match {
+        case PaymentBlindedContactInfo(BlindedPath(route), paymentInfo) =>
+          resolveCompactBlindedPaths(invoice, toResolve.tail, resolved :+ PaymentBlindedRoute(route, paymentInfo))
+        case PaymentBlindedContactInfo(route: CompactBlindedPath, paymentInfo) =>
+          router ! Router.GetNodeId(context.messageAdapter(WrappedNodeId), route.introductionNode.scid, route.introductionNode.isNode1)
+          waitForNodeId(invoice, route, paymentInfo, toResolve.tail, resolved)
+      }
+    }
+  }
+
+  private def waitForNodeId(invoice: Bolt12Invoice,
+                            compactRoute: CompactBlindedPath,
+                            paymentInfo: PaymentInfo,
+                            toResolve: Seq[PaymentBlindedContactInfo],
+                            resolved: Seq[PaymentBlindedRoute]): Behavior[Command] =
+    Behaviors.receiveMessagePartial {
+      case WrappedNodeId(None) =>
+        resolveCompactBlindedPaths(invoice, toResolve, resolved)
+      case WrappedNodeId(Some(nodeId)) =>
+        val resolvedPaymentBlindedRoute = PaymentBlindedRoute(BlindedRoute(nodeId, compactRoute.blindingKey, compactRoute.blindedNodes), paymentInfo)
+        resolveCompactBlindedPaths(invoice, toResolve, resolved :+ resolvedPaymentBlindedRoute)
+    }
+
 }

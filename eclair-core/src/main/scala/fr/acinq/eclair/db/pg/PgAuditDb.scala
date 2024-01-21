@@ -165,7 +165,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             migration910(statement)
           }
           if (v < 11) {
-          migration1011(statement)
+            migration1011(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -228,10 +228,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Postgres) {
     inTransaction { pg =>
       val payments = e match {
-        case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
+        case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
           // non-trampoline relayed payments have one input and one output
-          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", ts), RelayedPart(toChannelId, amountOut, "OUT", "channel", ts))
-        case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, ts) =>
+          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+        case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
           using(pg.prepareStatement("INSERT INTO audit.relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
             statement.setString(1, e.paymentHash.toHex)
             statement.setLong(2, nextTrampolineAmount.toLong)
@@ -240,7 +240,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
+          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
       }
       for (p <- payments) {
         using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -249,7 +249,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setString(3, p.channelId.toHex)
           statement.setString(4, p.direction)
           statement.setString(5, p.relayType)
-          statement.setTimestamp(6, e.timestamp.toSqlTimestamp)
+          statement.setTimestamp(6, p.timestamp.toSqlTimestamp)
           statement.executeUpdate()
         }
       }
@@ -259,7 +259,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
-        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(1, e.tx.txid.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
         statement.setLong(4, e.miningFee.toLong)
@@ -273,7 +273,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO audit.transactions_confirmed VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
-        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(1, e.tx.txid.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
         statement.setTimestamp(4, Timestamp.from(Instant.now()))
@@ -425,15 +425,15 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         case (paymentHash, parts) =>
           // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
           // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
-          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.IncomingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
+          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.OutgoingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
           parts.headOption match {
-            case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
-              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
+            case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
+              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.receivedAt, out.settledAt)
             }
-            case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
+            case Some(RelayedPart(_, _, _, "trampoline", _)) =>
               val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
-              TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
+              TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
             case _ => Nil
           }
       }.toSeq.sortBy(_.timestamp)

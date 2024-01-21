@@ -60,7 +60,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
       alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
       bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
       alice.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(bobParams.nodeId, relayFees)
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, pushMsat, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushMsat, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -119,7 +119,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     // we have a real scid, but the channel is not announced so alice uses bob's alias
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
@@ -141,7 +141,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     // the channel is not announced but bob didn't send an alias so we use the real scid
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
     assert(channelUpdateSentToPeer.shortChannelId == realScid)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
@@ -168,7 +168,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
     // the channel is not announced so alice uses bob's alias (we have a no real scid anyway)
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
@@ -193,7 +193,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     // the channel is 0-conf but bob didn't provide an alias: it's a spec violation, so we use our local alias and if
     // they can't understand it, too bad for them
     assert(channelUpdateSentToPeer.shortChannelId == aliceIds.localAlias)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
     awaitCond(alice.stateName == NORMAL)
@@ -218,7 +218,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
     // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
@@ -242,7 +242,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
     // the channel is not announced, so alice uses bob's alias (we have a no real scid anyway)
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
-    assert(Announcements.areSameIgnoreFlags(initialChannelUpdate, channelUpdateSentToPeer))
+    assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)

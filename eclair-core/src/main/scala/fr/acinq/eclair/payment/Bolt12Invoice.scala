@@ -18,8 +18,9 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OfferCodecs, OfferTypes, TlvStream}
@@ -52,7 +53,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
     // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
     f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
   }
-  val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
+  val blindedPaths: Seq[PaymentBlindedContactInfo] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedContactInfo(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
 
@@ -86,7 +87,9 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
 
 }
 
-case class PaymentBlindedRoute(route: Sphinx.RouteBlinding.BlindedRoute, paymentInfo: PaymentInfo)
+case class PaymentBlindedContactInfo(route: BlindedContactInfo, paymentInfo: PaymentInfo)
+
+case class PaymentBlindedRoute(route: BlindedRoute, paymentInfo: PaymentInfo)
 
 object Bolt12Invoice {
   val hrp = "lni"
@@ -107,7 +110,7 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             invoiceExpiry: FiniteDuration,
             features: Features[Bolt12Feature],
-            paths: Seq[PaymentBlindedRoute],
+            paths: Seq[PaymentBlindedContactInfo],
             additionalTlvs: Set[InvoiceTlv] = Set.empty,
             customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
     require(request.amount.nonEmpty || request.offer.amount.nonEmpty)
@@ -188,7 +191,7 @@ object MinimalBolt12Invoice {
   val hrp = "lndi"
 
   def apply(offer: Offer,
-            chain: ByteVector32,
+            chain: BlockHash,
             amount: MilliSatoshi,
             quantity: Long,
             paymentHash: ByteVector32,

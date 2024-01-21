@@ -20,17 +20,14 @@ import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
-import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 
 /**
@@ -122,10 +119,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       }
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
-
-    case RelayMessage(messageId, prevNodeId, nextNodeId, dataToRelay, relayPolicy, replyTo) =>
-      val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
-      relay ! MessageRelay.RelayMessage(messageId, self, prevNodeId.getOrElse(nodeParams.nodeId), nextNodeId, dataToRelay, relayPolicy, replyTo)
   }
 
   /**
@@ -166,9 +159,9 @@ object Switchboard {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
-  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends PeerFactory {
+  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command], register: ActorRef) extends PeerFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, pendingChannelsRateLimiter), name = peerActorName(remoteNodeId))
+      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, register, pendingChannelsRateLimiter), name = peerActorName(remoteNodeId))
   }
 
   def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))
@@ -183,8 +176,6 @@ object Switchboard {
 
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
-
-  case class RelayMessage(messageId: ByteVector32, prevNodeId: Option[PublicKey], nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy, replyTo_opt: Option[typed.ActorRef[MessageRelay.Status]])
   // @formatter:on
 
 }

@@ -8,7 +8,7 @@ import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -66,19 +66,21 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def nodeParamsFor(alias: String, seed: ByteVector32): NodeParams = {
     NodeParams.makeNodeParams(
-      config = ConfigFactory.load().getConfig("eclair"),
-      instanceId = UUID.randomUUID(),
-      nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
-      torAddress_opt = None,
-      database = TestDatabases.inMemoryDb(),
-      blockHeight = new AtomicLong(400_000),
-      feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
-    ).modify(_.alias).setTo(alias)
+        config = ConfigFactory.load().getConfig("eclair"),
+        instanceId = UUID.randomUUID(),
+        nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        onChainKeyManager_opt = None,
+        torAddress_opt = None,
+        database = TestDatabases.inMemoryDb(),
+        blockHeight = new AtomicLong(400_000),
+        feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
+      ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)
       .modify(_.peerConnectionConf.maxRebroadcastDelay).setTo(1 second)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setTo(100)
+      .modify(_.channelConf.balanceThresholds).setTo(Nil)
   }
 
   def apply(nodeParams: NodeParams, testName: String): MinimalNodeFixture = {
@@ -98,12 +100,12 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcherTyped, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
     val pendingChannelsRateLimiter = system.spawnAnonymous(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, Seq())).onFailure(typed.SupervisorStrategy.resume))
-    val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory, pendingChannelsRateLimiter)
+    val peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory, pendingChannelsRateLimiter, register)
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
     val channels = nodeParams.db.channels.listLocalChannels()
-    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+    val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
     readyListener.expectMsgAllOf(
@@ -180,7 +182,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
   def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): OpenChannelResponse.Created = {
     val sender = TestProbe("sender")
-    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None))
+    sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None, None))
     sender.expectMsgType[OpenChannelResponse.Created]
   }
 
@@ -271,9 +273,9 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
    * Computes a deterministic [[RealShortChannelId]] based on a txid. We need this so that watchers can verify
    * transactions in a independent and stateless fashion, since there is no actual blockchain in those tests.
    */
-  def deterministicShortId(txId: ByteVector32): RealShortChannelId = {
-    val blockHeight = txId.take(3).toInt(signed = false)
-    val txIndex = txId.takeRight(2).toInt(signed = false)
+  def deterministicShortId(txId: TxId): RealShortChannelId = {
+    val blockHeight = txId.value.take(3).toInt(signed = false)
+    val txIndex = txId.value.takeRight(2).toInt(signed = false)
     val outputIndex = 0 // funding txs created by the dummy wallet used in tests only have one output
     RealShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
   }
@@ -338,11 +340,11 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     }
   }
 
-  def sendPayment(node1: MinimalNodeFixture, amount: MilliSatoshi, invoice: Invoice)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
+  def sendPayment(node1: MinimalNodeFixture, amount: MilliSatoshi, invoice: Bolt11Invoice)(implicit system: ActorSystem): Either[PaymentFailed, PaymentSent] = {
     val sender = TestProbe("sender")
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amount, invoice, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amount, invoice, Nil, maxAttempts = 1, routeParams = routeParams, blockUntilComplete = true))
     sender.expectMsgType[PaymentEvent] match {
       case e: PaymentSent => Right(e)
       case e: PaymentFailed => Left(e)

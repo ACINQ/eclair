@@ -21,10 +21,10 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, OutgoingPaymentPacket, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket, PaymentOnionCodecs}
+import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket}
 import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
 import scodec.bits.ByteVector
 
@@ -122,7 +122,7 @@ case class BlindedRecipient(nodeId: PublicKey,
                             totalAmount: MilliSatoshi,
                             expiry: CltvExpiry,
                             blindedHops: Seq[BlindedHop],
-                            customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
+                            customTlvs: Set[GenericTlv]) extends Recipient {
   require(blindedHops.nonEmpty, "blinded routes must be provided")
 
   override val extraEdges = blindedHops.map { h =>
@@ -166,8 +166,12 @@ case class BlindedRecipient(nodeId: PublicKey,
 }
 
 object BlindedRecipient {
-  def apply(invoice: Bolt12Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
-    val blindedHops = invoice.blindedPaths.map(
+  /**
+   * @param invoice Bolt invoice. Paths from the invoice must be passed as `paths` with compact paths expanded to include the node id.
+   * @param paths   Payment paths to use to reach the recipient.
+   */
+  def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
+    val blindedHops = paths.map(
       path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
         // given edge in the graph, so we create a dummy one for the duration of the payment attempt.
@@ -226,14 +230,14 @@ case class ClearTrampolineRecipient(invoice: Bolt11Invoice,
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createPayload(totalAmount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, customTlvs))
       val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, nodeId))
       val payloads = Seq(trampolinePayload, finalPayload)
-      OutgoingPaymentPacket.buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, payloads, paymentHash)
+      OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
     } else {
       // The recipient doesn't support trampoline: the trampoline node will convert the payment to a non-trampoline payment.
       // The final payload will thus never reach the recipient, so we create the smallest payload possible to avoid overflowing the trampoline onion size.
       val dummyFinalPayload = NodePayload(nodeId, IntermediatePayload.ChannelRelay.Standard(ShortChannelId(0), 0 msat, CltvExpiry(0)))
       val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(totalAmount, totalAmount, expiry, nodeId, invoice))
       val payloads = Seq(trampolinePayload, dummyFinalPayload)
-      OutgoingPaymentPacket.buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, payloads, paymentHash)
+      OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
     }
   }
 }

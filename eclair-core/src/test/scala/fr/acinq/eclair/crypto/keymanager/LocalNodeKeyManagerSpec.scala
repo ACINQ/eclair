@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
-import java.io.File
-import java.nio.file.Files
-
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
@@ -26,6 +23,9 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.{NodeParams, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
+
+import java.io.File
+import java.nio.file.Files
 
 
 class LocalNodeKeyManagerSpec extends AnyFunSuite {

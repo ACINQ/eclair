@@ -23,7 +23,7 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
@@ -36,13 +36,10 @@ import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.OpenChannelInterceptor.{OpenChannelInitiator, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.PeerConnection.KillReason
-import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
-
-import scala.concurrent.duration.DurationInt
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -54,7 +51,7 @@ import scala.concurrent.duration.DurationInt
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, switchboard: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, switchboard: ActorRef, register: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -165,9 +162,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
           randomBytes32()
         }
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
-        val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType, c.fundingAmount)
+        val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -280,8 +277,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainP
         OnionMessages.process(nodeParams.privateKey, msg) match {
           case OnionMessages.DropMessage(reason) =>
             log.debug("dropping message from {}: {}", remoteNodeId.value.toHex, reason.toString)
-          case OnionMessages.SendMessage(nextNodeId, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
-            switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
+          case OnionMessages.SendMessage(nextNode, message) if nodeParams.features.hasFeature(Features.OnionMessages) =>
+            val messageId = randomBytes32()
+            val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
+            relay ! MessageRelay.RelayMessage(messageId, switchboard, register, remoteNodeId, nextNode, message, nodeParams.onionMessageConfig.relayPolicy, None)
           case OnionMessages.SendMessage(_, _) =>
             log.debug("dropping message from {}: relaying onion messages is disabled", remoteNodeId.value.toHex)
           case received: OnionMessages.ReceiveMessage =>
@@ -459,7 +458,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, pendingChannelsRateLimiter))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, register, pendingChannelsRateLimiter))
 
   // @formatter:off
 
@@ -506,6 +505,7 @@ object Peer {
                          channelType_opt: Option[SupportedChannelType],
                          pushAmount_opt: Option[MilliSatoshi],
                          fundingTxFeerate_opt: Option[FeeratePerKw],
+                         fundingTxFeeBudget_opt: Option[Satoshi],
                          channelFlags_opt: Option[ChannelFlags],
                          timeout_opt: Option[Timeout],
                          requireConfirmedInputsOverride_opt: Option[Boolean] = None,
@@ -527,7 +527,7 @@ object Peer {
      * double-spend the funding transaction. Callers must wait for on-chain confirmations if they want guarantees that
      * the channel has been opened.
      */
-    case class Created(channelId: ByteVector32, fundingTxId: ByteVector32, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
+    case class Created(channelId: ByteVector32, fundingTxId: TxId, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
     case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
     case object Cancelled extends OpenChannelResponse { override def toString  = "channel creation cancelled" }
     case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }

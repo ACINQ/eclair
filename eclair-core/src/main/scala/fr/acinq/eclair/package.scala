@@ -16,7 +16,6 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.Bitcoin
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
@@ -24,8 +23,6 @@ import fr.acinq.eclair.crypto.StrongRandom
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
-
-import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 package object eclair {
 
@@ -45,8 +42,9 @@ package object eclair {
 
   def randomLong(): Long = randomGen.nextLong()
 
-  def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
-    require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
+  def toLongId(fundingTxId: TxId, fundingOutputIndex: Int): ByteVector32 = {
+    require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than 0xFFFF")
+    val fundingTxHash = TxHash(fundingTxId).value
     val channelId = ByteVector32(fundingTxHash.take(30) :+ (fundingTxHash(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash(31) ^ fundingOutputIndex).toByte)
     channelId
   }
@@ -74,15 +72,6 @@ package object eclair {
   def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
-
-  /**
-   * @param address   bitcoin address.
-   * @param chainHash hash of the chain we're on, which will be checked against the input address
-   * @return the public key script that matches the input address.
-   */
-  def addressToPublicKeyScript(address: String, chainHash: ByteVector32): Seq[ScriptElt] = {
-    Bitcoin.addressToPublicKeyScript(chainHash, address).asScala.toSeq.map(kmp2scala)
-  }
 
   implicit class MilliSatoshiLong(private val n: Long) extends AnyVal {
     def msat = MilliSatoshi(n)

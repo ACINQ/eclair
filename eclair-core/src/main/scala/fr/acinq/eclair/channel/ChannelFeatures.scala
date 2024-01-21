@@ -30,22 +30,16 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
  */
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
 
-  val channelType: SupportedChannelType = {
-    val scidAlias = features.contains(Features.ScidAlias)
-    val zeroConf = features.contains(Features.ZeroConf)
-    if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
-    } else if (hasFeature(Features.AnchorOutputs)) {
-      ChannelTypes.AnchorOutputs(scidAlias, zeroConf)
-    } else if (hasFeature(Features.StaticRemoteKey)) {
-      ChannelTypes.StaticRemoteKey(scidAlias, zeroConf)
-    } else {
-      ChannelTypes.Standard(scidAlias, zeroConf)
-    }
+  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
+  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)
+  /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
+  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
+    UnsafeLegacyAnchorOutputsCommitmentFormat
+  } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
+    ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+  } else {
+    DefaultCommitmentFormat
   }
-
-  val paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
-  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 
   def hasFeature(feature: PermanentChannelFeature): Boolean = features.contains(feature)
 

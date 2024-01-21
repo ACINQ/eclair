@@ -18,7 +18,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
@@ -51,7 +51,7 @@ object Sync {
     if (s.replacePrevious || !d.sync.contains(s.remoteNodeId)) {
       // ask for everything
       val query = QueryChannelRange(s.chainHash, firstBlock = BlockHeight(0), numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toSet))
-      log.info("sending query_channel_range={}", query)
+      log.debug("sending query_channel_range={}", query)
       s.to ! query
 
       // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
@@ -94,7 +94,7 @@ object Sync {
 
     d.sync.get(origin.nodeId) match {
       case None =>
-        log.info("received unsolicited reply_channel_range with {} channels", r.shortChannelIds.array.size)
+        log.debug("received unsolicited reply_channel_range with {} channels", r.shortChannelIds.array.size)
         d // we didn't request a sync from this node, ignore
       case Some(currentSync) if currentSync.remainingQueries.isEmpty && r.shortChannelIds.array.isEmpty =>
         // NB: this case deals with peers who don't return any sync data. We're currently not correctly detecting the end
@@ -127,7 +127,7 @@ object Sync {
             val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
             (c1, u1)
         }
-        log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
+        log.info("received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
         Metrics.ReplyChannelRange.NewChannelAnnouncements.withoutTags().record(channelCount)
         Metrics.ReplyChannelRange.NewChannelUpdates.withoutTags().record(updatesCount)
 
@@ -186,7 +186,7 @@ object Sync {
     Metrics.QueryShortChannelIds.Nodes.withoutTags().record(nodeCount)
     Metrics.QueryShortChannelIds.ChannelAnnouncements.withoutTags().record(channelCount)
     Metrics.QueryShortChannelIds.ChannelUpdates.withoutTags().record(updateCount)
-    log.info("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
+    log.debug("received query_short_channel_ids with {} items, sent back {} channels and {} updates and {} nodes", q.shortChannelIds.array.size, channelCount, updateCount, nodeCount)
     origin.peerConnection ! ReplyShortChannelIdsEnd(q.chainHash, 1)
   }
 
@@ -481,7 +481,7 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[RealShortChannelId, PublicChannel]): ReplyChannelRange = {
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: BlockHash, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[RealShortChannelId, PublicChannel]): ReplyChannelRange = {
     val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>

@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -172,7 +172,7 @@ private[channel] object ChannelCodecs0 {
     val remoteCommitCodec: Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
+        ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit].decodeOnly
 
     val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
@@ -260,10 +260,10 @@ private[channel] object ChannelCodecs0 {
       (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
     )
 
-    val spentListCodec: Codec[List[(OutPoint, ByteVector32)]] = listOfN(uint16, outPointCodec ~ bytes32)
+    val spentListCodec: Codec[List[(OutPoint, TxId)]] = listOfN(uint16, outPointCodec ~ txId)
 
-    val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = Codec[Map[OutPoint, ByteVector32]](
-      (map: Map[OutPoint, ByteVector32]) => spentListCodec.encode(map.toList),
+    val spentMapCodec: Codec[Map[OutPoint, TxId]] = Codec[Map[OutPoint, TxId]](
+      (map: Map[OutPoint, TxId]) => spentListCodec.encode(map.toList),
       (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
     )
 
@@ -335,7 +335,7 @@ private[channel] object ChannelCodecs0 {
 
     val fundingCreatedCodec: Codec[FundingCreated] = (
       ("temporaryChannelId" | bytes32) ::
-        ("fundingTxid" | bytes32) ::
+        ("fundingTxHash" | txIdAsHash) ::
         ("fundingOutputIndex" | uint16) ::
         ("signature" | bytes64) ::
         ("tlvStream" | provide(TlvStream.empty[FundingCreatedTlv]))).as[FundingCreated]

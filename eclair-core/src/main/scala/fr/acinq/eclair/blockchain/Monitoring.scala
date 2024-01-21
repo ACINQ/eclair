@@ -32,6 +32,7 @@ object Monitoring {
 
   object Tags {
     val Method = "method"
+    val Wallet = "wallet"
     val Priority = "priority"
 
     object Priorities {

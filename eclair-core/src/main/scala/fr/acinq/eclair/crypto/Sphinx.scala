@@ -223,6 +223,8 @@ object Sphinx extends Logging {
     nextPacket
   }
 
+  def payloadsTotalSize(payloads: Seq[ByteVector]): Int = payloads.map(_.length + MacLength).sum.toInt
+
   /**
    * Create an encrypted onion packet that contains payloads for all nodes in the list.
    *
@@ -235,7 +237,7 @@ object Sphinx extends Logging {
    *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
    */
   def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): Try[PacketAndSecrets] = Try {
-    require(payloads.map(_.length + MacLength).sum <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
+    require(payloadsTotalSize(payloads) <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", packetPayloadLength, sharedsecrets.dropRight(1), payloads.dropRight(1))
 

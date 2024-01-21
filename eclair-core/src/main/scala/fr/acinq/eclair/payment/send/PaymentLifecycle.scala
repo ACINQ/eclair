@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
-import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
+import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
@@ -123,7 +123,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           // retry with another channel
           handleLocalFail(d, ChannelFailureException, isFatal = false)
         case HtlcResult.DisconnectedBeforeSigned(_) =>
-          // a disconnection occured before the outgoing htlc got signed
+          // a disconnection occurred before the outgoing htlc got signed
           // again, we consider it a local error and treat is as such
           handleLocalFail(d, DisconnectedException, isFatal = false)
       }
@@ -272,7 +272,16 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   /**
-   * Apply the channel update to our routing table.
+   * Analyze the channel_update we received and update our routing state accordingly.
+   *
+   * Note that we don't forward the channel update to the router, because it could leak that we were the payer:
+   *  - a malicious intermediate node would fail the payment with a custom channel_update
+   *  - they would *not* send this channel_update to the rest of the network
+   *  - they would then directly connect to us and ask for our latest channel_update for that channel
+   *  - if we sent them that channel_update, they'd know we were the payer
+   *
+   * We don't need to send that update to the router anyway: if the sending node is honest, we should receive it with
+   * the standard gossip mechanism.
    *
    * @return updated routing hints if applicable.
    */
@@ -318,9 +327,6 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         log.error(s"couldn't find node=$nodeId in the route, this should never happen")
         data.recipient.extraEdges
     }
-    // in all cases, we forward the update to the router: if the channel is disabled, the router will remove it from its routing table
-    // if the channel is not announced (e.g. was from a hint), the router will simply ignore the update
-    router ! failure.update
     // we update the recipient's assisted routes: they take precedence over the router's routing table
     data.recipient match {
       case recipient: ClearRecipient => recipient.copy(extraEdges = extraEdges1)

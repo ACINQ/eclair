@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -32,20 +33,29 @@ trait OnChainChannelFunder {
 
   import OnChainWallet._
 
-  /** Fund the provided transaction by adding inputs (and a change output if necessary). */
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty)(implicit ec: ExecutionContext): Future[FundTransactionResponse]
+  /**
+   * Fund the provided transaction by adding inputs (and a change output if necessary).
+   * Callers must verify that the resulting transaction isn't sending funds to unexpected addresses (malicious bitcoin node).
+   */
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
-  /** Sign the wallet inputs of the provided transaction. */
-  def signTransaction(tx: Transaction, allowIncomplete: Boolean)(implicit ec: ExecutionContext): Future[SignTransactionResponse]
+  /**
+   * Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. *
+   *
+   * @param psbt       PSBT to sign
+   * @param ourInputs  our wallet inputs. If Eclair is managing Bitcoin Core wallet keys, only these inputs will be signed.
+   * @param ourOutputs our wallet outputs. If Eclair is managing Bitcoin Core wallet keys, it will check that it can actually spend them (i.e re-compute private keys for them)
+   */
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse]
 
   /**
    * Publish a transaction on the bitcoin network.
    * This method must be idempotent: if the tx was already published, it must return a success.
    */
-  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ByteVector32]
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId]
 
   /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
   /**
    * Committing *must* include publishing the transaction on the network.
@@ -60,10 +70,10 @@ trait OnChainChannelFunder {
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /** Return the transaction if it exists, either in the blockchain or in the mempool. */
-  def getTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction]
+  def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction]
 
   /** Get the number of confirmations of a given transaction. */
-  def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]]
+  def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]]
 
   /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
@@ -122,6 +132,29 @@ object OnChainWallet {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
 
-  final case class SignTransactionResponse(tx: Transaction, complete: Boolean)
+  final case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean) {
 
+    import fr.acinq.bitcoin.psbt.UpdateFailure
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    /** Transaction with all available witnesses. */
+    val partiallySignedTx: Transaction = {
+      var tx = psbt.global.tx
+      for (i <- 0 until psbt.inputs.size()) {
+        Option(psbt.inputs.get(i).getScriptWitness).foreach { witness =>
+          tx = tx.updateWitness(i, witness)
+        }
+      }
+      tx
+    }
+
+    /** Extract a fully signed transaction if the psbt is finalized. */
+    val finalTx_opt: Either[UpdateFailure, Transaction] = {
+      val extracted: Either[UpdateFailure, fr.acinq.bitcoin.Transaction] = psbt.extract()
+      extracted match {
+        case Left(f) => Left(f)
+        case Right(tx) => Right(tx)
+      }
+    }
+  }
 }

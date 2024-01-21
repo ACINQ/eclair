@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishContext, TxRejectedReason}
@@ -59,14 +59,14 @@ object MempoolTxMonitor {
   sealed trait TxResult
   sealed trait IntermediateTxResult extends TxResult
   /** The transaction is still unconfirmed and available in the mempool. */
-  case class TxInMempool(txid: ByteVector32, blockHeight: BlockHeight, parentConfirmed: Boolean) extends IntermediateTxResult
+  case class TxInMempool(txid: TxId, blockHeight: BlockHeight, parentConfirmed: Boolean) extends IntermediateTxResult
   /** The transaction is confirmed, but hasn't reached min depth yet, we should wait for more confirmations. */
-  case class TxRecentlyConfirmed(txid: ByteVector32, confirmations: Int) extends IntermediateTxResult
+  case class TxRecentlyConfirmed(txid: TxId, confirmations: Int) extends IntermediateTxResult
   sealed trait FinalTxResult extends TxResult
   /** The transaction is confirmed and has reached min depth. */
   case class TxDeeplyBuried(tx: Transaction) extends FinalTxResult
   /** The transaction has been evicted from the mempool. */
-  case class TxRejected(txid: ByteVector32, reason: TxPublisher.TxRejectedReason) extends FinalTxResult
+  case class TxRejected(txid: TxId, reason: TxPublisher.TxRejectedReason) extends FinalTxResult
   // @formatter:on
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
@@ -153,7 +153,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           }
           Behaviors.same
         } else if (confirmations < nodeParams.channelConf.minDepthBlocks) {
-          log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
+          log.debug("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
           cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
           Behaviors.same
         } else {

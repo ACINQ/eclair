@@ -19,7 +19,7 @@ package fr.acinq.eclair.json
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxHash, TxId, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
@@ -44,8 +44,8 @@ import java.util.UUID
 class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Matchers {
 
   test("deserialize Map[OutPoint, ByteVector]") {
-    val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
-    val output2 = OutPoint(ByteVector32(hex"3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
+    val output1 = OutPoint(TxHash.fromValidHex("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
+    val output2 = OutPoint(TxHash.fromValidHex("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
     val map = Map(
       output1 -> hex"dead",
       output2 -> hex"beef"
@@ -63,8 +63,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("deserialize Map[OutPoint, Transaction]") {
-    val output1 = OutPoint(ByteVector32(hex"11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
-    val output2 = OutPoint(ByteVector32(hex"3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
+    val output1 = OutPoint(TxHash.fromValidHex("11418a2d282a40461966e4f578e1fdf633ad15c1b7fb3e771d14361127233be1"), 0)
+    val output2 = OutPoint(TxHash.fromValidHex("3d62bd4f71dc63798418e59efbc7532380c900b5e79db3a5521374b161dd0e33"), 1)
     val map = Map(
       output1 -> Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800"),
       output2 -> Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
@@ -121,9 +121,9 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
-    val commitmentInput = Funding.makeFundingInputInfo(dummyBytes32, 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
+    val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), dummyBytes32, dummyPublicKey)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
       ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"),
@@ -162,7 +162,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "fundingKeyPath": [42],
         |         "dustLimit": 546,
         |         "maxHtlcValueInFlightMsat": 9223372036854775807,
-        |         "requestedChannelReserve_opt": 1000,
+        |         "initialRequestedChannelReserve_opt": 1000,
         |         "htlcMinimum": 1,
         |         "toSelfDelay": 144,
         |         "maxAcceptedHtlcs": 50,
@@ -173,7 +173,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "dustLimit": 546,
         |         "maxHtlcValueInFlightMsat": 18446744073709551615,
-        |         "requestedChannelReserve_opt": 1000,
+        |         "initialRequestedChannelReserve_opt": 1000,
         |         "htlcMinimum": 1,
         |         "toSelfDelay": 144,
         |         "maxAcceptedHtlcs": 50,
@@ -276,7 +276,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("InputInfo serialization") {
     val inputInfo = InputInfo(
-      outPoint = OutPoint(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
+      outPoint = OutPoint(TxHash.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
       txOut = TxOut(456651 sat, hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63"),
       redeemScript = hex"00dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773"
     )
@@ -331,11 +331,11 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         htlcs = Btc(0.05)
       ), closing = ClosingBalance(
         localCloseBalance = PossiblyPublishedMainAndHtlcBalance(
-          toLocal = Map(ByteVector32(hex"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2") -> Btc(0.1)),
-          htlcs = Map(ByteVector32(hex"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71") -> Btc(0.03), ByteVector32(hex"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13") -> Btc(0.06)),
+          toLocal = Map(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2") -> Btc(0.1)),
+          htlcs = Map(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71") -> Btc(0.03), TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13") -> Btc(0.06)),
           htlcsUnpublished = Btc(0.01)),
         mutualCloseBalance = PossiblyPublishedMainBalance(
-          toLocal = Map(ByteVector32(hex"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247") -> Btc(0.1)))
+          toLocal = Map(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247") -> Btc(0.1)))
       ))
     )
     JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":1.0,"onChain":{"confirmed":0.4,"unconfirmed":0.05},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
@@ -353,13 +353,13 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("TransactionWithInputInfo serializer") {
     // the input info is ignored when serializing to JSON
-    val dummyInputInfo = InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(Satoshi(0), Nil), Nil)
+    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
     val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, ConfirmationTarget.Absolute(BlockHeight(1105)))
     val htlcSuccessJson =
       s"""{
-         |  "txid": "${htlcSuccessTx.txid.toHex}",
+         |  "txid": "${htlcSuccessTx.txid.value.toHex}",
          |  "tx": "0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800",
          |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 3,
@@ -372,7 +372,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2, ConfirmationTarget.Absolute(BlockHeight(144)))
     val claimHtlcTimeoutJson =
       s"""{
-         |  "txid": "${claimHtlcTimeoutTx.txid.toHex}",
+         |  "txid": "${claimHtlcTimeoutTx.txid.value.toHex}",
          |  "tx": "010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000",
          |  "htlcId": 2,
          |  "confirmBeforeBlock": 144
@@ -384,7 +384,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(OutputInfo(1, Satoshi(15000), hex"deadbeef")))
     val closingTxWithLocalOutputJson =
       s"""{
-         |  "txid": "${closingTx.txid.toHex}",
+         |  "txid": "${closingTx.txid.value.toHex}",
          |  "tx": "0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000",
          |  "toLocalOutput": {
          |    "index": 1,
@@ -398,7 +398,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val closingTxWithoutLocalOutput = ClosingTx(dummyInputInfo, closingTx, None)
     val closingTxWithoutLocalOutputJson =
       s"""{
-         |  "txid": "${closingTx.txid.toHex}",
+         |  "txid": "${closingTx.txid.value.toHex}",
          |  "tx": "0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000"
          |}
     """.stripMargin
@@ -428,8 +428,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val id1 = ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff")
     val id2 = ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3")
     val id3 = ByteVector32(hex"74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8")
-    val res1 = RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), id1)
-    val res2 = RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), CommandUnavailableInThisState(id2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))
+    val res1 = RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986), id1)
+    val res2 = RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986), CommandUnavailableInThisState(id2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))
     val res3 = ApiTypes.ChannelNotFound(Left(id3))
     val map = Map(
       Left(id1) -> Right(res1),

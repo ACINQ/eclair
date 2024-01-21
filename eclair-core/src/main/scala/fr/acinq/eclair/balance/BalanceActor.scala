@@ -3,7 +3,7 @@ package fr.acinq.eclair.balance
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.balance.BalanceActor._
@@ -40,11 +40,11 @@ object BalanceActor {
     }
   }
 
-  final case class UtxoInfo(utxos: Seq[Utxo], ancestorCount: Map[ByteVector32, Long])
+  final case class UtxoInfo(utxos: Seq[Utxo], ancestorCount: Map[TxId, Long])
 
   def checkUtxos(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[UtxoInfo] = {
 
-    def getUnconfirmedAncestorCount(utxo: Utxo): Future[(ByteVector32, Long)] = bitcoinClient.rpcClient.invoke("getmempoolentry", utxo.txid).map(json => {
+    def getUnconfirmedAncestorCount(utxo: Utxo): Future[(TxId, Long)] = bitcoinClient.rpcClient.invoke("getmempoolentry", utxo.txid).map(json => {
       val JInt(ancestorCount) = json \ "ancestorcount"
       (utxo.txid, ancestorCount.toLong)
     }).recover {
@@ -55,7 +55,7 @@ object BalanceActor {
         (utxo.txid, 0)
     }
 
-    def getUnconfirmedAncestorCountMap(utxos: Seq[Utxo]): Future[Map[ByteVector32, Long]] = Future.sequence(utxos.filter(_.confirmations == 0).map(getUnconfirmedAncestorCount)).map(_.toMap)
+    def getUnconfirmedAncestorCountMap(utxos: Seq[Utxo]): Future[Map[TxId, Long]] = Future.sequence(utxos.filter(_.confirmations == 0).map(getUnconfirmedAncestorCount)).map(_.toMap)
 
     for {
       utxos <- bitcoinClient.listUnspent()
@@ -134,7 +134,7 @@ private class BalanceActor(context: ActorContext[Command],
       Behaviors.same
     case WrappedUtxoInfo(res) =>
       res match {
-        case Success(UtxoInfo(utxos: Seq[Utxo], ancestorCount: Map[ByteVector32, Long])) =>
+        case Success(UtxoInfo(utxos, ancestorCount)) =>
           val filteredByStatus: Map[String, Seq[Utxo]] = Map(
             Monitoring.Tags.UtxoStatuses.Confirmed -> utxos.filter(utxo => utxo.confirmations > 0),
             // We cannot create chains of unconfirmed transactions with more than 25 elements, so we ignore such utxos.

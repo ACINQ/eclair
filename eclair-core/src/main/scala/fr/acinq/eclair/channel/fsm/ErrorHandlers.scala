@@ -156,7 +156,7 @@ trait ErrorHandlers extends CommonHandlers {
   private def publishIfNeeded(txs: Iterable[PublishTx], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
     val (skip, process) = txs.partition(publishTx => Closing.inputAlreadySpent(publishTx.input, irrevocablySpent))
     process.foreach { publishTx => txPublisher ! publishTx }
-    skip.foreach(publishTx => log.info("no need to republish tx spending {}:{}, it has already been confirmed", publishTx.input.txid, publishTx.input.index))
+    skip.foreach(publishTx => log.debug("no need to republish tx spending {}:{}, it has already been confirmed", publishTx.input.txid, publishTx.input.index))
   }
 
   /**
@@ -165,7 +165,7 @@ trait ErrorHandlers extends CommonHandlers {
   private def watchConfirmedIfNeeded(txs: Iterable[Transaction], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
     val (skip, process) = txs.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks))
-    skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
+    skip.foreach(tx => log.debug(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
   /**
@@ -180,7 +180,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
     val (skip, process) = outputs.partition(irrevocablySpent.contains)
     process.foreach(output => blockchain ! WatchOutputSpent(self, parentTx.txid, output.index.toInt, Set.empty))
-    skip.foreach(output => log.info(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
+    skip.foreach(output => log.debug(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
   }
 
   def spendLocalCurrent(d: ChannelDataWithCommitments) = {
@@ -272,8 +272,9 @@ trait ErrorHandlers extends CommonHandlers {
   def doPublish(remoteCommitPublished: RemoteCommitPublished, commitment: FullCommitment): Unit = {
     import remoteCommitPublished._
 
+    val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitment) }
     val redeemableHtlcTxs = claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitment))
-    val publishQueue = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
+    val publishQueue = claimLocalAnchor ++ claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:

@@ -28,10 +28,10 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
-import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, HtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -394,24 +394,73 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment", Tag(IgnoreChannelUpdates)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
-    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+
+    // the current state contains a pending htlc
+    addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // we simulate a disconnection followed by a reconnection
     disconnect(alice, bob)
     reconnect(alice, bob, alice2bob, bob2alice)
-
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
     // bob sends an invalid channel_reestablish
+    alice2bob.expectMsgType[ChannelReestablish]
     val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextRemoteRevocationNumber = 42)
 
-    // alice then finds out bob is lying
+    // alice then asks bob to publish its commitment to find out if bob is lying
     bob2alice.send(alice, invalidReestablish)
     val error = alice2bob.expectMsgType[Error]
     assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    // alice now waits for bob to publish its commitment
+    alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // bob publishes the latest commitment
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+
+    // alice is able to claim her main output and the htlc (once it times out)
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val claimHtlc = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(claimHtlc.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
+    Transaction.correctlySpends(claimHtlc.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+  }
+
+  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    // we sign a new commitment to make sure the first one is revoked
+    val bobRevokedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // we simulate a disconnection followed by a reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    // bob sends an invalid channel_reestablish
+    alice2bob.expectMsgType[ChannelReestablish]
+    val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextLocalCommitmentNumber = 42)
+
+    // alice then asks bob to publish its commitment to find out if bob is lying
+    bob2alice.send(alice, invalidReestablish)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    // alice now waits for bob to publish its commitment
+    alice2blockchain.expectNoMessage(100 millis)
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // bob publishes the revoked commitment
+    alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
+
+    // alice is able to claim all outputs
+    assert(bobRevokedCommitTx.txOut.length == 2)
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    Transaction.correctlySpends(claimMainOutput, bobRevokedCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val claimRevokedOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    Transaction.correctlySpends(claimRevokedOutput, bobRevokedCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(claimRevokedOutput.txIn.head.outPoint.index != claimMainOutput.txIn.head.outPoint.index)
   }
 
   test("change relay fee while offline", Tag(IgnoreChannelUpdates)) { f =>
@@ -425,7 +474,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMessage(300 millis)
 
     // we make alice update here relay fee
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456, cltvExpiryDelta_opt = None)
+    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456)
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     // alice doesn't broadcast the new channel_update yet

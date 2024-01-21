@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
@@ -43,7 +43,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
 
   // Copy of Bolt11Invoice.apply that doesn't strip unknown features
-  def createInvoiceUnsafe(chainHash: ByteVector32,
+  def createInvoiceUnsafe(chainHash: BlockHash,
                           amount: Option[MilliSatoshi],
                           paymentHash: ByteVector32,
                           privateKey: PrivateKey,
@@ -401,7 +401,11 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       // Invalid multiplier.
       "lnbc2500x1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgqrrzc4cvfue4zp3hggxp47ag7xnrlr8vgcmkjxk3j5jqethnumgkpqp23z9jclu3v0a7e0aruz366e9wqdykw6dxhdzcjjhldxq0w6wgqcnu43j",
       // Invalid sub-millisatoshi precision.
-      "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x"
+      "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x",
+      // Missing payment secret.
+      "lnbc1qqygh9qpp5s7zxqqqqqqqqqqqqpjqqqqqqqqqqqqqqqqqqcqpjqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqquqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzxqqqqqqqqqqqqqqqy6f523d",
+      // Invalid signature public key recovery id.
+      "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a"
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)

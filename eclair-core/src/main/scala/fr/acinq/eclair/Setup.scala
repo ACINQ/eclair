@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.WeakEntropyPool
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnChainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
@@ -77,10 +77,10 @@ class Setup(val datadir: File,
             seeds_opt: Option[Seeds] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-  implicit val sttpBackend = OkHttpFutureBackend()
+  implicit val timeout: Timeout = Timeout(30 seconds)
+  implicit val formats: org.json4s.Formats = org.json4s.DefaultFormats
+  implicit val ec: ExecutionContext = ExecutionContext.Implicits.global
+  implicit val sttpBackend: sttp.client3.SttpBackend[Future, sttp.capabilities.WebSockets] = OkHttpFutureBackend()
 
   logger.info(s"hello!")
   logger.info(s"version=${Kit.getVersion} commit=${Kit.getCommit}")
@@ -121,11 +121,11 @@ class Setup(val datadir: File,
   // early checks
   PortChecker.checkAvailable(serverBindingAddress)
 
+  // load on onchain key manager if an `eclair-signer.conf` is found in Eclair's data directory
+  val onChainKeyManager_opt = LocalOnChainKeyManager.load(datadir, NodeParams.hashFromChain(chain))
+
   val (bitcoin, bitcoinChainHash) = {
-    val wallet = {
-      val name = config.getString("bitcoind.wallet")
-      if (!name.isBlank) Some(name) else None
-    }
+    val wallet = if (config.hasPath("bitcoind.wallet")) Some(config.getString("bitcoind.wallet")) else None
     val rpcAuthMethod = config.getString("bitcoind.auth") match {
       case "safecookie" => BitcoinJsonRPCAuthMethod.readCookie(config.getString("bitcoind.cookie")) match {
         case Success(safeCookie) => safeCookie
@@ -134,12 +134,9 @@ class Setup(val datadir: File,
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
 
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      rpcAuthMethod = rpcAuthMethod,
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"),
-      wallet = wallet)
-    val future = for {
+    case class BitcoinStatus(version: Int, chainHash: BlockHash, initialBlockDownload: Boolean, verificationProgress: Double, blockCount: Long, headerCount: Long, unspentAddresses: List[String])
+
+    def getBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
       wallets <- bitcoinClient.invoke("listwallets").recover { case e => throw BitcoinWalletDisabledException(e) }
@@ -150,7 +147,8 @@ class Setup(val datadir: File,
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
       headers = (json \ "headers").extract[Long]
-      chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
+      // NB: bitcoind confusingly returns the blockId instead of the blockHash.
+      chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => BlockId(ByteVector32.fromValidHex(s))).map(BlockHash(_))
       bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
       unspentAddresses <- bitcoinClient.invoke("listunspent").recover { _ => if (wallet.isEmpty && wallets.length > 1) throw BitcoinDefaultWalletException(wallets) else throw BitcoinWalletNotLoadedException(wallet.getOrElse(""), wallets) }
         .collect { case JArray(values) =>
@@ -164,27 +162,48 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
-    // blocking sanity checks
-    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bitcoind did not respond after 30 seconds")
-    logger.info(s"bitcoind version=$bitcoinVersion")
-    assert(bitcoinVersion >= 230000, "Eclair requires Bitcoin Core 23.0 or higher")
-    assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
-    if (chainHash != Block.RegtestGenesisBlock.hash) {
-      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+    } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, unspentAddresses)
+
+    def pollBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = {
+      getBitcoinStatus(bitcoinClient).transformWith {
+        case Success(status) => Future.successful(status)
+        case Failure(e) =>
+          logger.warn(s"failed to connect to bitcoind (${e.getMessage}), retrying...")
+          after(5 seconds) {
+            pollBitcoinStatus(bitcoinClient)
+          }
+      }
     }
-    logger.info(s"current blockchain height=$blocks")
-    blockHeight.set(blocks)
-    (bitcoinClient, chainHash)
+
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      rpcAuthMethod = rpcAuthMethod,
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"),
+      wallet = wallet
+    )
+    val bitcoinStatus = if (config.getBoolean("bitcoind.wait-for-bitcoind-up")) {
+      await(pollBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind wasn't ready after 30 seconds")
+    } else {
+      await(getBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind did not respond after 30 seconds")
+    }
+    logger.info(s"bitcoind version=${bitcoinStatus.version}")
+    assert(bitcoinStatus.version >= 240100, "Eclair requires Bitcoin Core 24.1 or higher")
+    assert(bitcoinStatus.unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+    if (bitcoinStatus.chainHash != Block.RegtestGenesisBlock.hash) {
+      assert(!bitcoinStatus.initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=${bitcoinStatus.initialBlockDownload})")
+      assert(bitcoinStatus.verificationProgress > 0.999, s"bitcoind should be synchronized (progress=${bitcoinStatus.verificationProgress})")
+      assert(bitcoinStatus.headerCount - bitcoinStatus.blockCount <= 1, s"bitcoind should be synchronized (headers=${bitcoinStatus.headerCount} blocks=${bitcoinStatus.blockCount})")
+    }
+    logger.info(s"current blockchain height=${bitcoinStatus.blockCount}")
+    blockHeight.set(bitcoinStatus.blockCount)
+    (bitcoinClient, bitcoinStatus.chainHash)
   }
 
   val instanceId = UUID.randomUUID()
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onChainKeyManager_opt, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")
@@ -219,7 +238,7 @@ class Setup(val datadir: File,
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
-        case Block.RegtestGenesisBlock.hash =>
+        case Block.RegtestGenesisBlock.hash | Block.SignetGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
@@ -233,7 +252,7 @@ class Setup(val datadir: File,
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB} feeratesPerKw=${feeratesPerKw.get}")
+          logger.info(s"current feeratesPerKB=$feeratesPerKB feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
@@ -244,7 +263,14 @@ class Setup(val datadir: File,
 
       finalPubkey = new AtomicReference[PublicKey](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
-      bitcoinClient = new BitcoinCoreClient(bitcoin) with OnchainPubkeyCache {
+      // there are 3 possibilities regarding onchain key management:
+      // 1) there is no `eclair-signer.conf` file in Eclair's data directory, Eclair will not manage Bitcoin core keys, and Eclair's API will not return bitcoin core descriptors. This is the default mode.
+      // 2) there is an `eclair-signer.conf` file in Eclair's data directory, but the name of the wallet set in `eclair-signer.conf` does not match the `eclair.bitcoind.wallet` setting in `eclair.conf`.
+      // Eclair will use the wallet set in `eclair.conf` and will not manage Bitcoin core keys (here we don't set an optional onchain key manager in our bitcoin client) BUT its API will return bitcoin core descriptors.
+      // This is how you would create a new bitcoin wallet whose private keys are managed by Eclair.
+      // 3) there is an `eclair-signer.conf` file in Eclair's data directory, and the name of the wallet set in `eclair-signer.conf` matches the `eclair.bitcoind.wallet` setting in `eclair.conf`.
+      // Eclair will assume that this is a watch-only bitcoin wallet that has been created from descriptors generated by Eclair, and will manage its private keys, and here we pass the onchain key manager to our bitcoin client.
+      bitcoinClient = new BitcoinCoreClient(bitcoin, if (bitcoin.wallet == onChainKeyManager_opt.map(_.walletName)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
         val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
@@ -253,6 +279,7 @@ class Setup(val datadir: File,
           key
         }
       }
+      _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
       initialPubkey <- bitcoinClient.getP2wpkhPubkey()
       _ = finalPubkey.set(initialPubkey)
 
@@ -305,8 +332,7 @@ class Setup(val datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
-
+      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial address=$address for bitcoin wallet=${bitcoinClient.rpcClient.wallet.getOrElse("(default)")}"))
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future
 
@@ -340,7 +366,7 @@ class Setup(val datadir: File,
       txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcher, bitcoinClient)
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
       pendingChannelsRateLimiter = system.spawn(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, channels)).onFailure(typed.SupervisorStrategy.resume), name = "pending-channels-rate-limiter")
-      peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory, pendingChannelsRateLimiter)
+      peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory, pendingChannelsRateLimiter, register)
 
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory), "switchboard", SupervisorStrategy.Resume))
       _ = switchboard ! Switchboard.Init(channels)
@@ -351,7 +377,7 @@ class Setup(val datadir: File,
 
       balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
-      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard.toTyped, router.toTyped, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
       kit = Kit(
         nodeParams = nodeParams,

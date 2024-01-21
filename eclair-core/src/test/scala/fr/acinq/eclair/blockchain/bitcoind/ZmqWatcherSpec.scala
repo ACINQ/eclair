@@ -21,16 +21,18 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOp
 import akka.actor.{ActorRef, Props, typed}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, SignTransactionResponse}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxId, TxOut}
+import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec._
+import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, NewTransaction}
-import fr.acinq.eclair.{BlockHeight, RealShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, RealShortChannelId, TestConstants, TestKitBaseClass, randomKey}
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -103,14 +105,14 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
   test("add/remove watches from/to utxo map") {
     val m0 = Map.empty[OutPoint, Set[Watch[_ <: WatchTriggered]]]
-    val txid = randomBytes32()
+    val txid = randomTxId()
     val outputIndex = 42
-    val utxo = OutPoint(txid.reverse, outputIndex)
+    val utxo = OutPoint(txid, outputIndex)
 
     val w1 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
     val w2 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
     val w3 = WatchExternalChannelSpent(TestProbe().ref, txid, outputIndex, RealShortChannelId(1))
-    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomBytes32(), 5, RealShortChannelId(1))
+    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomTxId(), 5, RealShortChannelId(1))
     val w5 = WatchFundingConfirmed(TestProbe().ref, txid, 3)
 
     // we test as if the collection was immutable
@@ -121,17 +123,17 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val m3 = addWatchedUtxos(m2, w3)
     assert(m3.keySet == Set(utxo) && m3(utxo).size == 3)
     val m4 = addWatchedUtxos(m3, w4)
-    assert(m4.keySet == Set(utxo, OutPoint(w4.txId.reverse, w4.outputIndex)) && m3(utxo).size == 3)
+    assert(m4.keySet == Set(utxo, OutPoint(w4.txId, w4.outputIndex)) && m3(utxo).size == 3)
     val m5 = addWatchedUtxos(m4, w5)
-    assert(m5.keySet == Set(utxo, OutPoint(w4.txId.reverse, w4.outputIndex)) && m5(utxo).size == 3)
+    assert(m5.keySet == Set(utxo, OutPoint(w4.txId, w4.outputIndex)) && m5(utxo).size == 3)
     val m6 = removeWatchedUtxos(m5, w3)
-    assert(m6.keySet == Set(utxo, OutPoint(w4.txId.reverse, w4.outputIndex)) && m6(utxo).size == 2)
+    assert(m6.keySet == Set(utxo, OutPoint(w4.txId, w4.outputIndex)) && m6(utxo).size == 2)
     val m7 = removeWatchedUtxos(m6, w3)
-    assert(m7.keySet == Set(utxo, OutPoint(w4.txId.reverse, w4.outputIndex)) && m7(utxo).size == 2)
+    assert(m7.keySet == Set(utxo, OutPoint(w4.txId, w4.outputIndex)) && m7(utxo).size == 2)
     val m8 = removeWatchedUtxos(m7, w2)
-    assert(m8.keySet == Set(utxo, OutPoint(w4.txId.reverse, w4.outputIndex)) && m8(utxo).size == 1)
+    assert(m8.keySet == Set(utxo, OutPoint(w4.txId, w4.outputIndex)) && m8(utxo).size == 1)
     val m9 = removeWatchedUtxos(m8, w1)
-    assert(m9.keySet == Set(OutPoint(w4.txId.reverse, w4.outputIndex)))
+    assert(m9.keySet == Set(OutPoint(w4.txId, w4.outputIndex)))
     val m10 = removeWatchedUtxos(m9, w4)
     assert(m10.isEmpty)
   }
@@ -280,7 +282,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! StopWatching(probe.ref)
 
       // We should still find tx2 if the provided hint is wrong
-      watcher ! WatchOutputSpent(probe.ref, tx1.txid, 0, Set(randomBytes32()))
+      watcher ! WatchOutputSpent(probe.ref, tx1.txid, 0, Set(randomTxId()))
       probe.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx2.txid }
       watcher ! StopWatching(probe.ref)
 
@@ -303,9 +305,9 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // create a chain of transactions that we don't broadcast yet
       val priv = randomKey()
       val tx1 = {
-        bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), FundTransactionOptions(FeeratePerKw(250 sat))).pipeTo(probe.ref)
+        bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), FundTransactionOptions(FeeratePerKw(250 sat)), feeBudget_opt = None).pipeTo(probe.ref)
         val funded = probe.expectMsgType[FundTransactionResponse].tx
-        bitcoinClient.signTransaction(funded).pipeTo(probe.ref)
+        signTransaction(bitcoinClient, funded).pipeTo(probe.ref)
         probe.expectMsgType[SignTransactionResponse].tx
       }
       val outputIndex = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
@@ -358,11 +360,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val actor1 = TestProbe()
       val actor2 = TestProbe()
 
-      val txid = randomBytes32()
+      val txid = randomTxId()
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 2)
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 3)
       watcher ! WatchFundingDeeplyBuried(actor1.ref, txid, 3)
-      watcher ! WatchFundingConfirmed(actor1.ref, txid.reverse, 3)
+      watcher ! WatchFundingConfirmed(actor1.ref, TxId(txid.value.reverse), 3)
       watcher ! WatchOutputSpent(actor1.ref, txid, 0, Set.empty)
       watcher ! WatchOutputSpent(actor1.ref, txid, 1, Set.empty)
       watcher ! ListWatches(actor1.ref)
@@ -371,7 +373,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
       watcher ! WatchFundingConfirmed(actor2.ref, txid, 2)
       watcher ! WatchFundingDeeplyBuried(actor2.ref, txid, 3)
-      watcher ! WatchFundingConfirmed(actor2.ref, txid.reverse, 3)
+      watcher ! WatchFundingConfirmed(actor2.ref, TxId(txid.value.reverse), 3)
       watcher ! WatchOutputSpent(actor2.ref, txid, 0, Set.empty)
       watcher ! WatchOutputSpent(actor2.ref, txid, 1, Set.empty)
       watcher ! ListWatches(actor2.ref)

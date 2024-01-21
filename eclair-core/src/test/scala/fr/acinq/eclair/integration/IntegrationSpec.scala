@@ -28,13 +28,14 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
+import java.nio.file.Files
 import java.util.Properties
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -87,7 +88,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.channel.to-remote-delay-blocks" -> 24,
     "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
-    "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
+    "eclair.multi-part-payment-expiry" -> "20 seconds",
+    "eclair.channel.channel-update.balance-thresholds" -> Nil.asJava,
+    "eclair.channel.channel-update.min-time-between-updates" -> java.time.Duration.ZERO).asJava).withFallback(ConfigFactory.load())
 
   private val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${DataLossProtect.rfcName}" -> "optional",
@@ -102,15 +105,11 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${RouteBlinding.rfcName}" -> "optional",
   ).asJava)
 
-  val withDefaultCommitment = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
-    s"eclair.features.${StaticRemoteKey.rfcName}" -> "disabled",
+  val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${StaticRemoteKey.rfcName}" -> "mandatory",
     s"eclair.features.${AnchorOutputs.rfcName}" -> "disabled",
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "disabled",
   ).asJava))
-
-  val withStaticRemoteKey = ConfigFactory.parseMap(Map(
-    s"eclair.features.${StaticRemoteKey.rfcName}" -> "optional"
-  ).asJava).withFallback(withDefaultCommitment)
 
   val withAnchorOutputs = ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
@@ -146,6 +145,9 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   def instantiateEclairNode(name: String, config: Config): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
+    if (useEclairSigner) {
+      Files.writeString(datadir.toPath.resolve("eclair-signer.conf"), eclairSignerConf)
+    }
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
     val setup = new Setup(datadir, pluginParams = Seq.empty)
     val kit = Await.result(setup.bootstrap, 10 seconds)
@@ -178,6 +180,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       channelType_opt = None,
       pushAmount_opt = Some(pushMsat),
       fundingTxFeerate_opt = None,
+      fundingTxFeeBudget_opt = None,
       channelFlags_opt = None,
       timeout_opt = None))
     sender.expectMsgType[OpenChannelResponse.Created](10 seconds)

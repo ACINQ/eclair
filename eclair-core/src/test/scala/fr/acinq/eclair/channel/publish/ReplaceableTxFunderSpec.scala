@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.channel.publish
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
@@ -38,7 +39,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   private def createAnchorTx(): (CommitTx, ClaimLocalAnchorOutputTx) = {
     val anchorScript = Scripts.anchor(PlaceHolderPubKey)
-    val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
     val commitTx = Transaction(
       2,
       Seq(TxIn(commitInput.outPoint, commitInput.redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
@@ -60,7 +61,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val htlcTimeoutScript = Scripts.htlcOffered(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(OutPoint(randomBytes32(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),
+      Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),
       Seq(TxOut(5000 sat, Script.pay2wsh(htlcSuccessScript)), TxOut(4000 sat, Script.pay2wsh(htlcTimeoutScript))),
       0
     )
@@ -86,15 +87,15 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val htlcSuccessScript = Scripts.htlcReceived(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val htlcTimeoutScript = Scripts.htlcOffered(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val claimHtlcSuccess = ClaimHtlcSuccessWithWitnessData(ClaimHtlcSuccessTx(
-      InputInfo(OutPoint(ByteVector32.Zeroes, 3), TxOut(5000 sat, Script.pay2wsh(htlcSuccessScript)), htlcSuccessScript),
-      Transaction(2, Seq(TxIn(OutPoint(ByteVector32.Zeroes, 3), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 3), TxOut(5000 sat, Script.pay2wsh(htlcSuccessScript)), htlcSuccessScript),
+      Transaction(2, Seq(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 3), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       5,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), preimage)
     val claimHtlcTimeout = ClaimHtlcTimeoutWithWitnessData(ClaimHtlcTimeoutTx(
-      InputInfo(OutPoint(ByteVector32.Zeroes, 7), TxOut(5000 sat, Script.pay2wsh(htlcTimeoutScript)), htlcTimeoutScript),
-      Transaction(2, Seq(TxIn(OutPoint(ByteVector32.Zeroes, 7), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 7), TxOut(5000 sat, Script.pay2wsh(htlcTimeoutScript)), htlcTimeoutScript),
+      Transaction(2, Seq(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 7), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ))
@@ -133,8 +134,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       txIn = Seq(
         initialAnchorTx.tx.txIn.head,
         // The previous funding attempt added two wallet inputs:
-        TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-        TxIn(OutPoint(randomBytes32(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
+        TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
+        TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
       ),
       // And a change output:
       txOut = Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey)))
@@ -173,9 +174,9 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         txIn = Seq(
           initialHtlcTx.txInfo.tx.txIn.head,
           // The previous funding attempt added three wallet inputs:
-          TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-          TxIn(OutPoint(randomBytes32(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-          TxIn(OutPoint(randomBytes32(), 5), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
+          TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
+          TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
+          TxIn(OutPoint(randomTxId(), 5), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
         ),
         txOut = Seq(
           initialHtlcTx.txInfo.tx.txOut.head,

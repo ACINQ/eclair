@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, satoshiSigned, varint}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, satoshiSigned, txIdAsHash, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.codecs.discriminated
@@ -31,11 +31,11 @@ sealed trait TxAddInputTlv extends Tlv
 
 object TxAddInputTlv {
   /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
-  case class SharedInputTxId(txid: ByteVector32) extends TxAddInputTlv
+  case class SharedInputTxId(txId: TxId) extends TxAddInputTlv
 
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
-    .typecase(UInt64(1105), tlvField(bytes32.xmap(txId => txId.reverse, (txHash: ByteVector32) => txHash.reverse).as[SharedInputTxId]))
+    .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
   )
 }
 

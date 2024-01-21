@@ -294,19 +294,19 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.description == Left("a blinded coffee please"))
     assert(invoice.invoiceRequest.offer == offer)
     assert(invoice.blindedPaths.length == 3)
-    assert(invoice.blindedPaths(0).route.blindedNodeIds.length == 4)
-    assert(invoice.blindedPaths(0).route.introductionNodeId == a)
+    assert(invoice.blindedPaths(0).route.asInstanceOf[OfferTypes.BlindedPath].route.blindedNodeIds.length == 4)
+    assert(invoice.blindedPaths(0).route.asInstanceOf[OfferTypes.BlindedPath].route.introductionNodeId == a)
     assert(invoice.blindedPaths(0).paymentInfo == PaymentInfo(1950 msat, 0, CltvExpiryDelta(193), 1 msat, 25_000 msat, Features.empty))
-    assert(invoice.blindedPaths(1).route.blindedNodeIds.length == 4)
-    assert(invoice.blindedPaths(1).route.introductionNodeId == c)
+    assert(invoice.blindedPaths(1).route.asInstanceOf[OfferTypes.BlindedPath].route.blindedNodeIds.length == 4)
+    assert(invoice.blindedPaths(1).route.asInstanceOf[OfferTypes.BlindedPath].route.introductionNodeId == c)
     assert(invoice.blindedPaths(1).paymentInfo == PaymentInfo(400 msat, 0, CltvExpiryDelta(183), 1 msat, 25_000 msat, Features.empty))
-    assert(invoice.blindedPaths(2).route.blindedNodeIds.length == 1)
-    assert(invoice.blindedPaths(2).route.introductionNodeId == d)
+    assert(invoice.blindedPaths(2).route.asInstanceOf[OfferTypes.BlindedPath].route.blindedNodeIds.length == 1)
+    assert(invoice.blindedPaths(2).route.asInstanceOf[OfferTypes.BlindedPath].route.introductionNodeId == d)
     assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, Features.empty))
     // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
     // Check that all non-final encrypted payloads for blinded routes have the same length.
-    assert(invoice.blindedPaths.flatMap(_.route.encryptedPayloads.dropRight(1)).map(_.length).toSet.size == 1)
+    assert(invoice.blindedPaths.flatMap(_.route.asInstanceOf[OfferTypes.BlindedPath].route.encryptedPayloads.dropRight(1)).map(_.length).toSet.size == 1)
   }
 
   test("Invoice generation with route blinding should fail when router returns an error") { f =>

@@ -54,7 +54,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val finalExpiry = r.finalExpiry(nodeParams)
       val recipient = r.invoice match {
         case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
-        case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
+        case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.resolvedPaths, r.recipientAmount, finalExpiry, r.userCustomTlvs)
       }
       if (!nodeParams.features.invoiceFeatures().areSupported(recipient.features)) {
         replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
@@ -124,7 +124,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           val finalExpiry = r.finalExpiry(nodeParams)
           val recipient = r.invoice match {
             case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)
-            case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)
+            case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.resolvedPaths, r.recipientAmount, finalExpiry, Set.empty)
           }
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           payFsm ! PaymentLifecycle.SendPaymentToRoute(self, Left(r.route), recipient)
@@ -187,7 +187,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case PaymentIdentifier.PaymentUUID(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
         case PaymentIdentifier.PaymentHash(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
         case PaymentIdentifier.OfferId(offerId) => pending.collectFirst {
-          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
+          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
             (paymentId, pp)
         }
       }
@@ -309,6 +309,7 @@ object PaymentInitiator {
   /**
    * @param recipientAmount    amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    * @param invoice            invoice.
+   * @param resolvedPaths      when using a Bolt 12 invoice, list of payment paths to reach the recipient.
    * @param maxAttempts        maximum number of retries.
    * @param externalId         (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param routeParams        (optional) parameters to fine-tune the routing algorithm.
@@ -319,6 +320,7 @@ object PaymentInitiator {
   case class SendPaymentToNode(replyTo: ActorRef,
                                recipientAmount: MilliSatoshi,
                                invoice: Invoice,
+                               resolvedPaths: Seq[PaymentBlindedRoute],
                                maxAttempts: Int,
                                externalId: Option[String] = None,
                                routeParams: RouteParams,
@@ -371,6 +373,7 @@ object PaymentInitiator {
    * @param recipientAmount amount that should be received by the final recipient (usually from a Bolt 11 invoice).
    *                        This amount may be split between multiple requests if using MPP.
    * @param invoice         Bolt 11 invoice.
+   * @param resolvedPaths   when using a Bolt 12 invoice, list of payment paths to reach the recipient.
    * @param route           route to use to reach either the final recipient or the trampoline node.
    * @param externalId      (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param parentId        id of the whole payment. When manually sending a multi-part payment, you need to make
@@ -381,6 +384,7 @@ object PaymentInitiator {
    */
   case class SendPaymentToRoute(recipientAmount: MilliSatoshi,
                                 invoice: Invoice,
+                                resolvedPaths: Seq[PaymentBlindedRoute],
                                 route: PredefinedRoute,
                                 externalId: Option[String],
                                 parentId: Option[UUID],

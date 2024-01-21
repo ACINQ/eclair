@@ -3,18 +3,19 @@ package fr.acinq.eclair.wire.internal.channel.version4
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.fee
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.MilliSatoshiLong
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.protocol.{TxSignatures, UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, PermanentChannelFeature, channel}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -248,20 +249,56 @@ private[channel] object ChannelCodecs4 {
         ("targetFeerate" | feeratePerKw) ::
         ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
 
+    // This codec was used by a first prototype version of splicing that only worked without HTLCs.
+    private val sharedInteractiveTxInputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("publicKeyScript" | provide(ByteVector.empty)) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | provide(0 msat))).as[InteractiveTxBuilder.Input.Shared]
+
+    private val sharedInteractiveTxInputWithHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("publicKeyScript" | provide(ByteVector.empty)) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared]
+
+    private val sharedInteractiveTxInputWithHtlcsAndPubkeyScriptCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
+      ("serialId" | uint64) ::
+        ("outPoint" | outPointCodec) ::
+        ("publicKeyScript" | lengthDelimited(bytes)) ::
+        ("sequence" | uint32) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared]
+
     private val sharedInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Shared] = discriminated[InteractiveTxBuilder.Input.Shared].by(byte)
-      .typecase(0x01, (
-        ("serialId" | uint64) ::
-          ("outPoint" | outPointCodec) ::
-          ("sequence" | uint32) ::
-          ("localAmount" | millisatoshi) ::
-          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Input.Shared])
+      .typecase(0x03, sharedInteractiveTxInputWithHtlcsAndPubkeyScriptCodec)
+      .typecase(0x02, sharedInteractiveTxInputWithHtlcsCodec)
+      .typecase(0x01, sharedInteractiveTxInputWithoutHtlcsCodec)
+
+    private val sharedInteractiveTxOutputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
+      ("serialId" | uint64) ::
+        ("scriptPubKey" | lengthDelimited(bytes)) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | provide(0 msat))).as[InteractiveTxBuilder.Output.Shared]
+
+    private val sharedInteractiveTxOutputWithHtlcsCodec: Codec[InteractiveTxBuilder.Output.Shared] = (
+      ("serialId" | uint64) ::
+        ("scriptPubKey" | lengthDelimited(bytes)) ::
+        ("localAmount" | millisatoshi) ::
+        ("remoteAmount" | millisatoshi) ::
+        ("htlcAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared]
 
     private val sharedInteractiveTxOutputCodec: Codec[InteractiveTxBuilder.Output.Shared] = discriminated[InteractiveTxBuilder.Output.Shared].by(byte)
-      .typecase(0x01, (
-        ("serialId" | uint64) ::
-          ("scriptPubKey" | lengthDelimited(bytes)) ::
-          ("localAmount" | millisatoshi) ::
-          ("remoteAmount" | millisatoshi)).as[InteractiveTxBuilder.Output.Shared])
+      .typecase(0x02, sharedInteractiveTxOutputWithHtlcsCodec)
+      .typecase(0x01, sharedInteractiveTxOutputWithoutHtlcsCodec)
 
     private val localOnlyInteractiveTxInputCodec: Codec[InteractiveTxBuilder.Input.Local] = (
       ("serialId" | uint64) ::
@@ -331,13 +368,28 @@ private[channel] object ChannelCodecs4 {
     private val dualFundedUnconfirmedFundingTxCodec: Codec[DualFundedUnconfirmedFundingTx] = (
       ("sharedTx" | signedSharedTransactionCodec) ::
         ("createdAt" | blockHeight) ::
-        ("fundingParams" | fundingParamsCodec)).as[DualFundedUnconfirmedFundingTx]
+        ("fundingParams" | fundingParamsCodec)).as[DualFundedUnconfirmedFundingTx].xmap(
+      dfu => (dfu.sharedTx.tx.sharedInput_opt, dfu.fundingParams.sharedInput_opt) match {
+        case (Some(sharedTxInput), Some(sharedFundingParamsInput)) if sharedTxInput.publicKeyScript.isEmpty =>
+          val sharedTxInput1 = sharedTxInput.copy(publicKeyScript = sharedFundingParamsInput.info.txOut.publicKeyScript)
+          val sharedTx1 = dfu.sharedTx.tx.copy(sharedInput_opt = Some(sharedTxInput1))
+          val dfu1 = dfu.sharedTx match {
+            case pt: PartiallySignedSharedTransaction => dfu.copy(sharedTx = pt.copy(tx = sharedTx1))
+            case ft: FullySignedSharedTransaction => dfu.copy(sharedTx = ft.copy(tx = sharedTx1))
+          }
+          dfu1
+        case _ => dfu
+      },
+      dfu => dfu
+    )
 
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
       .typecase(0x02, dualFundedUnconfirmedFundingTxCodec)
-      .typecase(0x03, txCodec.as[ZeroconfPublishedFundingTx])
-      .typecase(0x04, txCodec.as[ConfirmedFundingTx])
+      .typecase(0x05, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec))).as[ZeroconfPublishedFundingTx])
+      .typecase(0x06, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec))).as[ConfirmedFundingTx])
+      .typecase(0x03, (txCodec :: provide(Option.empty[TxSignatures])).as[ZeroconfPublishedFundingTx])
+      .typecase(0x04, (txCodec :: provide(Option.empty[TxSignatures])).as[ConfirmedFundingTx])
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
@@ -369,7 +421,7 @@ private[channel] object ChannelCodecs4 {
     private def remoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
+        ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
     private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = (

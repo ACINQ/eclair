@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -84,9 +84,9 @@ object TxPublisher {
    * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
    *            which case it must be set to zero here).
    */
-  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
+  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
   object PublishFinalTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment) extends PublishTx {
@@ -241,8 +241,11 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               case (ConfirmationTarget.Absolute(currentConfirmBefore), ConfirmationTarget.Absolute(proposedConfirmBefore)) if proposedConfirmBefore < currentConfirmBefore =>
                 // The proposed block target is closer than what it was
                 updateConfirmationTarget()
-              case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(proposedConfirmBefore)) =>
+              case (_: ConfirmationTarget.Priority, ConfirmationTarget.Absolute(_)) =>
                 // Switch from relative priority mode to absolute blockheight mode
+                updateConfirmationTarget()
+              case (ConfirmationTarget.Priority(current), ConfirmationTarget.Priority(proposed)) if current < proposed =>
+                // Switch to a higher relative priority.
                 updateConfirmationTarget()
               case _ =>
                 log.debug("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)

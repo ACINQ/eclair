@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -106,7 +106,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
-      log.info(s"using features=$localFeatures")
+      log.debug(s"using features=$localFeatures")
       val localInit = d.pendingAuth.address match {
         case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
         case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
@@ -132,6 +132,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
+        val featuresCompatibilityResult = Features.testCompatible(d.localInit.features, remoteInit.features)
         if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
@@ -143,9 +144,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(featureGraphErr.message))
           d.transport ! PoisonPill
           stay()
-        } else if (!Features.areCompatible(d.localInit.features, remoteInit.features)) {
-          log.warning("incompatible features, disconnecting")
-          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
+        } else if (!featuresCompatibilityResult.areCompatible) {
+          log.warning(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")}), disconnecting")
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(s"incompatible features (${featuresCompatibilityResult.errorHints.mkString(",")})"))
           d.transport ! PoisonPill
           stay()
         } else {
@@ -161,7 +162,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
           val rebroadcastDelay = Random.nextInt(conf.maxRebroadcastDelay.toSeconds.toInt).seconds
-          log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
+          log.debug(s"rebroadcast will be delayed by $rebroadcastDelay")
           context.system.eventStream.subscribe(self, classOf[Rebroadcast])
 
           goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay, isPersistent = d.isPersistent)
@@ -370,6 +371,10 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             } else if (d.behavior.fundingTxAlreadySpentCount < MAX_FUNDING_TX_ALREADY_SPENT) {
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
             } else {
+              // Our peer isn't necessarily malicious: their bitcoind node may be late, or they restarted and have not
+              // yet received notifications for the recently closed channels. There may also be splicing attempts that
+              // are being confirmed and look like closed channels, but actually aren't.
+              // But we still need to protect ourselves against potentially malicious peers and ignore them.
               log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
               d.transport ! Warning("too many channel announcements with funding tx already spent, please check your bitcoin node")
               startSingleTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD)
@@ -389,13 +394,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay() using d.copy(behavior = behavior1)
 
       case Event(DoSync(replacePrevious), d: ConnectedData) =>
-        val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
+        // We assume support for standard range queries since https://github.com/lightning/bolts/pull/1092
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
-        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-          log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
-          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
-        }
+        val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+        log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+        router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
         stay()
 
       case Event(ResumeAnnouncements, d: ConnectedData) =>
@@ -529,10 +532,7 @@ object PeerConnection {
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
-
-  // @formatter:off
-  val MAX_FUNDING_TX_ALREADY_SPENT = 10
-  // @formatter:on
+  val MAX_FUNDING_TX_ALREADY_SPENT = 250
 
   def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
     Props(new PeerConnection(keyPair, conf, switchboard, router))
@@ -555,8 +555,8 @@ object PeerConnection {
   case object Nothing extends Data
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
-  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, isPersistent: Boolean) extends Data with HasTransport
-  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, isPersistent: Boolean) extends Data with HasTransport
+  case class InitializingData(chainHash: BlockHash, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, isPersistent: Boolean) extends Data with HasTransport
+  case class ConnectedData(chainHash: BlockHash, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, isPersistent: Boolean) extends Data with HasTransport
 
   case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
@@ -572,7 +572,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes

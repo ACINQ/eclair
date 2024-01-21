@@ -176,9 +176,6 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
     probe.expectMessage(AsyncPaymentTimeout)
 
-    // First remote node connects, but does not trigger expired watch
-    system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId, null))
-
     // Second remote node connects and triggers watch
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId2, null))
     val request3 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
@@ -187,6 +184,10 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING, null)))
     probe.expectNoMessage(100 millis)
     probe2.expectMessage(AsyncPaymentTriggered)
+
+    // First remote node connects, but does not trigger expired watch
+    system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId, null))
+    switchboard.expectNoMessage(100 millis)
   }
 
   test("triggerer treats an unexpected stop of the notifier as a cancel") { f =>

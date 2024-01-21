@@ -19,12 +19,12 @@ package fr.acinq.eclair.api.handlers
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.{Satoshi, Script}
-import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{ChannelTypes, ClosingFeerates}
+import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import scodec.bits.ByteVector
 
 trait Channel {
@@ -52,8 +52,8 @@ trait Channel {
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt) =>
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "fundingFeeBudgetSatoshis".as[Satoshi].?, "announceChannel".as[Boolean].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelTypeName_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt) =>
         val (channelTypeOk, channelType_opt) = channelTypeName_opt match {
           case Some(channelTypeName) => supportedChannelTypes.get(channelTypeName) match {
             case Some(channelType) => (true, Some(channelType))
@@ -64,14 +64,14 @@ trait Channel {
         if (!channelTypeOk) {
           reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be one of ${supportedChannelTypes.keys.mkString(",")}"))
         } else {
-          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, announceChannel_opt, openTimeout_opt))
+          complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, fundingFeeBudget_opt, announceChannel_opt, openTimeout_opt))
         }
     }
   }
 
   val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
-    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "lockTime".as[Long].?) {
-      (channelId, targetFeerateSatByte, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), lockTime_opt))
+    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
+      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
     }
   }
 
@@ -115,6 +115,14 @@ trait Channel {
     }
   }
 
+  val bumpForceClose: Route = postRequest("bumpforceclose") { implicit t =>
+    withChannelsIdentifier { channels =>
+      formFields(confirmationPriorityFormParam) { priority =>
+        complete(eclairApi.bumpForceCloseFee(channels, ConfirmationTarget.Priority(priority)))
+      }
+    }
+  }
+
   val channel: Route = postRequest("channel") { implicit t =>
     withChannelIdentifier { channel =>
       complete(eclairApi.channelInfo(channel))
@@ -155,6 +163,6 @@ trait Channel {
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }

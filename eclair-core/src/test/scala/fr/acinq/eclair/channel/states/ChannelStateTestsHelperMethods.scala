@@ -28,11 +28,11 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel.{ChannelData, ChannelState, _}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
@@ -90,6 +90,10 @@ object ChannelStateTestsTags {
   val RejectRbfAttempts = "reject_rbf_attempts"
   /** If set, the non-initiator will require a 1-block delay between RBF attempts. */
   val DelayRbfAttempts = "delay_rbf_attempts"
+  /** If set, peers will support the quiesce protocol. */
+  val Quiescence = "quiescence"
+  /** If set, channels will adapt their max HTLC amount to the available balance */
+  val AdaptMaxHtlcAmount = "adapt-max-htlc-amount"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -142,6 +146,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
+      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val finalNodeParamsB = nodeParamsB
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
@@ -150,9 +155,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.RejectRbfAttempts))(0)
       .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.DelayRbfAttempts))(1)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
+      .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val wallet = wallet_opt match {
       case Some(wallet) => wallet
-      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
+      case None => if (tags.contains(ChannelStateTestsTags.DualFunding) || tags.contains(ChannelStateTestsTags.Splicing)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
     }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
@@ -180,6 +186,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Quiescence))(_.updated(Features.Quiescence, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -193,6 +200,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Quiescence))(_.updated(Features.Quiescence, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
@@ -209,7 +217,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(150_000_000 msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
-      .modify(_.requestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
+      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
       .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
     val bobParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
@@ -217,7 +225,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(Long.MaxValue.msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
-      .modify(_.requestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
+      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
       .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
 
     (aliceParams, bobParams, channelType)
@@ -242,7 +250,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, initiatorPushAmount, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, initiatorPushAmount, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
     bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFundingAmount, dualFunded, nonInitiatorPushAmount, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
@@ -447,22 +455,26 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {
-      s2r.expectMsgType[CommitSig]
-      s2r.forward(r)
+      sigs2r = 0
+      do {
+        s2r.expectMsgType[CommitSig]
+        s2r.forward(r)
+        sigs2r += 1
+      } while (sigs2r < batchSize)
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {
         assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 2)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 2)
         assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == rCommitIndex + 2)
-        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 1)
       }
     } else {
       eventually {
         assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == sCommitIndex + 1)
-        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 1)
+        assert(s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 1)
         assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localCommitIndex == rCommitIndex + 1)
-        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == rCommitIndex + 1)
+        assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.remoteCommitIndex == sCommitIndex + 1)
       }
     }
   }
@@ -570,6 +582,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(closingData.localCommitPublished.isEmpty)
     val remoteCommitPublished = remoteCommitPublished_opt.get
 
+    // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
+    closingData.commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat =>
+        val anchorTx = s2blockchain.expectMsgType[PublishReplaceableTx]
+        assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      case Transactions.DefaultCommitmentFormat => ()
+    }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

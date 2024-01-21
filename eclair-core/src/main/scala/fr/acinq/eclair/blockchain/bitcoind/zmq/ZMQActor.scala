@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 import akka.Done
 import akka.actor.{Actor, ActorLogging}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{BlockId, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
@@ -92,9 +92,9 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
     case msg: ZMsg => msg.popString() match {
       case "hashblock" =>
-        val blockHash = ByteVector32(ByteVector(msg.pop().getData))
-        log.debug("received blockhash={}", blockHash)
-        context.system.eventStream.publish(NewBlock(blockHash))
+        val blockId = BlockId(ByteVector32(ByteVector(msg.pop().getData)))
+        log.debug("received blockId={}", blockId)
+        context.system.eventStream.publish(NewBlock(blockId))
       case "rawtx" =>
         val tx = Transaction.read(msg.pop().getData)
         log.debug("received txid={}", tx.txid)

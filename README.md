@@ -62,7 +62,7 @@ This means that instead of re-implementing them, Eclair benefits from the verifi
 
 * Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 * You must configure your Bitcoin node to use `bech32` or `bech32m` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit`, `bech32` or `bech32m`), you must send them to a `bech32` or `bech32m` address before running Eclair.
-* Eclair requires Bitcoin Core 23.2 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+* Eclair requires Bitcoin Core 24.1 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -162,7 +162,10 @@ limitdescendantcount=20
 
 Setting these parameters lets you unblock long chains of unconfirmed channel funding transactions by using child-pays-for-parent (CPFP) to make them confirm.
 
-With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by the rest of the network.
+With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by
+the rest of the network.
+
+You can also configure Eclair to manage Bitcoin Core's private keys, see our [guides](./docs/Guides.md) for more details.
 
 ### Java Environment Variables
 

@@ -18,12 +18,12 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, RealShortChannelId, TimestampSecond, UInt64, nodeFee, randomBytes32}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
@@ -35,6 +35,18 @@ import scala.util.{Failure, Try}
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
 object OfferTypes {
+  case class ShortChannelIdDir(isNode1: Boolean, scid: RealShortChannelId)
+
+  // @formatter:off
+  /** Data provided to reach the issuer of an offer or invoice. */
+  sealed trait ContactInfo
+  /** If the offer or invoice issuer doesn't want to hide their identity, they can directly share their public nodeId. */
+  case class RecipientNodeId(nodeId: PublicKey) extends ContactInfo
+  /** If the offer or invoice issuer wants to hide their identity, they instead provide blinded paths. */
+  sealed trait BlindedContactInfo extends ContactInfo
+  case class BlindedPath(route: BlindedRoute) extends BlindedContactInfo
+  case class CompactBlindedPath(introductionNode: ShortChannelIdDir, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) extends BlindedContactInfo
+  // @formatter:on
 
   sealed trait Bolt12Tlv extends Tlv
 
@@ -49,7 +61,7 @@ object OfferTypes {
   /**
    * Chains for which the offer is valid. If empty, bitcoin mainnet is implied.
    */
-  case class OfferChains(chains: Seq[ByteVector32]) extends OfferTlv
+  case class OfferChains(chains: Seq[BlockHash]) extends OfferTlv
 
   /**
    * Data from the offer creator to themselves, for instance a signature that authenticates the offer so that they don't need to store the offer.
@@ -84,7 +96,7 @@ object OfferTypes {
   /**
    * Paths that can be used to retrieve an invoice.
    */
-  case class OfferPaths(paths: Seq[BlindedRoute]) extends OfferTlv
+  case class OfferPaths(paths: Seq[BlindedContactInfo]) extends OfferTlv
 
   /**
    * Name of the offer creator.
@@ -113,7 +125,7 @@ object OfferTypes {
   /**
    * If `OfferChains` is present, this specifies which chain is going to be used to pay.
    */
-  case class InvoiceRequestChain(hash: ByteVector32) extends InvoiceRequestTlv
+  case class InvoiceRequestChain(hash: BlockHash) extends InvoiceRequestTlv
 
   /**
    * Amount that the sender is going to send.
@@ -144,7 +156,7 @@ object OfferTypes {
   /**
    * Payment paths to send the payment to.
    */
-  case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
+  case class InvoicePaths(paths: Seq[BlindedContactInfo]) extends InvoiceTlv
 
   case class PaymentInfo(feeBase: MilliSatoshi,
                          feeProportionalMillionths: Long,
@@ -204,11 +216,11 @@ object OfferTypes {
   case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv
 
   def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
-    // Offer TLVs are in the range (0, 80).
+  // Offer TLVs are in the range (0, 80).
     TlvStream[OfferTlv](tlvs.records.collect { case tlv: OfferTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(80)))
 
   def filterInvoiceRequestFields(tlvs: TlvStream[InvoiceTlv]): TlvStream[InvoiceRequestTlv] =
-    // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
+  // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
     TlvStream[InvoiceRequestTlv](tlvs.records.collect { case tlv: InvoiceRequestTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(160)))
 
   case class ErroneousField(tag: Long) extends InvoiceErrorTlv
@@ -218,7 +230,7 @@ object OfferTypes {
   case class Error(message: String) extends InvoiceErrorTlv
 
   case class Offer(records: TlvStream[OfferTlv]) {
-    val chains: Seq[ByteVector32] = records.get[OfferChains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
+    val chains: Seq[BlockHash] = records.get[OfferChains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
     val metadata: Option[ByteVector] = records.get[OfferMetadata].map(_.data)
     val currency: Option[String] = records.get[OfferCurrency].map(_.iso4217)
     val amount: Option[MilliSatoshi] = currency match {
@@ -228,12 +240,12 @@ object OfferTypes {
     val description: String = records.get[OfferDescription].get.description
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
-    private val paths: Option[Seq[BlindedRoute]] = records.get[OfferPaths].map(_.paths)
+    private val paths: Option[Seq[BlindedContactInfo]] = records.get[OfferPaths].map(_.paths)
     val issuer: Option[String] = records.get[OfferIssuer].map(_.issuer)
     val quantityMax: Option[Long] = records.get[OfferQuantityMax].map(_.max).map { q => if (q == 0) Long.MaxValue else q }
     val nodeId: PublicKey = records.get[OfferNodeId].map(_.publicKey).get
 
-    val contactInfo: Either[Seq[BlindedRoute], PublicKey] = paths.map(Left(_)).getOrElse(Right(nodeId))
+    val contactInfos: Seq[ContactInfo] = paths.getOrElse(Seq(RecipientNodeId(nodeId)))
 
     def encode(): String = {
       val data = OfferCodecs.offerTlvCodec.encode(records).require.bytes
@@ -259,7 +271,7 @@ object OfferTypes {
               description: String,
               nodeId: PublicKey,
               features: Features[Bolt12Feature],
-              chain: ByteVector32,
+              chain: BlockHash,
               additionalTlvs: Set[OfferTlv] = Set.empty,
               customTlvs: Set[GenericTlv] = Set.empty): Offer = {
       val tlvs: Set[OfferTlv] = Set(
@@ -298,7 +310,7 @@ object OfferTypes {
     val offer: Offer = Offer.validate(filterOfferFields(records)).toOption.get
 
     val metadata: ByteVector = records.get[InvoiceRequestMetadata].get.data
-    val chain: ByteVector32 = records.get[InvoiceRequestChain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
+    val chain: BlockHash = records.get[InvoiceRequestChain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
     val amount: Option[MilliSatoshi] = records.get[InvoiceRequestAmount].map(_.amount)
     val features: Features[Bolt12Feature] = records.get[InvoiceRequestFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val quantity_opt: Option[Long] = records.get[InvoiceRequestQuantity].map(_.quantity)
@@ -355,7 +367,7 @@ object OfferTypes {
               quantity: Long,
               features: Features[Bolt12Feature],
               payerKey: PrivateKey,
-              chain: ByteVector32,
+              chain: BlockHash,
               additionalTlvs: Set[InvoiceRequestTlv] = Set.empty,
               customTlvs: Set[GenericTlv] = Set.empty): InvoiceRequest = {
       require(offer.chains.contains(chain))

@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.payment.Invoice
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router.{ChannelDesc, HopRelayParams}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
@@ -35,13 +35,13 @@ class BalanceEstimateSpec extends AnyFunSuite {
       balance.high <= balance.maxCapacity
   }
 
-  def makeEdge(nodeId1: PublicKey, nodeId2: PublicKey, channelId: Long, capacity: Satoshi): ActiveEdge =
-    ActiveEdge(
+  def makeEdge(nodeId1: PublicKey, nodeId2: PublicKey, channelId: Long, capacity: Satoshi): GraphEdge =
+    GraphEdge(
       ChannelDesc(ShortChannelId(channelId), nodeId1, nodeId2),
       HopRelayParams.FromHint(Invoice.ExtraEdge(nodeId1, nodeId2, ShortChannelId(channelId), 0 msat, 0, CltvExpiryDelta(0), 0 msat, None)),
       capacity, None)
 
-  def makeEdge(channelId: Long, capacity: Satoshi): ActiveEdge =
+  def makeEdge(channelId: Long, capacity: Satoshi): GraphEdge =
     makeEdge(randomKey().publicKey, randomKey().publicKey, channelId, capacity)
 
   test("no balance information") {

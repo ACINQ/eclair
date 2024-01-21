@@ -18,14 +18,14 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
@@ -33,8 +33,8 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
-import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -54,6 +54,7 @@ import scala.jdk.CollectionConverters._
  */
 case class NodeParams(nodeKeyManager: NodeKeyManager,
                       channelKeyManager: ChannelKeyManager,
+                      onChainKeyManager_opt: Option[OnChainKeyManager],
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
                       private val feerates: AtomicReference[FeeratesPerKw],
@@ -72,7 +73,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
-                      chainHash: ByteVector32,
+                      chainHash: BlockHash,
                       invoiceExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       peerConnectionConf: PeerConnection.Conf,
@@ -101,7 +102,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def currentFeerates: FeeratesPerKw = feerates.get()
 
   /** Only to be used in tests. */
-  def setFeerates(value: FeeratesPerKw) = feerates.set(value)
+  def setFeerates(value: FeeratesPerKw): Unit = feerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
@@ -183,16 +184,16 @@ object NodeParams extends Logging {
     Seeds(nodeSeed, channelSeed)
   }
 
-  private val chain2Hash: Map[String, ByteVector32] = Map(
+  private val chain2Hash: Map[String, BlockHash] = Map(
     "regtest" -> Block.RegtestGenesisBlock.hash,
     "testnet" -> Block.TestnetGenesisBlock.hash,
     "signet" -> Block.SignetGenesisBlock.hash,
     "mainnet" -> Block.LivenetGenesisBlock.hash
   )
 
-  def hashFromChain(chain: String): ByteVector32 = chain2Hash.getOrElse(chain, throw new RuntimeException(s"invalid chain '$chain'"))
+  def hashFromChain(chain: String): BlockHash = chain2Hash.getOrElse(chain, throw new RuntimeException(s"invalid chain '$chain'"))
 
-  def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
+  def chainFromHash(chainHash: BlockHash): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def parseSocks5ProxyParams(config: Config): Option[Socks5ProxyParams] = {
     if (config.getBoolean("socks5.enabled")) {
@@ -211,7 +212,8 @@ object NodeParams extends Logging {
     }
   }
 
-  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+  def makeNodeParams(config: Config, instanceId: UUID,
+                     nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onChainKeyManager_opt: Option[OnChainKeyManager],
                      torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
@@ -324,9 +326,11 @@ object NodeParams extends Logging {
     def validateFeatures(features: Features[Feature]): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
+      require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
+      require(features.hasFeature(Features.DataLossProtect), s"${Features.DataLossProtect.rfcName} must be enabled")
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
       require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), s"${Features.PaymentSecret.rfcName} must be enabled and mandatory")
-      require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
+      require(features.hasFeature(Features.StaticRemoteKey), s"${Features.StaticRemoteKey.rfcName} must be enabled")
       require(features.hasFeature(Features.ChannelType), s"${Features.ChannelType.rfcName} must be enabled")
     }
 
@@ -439,8 +443,7 @@ object NodeParams extends Logging {
       val ratioBase = config.getDouble("ratios.base")
       val ratioAge = config.getDouble("ratios.channel-age")
       val ratioCapacity = config.getDouble("ratios.channel-capacity")
-      val disabledMultiplier = config.getDouble("ratios.disabled-multiplier")
-      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity, disabledMultiplier))
+      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity))
     }
 
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
@@ -475,6 +478,7 @@ object NodeParams extends Logging {
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
+      onChainKeyManager_opt = onChainKeyManager_opt,
       instanceId = instanceId,
       blockHeight = blockHeight,
       feerates = feerates,
@@ -505,15 +509,20 @@ object NodeParams extends Logging {
         maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
         minFinalExpiryDelta = minFinalExpiryDelta,
+        maxRestartWatchDelay = FiniteDuration(config.getDuration("channel.max-restart-watch-delay").getSeconds, TimeUnit.SECONDS),
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
+        maxChannelSpentRescanBlocks = config.getInt("channel.max-channel-spent-rescan-blocks"),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
         requireConfirmedInputsForDualFunding = config.getBoolean("channel.require-confirmed-inputs-for-dual-funding"),
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
-        remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks"))
+        remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks")),
+        quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
+        balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
+        minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

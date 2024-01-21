@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -63,7 +63,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsgType[Seq[Transaction]]
   }
 
-  def waitTxInMempool(bitcoinClient: BitcoinCoreClient, txId: ByteVector32, probe: TestProbe): Unit = {
+  def waitTxInMempool(bitcoinClient: BitcoinCoreClient, txId: TxId, probe: TestProbe): Unit = {
     awaitCond(getMempool(bitcoinClient, probe).exists(_.txid == txId))
   }
 

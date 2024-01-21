@@ -18,12 +18,12 @@ package fr.acinq.eclair.router
 
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, ActiveEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
@@ -436,14 +436,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, DEFAULT_CAPACITY.toMilliSatoshi)
 
     val edges = Seq(
-      ActiveEdge(ChannelDesc(ShortChannelId(1L), a, b), HopRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(1L), b, a), HopRelayParams.FromAnnouncement(uba), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(2L), b, c), HopRelayParams.FromAnnouncement(ubc), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(2L), c, b), HopRelayParams.FromAnnouncement(ucb), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(3L), c, d), HopRelayParams.FromAnnouncement(ucd), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(3L), d, c), HopRelayParams.FromAnnouncement(udc), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(4L), d, e), HopRelayParams.FromAnnouncement(ude), DEFAULT_CAPACITY, None),
-      ActiveEdge(ChannelDesc(ShortChannelId(4L), e, d), HopRelayParams.FromAnnouncement(ued), DEFAULT_CAPACITY, None)
+      GraphEdge(ChannelDesc(ShortChannelId(1L), a, b), HopRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(1L), b, a), HopRelayParams.FromAnnouncement(uba), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(2L), b, c), HopRelayParams.FromAnnouncement(ubc), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(2L), c, b), HopRelayParams.FromAnnouncement(ucb), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(3L), c, d), HopRelayParams.FromAnnouncement(ucd), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(3L), d, c), HopRelayParams.FromAnnouncement(udc), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(4L), d, e), HopRelayParams.FromAnnouncement(ude), DEFAULT_CAPACITY, None),
+      GraphEdge(ChannelDesc(ShortChannelId(4L), e, d), HopRelayParams.FromAnnouncement(ued), DEFAULT_CAPACITY, None)
     )
 
     val g = DirectedGraph(edges)
@@ -554,7 +554,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
       val HopRelayParams.FromAnnouncement(update) = edges.find(_.desc.shortChannelId == shortChannelId).get.params
       val (update_1_opt, update_2_opt) = if (update.channelFlags.isNode1) (Some(update), None) else (None, Some(update))
-      val pc = PublicChannel(announcement, ByteVector32.Zeroes, Satoshi(1000), update_1_opt, update_2_opt, None)
+      val pc = PublicChannel(announcement, TxId(ByteVector32.Zeroes), Satoshi(1000), update_1_opt, update_2_opt, None)
       (shortChannelId, pc)
     }
 
@@ -903,26 +903,26 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val updates = SortedMap(
       RealShortChannelId(BlockHeight(565643), 1216, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("565643x1216x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(14), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 10, 4_294_967_295L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565643x1216x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 0 msat, feeBaseMsat = 1000 msat, 100, 15_000_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(542280), 2156, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("542280x2156x0").success.value.toLong, PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), PublicKey(hex"03cb7983dc247f9f81a0fa2dfa3ce1c255365f7279c8dd143e086ca333df10e278")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1000 msat, feeBaseMsat = 1000 msat, 100, 16_777_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("542280x2156x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 667 msat, 1, 16_777_000_000L msat)),
         meta_opt = None
       ),
       RealShortChannelId(BlockHeight(565779), 2711, 0) -> PublicChannel(
         ann = makeChannel(ShortChannelId.fromCoordinates("565779x2711x0").success.value.toLong, PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
-        fundingTxid = ByteVector32.Zeroes,
+        fundingTxId = TxId(ByteVector32.Zeroes),
         capacity = DEFAULT_CAPACITY,
-        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
-        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, ByteVector32.Zeroes, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_1_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
+        update_2_opt = Some(ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, ShortChannelId.fromCoordinates("565779x2711x0").success.value, 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(144), htlcMinimumMsat = 1 msat, feeBaseMsat = 1000 msat, 100, 230_000_000L msat)),
         meta_opt = None
       )
     )
@@ -1656,12 +1656,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //  \        /    \           /    \        /
     //   +----> N ---> N         N ---> N ----+
 
-    def makeEdges(n: Int): Seq[ActiveEdge] = {
+    def makeEdges(n: Int): Seq[GraphEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
         nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
-      val q = new mutable.Queue[ActiveEdge]
+      val q = new mutable.Queue[GraphEdge]
       // One path is shorter to maximise the overlap between the n-shortest paths, they will all be like the shortest path with a single hop changed.
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 90))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
@@ -1689,12 +1689,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //  \        /    \           /    \        /
     //   +----> N ---> N         N ---> N ----+
 
-    def makeEdges(n: Int): Seq[ActiveEdge] = {
+    def makeEdges(n: Int): Seq[GraphEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
         nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
-      val q = new mutable.Queue[ActiveEdge]
+      val q = new mutable.Queue[GraphEdge]
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 100))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
       for (i <- 0 until (n - 1)) {
@@ -1947,9 +1947,9 @@ object RouteCalculationSpec {
                maxHtlc: Option[MilliSatoshi] = None,
                cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0),
                capacity: Satoshi = DEFAULT_CAPACITY,
-               balance_opt: Option[MilliSatoshi] = None): ActiveEdge = {
+               balance_opt: Option[MilliSatoshi] = None): GraphEdge = {
     val update = makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
-    ActiveEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
+    GraphEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
   }
 
   def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): ChannelUpdate =
@@ -1973,7 +1973,7 @@ object RouteCalculationSpec {
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 
-  def route2Edges(route: Route): Seq[ActiveEdge] = route.hops.map(hop => ActiveEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
+  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.shortChannelId, hop.nodeId, hop.nextNodeId), hop.params, 0 sat, None))
 
   def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.hops.map(hop => (hop.nodeId, hop.nextNodeId))
 

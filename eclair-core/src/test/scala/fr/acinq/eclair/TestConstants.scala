@@ -81,6 +81,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
@@ -114,8 +115,10 @@ object TestConstants {
         maxExpiryDelta = CltvExpiryDelta(2016),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
         minFinalExpiryDelta = CltvExpiryDelta(18),
+        maxRestartWatchDelay = 0 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 0 msat,
         minDepthBlocks = 3,
         toRemoteDelay = CltvExpiryDelta(144),
@@ -131,7 +134,10 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
-        remoteRbfLimits = RemoteRbfLimits(5, 0)
+        remoteRbfLimits = RemoteRbfLimits(5, 0),
+        quiescenceTimeout = 2 minutes,
+        balanceThresholds = Nil,
+        minTimeBetweenUpdates = 0 hours,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -201,7 +207,7 @@ object TestConstants {
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2, 1.5)),
+        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0,
       ),
@@ -232,7 +238,7 @@ object TestConstants {
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,
     ).copy(
-      requestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
+      initialRequestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
   }
 
@@ -244,6 +250,7 @@ object TestConstants {
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
+      onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
@@ -274,8 +281,10 @@ object TestConstants {
         maxExpiryDelta = CltvExpiryDelta(2016),
         fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),
         minFinalExpiryDelta = CltvExpiryDelta(18),
+        maxRestartWatchDelay = 5 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
         minDepthBlocks = 3,
         toRemoteDelay = CltvExpiryDelta(144),
@@ -291,7 +300,10 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
-        remoteRbfLimits = RemoteRbfLimits(5, 0)
+        remoteRbfLimits = RemoteRbfLimits(5, 0),
+        quiescenceTimeout = 2 minutes,
+        balanceThresholds = Nil,
+        minTimeBetweenUpdates = 0 hour,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -361,7 +373,7 @@ object TestConstants {
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3, 3.14)),
+        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0
       ),
@@ -392,7 +404,7 @@ object TestConstants {
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,
     ).copy(
-      requestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
+      initialRequestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
   }
 

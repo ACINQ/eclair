@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scalacompat.{BlockId, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 
@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 
 sealed trait BlockchainEvent
 
-case class NewBlock(blockHash: ByteVector32) extends BlockchainEvent
+case class NewBlock(blockId: BlockId) extends BlockchainEvent
 
 case class NewTransaction(tx: Transaction) extends BlockchainEvent
 

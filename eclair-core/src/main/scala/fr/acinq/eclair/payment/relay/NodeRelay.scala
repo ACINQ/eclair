@@ -39,9 +39,10 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import scala.collection.immutable.Queue
 
 /**
@@ -182,13 +183,13 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPacket  trampoline onion to relay to the next trampoline node.
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[Upstream.ReceivedHtlc], nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPaymentPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-        receiving(htlcs :+ add, nextPayload, nextPacket, handler)
+        receiving(htlcs :+ Upstream.ReceivedHtlc(add, TimestampMilli.now()), nextPayload, nextPacket, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -238,7 +239,7 @@ class NodeRelay private(nodeParams: NodeParams,
   private def doSend(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     relay(upstream, nextPayload, nextPacket)
-    sending(upstream, nextPayload, fulfilledUpstream = false)
+    sending(upstream, nextPayload, TimestampMilli.now(), fulfilledUpstream = false)
   }
 
   /**
@@ -248,7 +249,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Trampoline, nextPayload: IntermediatePayload.NodeRelay.Standard, startedAt: TimestampMilli, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -257,7 +258,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage)
-            sending(upstream, nextPayload, fulfilledUpstream = true)
+            sending(upstream, nextPayload, startedAt, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -265,12 +266,14 @@ class NodeRelay private(nodeParams: NodeParams,
         case WrappedPaymentSent(paymentSent) =>
           context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
+          recordRelayDuration(startedAt, isSuccess = true)
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           context.log.debug(s"trampoline payment failed downstream")
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
+          recordRelayDuration(startedAt, isSuccess = fulfilledUpstream)
           stopping()
       }
     }
@@ -353,12 +356,12 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
     Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
-    upstream.adds.foreach(add => rejectHtlc(add.id, add.channelId, upstream.amountIn, failure))
+    upstream.adds.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, failure))
   }
 
-  private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
-    val cmd = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmd)
+  private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(r => {
+    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, commit = true)
+    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
@@ -366,9 +369,14 @@ class NodeRelay private(nodeParams: NodeParams,
     if (!fulfilledUpstream) {
       fulfillPayment(upstream, paymentSent.paymentPreimage)
     }
-    val incoming = upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
-    val outgoing = paymentSent.parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
+    val incoming = upstream.adds.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
+    val outgoing = paymentSent.parts.map(part => PaymentRelayed.OutgoingPart(part.amountWithFees, part.toChannelId, part.timestamp))
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 
+  private def recordRelayDuration(startedAt: TimestampMilli, isSuccess: Boolean): Unit =
+    Metrics.RelayedPaymentDuration
+      .withTag(Tags.Relay, Tags.RelayType.Trampoline)
+      .withTag(Tags.Success, isSuccess)
+      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
 }

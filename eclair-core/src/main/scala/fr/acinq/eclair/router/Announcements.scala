@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
@@ -28,16 +28,16 @@ import shapeless.HNil
  */
 object Announcements {
 
-  def channelAnnouncementWitnessEncode(chainHash: ByteVector32, shortChannelId: RealShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features[Feature], tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
+  def channelAnnouncementWitnessEncode(chainHash: BlockHash, shortChannelId: RealShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features[Feature], tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: tlvStream :: HNil))))
 
   def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[Feature], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: tlvStream :: HNil))))
 
-  def channelUpdateWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, timestamp: TimestampSecond, messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
+  def channelUpdateWitnessEncode(chainHash: BlockHash, shortChannelId: ShortChannelId, timestamp: TimestampSecond, messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: tlvStream :: HNil))))
 
-  def generateChannelAnnouncementWitness(chainHash: ByteVector32, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, features: Features[Feature]): ByteVector =
+  def generateChannelAnnouncementWitness(chainHash: BlockHash, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, features: Features[Feature]): ByteVector =
     if (isNode1(localNodeId, remoteNodeId)) {
       channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeId, remoteNodeId, localFundingKey, remoteFundingKey, features, TlvStream.empty)
     } else {
@@ -46,7 +46,7 @@ object Announcements {
 
   def signChannelAnnouncement(witness: ByteVector, key: PrivateKey): ByteVector64 = Crypto.sign(witness, key)
 
-  def makeChannelAnnouncement(chainHash: ByteVector32, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector64, remoteNodeSignature: ByteVector64, localBitcoinSignature: ByteVector64, remoteBitcoinSignature: ByteVector64): ChannelAnnouncement = {
+  def makeChannelAnnouncement(chainHash: BlockHash, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector64, remoteNodeSignature: ByteVector64, localBitcoinSignature: ByteVector64, remoteBitcoinSignature: ByteVector64): ChannelAnnouncement = {
     val (nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, nodeSignature1, nodeSignature2, bitcoinSignature1, bitcoinSignature2) =
       if (isNode1(localNodeId, remoteNodeId)) {
         (localNodeId, remoteNodeId, localFundingKey, remoteFundingKey, localNodeSignature, remoteNodeSignature, localBitcoinSignature, remoteBitcoinSignature)
@@ -111,14 +111,14 @@ object Announcements {
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.copy(signature = ByteVector64.Zeroes, timestamp = 0 unixsec) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0 unixsec)
 
-  def areSameIgnoreFlags(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
+  def areSameRelayParams(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.feeBaseMsat == u2.feeBaseMsat &&
       u1.feeProportionalMillionths == u2.feeProportionalMillionths &&
       u1.cltvExpiryDelta == u2.cltvExpiryDelta &&
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
 
-  def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, isPrivate: Boolean = false, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: BlockHash, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, isPrivate: Boolean = false, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
     val messageFlags = ChannelUpdate.MessageFlags(isPrivate)
     val channelFlags = ChannelUpdate.ChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), isEnabled = enable)
     val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, messageFlags, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsat, TlvStream.empty)

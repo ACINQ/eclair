@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
+import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -26,7 +27,6 @@ import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
-import fr.acinq.eclair.{Features, NotificationsLogger}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -141,16 +141,6 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     rbfStatus match {
       case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
       case RbfStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
-        txBuilder ! InteractiveTxBuilder.Abort
-        cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
-      case _ => ()
-    }
-  }
-
-  def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
-    spliceStatus match {
-      case SpliceStatus.SpliceRequested(cmd, _) => cmd.replyTo ! RES_FAILURE(cmd, f)
-      case SpliceStatus.SpliceInProgress(cmd_opt, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
       case _ => ()

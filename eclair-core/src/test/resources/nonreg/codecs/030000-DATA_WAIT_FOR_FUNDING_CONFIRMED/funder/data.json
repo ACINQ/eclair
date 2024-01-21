@@ -10,7 +10,7 @@
         "fundingKeyPath" : [ 4092535092, 4227137620, 3959690417, 2298849496, 2106263857, 1090614243, 1495530077, 1280982866, 2147483649 ],
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
-        "requestedChannelReserve_opt" : 10000,
+        "initialRequestedChannelReserve_opt" : 10000,
         "htlcMinimum" : 0,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 100,
@@ -32,7 +32,7 @@
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
         "dustLimit" : 1000,
         "maxHtlcValueInFlightMsat" : 18446744073709551615,
-        "requestedChannelReserve_opt" : 20000,
+        "initialRequestedChannelReserve_opt" : 20000,
         "htlcMinimum" : 1000,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 30,
@@ -120,7 +120,7 @@
   "waitingSince" : 400000,
   "lastSent" : {
     "temporaryChannelId" : "0000000000000000000000000000000000000000000000000000000000000000",
-    "fundingTxHash" : "e917adc681383fe00f779c6144a1bd91135ba2c9862ad1bc5aa8a14d37bae3f4",
+    "fundingTxId" : "f4e3ba374da1a85abcd12a86c9a25b1391bda144619c770fe03f3881c6ad17e9",
     "fundingOutputIndex" : 0,
     "signature" : "bd55d8660f54a1be6e123e2ed9cd6669d90b830d99dc6f9addd9ae65c447ea6b657e2fe39841f66c1d6a2fc80ad59e6f3d9bfaf177f4e95a579f0683bf3e9790",
     "tlvStream" : { }

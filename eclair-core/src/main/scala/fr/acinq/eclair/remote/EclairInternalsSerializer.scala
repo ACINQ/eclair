@@ -90,8 +90,7 @@ object EclairInternalsSerializer {
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
       ("ageFactor" | double) ::
-      ("capacityFactor" | double) ::
-      ("disabledMultiplier" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+      ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
@@ -151,7 +150,7 @@ object EclairInternalsSerializer {
 
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
-      ("chainHash" | bytes32) ::
+      ("chainHash" | blockHash) ::
       ("features" | variableSizeBytes(uint16, initFeaturesCodec)) ::
       ("doSync" | bool(8))).as[PeerConnection.InitializeConnection]
 
@@ -166,7 +165,7 @@ object EclairInternalsSerializer {
   val optionQueryChannelRangeTlv: Codec[Option[QueryChannelRangeTlv]] = variableSizeBytes(uint16, optional(bool(8), variableSizeBytesLong(varintoverflow, queryFlagsCodec.upcast[QueryChannelRangeTlv])))
 
   def sendChannelQueryCodec(system: ExtendedActorSystem): Codec[SendChannelQuery] = (
-    ("chainsHash" | bytes32) ::
+    ("chainHash" | blockHash) ::
       ("remoteNodeId" | publicKey) ::
       ("to" | actorRefCodec(system)) ::
       ("replacePrevious" | bool(8)) ::

@@ -25,7 +25,7 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OutPoint, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, SatoshiLong, TxId}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, DataLossProtect}
@@ -250,7 +250,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       features = Features(DataLossProtect -> Mandatory, ChannelRangeQueriesExtended -> Optional),
       nodeId = aliceNodeId,
       alias = "alice",
-      chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      chainHash = BlockHash(ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f")),
       network = "regtest",
       blockHeight = 9999,
       publicAddresses = NodeAddress.fromParts("127.0.0.1", 9731).get :: Nil,
@@ -274,10 +274,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 100 sat))
+    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 100 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
@@ -288,7 +288,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=100 sat\"")
-        eclair.open(nodeId, 100002 sat, None, None, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 100002 sat, None, None, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -311,10 +311,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'open' channels with standard channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 0 sat))
+    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 0 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "standard").toEntity) ~>
@@ -325,17 +325,17 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=0 sat\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.Standard()), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.Standard()), None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
   test("'open' channels with static_remotekey channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 1 sat))
+    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 1 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "static_remotekey").toEntity) ~>
@@ -346,17 +346,17 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=1 sat\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.StaticRemoteKey()), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.StaticRemoteKey()), None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
   test("'open' channels with anchor_outputs channelType") {
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
-    val fundingTxId = ByteVector32(hex"a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
+    val fundingTxId = TxId.fromValidHex("a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 500 sat))
+    eclair.open(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(OpenChannelResponse.Created(channelId, fundingTxId, 500 sat))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs").toEntity) ~>
@@ -367,7 +367,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=500 sat\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputs()), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputs()), None, None, None, None)(any[Timeout]).wasCalled(once)
       }
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs_zero_fee_htlc_tx").toEntity) ~>
@@ -378,7 +378,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e with fundingTxId=a86b3f93c1b2ea3f221159869d6f556cae1ba2622cc8c7eb71c7f4f64e0fbca4 and fees=500 sat\"")
-        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -575,9 +575,9 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'cpfpbumpfees'") {
     val eclair = mock[Eclair]
-    eclair.cpfpBumpFees(any, any) returns Future.successful(randomBytes32())
+    eclair.cpfpBumpFees(any, any) returns Future.successful(TxId(randomBytes32()))
     val mockService = new MockService(eclair)
-    val (txId1, txId2) = (randomBytes32(), randomBytes32())
+    val (txId1, txId2) = (TxId(randomBytes32()), TxId(randomBytes32()))
 
     Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10", "outpoints" -> s"$txId1:2,$txId2:0,$txId1:13").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -585,7 +585,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.cpfpBumpFees(FeeratePerByte(10 sat), Set(OutPoint(txId1.reverse, 2), OutPoint(txId1.reverse, 13), OutPoint(txId2.reverse, 0))).wasCalled(once)
+        eclair.cpfpBumpFees(FeeratePerByte(10 sat), Set(OutPoint(txId1, 2), OutPoint(txId1, 13), OutPoint(txId2, 0))).wasCalled(once)
       }
 
     Post("/cpfpbumpfees", FormData("targetFeerateSatByte" -> "10").toEntity) ~>
@@ -1032,7 +1032,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val mockChannelUpdate1 = ChannelUpdate(
       signature = ByteVector64.fromValidHex("92cf3f12e161391986eb2cd7106ddab41a23c734f8f1ed120fb64f4b91f98f690ecf930388e62965f8aefbf1adafcd25a572669a125396dcfb83615208754679"),
-      chainHash = ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2"),
+      chainHash = BlockHash(ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2")),
       shortChannelId = RealShortChannelId(BlockHeight(1), 2, 3),
       timestamp = 0 unixsec,
       messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
@@ -1184,14 +1184,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
 
-        val prel = ChannelPaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, ByteVector32.Zeroes, ByteVector32.One, TimestampMilli(1553784963659L))
-        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val prel = ChannelPaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, ByteVector32.Zeroes, ByteVector32.One, TimestampMilli(1553784961048L), TimestampMilli(1553784963659L))
+        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:56:01.048Z","unix":1553784961},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
         assert(serialization.write(prel) == expectedSerializedPrel)
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
 
-        val ptrel = TrampolinePaymentRelayed(ByteVector32.Zeroes, Seq(PaymentRelayed.Part(21 msat, ByteVector32.Zeroes)), Seq(PaymentRelayed.Part(8 msat, ByteVector32.Zeroes), PaymentRelayed.Part(10 msat, ByteVector32.One)), bobNodeId, 17 msat, TimestampMilli(1553784963659L))
-        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","incoming":[{"amount":21,"channelId":"0000000000000000000000000000000000000000000000000000000000000000"}],"outgoing":[{"amount":8,"channelId":"0000000000000000000000000000000000000000000000000000000000000000"},{"amount":10,"channelId":"0100000000000000000000000000000000000000000000000000000000000000"}],"nextTrampolineNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","nextTrampolineAmount":17,"timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val ptrel = TrampolinePaymentRelayed(ByteVector32.Zeroes, Seq(PaymentRelayed.IncomingPart(21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))), Seq(PaymentRelayed.OutgoingPart(8 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L)), PaymentRelayed.OutgoingPart(10 msat, ByteVector32.One, TimestampMilli(1553784963659L))), bobNodeId, 17 msat)
+        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","incoming":[{"amount":21,"channelId":"0000000000000000000000000000000000000000000000000000000000000000","receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"outgoing":[{"amount":8,"channelId":"0000000000000000000000000000000000000000000000000000000000000000","settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}},{"amount":10,"channelId":"0100000000000000000000000000000000000000000000000000000000000000","settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"nextTrampolineNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","nextTrampolineAmount":17}"""
         assert(serialization.write(ptrel) == expectedSerializedPtrel)
         system.eventStream.publish(ptrel)
         wsClient.expectMessage(expectedSerializedPtrel)

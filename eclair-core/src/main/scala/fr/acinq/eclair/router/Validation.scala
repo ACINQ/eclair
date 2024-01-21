@@ -21,14 +21,14 @@ import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
 import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
-import fr.acinq.eclair.router.Graph.GraphStructure.ActiveEdge
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
@@ -156,15 +156,15 @@ object Validation {
     }
   }
 
-  private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val fundingOutputIndex = outputIndex(ann.shortChannelId)
-    watcher ! WatchExternalChannelSpent(ctx.self, fundingTxid, fundingOutputIndex, ann.shortChannelId)
+    watcher ! WatchExternalChannelSpent(ctx.self, fundingTxId, fundingOutputIndex, ann.shortChannelId)
     ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
-    nodeParams.db.network.addChannel(ann, fundingTxid, capacity)
+    nodeParams.db.network.addChannel(ann, fundingTxId, capacity)
     val pubChan = PublicChannel(
       ann = ann,
-      fundingTxid = fundingTxid,
+      fundingTxId = fundingTxId,
       capacity = capacity,
       update_1_opt = privChan_opt.flatMap(_.update_1_opt),
       update_2_opt = privChan_opt.flatMap(_.update_2_opt),
@@ -181,8 +181,8 @@ object Validation {
         // remove previous private edges
         graph = graph.removeChannel(ChannelDesc(privateChannel.shortIds.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
         // add new public edges
-        pubChan.update_1_opt.foreach(u => graph = graph.addEdge(ActiveEdge(u, pubChan)))
-        pubChan.update_2_opt.foreach(u => graph = graph.addEdge(ActiveEdge(u, pubChan)))
+        pubChan.update_1_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
+        pubChan.update_2_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
         graph
       case None => d.graphWithBalances
     }
@@ -323,7 +323,7 @@ object Validation {
             case Left(_) =>
               // NB: we update the channels because the balances may have changed even if the channel_update is the same.
               val pc1 = pc.applyChannelUpdate(update)
-              val graphWithBalances1 = d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
+              val graphWithBalances1 = d.graphWithBalances.addEdge(GraphEdge(u, pc1))
               d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)), channels = d.channels + (pc.shortChannelId -> pc1), graphWithBalances = graphWithBalances1)
             case Right(_) =>
               d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins1)))
@@ -339,7 +339,7 @@ object Validation {
             case Left(_) =>
               // NB: we update the graph because the balances may have changed even if the channel_update is the same.
               val pc1 = pc.applyChannelUpdate(update)
-              val graphWithBalances1 = d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
+              val graphWithBalances1 = d.graphWithBalances.addEdge(GraphEdge(u, pc1))
               d.copy(channels = d.channels + (pc.shortChannelId -> pc1), graphWithBalances = graphWithBalances1)
             case Right(_) => d
           }
@@ -356,10 +356,10 @@ object Validation {
           // update the graph
           val pc1 = pc.applyChannelUpdate(update)
           val graphWithBalances1 = if (u.channelFlags.isEnabled) {
-            update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
-            d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
+            update.left.foreach(_ => log.debug("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
+            d.graphWithBalances.addEdge(GraphEdge(u, pc1))
           } else {
-            update.left.foreach(_ => log.info("disabled local shortChannelId={} public={} in the network graph", u.shortChannelId, publicChannel))
+            update.left.foreach(_ => log.debug("disabled local shortChannelId={} public={} in the network graph", u.shortChannelId, publicChannel))
             d.graphWithBalances.disableEdge(ChannelDesc(u, pc1.ann))
           }
           d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graphWithBalances = graphWithBalances1)
@@ -370,8 +370,8 @@ object Validation {
           db.updateChannel(u)
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graphWithBalances1 = d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
-          update.left.foreach(_ => log.info("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
+          val graphWithBalances1 = d.graphWithBalances.addEdge(GraphEdge(u, pc1))
+          update.left.foreach(_ => log.debug("added local shortChannelId={} public={} to the network graph", u.shortChannelId, publicChannel))
           d.copy(channels = d.channels + (pc.shortChannelId -> pc1), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graphWithBalances = graphWithBalances1)
         }
       case Some(pc: PrivateChannel) =>
@@ -396,10 +396,10 @@ object Validation {
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
           val graphWithBalances1 = if (u.channelFlags.isEnabled) {
-            update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
-            d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
+            update.left.foreach(_ => log.debug("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
+            d.graphWithBalances.addEdge(GraphEdge(u, pc1))
           } else {
-            update.left.foreach(_ => log.info("disabled local channelId={} public={} in the network graph", pc.channelId, publicChannel))
+            update.left.foreach(_ => log.debug("disabled local channelId={} public={} in the network graph", pc.channelId, publicChannel))
             d.graphWithBalances.disableEdge(ChannelDesc(u, pc1))
           }
           d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graphWithBalances = graphWithBalances1)
@@ -409,8 +409,8 @@ object Validation {
           ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
           // we also need to update the graph
           val pc1 = pc.applyChannelUpdate(update)
-          val graphWithBalances1 = d.graphWithBalances.addEdge(ActiveEdge(u, pc1))
-          update.left.foreach(_ => log.info("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
+          val graphWithBalances1 = d.graphWithBalances.addEdge(GraphEdge(u, pc1))
+          update.left.foreach(_ => log.debug("added local channelId={} public={} to the network graph", pc.channelId, publicChannel))
           d.copy(privateChannels = d.privateChannels + (pc.channelId -> pc1), graphWithBalances = graphWithBalances1)
         }
       case None =>
@@ -459,7 +459,7 @@ object Validation {
                 ctx.system.eventStream.publish(ChannelUpdatesReceived(channelUpdates.keys))
                 // We update the graph.
                 val graphWithBalances1 = channelUpdates.keys.foldLeft(d.graphWithBalances) {
-                  case (currentGraph, currentUpdate) if currentUpdate.channelFlags.isEnabled => currentGraph.addEdge(ActiveEdge(currentUpdate, pc1))
+                  case (currentGraph, currentUpdate) if currentUpdate.channelFlags.isEnabled => currentGraph.addEdge(GraphEdge(currentUpdate, pc1))
                   case (currentGraph, _) => currentGraph
                 }
                 d.copy(channels = d.channels + (pc1.shortChannelId -> pc1), prunedChannels = d.prunedChannels - pc1.shortChannelId, rebroadcast = rebroadcast1, graphWithBalances = graphWithBalances1)
@@ -551,7 +551,7 @@ object Validation {
     } else if (d.privateChannels.contains(lcd.channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
       val localAlias = d.privateChannels(channelId).shortIds.localAlias
-      log.info("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
+      log.debug("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
       // we remove the corresponding updates from the graph
       val graphWithBalances1 = d.graphWithBalances
         .removeChannel(ChannelDesc(localAlias, localNodeId, remoteNodeId))
@@ -568,7 +568,7 @@ object Validation {
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("public channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
-        val graphWithBalances1 = update_opt.map(u => d.graphWithBalances.addEdge(ActiveEdge(u, pc1))).getOrElse(d.graphWithBalances)
+        val graphWithBalances1 = update_opt.map(u => d.graphWithBalances.addEdge(GraphEdge(u, pc1))).getOrElse(d.graphWithBalances)
         (d.channels + (pc.ann.shortChannelId -> pc1), graphWithBalances1)
       case None =>
         (d.channels, d.graphWithBalances)
@@ -578,7 +578,7 @@ object Validation {
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("private channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localNodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
-        val graphWithBalances2 = update_opt.map(u => graphWithBalances1.addEdge(ActiveEdge(u, pc1))).getOrElse(graphWithBalances1)
+        val graphWithBalances2 = update_opt.map(u => graphWithBalances1.addEdge(GraphEdge(u, pc1))).getOrElse(graphWithBalances1)
         (d.privateChannels + (e.channelId -> pc1), graphWithBalances2)
       case None =>
         (d.privateChannels, graphWithBalances1)

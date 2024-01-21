@@ -50,7 +50,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>3.6.0</version>
                 <configuration>
                     <finalName>${project.name}-${project.version}-${git.commit.id.abbrev}</finalName>
                     <descriptors>
@@ -80,18 +80,18 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.3</version>
+            <version>1.2.13</version>
         </dependency>
         <dependency>
             <groupId>org.codehaus.janino</groupId>
             <artifactId>janino</artifactId>
-            <version>3.1.2</version>
+            <version>3.1.10</version>
         </dependency>
         <!-- key management -->
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-java-sdk-secretsmanager</artifactId>
-            <version>1.11.776</version>
+            <version>1.12.504</version>
         </dependency>
         <!-- metrics -->
         <dependency>
@@ -113,7 +113,8 @@
         <dependency>
             <groupId>io.kamon</groupId>
             <artifactId>kanela-agent</artifactId>
-            <version>1.0.5</version>
+            <!-- if you change this make sure to also update the lib version in eclair-front.sh and eclair-node.sh -->
+            <version>1.0.17</version>
         </dependency>
         <!-- tests -->
         <dependency>
@@ -134,12 +135,6 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-actor-testkit-typed_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.opentable.components</groupId>
-            <artifactId>otj-pg-embedded</artifactId>
-            <version>0.13.3</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

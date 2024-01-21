@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
@@ -144,7 +144,7 @@ object Bolt11Invoice {
 
   val defaultFeatures: Features[Bolt11Feature] = Features((Features.VariableLengthOnion, FeatureSupport.Mandatory), (Features.PaymentSecret, FeatureSupport.Mandatory))
 
-  def apply(chainHash: ByteVector32,
+  def apply(chainHash: BlockHash,
             amount: Option[MilliSatoshi],
             paymentHash: ByteVector32,
             privateKey: PrivateKey,

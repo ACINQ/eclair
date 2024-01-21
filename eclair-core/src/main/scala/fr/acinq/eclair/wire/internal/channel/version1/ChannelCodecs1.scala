@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.internal.channel.version1
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -135,7 +135,7 @@ private[channel] object ChannelCodecs1 {
     val remoteCommitCodec: Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
-        ("txid" | bytes32) ::
+        ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
@@ -181,7 +181,7 @@ private[channel] object ChannelCodecs1 {
 
     val originsMapCodec: Codec[Map[Long, Origin]] = mapCodec(int64, originCodec)
 
-    val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
+    val spentMapCodec: Codec[Map[OutPoint, TxId]] = mapCodec(outPointCodec, txId)
 
     val commitmentsCodec: Codec[Commitments] = (
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>

@@ -19,10 +19,10 @@ package fr.acinq.eclair.api.serde
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, TxId}
 import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
-import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, FeeratePerByte}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
@@ -67,7 +67,7 @@ object FormParamExtractors {
 
   implicit val outPointListUnmarshaller: Unmarshaller[String, List[OutPoint]] = listUnmarshaller(outPoint => {
     val parts = outPoint.split(":")
-    OutPoint(ByteVector32.fromValidHex(parts.head).reverse, parts.last.toLong)
+    OutPoint(TxId.fromValidHex(parts.head), parts.last.toLong)
   })
 
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
@@ -80,7 +80,16 @@ object FormParamExtractors {
     blindedRouteCodec.decode(ByteVector.fromValidHex(str).bits).require.value
   }
 
-  val offerUnmarshaller: Unmarshaller[String, Offer] = Unmarshaller.strict { Offer.decode(_).get }
+  val offerUnmarshaller: Unmarshaller[String, Offer] = Unmarshaller.strict {
+    Offer.decode(_).get
+  }
+
+  val confirmationPriorityUnmarshaller: Unmarshaller[String, ConfirmationPriority] = Unmarshaller.strict {
+    case "slow" => ConfirmationPriority.Slow
+    case "medium" => ConfirmationPriority.Medium
+    case "fast" => ConfirmationPriority.Fast
+    case priority => throw new IllegalArgumentException(s"unknown confirmation priority '$priority'")
+  }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))

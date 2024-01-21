@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.MinimalBolt12Invoice
@@ -106,7 +107,7 @@ object OfferManager {
         case RequestInvoice(messagePayload, postman) =>
           registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
             case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
-              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey, router, OnionMessages.BlindedPath(messagePayload.replyPath), postman))
+              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey, router, messagePayload.replyPath, postman))
               child ! InvoiceRequestActor.RequestInvoice
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }
@@ -167,7 +168,7 @@ object OfferManager {
               offerHandler: ActorRef[HandleInvoiceRequest],
               nodeKey: PrivateKey,
               router: akka.actor.ActorRef,
-              pathToSender: OnionMessages.Destination,
+              pathToSender: RouteBlinding.BlindedRoute,
               postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup { context =>
         Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT))) {
@@ -184,13 +185,13 @@ object OfferManager {
                                       invoiceRequest: InvoiceRequest,
                                       nodeKey: PrivateKey,
                                       router: akka.actor.ActorRef,
-                                      pathToSender: OnionMessages.Destination,
+                                      pathToSender: RouteBlinding.BlindedRoute,
                                       postman: ActorRef[Postman.SendMessage],
                                       context: ActorContext[Command]) {
       def waitForHandler(): Behavior[Command] = {
         Behaviors.receiveMessagePartial {
           case RejectRequest(error) =>
-            postman ! Postman.SendMessage(pathToSender, OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
+            postman ! Postman.SendMessage(OfferTypes.BlindedPath(pathToSender), OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
             waitForSent()
           case ApproveRequest(amount, routes, pluginData_opt, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
@@ -208,7 +209,7 @@ object OfferManager {
           case WrappedInvoiceResponse(invoiceResponse) =>
             invoiceResponse match {
               case CreateInvoiceActor.InvoiceCreated(invoice) =>
-                postman ! Postman.SendMessage(pathToSender, OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
+                postman ! Postman.SendMessage(OfferTypes.BlindedPath(pathToSender), OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
                 waitForSent()
               case f: CreateInvoiceActor.InvoiceCreationFailed =>
                 context.log.debug("invoice creation failed: {}", f.message)

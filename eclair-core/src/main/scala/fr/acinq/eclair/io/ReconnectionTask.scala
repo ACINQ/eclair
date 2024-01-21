@@ -146,7 +146,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   lazy val mediator = DistributedPubSub(context.system).mediator
 
   private def connect(address: NodeAddress, origin: ActorRef, isPersistent: Boolean): Unit = {
-    log.info(s"connecting to $address")
+    log.debug(s"connecting to $address")
     val req = ClientSpawner.ConnectionRequest(remoteNodeId, address, origin, isPersistent)
     if (context.system.hasExtension(Cluster)) {
       mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)

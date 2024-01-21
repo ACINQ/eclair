@@ -49,7 +49,7 @@ trait WebSocket {
     // register an actor that feeds the queue on payment related events
     actorSystem.actorOf(Props(new Actor {
 
-      override def preStart: Unit = {
+      override def preStart(): Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
         context.system.eventStream.subscribe(self, classOf[ChannelCreated])
         context.system.eventStream.subscribe(self, classOf[ChannelOpened])

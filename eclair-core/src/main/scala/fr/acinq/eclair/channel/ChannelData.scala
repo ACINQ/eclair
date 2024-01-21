@@ -18,8 +18,8 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
@@ -27,7 +27,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -96,6 +96,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         dualFunded: Boolean,
                                         commitTxFeerate: FeeratePerKw,
                                         fundingTxFeerate: FeeratePerKw,
+                                        fundingTxFeeBudget_opt: Option[Satoshi],
                                         pushAmount_opt: Option[MilliSatoshi],
                                         requireConfirmedInputs: Boolean,
                                         localParams: LocalParams,
@@ -176,7 +177,7 @@ object Origin {
   object Hot {
     def apply(replyTo: ActorRef, upstream: Upstream): Hot = upstream match {
       case u: Upstream.Local => Origin.LocalHot(replyTo, u.id)
-      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds)
+      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds.map(_.add))
     }
   }
 }
@@ -187,13 +188,14 @@ sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
 sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option[ActorRef] }
 
 sealed trait ForbiddenCommandDuringSplice extends Command
+sealed trait ForbiddenCommandDuringQuiescence extends Command
 
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice
-sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice { def id: Long }
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice
+final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice
 
 final case class ClosingFees(preferred: Satoshi, min: Satoshi, max: Satoshi)
@@ -202,10 +204,11 @@ final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max
 }
 
 sealed trait CloseCommand extends HasReplyToCommand
-final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringSplice
+final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
+final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
-final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, lockTime: Long) extends Command
+final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long) extends Command
 case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount: MilliSatoshi = 0 msat)
 case class SpliceOut(amount: Satoshi, scriptPubKey: ByteVector)
 final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_SPLICE]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]) extends Command {
@@ -214,7 +217,7 @@ final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[C
   val pushAmount: MilliSatoshi = spliceIn_opt.map(_.pushAmount).getOrElse(0 msat)
   val spliceOutputs: List[TxOut] = spliceOut_opt.toList.map(s => TxOut(s.amount, s.scriptPubKey))
 }
-final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
+final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_INFO(replyTo: akka.actor.typed.ActorRef[RES_GET_CHANNEL_INFO]) extends Command
@@ -261,8 +264,8 @@ object HtlcResult {
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
-final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: ByteVector32, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]
-final case class RES_SPLICE(fundingTxIndex: Long, fundingTxId: ByteVector32, capacity: Satoshi, balance: MilliSatoshi) extends CommandSuccess[CMD_SPLICE]
+final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: TxId, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]
+final case class RES_SPLICE(fundingTxIndex: Long, fundingTxId: TxId, capacity: Satoshi, balance: MilliSatoshi) extends CommandSuccess[CMD_SPLICE]
 final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
 final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
 final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, channel: ActorRef, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
@@ -410,7 +413,11 @@ object RealScidStatus {
  */
 case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
 
-sealed trait LocalFundingStatus { def signedTx_opt: Option[Transaction] }
+sealed trait LocalFundingStatus {
+  def signedTx_opt: Option[Transaction]
+  /** We store local signatures for the purpose of retransmitting if the funding/splicing flow is interrupted. */
+  def localSigs_opt: Option[TxSignatures]
+}
 object LocalFundingStatus {
   sealed trait NotLocked extends LocalFundingStatus
   sealed trait Locked extends LocalFundingStatus
@@ -422,14 +429,17 @@ object LocalFundingStatus {
    * didn't keep the funding tx at all, even as funder (e.g. NORMAL). However, right after restoring those channels we
    * retrieve the funding tx and update the funding status immediately.
    */
-  case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx with NotLocked
-  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx with NotLocked {
-    override def signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+  case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx with NotLocked {
+    override val localSigs_opt: Option[TxSignatures] = None
   }
-  case class ZeroconfPublishedFundingTx(tx: Transaction) extends UnconfirmedFundingTx with Locked {
+  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx with NotLocked {
+    override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
+    override val localSigs_opt: Option[TxSignatures] = Some(sharedTx.localSigs)
+  }
+  case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -450,12 +460,32 @@ object RbfStatus {
 }
 
 sealed trait SpliceStatus
+/** We're waiting for the channel to be quiescent. */
+sealed trait QuiescenceNegotiation extends SpliceStatus
+object QuiescenceNegotiation {
+  sealed trait Initiator extends QuiescenceNegotiation
+  sealed trait NonInitiator extends QuiescenceNegotiation
+}
+/** The channel is quiescent and a splice attempt was initiated. */
+sealed trait QuiescentSpliceStatus extends SpliceStatus
 object SpliceStatus {
   case object NoSplice extends SpliceStatus
-  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends SpliceStatus
-  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends SpliceStatus
-  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends SpliceStatus
-  case object SpliceAborted extends SpliceStatus
+  /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+  case class QuiescenceRequested(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
+  /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
+  case class InitiatorQuiescent(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
+  /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+  case class ReceivedStfu(stfu: Stfu) extends QuiescenceNegotiation.NonInitiator
+  /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
+  case object NonInitiatorQuiescent extends QuiescentSpliceStatus
+  /** We told our peer we want to splice funds in the channel. */
+  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
+  /** We both agreed to splice and are building the splice transaction. */
+  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
+  /** The splice transaction has been negotiated, we're exchanging signatures. */
+  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
+  /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
+  case object SpliceAborted extends QuiescentSpliceStatus
 }
 
 sealed trait ChannelData extends PossiblyHarmful {
@@ -598,7 +628,7 @@ case class LocalParams(nodeId: PublicKey,
                        fundingKeyPath: DeterministicWallet.KeyPath,
                        dustLimit: Satoshi,
                        maxHtlcValueInFlightMsat: MilliSatoshi,
-                       requestedChannelReserve_opt: Option[Satoshi],
+                       initialRequestedChannelReserve_opt: Option[Satoshi],
                        htlcMinimum: MilliSatoshi,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
@@ -613,7 +643,7 @@ case class LocalParams(nodeId: PublicKey,
 case class RemoteParams(nodeId: PublicKey,
                         dustLimit: Satoshi,
                         maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        requestedChannelReserve_opt: Option[Satoshi],
+                        initialRequestedChannelReserve_opt: Option[Satoshi],
                         htlcMinimum: MilliSatoshi,
                         toSelfDelay: CltvExpiryDelta,
                         maxAcceptedHtlcs: Int,

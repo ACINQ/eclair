@@ -77,6 +77,20 @@ trait ChannelTypeFeature extends PermanentChannelFeature
 
 case class UnknownFeature(bitIndex: Int)
 
+// @formatter:off
+sealed trait FeatureCompatibilityResult {
+  def areCompatible: Boolean = this == FeatureCompatibilityResult.Compatible
+  def errorHints: Set[String] = this match {
+    case FeatureCompatibilityResult.Compatible => Set.empty
+    case r: FeatureCompatibilityResult.NotCompatible => r.hints
+  }
+}
+object FeatureCompatibilityResult {
+  case object Compatible extends FeatureCompatibilityResult
+  case class NotCompatible(hints: Set[String]) extends FeatureCompatibilityResult
+}
+// @formatter:on
+
 case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
   def isEmpty: Boolean = activated.isEmpty && unknown.isEmpty
@@ -87,16 +101,19 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Se
   }
 
   /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
-  def areSupported(remoteFeatures: Features[T]): Boolean = {
+  def testSupported(remoteFeatures: Features[T]): FeatureCompatibilityResult = {
     // we allow unknown odd features (it's ok to be odd)
-    val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
+    val incompatibleUnknownFeatures = remoteFeatures.unknown.filter(_.bitIndex % 2 == 0)
     // we verify that we activated every mandatory feature they require
-    val knownFeaturesOk = remoteFeatures.activated.forall {
-      case (_, Optional) => true
-      case (feature, Mandatory) => hasFeature(feature)
-    }
-    unknownFeaturesOk && knownFeaturesOk
+    val incompatibleKnownFeatures = remoteFeatures.activated.filter {
+      case (_, Optional) => false
+      case (feature, Mandatory) => !hasFeature(feature)
+    }.keySet
+    val incompatibleFeatures = incompatibleUnknownFeatures.map(u => s"unknown_${u.bitIndex}") ++ incompatibleKnownFeatures.map(_.rfcName)
+    if (incompatibleFeatures.isEmpty) FeatureCompatibilityResult.Compatible else FeatureCompatibilityResult.NotCompatible(incompatibleFeatures)
   }
+
+  def areSupported(remoteFeatures: Features[T]): Boolean = testSupported(remoteFeatures).areCompatible
 
   def initFeatures(): Features[InitFeature] = Features(activated.collect { case (f: InitFeature, s) => (f, s) }, unknown)
 
@@ -247,6 +264,12 @@ object Features {
     val mandatory = 28
   }
 
+  // TODO: this should also extend NodeFeature once the spec is finalized
+  case object Quiescence extends Feature with InitFeature {
+    val rfcName = "option_quiesce"
+    val mandatory = 34
+  }
+
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
@@ -316,6 +339,7 @@ object Features {
     RouteBlinding,
     ShutdownAnySegwit,
     DualFunding,
+    Quiescence,
     OnionMessages,
     ChannelType,
     ScidAlias,
@@ -347,8 +371,13 @@ object Features {
       FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.unscoped().hasFeature(d)).mkString(" and ")})")
   }
 
+  def testCompatible[T <: Feature](ours: Features[T], theirs: Features[T]): FeatureCompatibilityResult = (ours.testSupported(theirs), theirs.testSupported(ours)) match {
+    case (FeatureCompatibilityResult.Compatible, FeatureCompatibilityResult.Compatible) => FeatureCompatibilityResult.Compatible
+    case (r1, r2) => FeatureCompatibilityResult.NotCompatible(r1.errorHints ++ r2.errorHints)
+  }
+
   /** Returns true if both feature sets are compatible. */
-  def areCompatible[T <: Feature](ours: Features[T], theirs: Features[T]): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
+  def areCompatible[T <: Feature](ours: Features[T], theirs: Features[T]): Boolean = testCompatible(ours, theirs).areCompatible
 
   /** returns true if both have at least optional support */
   def canUseFeature[T <: Feature](localFeatures: Features[T], remoteFeatures: Features[T], feature: T): Boolean = {

@@ -3,14 +3,15 @@ package fr.acinq.eclair.wire.internal.channel.version1
 import akka.actor.ActorSystem
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{Origin, RemoteParams}
+import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, DecodeResult}
@@ -154,10 +155,10 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode map of spending txes") {
     val map = Map(
-      OutPoint(randomBytes32(), 42) -> randomBytes32(),
-      OutPoint(randomBytes32(), 14502) -> randomBytes32(),
-      OutPoint(randomBytes32(), 0) -> randomBytes32(),
-      OutPoint(randomBytes32(), 454513) -> randomBytes32()
+      OutPoint(randomTxId(), 42) -> randomTxId(),
+      OutPoint(randomTxId(), 14502) -> randomTxId(),
+      OutPoint(randomTxId(), 0) -> randomTxId(),
+      OutPoint(randomTxId(), 454513) -> randomTxId()
     )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require == map)
   }

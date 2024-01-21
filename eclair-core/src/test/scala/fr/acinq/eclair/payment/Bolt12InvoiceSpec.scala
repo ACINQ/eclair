@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.crypto.Sphinx
@@ -49,13 +49,13 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     signedInvoice
   }
 
-  def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedRoute = {
+  def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedContactInfo = {
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
-    PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
+    PaymentBlindedContactInfo(OfferTypes.BlindedPath(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route), PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
   }
 
   test("check invoice signature") {
-    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
@@ -72,7 +72,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   test("check invoice signature with unknown field from invoice request") {
-    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val basicRequest = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, Set(GenericTlv(UInt64(87), hex"0404"))))
@@ -83,7 +83,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   test("check that invoice matches offer") {
-    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
     val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
@@ -104,7 +104,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   test("check that invoice matches invoice request") {
-    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
     val offer = Offer(Some(15000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 15000 msat, 1, Features.empty, payerKey, chain)
     assert(request.quantity_opt.isEmpty) // when paying for a single item, the quantity field must not be present
@@ -145,7 +145,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   test("check invoice expiry") {
-    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), randomBytes32())
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
     val offer = Offer(Some(5000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 5000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
@@ -251,7 +251,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(codedDecoded.paymentHash == paymentHash)
     assert(codedDecoded.relativeExpiry == relativeExpiry.seconds)
     assert(codedDecoded.fallbacks.contains(fallbacks))
-    assert(codedDecoded.records.unknown.toSet == Set(GenericTlv(UInt64(121), hex"010203"), GenericTlv(UInt64(313), hex"baba")))
+    assert(codedDecoded.records.unknown == Set(GenericTlv(UInt64(121), hex"010203"), GenericTlv(UInt64(313), hex"baba")))
   }
 
   test("minimal tip") {
