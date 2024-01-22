@@ -394,11 +394,11 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.recipient.totalAmount == finalAmount)
     assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
     assert(msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
-    assert(msg.recipient.isInstanceOf[ClearTrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineNodeId == b)
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
+    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
     assert(msg.maxAttempts == nodeParams.maxPaymentAttempts)
   }
 
@@ -416,11 +416,11 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.recipient.totalAmount == finalAmount)
     assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
     assert(!msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
-    assert(msg.recipient.isInstanceOf[ClearTrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineNodeId == b)
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
+    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
     assert(msg.maxAttempts == nodeParams.maxPaymentAttempts)
   }
 
@@ -454,7 +454,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg1.recipient.totalAmount == finalAmount)
-    assert(msg1.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
+    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
     sender.expectMsgType[PaymentIsPending]
@@ -464,7 +464,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
     val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg2.recipient.totalAmount == finalAmount)
-    assert(msg2.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
+    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
 
     // Simulate success which should publish the event and respond to the original sender.
     val success = PaymentSent(cfg.parentId, invoice.paymentHash, randomBytes32(), finalAmount, c, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), 1000 msat, 500 msat, randomBytes32(), None)))
@@ -491,14 +491,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg1.recipient.totalAmount == finalAmount)
-    assert(msg1.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
+    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
 
     // Simulate a failure which should trigger a retry.
     multiPartPayFsm.send(initiator, PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg1.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient())))))
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
     val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
     assert(msg2.recipient.totalAmount == finalAmount)
-    assert(msg2.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
+    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
 
     // Simulate a failure that exhausts payment attempts.
     val failed = PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg2.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure()))))
@@ -519,13 +519,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
     val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg1.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
+    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
     // Trampoline node couldn't find a route for the given fee.
     val failed = PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg1.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient()))))
     multiPartPayFsm.send(initiator, failed)
     multiPartPayFsm.expectMsgType[SendPaymentConfig]
     val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg2.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
+    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
     // Trampoline node couldn't find a route even with the increased fee.
     multiPartPayFsm.send(initiator, failed)
 
@@ -550,9 +550,9 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.route == Left(route))
     assert(msg.amount == finalAmount + trampolineAttempt.fees)
     assert(msg.recipient.totalAmount == finalAmount)
-    assert(msg.recipient.isInstanceOf[ClearTrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolineAmount == finalAmount + trampolineAttempt.fees)
-    assert(msg.recipient.asInstanceOf[ClearTrampolineRecipient].trampolinePaymentSecret == payment.trampolineSecret.get)
+    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineAttempt.fees)
+    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret == payment.trampolineSecret.get)
   }
 
 }

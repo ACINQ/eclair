@@ -29,7 +29,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.send.{ClearRecipient, ClearTrampolineRecipient, SpontaneousRecipient}
+import fr.acinq.eclair.payment.send.{ClearRecipient, TrampolineRecipient, SpontaneousRecipient}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRoutesFromPaths, channelAnnouncement}
@@ -515,7 +515,7 @@ class RouterSpec extends BaseRouterSpec {
     val recipientKey = randomKey()
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, randomBytes32(), recipientKey, Left("invoice"), CltvExpiryDelta(6))
     val trampolineHop = NodeHop(c, recipientKey.publicKey, CltvExpiryDelta(100), 25_000 msat)
-    val recipient = ClearTrampolineRecipient(invoice, 725_000 msat, DEFAULT_EXPIRY, trampolineHop, randomBytes32())
+    val recipient = TrampolineRecipient(invoice, 725_000 msat, DEFAULT_EXPIRY, trampolineHop, randomBytes32())
     sender.send(router, RouteRequest(a, recipient, routeParams))
     val route1 = sender.expectMsgType[RouteResponse].routes.head
     assert(route1.amount == 750_000.msat)

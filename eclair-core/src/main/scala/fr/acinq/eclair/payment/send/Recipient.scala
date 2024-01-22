@@ -190,12 +190,12 @@ object BlindedRecipient {
  * Note that we don't need to support the case where we'd use multiple trampoline hops in the same route: since we have
  * access to the network graph, it's always more efficient to find a channel route to the last trampoline node.
  */
-case class ClearTrampolineRecipient(invoice: Invoice,
-                                    totalAmount: MilliSatoshi,
-                                    expiry: CltvExpiry,
-                                    trampolineHop: NodeHop,
-                                    trampolinePaymentSecret: ByteVector32,
-                                    customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
+case class TrampolineRecipient(invoice: Invoice,
+                               totalAmount: MilliSatoshi,
+                               expiry: CltvExpiry,
+                               trampolineHop: NodeHop,
+                               trampolinePaymentSecret: ByteVector32,
+                               customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   require(trampolineHop.nextNodeId == invoice.nodeId, "trampoline hop must end at the recipient")
 
   val trampolineNodeId = trampolineHop.nodeId
