@@ -20,7 +20,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
-import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
+import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, DetailedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.RemoteSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
@@ -565,6 +565,10 @@ object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => Comm
 // @formatter:on
 
 // @formatter:off
+private case class DetailedOnChainBalanceJson(confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc], confirmedSwapIn: Map[OutPoint, Btc], unconfirmedSwapIn: Map[OutPoint, Btc])
+object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(confirmed = b.confirmed, unconfirmed = b.unconfirmed, confirmedSwapIn = b.confirmedSwapIn, unconfirmedSwapIn = b.unconfirmedSwapIn))
+private case class CorrectedOnChainBalanceJson(total: Btc, details: DetailedOnChainBalance)
+object CorrectedOnChainBalanceSerializer extends ConvertClassSerializer[CorrectedOnChainBalance](b => CorrectedOnChainBalanceJson(b.total, b.details))
 private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
@@ -728,6 +732,8 @@ object JsonSerializers {
     OriginSerializer +
     ByteVector32KeySerializer +
     TxIdKeySerializer +
+    DetailedOnChainBalanceSerializer +
+    CorrectedOnChainBalanceSerializer +
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
