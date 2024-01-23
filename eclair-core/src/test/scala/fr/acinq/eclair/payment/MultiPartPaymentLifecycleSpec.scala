@@ -147,7 +147,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), randomBytes32(), randomKey(), Left("invoice"), CltvExpiryDelta(12))
     val trampolineHop = NodeHop(e, invoice.nodeId, CltvExpiryDelta(50), 1000 msat)
-    val recipient = ClearTrampolineRecipient(invoice, finalAmount, expiry, trampolineHop, randomBytes32())
+    val recipient = TrampolineRecipient(invoice, finalAmount, expiry, trampolineHop, randomBytes32())
     val payment = SendMultiPartPayment(sender.ref, recipient, 1, routeParams)
     sender.send(payFsm, payment)
 

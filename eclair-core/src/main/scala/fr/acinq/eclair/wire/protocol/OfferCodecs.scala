@@ -131,7 +131,7 @@ object OfferCodecs {
 
   private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
 
-  private val paymentInfo: Codec[PaymentInfo] =
+  val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::
       ("fee_proportional_millionths" | uint32) ::
       ("cltv_expiry_delta" | cltvExpiryDelta) ::

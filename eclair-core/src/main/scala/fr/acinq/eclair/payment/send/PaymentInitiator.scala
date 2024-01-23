@@ -198,7 +198,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
   }
 
-  private def buildTrampolineRecipient(r: SendRequestedPayment, trampolineHop: NodeHop): Try[ClearTrampolineRecipient] = {
+  private def buildTrampolineRecipient(r: SendRequestedPayment, trampolineHop: NodeHop): Try[TrampolineRecipient] = {
     // We generate a random secret for the payment to the trampoline node.
     val trampolineSecret = r match {
       case r: SendPaymentToRoute => r.trampoline_opt.map(_.paymentSecret).getOrElse(randomBytes32())
@@ -206,7 +206,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     }
     val finalExpiry = r.finalExpiry(nodeParams)
     r.invoice match {
-      case invoice: Bolt11Invoice => Success(ClearTrampolineRecipient(invoice, r.recipientAmount, finalExpiry, trampolineHop, trampolineSecret))
+      case invoice: Bolt11Invoice => Success(TrampolineRecipient(invoice, r.recipientAmount, finalExpiry, trampolineHop, trampolineSecret))
       case _: Bolt12Invoice => Failure(new IllegalArgumentException("trampoline blinded payments are not supported yet"))
     }
   }
