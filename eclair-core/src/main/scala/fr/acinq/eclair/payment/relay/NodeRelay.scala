@@ -23,9 +23,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -33,20 +31,19 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
+import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.Resolve
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
-import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle, Recipient}
+import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, CompactBlindedPathsResolver, MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle, Recipient}
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound, Router}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{BlindedPath, CompactBlindedPath, PaymentInfo}
+import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32, randomKey}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 
 /**
@@ -66,7 +63,7 @@ object NodeRelay {
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
-  private case class WrappedNodeId(nodeId_opt: Option[PublicKey]) extends Command
+  private case class WrappedResolvedPaths(resolved: Seq[PaymentBlindedRoute]) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -134,7 +131,7 @@ object NodeRelay {
           } else {
             None
           }
-        case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
+        case _: IntermediatePayload.NodeRelay.ToBlindedPaths =>
           None
       }
     }
@@ -167,7 +164,11 @@ object NodeRelay {
       case _ if routeNotFound => Some(TrampolineFeeInsufficient()) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
-        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) if nextPayload.isInstanceOf[IntermediatePayload.NodeRelay.Standard] && e.originNode == nextPayload.asInstanceOf[IntermediatePayload.NodeRelay.Standard].outgoingNodeId => e.failureMessage }
+        val outgoingNodeFailure = nextPayload match {
+          case nextPayload: IntermediatePayload.NodeRelay.Standard => failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
+          // When using blinded paths, we will never get a failure from the final node (for privacy reasons).
+          case _: IntermediatePayload.NodeRelay.ToBlindedPaths => None
+        }
         val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) => e.failureMessage }
         val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure()))
         Some(failure)
@@ -223,6 +224,7 @@ class NodeRelay private(nodeParams: NodeParams,
             stopping()
           case None =>
             nextPayload match {
+              // TODO: async payments are not currently supported for blinded recipients. We should update the AsyncPaymentTriggerer to decrypt the blinded path.
               case nextPayload: IntermediatePayload.NodeRelay.Standard if nextPayload.isAsyncPayment && nodeParams.features.hasFeature(Features.AsyncPaymentPrototype) =>
                 waitForTrigger(upstream, nextPayload, nextPacket_opt)
               case _ =>
@@ -329,13 +331,8 @@ class NodeRelay private(nodeParams: NodeParams,
             val extraEdges = payloadOut.invoiceRoutingInfo.getOrElse(Nil).flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
             val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
             val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features(features).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata)
-            if (recipient.features.hasFeature(Features.BasicMultiPartPayment)) {
-              context.log.debug("sending the payment to non-trampoline recipient using MPP")
-              relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
-            } else {
-              context.log.debug("sending the payment to non-trampoline recipient without MPP")
-              relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = false)
-            }
+            context.log.debug("sending the payment to non-trampoline recipient (MPP={})", recipient.features.hasFeature(Features.BasicMultiPartPayment))
+            relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment))
           case None =>
             context.log.debug("sending the payment to the next trampoline node")
             val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
@@ -343,7 +340,8 @@ class NodeRelay private(nodeParams: NodeParams,
             relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
         }
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
-        resolveCompactBlindedPaths(payloadOut.outgoingBlindedPaths, Nil, upstream, payloadOut, paymentCfg, routeParams)
+        context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[PaymentBlindedRoute]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
+        waitForResolvedPaths(upstream, payloadOut, paymentCfg, routeParams)
     }
   }
 
@@ -368,49 +366,21 @@ class NodeRelay private(nodeParams: NodeParams,
    * Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to resolve
    * that to a nodeId in order to reach that introduction node and use the blinded path.
    */
-  @tailrec
-  private def resolveCompactBlindedPaths(toResolve: Seq[PaymentBlindedContactInfo],
-                                         resolved: Seq[PaymentBlindedRoute],
-                                         upstream: Upstream.Trampoline,
-                                         payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths,
-                                         paymentCfg: SendPaymentConfig,
-                                         routeParams: RouteParams): Behavior[Command] = {
-    if (toResolve.isEmpty) {
-      if (resolved.isEmpty) {
-        context.log.warn(s"rejecting trampoline payment to blinded paths: no usable blinded path")
-        rejectPayment(upstream, Some(TemporaryNodeFailure()))
-        stopping()
-      } else {
-        val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
-        val recipient = BlindedRecipient.fromPaths(randomKey().publicKey, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
-        context.log.debug("sending the payment to blinded recipient, useMultiPart={}", features.hasFeature(Features.BasicMultiPartPayment))
-        relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, features.hasFeature(Features.BasicMultiPartPayment))
-      }
-    } else {
-      toResolve.head match {
-        case PaymentBlindedContactInfo(BlindedPath(route), paymentInfo) =>
-          resolveCompactBlindedPaths(toResolve.tail, resolved :+ PaymentBlindedRoute(route, paymentInfo), upstream, payloadOut, paymentCfg, routeParams)
-        case PaymentBlindedContactInfo(route: CompactBlindedPath, paymentInfo) =>
-          router ! Router.GetNodeId(context.messageAdapter(WrappedNodeId), route.introductionNode.scid, route.introductionNode.isNode1)
-          waitForNodeId(route, paymentInfo, toResolve.tail, resolved, upstream, payloadOut, paymentCfg, routeParams)
-      }
-    }
-  }
-
-  private def waitForNodeId(compactRoute: CompactBlindedPath,
-                            paymentInfo: PaymentInfo,
-                            toResolve: Seq[PaymentBlindedContactInfo],
-                            resolved: Seq[PaymentBlindedRoute],
+  private def waitForResolvedPaths(
                             upstream: Upstream.Trampoline,
                             payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths,
                             paymentCfg: SendPaymentConfig,
                             routeParams: RouteParams): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedNodeId(None) =>
-        resolveCompactBlindedPaths(toResolve, resolved, upstream, payloadOut, paymentCfg, routeParams)
-      case WrappedNodeId(Some(nodeId)) =>
-        val resolvedPaymentBlindedRoute = PaymentBlindedRoute(BlindedRoute(nodeId, compactRoute.blindingKey, compactRoute.blindedNodes), paymentInfo)
-        resolveCompactBlindedPaths(toResolve, resolved :+ resolvedPaymentBlindedRoute, upstream, payloadOut, paymentCfg, routeParams)
+      case WrappedResolvedPaths(resolved) if resolved.isEmpty =>
+        context.log.warn(s"rejecting trampoline payment to blinded paths: no usable blinded path")
+        rejectPayment(upstream, Some(TemporaryNodeFailure()))
+        stopping()
+      case WrappedResolvedPaths(resolved) =>
+        val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
+        val recipient = BlindedRecipient.fromPaths(randomKey().publicKey, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
+        context.log.debug("sending the payment to blinded recipient, useMultiPart={}", features.hasFeature(Features.BasicMultiPartPayment))
+        relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, features.hasFeature(Features.BasicMultiPartPayment))
     }
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
