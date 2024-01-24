@@ -22,6 +22,7 @@ object BalanceActor {
 
   // @formatter:off
   sealed trait Command
+  final case class ResetBalance(replyTo: ActorRef[Option[GlobalBalance]]) extends Command
   private final case object TickBalance extends Command
   final case class GetGlobalBalance(replyTo: ActorRef[Try[GlobalBalance]], channels: Map[ByteVector32, PersistentChannelData]) extends Command
   private final case class WrappedChannels(wrapped: ChannelsListener.GetChannelsResponse) extends Command
@@ -52,6 +53,12 @@ private class BalanceActor(context: ActorContext[Command],
    * @return
    */
   def apply(refBalance_opt: Option[GlobalBalance], previousBalance_opt: Option[GlobalBalance]): Behavior[Command] = Behaviors.receiveMessage {
+    case ResetBalance(replyTo) =>
+      log.info("resetting balance")
+      // we use the last balance as new reference
+      val newRefBalance_opt = previousBalance_opt
+      replyTo ! previousBalance_opt
+      apply(refBalance_opt = newRefBalance_opt, previousBalance_opt = previousBalance_opt)
     case TickBalance =>
       log.debug("checking balance...")
       channelsListener ! ChannelsListener.GetChannels(context.messageAdapter[ChannelsListener.GetChannelsResponse](WrappedChannels))

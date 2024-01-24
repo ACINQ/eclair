@@ -29,6 +29,10 @@ trait Control {
     complete(eclairApi.enableFromFutureHtlc())
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc
+  val resetBalance: Route = postRequest("resetbalance") { implicit t =>
+    complete(eclairApi.resetBalance())
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance
 
 }

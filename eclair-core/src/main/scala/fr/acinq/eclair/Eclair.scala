@@ -174,6 +174,8 @@ trait Eclair {
 
   def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
 
+  def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]]
+
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
@@ -656,6 +658,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       globalBalance_try <- appKit.balanceActor.ask(res => BalanceActor.GetGlobalBalance(res, channels))
       globalBalance <- Promise[GlobalBalance]().complete(globalBalance_try).future
     } yield globalBalance
+  }
+
+  override def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]] = {
+    appKit.balanceActor.ask(res => BalanceActor.ResetBalance(res))
   }
 
   override def signMessage(message: ByteVector): SignedMessage = {
