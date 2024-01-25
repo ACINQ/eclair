@@ -102,6 +102,8 @@ trait Eclair {
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
 
+  def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]]
+
   def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]]
 
   def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
@@ -278,6 +280,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
     sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender))
+  }
+
+  override def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]] = {
+    sendToChannel[CMD_FORCECLOSE, CommandResponse[CMD_FORCECLOSE]](channel, CMD_FORCECLOSE(ActorRef.noSender, resetFundingTxIndex_opt = Some(resetFundingTxIndex)))
   }
 
   override def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]] = {

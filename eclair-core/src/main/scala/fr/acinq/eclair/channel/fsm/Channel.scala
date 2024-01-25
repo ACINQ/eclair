@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
@@ -2625,14 +2626,33 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(d.channelId, "close", stateName), c)
 
     case Event(c: CMD_FORCECLOSE, d) =>
-      d match {
-        case data: PersistentChannelData =>
+      val maybeD1 = c.resetFundingTxIndex_opt match {
+        case Some(resetFundingTxIndex) =>
+          d match {
+            case data: ChannelDataWithCommitments =>
+              if (data.commitments.active.exists(_.fundingTxIndex == resetFundingTxIndex) &&
+                data.commitments.active.filter(_.fundingTxIndex > resetFundingTxIndex).forall(_.localFundingStatus.isInstanceOf[LocalFundingStatus.UnconfirmedFundingTx])
+              ) {
+                log.warning("resetting to fundingTxIndex={}", resetFundingTxIndex)
+                Right(data.modify(_.commitments.active).using(_.filter(_.fundingTxIndex <= resetFundingTxIndex)))
+              } else {
+                Left(CommandUnavailableInThisState(d.channelId, "forcecloseresetfundingindex", stateName))
+              }
+            case _ => Right(d)
+          }
+        case None => Right(d)
+      }
+
+      maybeD1 match {
+        case Right(data: PersistentChannelData) =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
           val failure = ForcedLocalCommit(data.channelId)
           handleLocalError(failure, data, Some(c))
-        case _: TransientChannelData =>
+        case Right(_: TransientChannelData) =>
           handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
+        case Left(failure) =>
+          handleCommandError(failure, c)
       }
 
     // In states where we don't explicitly handle this command, we won't broadcast a new channel update immediately,

@@ -33,6 +33,15 @@ trait Control {
     complete(eclairApi.resetBalance())
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance
+  val forceCloseResetFundingIndex: Route = postRequest("forcecloseresetfundingindex") { implicit t =>
+    withChannelIdentifier { channel =>
+      formFields("resetFundingIndex".as[Int]) {
+        resetFundingIndex =>
+          complete(eclairApi.forceCloseResetFundingIndex(channel, resetFundingIndex))
+      }
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex
 
 }
