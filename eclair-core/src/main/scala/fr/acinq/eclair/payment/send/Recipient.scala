@@ -170,7 +170,10 @@ object BlindedRecipient {
    * @param invoice Bolt invoice. Paths from the invoice must be passed as `paths` with compact paths expanded to include the node id.
    * @param paths   Payment paths to use to reach the recipient.
    */
-  def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient = {
+  def apply(invoice: Bolt12Invoice, paths: Seq[PaymentBlindedRoute], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): BlindedRecipient =
+    BlindedRecipient.fromPaths(invoice.nodeId, invoice.features, totalAmount, expiry, paths, customTlvs)
+
+  def fromPaths(nodeId: PublicKey, features: Features[InvoiceFeature], totalAmount: MilliSatoshi, expiry: CltvExpiry, paths: Seq[PaymentBlindedRoute], customTlvs: Set[GenericTlv]): BlindedRecipient = {
     val blindedHops = paths.map(
       path => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
@@ -178,7 +181,7 @@ object BlindedRecipient {
         val dummyId = ShortChannelId.generateLocalAlias()
         BlindedHop(dummyId, path.route, path.paymentInfo)
       })
-    BlindedRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, blindedHops, customTlvs)
+    BlindedRecipient(nodeId, features, totalAmount, expiry, blindedHops, customTlvs)
   }
 }
 

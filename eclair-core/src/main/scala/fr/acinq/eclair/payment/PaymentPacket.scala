@@ -55,7 +55,13 @@ object IncomingPaymentPacket {
     val expiryDelta: CltvExpiryDelta = add.cltvExpiry - outgoingCltv
   }
   /** We must relay the payment to a remote node. */
-  case class NodeRelayPacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket) extends RelayPacket
+  sealed trait NodeRelayPacket extends RelayPacket {
+    def add: UpdateAddHtlc
+    def outerPayload: FinalPayload.Standard
+    def innerPayload: IntermediatePayload.NodeRelay
+  }
+  case class RelayToTrampolinePacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket) extends NodeRelayPacket
+  case class RelayToBlindedPathsPacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.ToBlindedPaths) extends NodeRelayPacket
   // @formatter:on
 
   case class DecodedOnionPacket(payload: TlvStream[OnionPaymentPayloadTlv], next_opt: Option[OnionRoutingPacket])
@@ -150,7 +156,7 @@ object IncomingPaymentPacket {
                   case DecodedOnionPacket(innerPayload, Some(next)) => validateNodeRelay(add, payload, innerPayload, next)
                   case DecodedOnionPacket(innerPayload, None) =>
                     if (innerPayload.get[OutgoingBlindedPaths].isDefined) {
-                      Left(InvalidOnionPayload(UInt64(66102), 0)) // Trampoline to blinded paths is not yet supported.
+                      validateTrampolineToBlindedPaths(add, payload, innerPayload)
                     } else {
                       validateTrampolineFinalPayload(add, payload, innerPayload)
                     }
@@ -209,13 +215,23 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, NodeRelayPacket] = {
+  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, RelayToTrampolinePacket] = {
     // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
     FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
       IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
         case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
         case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload => Right(NodeRelayPacket(add, outerPayload, innerPayload, next))
+        case innerPayload => Right(RelayToTrampolinePacket(add, outerPayload, innerPayload, next))
+      }
+    }
+  }
+
+  private def validateTrampolineToBlindedPaths(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, RelayToBlindedPathsPacket] = {
+    FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
+      IntermediatePayload.NodeRelay.ToBlindedPaths.validate(innerPayload).left.map(_.failureMessage).flatMap {
+        case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
+        case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+        case innerPayload => Right(RelayToBlindedPathsPacket(add, outerPayload, innerPayload))
       }
     }
   }

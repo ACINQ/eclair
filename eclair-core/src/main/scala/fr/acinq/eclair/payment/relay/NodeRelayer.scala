@@ -57,7 +57,7 @@ object NodeRelayer {
    *                 NB: the payment secret used here is different from the invoice's payment secret and ensures we can
    *                 group together HTLCs that the previous trampoline node sent in the same MPP.
    */
-  def apply(nodeParams: NodeParams, register: akka.actor.ActorRef, outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory, triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command], children: Map[PaymentKey, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
+  def apply(nodeParams: NodeParams, register: akka.actor.ActorRef, outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory, triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command], router: akka.actor.ActorRef, children: Map[PaymentKey, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
@@ -72,15 +72,15 @@ object NodeRelayer {
               case None =>
                 val relayId = UUID.randomUUID()
                 context.log.debug(s"spawning a new handler with relayId=$relayId")
-                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, outgoingPaymentFactory, triggerer), relayId.toString)
+                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, outgoingPaymentFactory, triggerer, router), relayId.toString)
                 context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
                 handler ! NodeRelay.Relay(nodeRelayPacket)
-                apply(nodeParams, register, outgoingPaymentFactory, triggerer, children + (childKey -> handler))
+                apply(nodeParams, register, outgoingPaymentFactory, triggerer, router, children + (childKey -> handler))
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>
             // we do a back-and-forth between parent and child before stopping the child to prevent a race condition
             childHandler ! NodeRelay.Stop
-            apply(nodeParams, register, outgoingPaymentFactory, triggerer, children - PaymentKey(paymentHash, paymentSecret))
+            apply(nodeParams, register, outgoingPaymentFactory, triggerer, router, children - PaymentKey(paymentHash, paymentSecret))
           case GetPendingPayments(replyTo) =>
             replyTo ! children
             Behaviors.same
