@@ -31,19 +31,19 @@ import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, P
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.payment.IncomingPaymentPacket.{NodeRelayPacket, RelayToBlindedPathsPacket, RelayToTrampolinePacket}
+import fr.acinq.eclair.payment.IncomingPaymentPacket.{RelayToBlindedPathsPacket, RelayToTrampolinePacket}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.{AsyncPaymentCanceled, AsyncPaymentTimeout, AsyncPaymentTriggered, Watch}
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
-import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
+import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient}
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound, Router}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{BlindedPath, CompactBlindedPath, InvoiceRequest, Offer, PaymentInfo, ShortChannelIdDir}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, PathId, PaymentConstraints}
@@ -64,6 +64,7 @@ import scala.util.Random
 class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
   import NodeRelayerSpec._
+
   case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent], triggerer: TestProbe[AsyncPaymentTriggerer.Command]) {
     def createNodeRelay(packetIn: IncomingPaymentPacket.NodeRelayPacket, useRealPaymentFactory: Boolean = false): (ActorRef[NodeRelay.Command], TestProbe[NodeRelayer.Command]) = {
       val parent = TestProbe[NodeRelayer.Command]("parent-relayer")
@@ -879,7 +880,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional), Seq(createPaymentBlindedRoute(outgoingNodeId)))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
       incoming.innerPayload.amountToForward, outgoingExpiry, invoice
-    ).asInstanceOf[IntermediatePayload.NodeRelay.ToBlindedPaths]))
+    )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
@@ -922,7 +923,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features.empty, Seq(compactPaymentBlindedRoute))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
       incoming.innerPayload.amountToForward, outgoingExpiry, invoice
-    ).asInstanceOf[IntermediatePayload.NodeRelay.ToBlindedPaths]))
+    )))
     val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
@@ -971,7 +972,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
       incoming.innerPayload.amountToForward, outgoingExpiry, invoice
     )))
-    val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
+    val (nodeRelayer, _) = f.createNodeRelay(incomingPayments.head)
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
     val getNodeId = router.expectMessageType[Router.GetNodeId]
@@ -984,7 +985,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(UnknownNextPeer()), commit = true))
     }
   }
 

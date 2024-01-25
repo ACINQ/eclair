@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.Resolve
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
-import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, CompactBlindedPathsResolver, MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle, Recipient}
+import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -197,10 +197,10 @@ class NodeRelay private(nodeParams: NodeParams,
    * We start by aggregating an incoming HTLC set. Once we received the whole set, we will compute a route to the next
    * trampoline node and forward the payment.
    *
-   * @param htlcs           received incoming HTLCs for this set.
-   * @param nextPayload     relay instructions (should be identical across HTLCs in this set).
-   * @param nextPacket_opt  trampoline onion to relay to the next trampoline node.
-   * @param handler         actor handling the aggregation of the incoming HTLC set.
+   * @param htlcs          received incoming HTLCs for this set.
+   * @param nextPayload    relay instructions (should be identical across HTLCs in this set).
+   * @param nextPacket_opt trampoline onion to relay to the next trampoline node.
+   * @param handler        actor handling the aggregation of the incoming HTLC set.
    */
   private def receiving(htlcs: Queue[Upstream.ReceivedHtlc], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
@@ -366,19 +366,20 @@ class NodeRelay private(nodeParams: NodeParams,
    * Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to resolve
    * that to a nodeId in order to reach that introduction node and use the blinded path.
    */
-  private def waitForResolvedPaths(
-                            upstream: Upstream.Trampoline,
-                            payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths,
-                            paymentCfg: SendPaymentConfig,
-                            routeParams: RouteParams): Behavior[Command] =
+  private def waitForResolvedPaths(upstream: Upstream.Trampoline,
+                                   payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths,
+                                   paymentCfg: SendPaymentConfig,
+                                   routeParams: RouteParams): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedResolvedPaths(resolved) if resolved.isEmpty =>
         context.log.warn(s"rejecting trampoline payment to blinded paths: no usable blinded path")
-        rejectPayment(upstream, Some(TemporaryNodeFailure()))
+        rejectPayment(upstream, Some(UnknownNextPeer()))
         stopping()
       case WrappedResolvedPaths(resolved) =>
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
-        val recipient = BlindedRecipient.fromPaths(randomKey().publicKey, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
+        // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
+        val blindedNodeId = resolved.head.route.blindedNodeIds.last
+        val recipient = BlindedRecipient.fromPaths(blindedNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
         context.log.debug("sending the payment to blinded recipient, useMultiPart={}", features.hasFeature(Features.BasicMultiPartPayment))
         relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, features.hasFeature(Features.BasicMultiPartPayment))
     }

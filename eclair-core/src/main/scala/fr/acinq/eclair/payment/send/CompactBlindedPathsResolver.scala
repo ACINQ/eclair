@@ -13,11 +13,11 @@ import fr.acinq.eclair.wire.protocol.OfferTypes.{BlindedPath, CompactBlindedPath
 import scala.annotation.tailrec
 
 object CompactBlindedPathsResolver {
+  // @formatter:off
   sealed trait Command
-
   case class Resolve(replyTo: typed.ActorRef[Seq[PaymentBlindedRoute]], blindedPaths: Seq[PaymentBlindedContactInfo]) extends Command
-
   private case class WrappedNodeId(nodeId_opt: Option[PublicKey]) extends Command
+  // @formatter:on
 
   def apply(router: ActorRef): Behavior[Command] = {
     Behaviors.receivePartial {
@@ -34,17 +34,15 @@ private class CompactBlindedPathsResolver(replyTo: typed.ActorRef[Seq[PaymentBli
   @tailrec
   private def resolveCompactBlindedPaths(toResolve: Seq[PaymentBlindedContactInfo],
                                          resolved: Seq[PaymentBlindedRoute]): Behavior[Command] = {
-    if (toResolve.isEmpty) {
-      replyTo ! resolved
-      Behaviors.stopped
-    } else {
-      toResolve.head match {
-        case PaymentBlindedContactInfo(BlindedPath(route), paymentInfo) =>
-          resolveCompactBlindedPaths(toResolve.tail, resolved :+ PaymentBlindedRoute(route, paymentInfo))
-        case PaymentBlindedContactInfo(route: CompactBlindedPath, paymentInfo) =>
-          router ! Router.GetNodeId(context.messageAdapter(WrappedNodeId), route.introductionNode.scid, route.introductionNode.isNode1)
-          waitForNodeId(route, paymentInfo, toResolve.tail, resolved)
-      }
+    toResolve.headOption match {
+      case Some(PaymentBlindedContactInfo(BlindedPath(route), paymentInfo)) =>
+        resolveCompactBlindedPaths(toResolve.tail, resolved :+ PaymentBlindedRoute(route, paymentInfo))
+      case Some(PaymentBlindedContactInfo(route: CompactBlindedPath, paymentInfo)) =>
+        router ! Router.GetNodeId(context.messageAdapter(WrappedNodeId), route.introductionNode.scid, route.introductionNode.isNode1)
+        waitForNodeId(route, paymentInfo, toResolve.tail, resolved)
+      case None =>
+        replyTo ! resolved
+        Behaviors.stopped
     }
   }
 

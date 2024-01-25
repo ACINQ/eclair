@@ -836,7 +836,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val sender = TestProbe()
     val alice = new EclairImpl(nodes("A"))
-    alice.payOfferTrampoline(offer, amount, 1, nodes("B").nodeParams.nodeId, Seq((10000 msat, CltvExpiryDelta(1000))), maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
+    alice.payOfferTrampoline(offer, amount, 1, nodes("B").nodeParams.nodeId, Seq((10_000 msat, CltvExpiryDelta(1000))), maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val receivingRoutes = Seq(ReceivingRoute(Seq(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(500)))
@@ -850,6 +850,16 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     awaitCond(nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId).headOption.exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+    val Some(OutgoingPaymentStatus.Succeeded(preimage, _, route, _)) = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId).headOption.map(_.status)
+    assert(route.length == 2)
+    assert(route.head.shortChannelId.nonEmpty)
+    assert(route.head.nodeId == nodes("A").nodeParams.nodeId)
+    assert(route.head.nextNodeId == nodes("B").nodeParams.nodeId)
+    assert(route.last.shortChannelId.isEmpty)
+    assert(route.last.nodeId == nodes("B").nodeParams.nodeId)
+    assert(route.last.nextNodeId == nodes("D").nodeParams.nodeId)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(Crypto.sha256(preimage))
+    assert(receivedAmount >= amount)
   }
 
   test("send to compact route") {

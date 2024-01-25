@@ -25,7 +25,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
-import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, RelayToTrampolinePacket, decrypt}
+import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, RelayToTrampolinePacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, TrampolineRecipient}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
