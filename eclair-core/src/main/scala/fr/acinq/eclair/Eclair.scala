@@ -24,11 +24,12 @@ import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, TxId, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
@@ -197,6 +198,8 @@ trait Eclair {
   def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
 
   def stop(): Future[Unit]
+
+  def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -819,5 +822,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     logger.info("stopping eclair")
     sys.exit(0)
     Future.successful(())
+  }
+
+  override def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId = {
+    appKit.register ! Register.Forward(null, channelId, WatchFundingSpentTriggered(tx))
+    tx.txid
   }
 }

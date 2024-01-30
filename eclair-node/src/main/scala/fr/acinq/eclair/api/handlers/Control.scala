@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
+import fr.acinq.bitcoin.scalacompat.Transaction
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 
@@ -42,6 +43,13 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex
+  val manualWatchFundingSpent: Route = postRequest("manualwatchfundingspent") { implicit t =>
+    formFields(channelIdFormParam, "tx") {
+      (channelId, tx) =>
+        complete(eclairApi.manualWatchFundingSpent(channelId, Transaction.read(tx)))
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent
 
 }
