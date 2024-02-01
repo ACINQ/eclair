@@ -16,10 +16,12 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.scalacompat.Transaction
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.api.serde.FormParamExtractors._
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 
 trait Control {
   this: Service with EclairDirectives =>
@@ -50,6 +52,17 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent
+  val manualBumpRemote: Route = postRequest("manualbumpforceclose") { implicit t =>
+    formFields(channelIdFormParam, "feerate".as[FeeratePerByte], "type") {
+      (channelId, feerate, `type`) =>
+        `type` match {
+          case "local" => complete(eclairApi.manualBumpForceClose(channelId, FeeratePerKw(feerate), local = true))
+          case "remote" => complete(eclairApi.manualBumpForceClose(channelId, FeeratePerKw(feerate), local = false))
+          case _ => reject(MalformedFormFieldRejection("type", "type must be 'local' or 'remote'"))
+        }
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ manualBumpRemote
 
 }
