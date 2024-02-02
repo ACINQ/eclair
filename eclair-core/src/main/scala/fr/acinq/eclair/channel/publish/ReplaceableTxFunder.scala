@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Tr
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
@@ -75,7 +75,7 @@ object ReplaceableTxFunder {
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
-            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment))
+            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.onChainFeeConf))
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
@@ -96,7 +96,7 @@ object ReplaceableTxFunder {
    * The on-chain feerate can be arbitrarily high, but it wouldn't make sense to pay more fees than the amount we're
    * trying to claim on-chain. We compute how much funds we have at risk and the feerate that matches this amount.
    */
-  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment): FeeratePerKw = {
+  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, feeConf: OnChainFeeConf): FeeratePerKw = {
     // We don't want to pay more in fees than the amount at risk in untrimmed pending HTLCs.
     val maxFee = txInfo match {
       case tx: HtlcTx => tx.input.txOut.amount
@@ -104,9 +104,10 @@ object ReplaceableTxFunder {
       case _: ClaimLocalAnchorOutputTx =>
         val htlcBalance = commitment.localCommit.htlcTxsAndRemoteSigs.map(_.htlcTx.input.txOut.amount).sum
         val mainBalance = commitment.localCommit.spec.toLocal.truncateToSatoshi
-        // If there are no HTLCs or a low HTLC amount, we may still want to get back our main balance.
-        // In that case, we spend at most 5% of our balance in fees.
-        htlcBalance.max(mainBalance * 5 / 100)
+        // If there are no HTLCs or a low HTLC amount, we still want to get back our main balance.
+        // In that case, we spend at most 5% of our balance in fees, with a hard cap configured by the node operator.
+        val mainBalanceFee = (mainBalance * 5 / 100).min(feeConf.anchorWithoutHtlcsMaxFee)
+        htlcBalance.max(mainBalanceFee)
     }
     // We cannot know beforehand how many wallet inputs will be added, but an estimation should be good enough.
     val weight = txInfo match {

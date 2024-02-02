@@ -23,6 +23,19 @@ eclair.on-chain-fees.confirmation-priority {
 
 This configuration section replaces the previous `eclair.on-chain-fees.target-blocks` section.
 
+### Add configurable maximum anchor fee
+
+Whenever an anchor outputs channel force-closes, we regularly bump the fees of the commitment transaction to get it to confirm.
+We previously ensured that the fees paid couldn't exceed 5% of our channel balance, but that may already be extremely high for large channels.
+Without package relay, our anchor transactions may not propagate to miners, and eclair may end up bumping the fees more than the actual feerate, because it cannot know why the transaction isn't confirming.
+
+We introduced a new parameter to control the maximum fee that will be paid during fee-bumping, that node operators may configure:
+
+```eclair.conf
+// maximum amount of fees we will pay to bump an anchor output when we have no HTLC at risk
+eclair.on-chain-fees.anchor-without-htlcs-max-fee-satoshis = 10000
+```
+
 ### Managing Bitcoin Core wallet keys
 
 You can now use Eclair to manage the private keys for on-chain funds monitored by a Bitcoin Core watch-only wallet.

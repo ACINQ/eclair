@@ -16,11 +16,10 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.channel.ChannelTypes
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import org.scalatest.funsuite.AnyFunSuite
 
 class OnChainFeeConfSpec extends AnyFunSuite {
@@ -29,7 +28,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   private val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1000 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(900 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1100 sat)))
@@ -39,7 +38,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
 
   test("get commitment feerate") {
     val commitmentFormat = DefaultCommitmentFormat
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(5000 sat))
     assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, commitmentFormat, 100000 sat) == FeeratePerKw(5000 sat))
@@ -53,7 +52,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val defaultMaxCommitFeerate = defaultFeerateTolerance.anchorOutputMaxCommitFeerate
     val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
+    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
     assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate / 2)

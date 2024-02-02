@@ -45,6 +45,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
     safeUtxosThreshold = 0,
     spendAnchorWithoutHtlcs = true,
+    anchorWithoutHtlcsMaxFee = 10_000.sat,
     closeOnOfflineMismatch = false,
     1.0,
     FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, DustTolerance(100000 sat, closeOnUpdateFeeOverflow = false)),
