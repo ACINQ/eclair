@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Tr
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
@@ -75,7 +75,7 @@ object ReplaceableTxFunder {
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
-            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.onChainFeeConf))
+            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.currentFeerates, nodeParams.onChainFeeConf))
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
@@ -96,7 +96,7 @@ object ReplaceableTxFunder {
    * The on-chain feerate can be arbitrarily high, but it wouldn't make sense to pay more fees than the amount we're
    * trying to claim on-chain. We compute how much funds we have at risk and the feerate that matches this amount.
    */
-  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, feeConf: OnChainFeeConf): FeeratePerKw = {
+  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, currentFeerates: FeeratesPerKw, feeConf: OnChainFeeConf): FeeratePerKw = {
     // We don't want to pay more in fees than the amount at risk in untrimmed pending HTLCs.
     val maxFee = txInfo match {
       case tx: HtlcTx => tx.input.txOut.amount
@@ -119,7 +119,8 @@ object ReplaceableTxFunder {
       case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
       case _: ClaimLocalAnchorOutputTx => commitWeight(commitment) + Transactions.claimAnchorOutputMinWeight
     }
-    Transactions.fee2rate(maxFee, weight)
+    // It doesn't make sense to use a feerate that is much higher than the current feerate for inclusion into the next block.
+    Transactions.fee2rate(maxFee, weight).min(currentFeerates.fastest * 1.25)
   }
 
   /**

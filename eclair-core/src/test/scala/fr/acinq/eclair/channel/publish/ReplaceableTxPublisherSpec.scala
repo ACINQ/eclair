@@ -83,9 +83,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     def bobBlockHeight(): BlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
 
     /** Set uniform feerate for all block targets. */
-    def setFeerate(feerate: FeeratePerKw): Unit = {
-      alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate))
-      bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate))
+    def setFeerate(feerate: FeeratePerKw, fastest: FeeratePerKw = FeeratePerKw(100_000 sat)): Unit = {
+      alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
+      bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
     }
 
     /** Set feerate for a specific block target. */
@@ -171,7 +171,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Execute our test.
     val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, walletClient, alice2blockchain.ref, TxPublishContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
-    testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, walletClient, walletRpcClient, publisher, probe))
+    val f = Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, walletClient, walletRpcClient, publisher, probe)
+    // We set a high fastest feerate, to ensure that by default we're not limited by this.
+    f.setFeerate(FeeratePerKw(100_000 sat), blockTarget = 1)
+    testFun(f)
   }
 
   def closeChannelWithoutHtlcs(f: Fixture, overrideCommitTarget: BlockHeight): (PublishFinalTx, PublishReplaceableTx) = {
@@ -493,7 +496,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsg(commitTx.tx.txid)
       assert(getMempool().length == 1)
 
-      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       val targetFeerate = FeeratePerKw(50_000 sat)
       assert(maxFeerate <= targetFeerate / 2)
       setFeerate(targetFeerate, blockTarget = 12)
@@ -512,6 +515,31 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(result.cmd == anchorTx)
       assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
       assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+    }
+  }
+
+  test("commit tx feerate too low, spending anchor output (fastest feerate threshold)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      assert(getMempool().length == 1)
+
+      val fastestFeerate = FeeratePerKw(15_000 sat)
+      setFeerate(fastestFeerate, blockTarget = 1)
+      val targetFeerate = FeeratePerKw(50_000 sat)
+      setFeerate(targetFeerate, blockTarget = 12)
+      publisher ! Publish(probe.ref, anchorTx)
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      // We allow up to 25% more than the fastest feerate.
+      val targetFee = Transactions.weight2fee(fastestFeerate * 1.25, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
     }
   }
 
@@ -1127,12 +1155,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 30, outgoingHtlcAmount = 5_000_000 msat, incomingHtlcAmount = 4_000_000 msat)
       setFeerate(targetFeerate, blockTarget = 12)
       assert(htlcSuccess.txInfo.fee == 0.sat)
-      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcSuccessMaxFeerate < targetFeerate / 2)
       val htlcSuccessTx = testPublishHtlcSuccess(f, commitTx, htlcSuccess, htlcSuccessMaxFeerate)
       assert(htlcSuccessTx.txIn.length > 1)
       assert(htlcTimeout.txInfo.fee == 0.sat)
-      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcTimeoutMaxFeerate < targetFeerate / 2)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, htlcTimeoutMaxFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
@@ -1278,7 +1306,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       import f._
 
       val feerate = FeeratePerKw(15_000 sat)
-      setFeerate(feerate)
+      setFeerate(feerate, fastest = feerate)
       // The confirmation target for htlc-timeout corresponds to their CLTV: we should claim them asap once the htlc has timed out.
       val (commitTx, _, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 144)
 
@@ -1297,6 +1325,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcTimeoutTx1.txid == htlcTimeoutTxId1)
 
       // A new block is found, and we've already reached the confirmation target, so we bump the fees.
+      setFeerate(feerate, fastest = feerate * 1.2)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 145))
       val htlcTimeoutTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
       assert(!isInMempool(htlcTimeoutTx1.txid))
@@ -1673,13 +1702,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
 
       // The Claim-HTLC-success tx will be immediately published.
-      setFeerate(initialFeerate)
+      setFeerate(initialFeerate, fastest = targetFeerate)
       val claimHtlcSuccessPublisher = createPublisher()
       claimHtlcSuccessPublisher ! Publish(probe.ref, claimHtlcSuccess)
       val claimHtlcSuccessTx1 = getMempoolTxs(1).head
       assert(listener.expectMsgType[TransactionPublished].tx.txid == claimHtlcSuccessTx1.txid)
 
-      setFeerate(targetFeerate)
+      setFeerate(targetFeerate, fastest = targetFeerate)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 5))
       val claimHtlcSuccessTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
       assert(!isInMempool(claimHtlcSuccessTx1.txid))
@@ -1694,7 +1723,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(finalHtlcSuccessTx.txIn.head.outPoint.txid == remoteCommitTx.txid)
 
       // The Claim-HTLC-timeout will be published after the timeout.
-      setFeerate(initialFeerate)
+      setFeerate(initialFeerate, fastest = targetFeerate)
       val claimHtlcTimeoutPublisher = createPublisher()
       claimHtlcTimeoutPublisher ! Publish(probe.ref, claimHtlcTimeout)
       generateBlocks(144)
@@ -1703,7 +1732,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val claimHtlcTimeoutTx1 = getMempoolTxs(1).head
       assert(listener.expectMsgType[TransactionPublished].tx.txid == claimHtlcTimeoutTx1.txid)
 
-      setFeerate(targetFeerate)
+      setFeerate(targetFeerate, fastest = targetFeerate)
       system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 145))
       val claimHtlcTimeoutTxId2 = listener.expectMsgType[TransactionPublished].tx.txid
       assert(!isInMempool(claimHtlcTimeoutTx1.txid))
