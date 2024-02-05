@@ -528,6 +528,7 @@ object NodeParams extends Logging {
         feeTargets = feeTargets,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
+        anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
         defaultFeerateTolerance = FeerateTolerance(

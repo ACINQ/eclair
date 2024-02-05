@@ -29,7 +29,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -143,6 +143,7 @@ object TestConstants {
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
+        anchorWithoutHtlcsMaxFee = 100_000.sat,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -308,6 +309,7 @@ object TestConstants {
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
+        anchorWithoutHtlcsMaxFee = 100_000.sat,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),

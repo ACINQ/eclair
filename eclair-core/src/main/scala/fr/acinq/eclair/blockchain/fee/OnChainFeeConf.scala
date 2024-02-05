@@ -81,7 +81,14 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
   }
 }
 
-case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+case class OnChainFeeConf(feeTargets: FeeTargets,
+                          safeUtxosThreshold: Int,
+                          spendAnchorWithoutHtlcs: Boolean,
+                          anchorWithoutHtlcsMaxFee: Satoshi,
+                          closeOnOfflineMismatch: Boolean,
+                          updateFeeMinDiffRatio: Double,
+                          private val defaultFeerateTolerance: FeerateTolerance,
+                          private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
