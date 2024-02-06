@@ -4,6 +4,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, TxId}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.AuditDb.PublishedTransaction
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
@@ -173,6 +174,11 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
   override def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit = {
     runAsync(secondary.addPathFindingExperimentMetrics(metrics))
     primary.addPathFindingExperimentMetrics(metrics)
+  }
+
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = {
+    runAsync(secondary.listPublished(channelId))
+    primary.listPublished(channelId)
   }
 
   override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentSent] = {

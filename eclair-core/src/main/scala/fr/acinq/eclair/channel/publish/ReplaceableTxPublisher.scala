@@ -327,17 +327,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   // Clean up the failed transaction attempt. Once that's done, go back to the waiting state with the new transaction.
   def cleanUpFailedTxAndWait(failedTx: Transaction, mempoolTx: FundedTx): Behavior[Command] = {
-    context.pipeToSelf(bitcoinClient.abandonTransaction(failedTx.txid))(_ => UnlockUtxos)
+    val toUnlock = failedTx.txIn.map(_.outPoint).toSet -- mempoolTx.signedTx.txIn.map(_.outPoint).toSet
+    if (toUnlock.isEmpty) {
+      context.self ! UtxosUnlocked
+    } else {
+      log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+      context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
+    }
     Behaviors.receiveMessagePartial {
-      case UnlockUtxos =>
-        val toUnlock = failedTx.txIn.map(_.outPoint).toSet -- mempoolTx.signedTx.txIn.map(_.outPoint).toSet
-        if (toUnlock.isEmpty) {
-          context.self ! UtxosUnlocked
-        } else {
-          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
-        }
-        Behaviors.same
       case UtxosUnlocked =>
         // Now that we've cleaned up the failed transaction, we can go back to waiting for the current mempool transaction
         // or bump it if it doesn't confirm fast enough either.
@@ -367,22 +364,21 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def unlockAndStop(input: OutPoint, txs: Seq[Transaction]): Behavior[Command] = {
-    // The bitcoind wallet will keep transactions around even when they can't be published (e.g. one of their inputs has
-    // disappeared but bitcoind thinks it may reappear later), hoping that it will be able to automatically republish
-    // them later. In our case this is unnecessary, we will publish ourselves, and we don't want to pollute the wallet
-    // state with transactions that will never be valid, so we eagerly abandon every time.
-    // If the transaction is in the mempool or confirmed, it will be a no-op.
-    context.pipeToSelf(Future.traverse(txs)(tx => bitcoinClient.abandonTransaction(tx.txid)))(_ => UnlockUtxos)
+    // Note that we unlock utxos but we don't abandon failed transactions:
+    //  - if they were successfully published:
+    //    - the utxos have automatically been unlocked, so the call to unlock is a (safe) no-op
+    //    - there is still a risk that transactions may confirm later, so it's unsafe to abandon them
+    //  - if they failed to be published:
+    //    - we must unlock the utxos, otherwise they would stay locked forever
+    //    - abandoning the transaction would be a no-op, as it was never added to our wallet
+    val toUnlock = txs.flatMap(_.txIn).filterNot(_.outPoint == input).map(_.outPoint).toSet
+    if (toUnlock.isEmpty) {
+      context.self ! UtxosUnlocked
+    } else {
+      log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+      context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
+    }
     Behaviors.receiveMessagePartial {
-      case UnlockUtxos =>
-        val toUnlock = txs.flatMap(_.txIn).filterNot(_.outPoint == input).map(_.outPoint).toSet
-        if (toUnlock.isEmpty) {
-          context.self ! UtxosUnlocked
-        } else {
-          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
-        }
-        Behaviors.same
       case UtxosUnlocked =>
         log.debug("utxos unlocked")
         Behaviors.stopped

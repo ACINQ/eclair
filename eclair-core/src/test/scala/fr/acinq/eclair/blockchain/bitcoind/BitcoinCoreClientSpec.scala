@@ -900,19 +900,19 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(signedTx2.txid)
 
     // Abandon the first wallet transaction.
-    bitcoinClient.abandonTransaction(signedTx1.txid).pipeTo(sender.ref)
+    bitcoinClient.abandon(signedTx1.txid).pipeTo(sender.ref)
     sender.expectMsg(true)
 
     // Abandoning an already-abandoned transaction is a no-op.
-    bitcoinClient.abandonTransaction(signedTx1.txid).pipeTo(sender.ref)
+    bitcoinClient.abandon(signedTx1.txid).pipeTo(sender.ref)
     sender.expectMsg(true)
 
     // We can't abandon the second transaction (it's in the mempool).
-    bitcoinClient.abandonTransaction(signedTx2.txid).pipeTo(sender.ref)
+    bitcoinClient.abandon(signedTx2.txid).pipeTo(sender.ref)
     sender.expectMsg(false)
 
     // We can't abandon a confirmed transaction.
-    bitcoinClient.abandonTransaction(signedTx2.txIn.head.outPoint.txid).pipeTo(sender.ref)
+    bitcoinClient.abandon(signedTx2.txIn.head.outPoint.txid).pipeTo(sender.ref)
     sender.expectMsg(false)
   }
 

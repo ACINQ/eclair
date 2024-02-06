@@ -17,9 +17,9 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 11
+  val CURRENT_VERSION = 12
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -110,6 +110,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
       }
 
+      def migration1112(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -142,9 +146,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
           statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
           statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
+          statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -166,6 +171,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
           if (v < 11) {
             migration1011(statement)
+          }
+          if (v < 12) {
+            migration1112(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -330,6 +338,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(9, m.paymentHash.toHex)
         statement.setString(10, serialization.write(m.extraEdges))
         statement.executeUpdate()
+      }
+    }
+  }
+
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_published WHERE channel_id = ?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeQuery().map { rs =>
+          PublishedTransaction(TxId.fromValidHex(rs.getString("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+        }.toSeq
       }
     }
   }

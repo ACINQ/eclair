@@ -42,6 +42,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   val funded = collection.concurrent.TrieMap.empty[TxId, Transaction]
   val published = collection.concurrent.TrieMap.empty[TxId, Transaction]
   var rolledback = Set.empty[Transaction]
+  var abandoned = Set.empty[TxId]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -78,6 +79,11 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(true)
   }
 
+  override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
+    abandoned = abandoned + txId
+    Future.successful(true)
+  }
+
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
@@ -89,6 +95,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[TxId]
+  var abandoned = Set.empty[TxId]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -115,6 +122,11 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     Future.successful(true)
   }
 
+  override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
+    abandoned = abandoned + txId
+    Future.successful(true)
+  }
+
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
@@ -127,6 +139,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   var inputs = Seq.empty[Transaction]
   var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[TxId]
+  var abandoned = Set.empty[TxId]
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
@@ -215,6 +228,11 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback :+ tx
+    Future.successful(true)
+  }
+
+  override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
+    abandoned = abandoned + txId
     Future.successful(true)
   }
 
