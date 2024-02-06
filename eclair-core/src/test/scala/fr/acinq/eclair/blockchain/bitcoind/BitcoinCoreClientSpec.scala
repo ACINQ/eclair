@@ -537,6 +537,153 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }, max = 10 seconds, interval = 1 second)
   }
 
+  test("unlock transaction inputs when double-spent by another wallet transaction") {
+    assume(!useEclairSigner)
+
+    val sender = TestProbe()
+    val priv = randomKey()
+    val miner = makeBitcoinCoreClient()
+    // We initialize our wallet with two inputs:
+    val wallet = new BitcoinCoreClient(createWallet("mempool_double_spend", sender))
+    wallet.getReceiveAddress().pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    Seq(200_000 sat, 200_000 sat).foreach(amount => {
+      miner.sendToAddress(address, amount, 1).pipeTo(sender.ref)
+      sender.expectMsgType[TxId]
+    })
+    generateBlocks(1)
+
+    // We create the following transactions:
+    //
+    //                          +------------+
+    //    wallet input 1 ------>|            |
+    //                   +----->| anchor tx1 |
+    // +-----------+     |      +------------+
+    // | commit tx |-----+
+    // +-----------+     |      +------------+
+    //                   +----->|            |
+    //    wallet input 2 ------>| anchor tx2 |
+    //                          +------------+
+    val commitTx = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+      miner.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+      signTransaction(miner, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      miner.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    val commitOutpoint = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))))
+    val Seq(anchorTx1, anchorTx2) = Seq(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat)).map(feerate => {
+      val externalInput = Map(commitOutpoint -> Transactions.claimP2WPKHOutputWeight.toLong)
+      val txNotFunded = Transaction(2, Seq(TxIn(commitOutpoint, Nil, 0)), Seq(TxOut(200_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+      wallet.fundTransaction(txNotFunded, feerate, replaceable = true, externalInput).pipeTo(sender.ref)
+      signTransaction(wallet, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
+      val partiallySignedTx = sender.expectMsgType[SignTransactionResponse].tx
+      assert(partiallySignedTx.txIn.size == 2) // a single wallet input should have been added
+      val commitInputIndex = partiallySignedTx.txIn.indexWhere(_.outPoint == commitOutpoint)
+      val sig = Transaction.signInput(partiallySignedTx, commitInputIndex, Script.pay2pkh(priv.publicKey), SigHash.SIGHASH_ALL, 100_000 sat, SigVersion.SIGVERSION_WITNESS_V0, priv)
+      val signedTx = partiallySignedTx.updateWitness(commitInputIndex, Script.witnessPay2wpkh(priv.publicKey, sig))
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    })
+    val Some(walletInput1) = anchorTx1.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
+    val Some(walletInput2) = anchorTx2.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
+    assert(walletInput1 != walletInput2)
+
+    // The second anchor transaction replaced the first one.
+    wallet.getMempoolTx(anchorTx1.txid).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
+    wallet.getMempoolTx(anchorTx2.txid).pipeTo(sender.ref)
+    sender.expectMsgType[MempoolTx]
+    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+    wallet.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+
+    // The second anchor transaction confirms, which frees up the wallet input of the first anchor transaction.
+    generateBlocks(1)
+    wallet.listUnspent().pipeTo(sender.ref)
+    val walletUtxos = sender.expectMsgType[Seq[Utxo]]
+    assert(walletUtxos.exists(_.txid == walletInput1.txid))
+    wallet.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+    sender.expectMsgType[FundTransactionResponse]
+  }
+
+  test("unlock transaction inputs when double-spent by an external transaction") {
+    assume(!useEclairSigner)
+
+    val sender = TestProbe()
+    val priv = randomKey()
+    val miner = makeBitcoinCoreClient()
+    // We initialize two separate wallets:
+    val wallet1 = new BitcoinCoreClient(createWallet("external_double_spend_1", sender))
+    val wallet2 = new BitcoinCoreClient(createWallet("external_double_spend_2", sender))
+    Seq(wallet1, wallet2).foreach(wallet => {
+      wallet.getReceiveAddress().pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+      miner.sendToAddress(address, 200_000 sat, 1).pipeTo(sender.ref)
+      sender.expectMsgType[TxId]
+    })
+    generateBlocks(1)
+
+    // We create the following transactions:
+    //
+    //                          +--------------+
+    //          wallet 1 ------>|              |
+    //                   +----->| htlc success |
+    // +-----------+     |      +--------------+
+    // | commit tx |-----+
+    // +-----------+     |      +--------------+
+    //                   +----->|              |
+    //          wallet 2 ------>| htlc timeout |
+    //                          +--------------+
+    val commitTx = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+      miner.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+      signTransaction(miner, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[SignTransactionResponse].tx
+      miner.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    val commitOutpoint = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))))
+    val Seq(htlcSuccessTx, htlcTimeoutTx) = Seq((wallet1, FeeratePerKw(1000 sat)), (wallet2, FeeratePerKw(2000 sat))).map { case (wallet, feerate) =>
+      val externalInput = Map(commitOutpoint -> Transactions.claimP2WPKHOutputWeight.toLong)
+      val txNotFunded = Transaction(2, Seq(TxIn(commitOutpoint, Nil, 0)), Seq(TxOut(200_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+      wallet.fundTransaction(txNotFunded, feerate, replaceable = true, externalInput).pipeTo(sender.ref)
+      signTransaction(wallet, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
+      val partiallySignedTx = sender.expectMsgType[SignTransactionResponse].tx
+      assert(partiallySignedTx.txIn.size == 2) // a single wallet input should have been added
+      val commitInputIndex = partiallySignedTx.txIn.indexWhere(_.outPoint == commitOutpoint)
+      val sig = Transaction.signInput(partiallySignedTx, commitInputIndex, Script.pay2pkh(priv.publicKey), SigHash.SIGHASH_ALL, 100_000 sat, SigVersion.SIGVERSION_WITNESS_V0, priv)
+      val signedTx = partiallySignedTx.updateWitness(commitInputIndex, Script.witnessPay2wpkh(priv.publicKey, sig))
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    val Some(walletInput1) = htlcSuccessTx.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
+    val Some(walletInput2) = htlcTimeoutTx.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
+    assert(walletInput1 != walletInput2)
+
+    // The second htlc transaction replaced the first one.
+    miner.getMempoolTx(htlcSuccessTx.txid).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
+    miner.getMempoolTx(htlcTimeoutTx.txid).pipeTo(sender.ref)
+    sender.expectMsgType[MempoolTx]
+    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
+    wallet1.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+
+    // The second anchor transaction confirms, which frees up the wallet input of the first anchor transaction.
+    generateBlocks(1)
+    wallet1.listUnspent().pipeTo(sender.ref)
+    val walletUtxos = sender.expectMsgType[Seq[Utxo]]
+    assert(walletUtxos.exists(_.txid == walletInput1.txid))
+    wallet1.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
+    sender.expectMsgType[FundTransactionResponse]
+  }
+
   test("keep transaction inputs locked if below mempool min fee") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
