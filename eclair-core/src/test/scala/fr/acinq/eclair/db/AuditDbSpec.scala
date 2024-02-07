@@ -169,6 +169,10 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, "funding")) // unconfirmed
       db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
 
+      assert(db.listPublished(randomBytes32()).isEmpty)
+      assert(db.listPublished(c4).map(_.txId).toSet.size == 2)
+      assert(db.listPublished(c4).map(_.desc) == Seq("funding", "funding"))
+
       // NB: we only count a relay fee for the outgoing channel, no the incoming one.
       assert(db.stats(0 unixms, TimestampMilli.now() + 1.milli).toSet == Set(
         Stats(channelId = c1, direction = "IN", avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 0 sat),

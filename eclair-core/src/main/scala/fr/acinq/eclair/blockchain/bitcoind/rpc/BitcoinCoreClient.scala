@@ -483,12 +483,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
 
-  /**
-   * Mark a transaction as abandoned, which will allow for its wallet inputs to be re-spent.
-   * This method can be used to replace "stuck" or evicted transactions.
-   * It only works on transactions which are not included in a block and are not currently in the mempool.
-   */
-  def abandonTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
+  override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
 

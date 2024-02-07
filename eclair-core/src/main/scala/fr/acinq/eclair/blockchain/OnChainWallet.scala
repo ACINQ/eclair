@@ -79,6 +79,25 @@ trait OnChainChannelFunder {
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
+   * Mark a transaction as abandoned, which will allow for its wallet inputs to be re-spent.
+   *
+   * If the transaction has been permanently double-spent by a direct conflict, there is no need to call this function,
+   * it will automatically be detected and the wallet inputs will be re-spent.
+   *
+   * This should only be used when the transaction has become invalid because one of its ancestors has been permanently
+   * double-spent. Since the wallet doesn't keep track of unconfirmed ancestors status, it cannot know that the
+   * transaction has become permanently invalid and will never be publishable again.
+   *
+   * This function must never be called on a transaction that isn't permanently invalidated, otherwise it would create
+   * a risk of accidentally double-spending ourselves:
+   *  - the transaction is abandoned
+   *  - its inputs are re-spent in another transaction
+   *  - but the initial transaction confirms because it had already reached the mempool of other nodes, unexpectedly
+   *    double-spending the second transaction
+   */
+  def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean]
+
+  /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.
    * Implementations may always return false if they don't want to implement it.
    */
