@@ -1738,7 +1738,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (d1.remoteCommitPublished.exists(_.commitTx.txid == tx.txid) || d1.nextRemoteCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         nodeParams.db.audit.listPublished(d.channelId).collect {
           case tx if tx.desc == "local-anchor" =>
-            log.warning("abandoning local-anchor txId={} (local commit was confirmed)", tx.txId)
+            log.warning("abandoning local-anchor txId={} (remote commit was confirmed)", tx.txId)
             wallet.abandon(tx.txId)
         }
       }
