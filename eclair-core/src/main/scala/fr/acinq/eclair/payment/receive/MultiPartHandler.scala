@@ -27,6 +27,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.NodeId.ShortChannelIdDir
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -36,7 +37,7 @@ import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, ShortChannelIdDir}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, randomBytes32}

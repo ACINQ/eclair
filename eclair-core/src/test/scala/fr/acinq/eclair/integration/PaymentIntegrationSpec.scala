@@ -23,6 +23,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, SatoshiLong}
+import fr.acinq.eclair.NodeId.ShortChannelIdDir
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
@@ -43,7 +44,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTra
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{CompactBlindedPath, Offer, OfferPaths, ShortChannelIdDir}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{CompactBlindedPath, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, OfferTypes}
 import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}

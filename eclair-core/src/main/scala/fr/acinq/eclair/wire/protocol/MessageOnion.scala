@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.{NodeId, ShortChannelId, UInt64}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
@@ -73,7 +73,7 @@ object MessageOnion {
 
   /** Per-hop payload for an intermediate node. */
   case class IntermediatePayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
-    val nextNode: Either[ShortChannelId, PublicKey] =
+    val nextNode: Either[ShortChannelId, NodeId] =
       blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(outgoingNodeId => Right(outgoingNodeId.nodeId))
         .getOrElse(Left(blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].get.shortChannelId))
   }

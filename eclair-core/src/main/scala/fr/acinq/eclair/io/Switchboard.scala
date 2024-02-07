@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
 import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.{NodeParams, SubscriptionsComplete}
 
@@ -159,9 +160,9 @@ object Switchboard {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
-  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command], register: ActorRef) extends PeerFactory {
+  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command], register: ActorRef, router: typed.ActorRef[Router.GetNodeId]) extends PeerFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, register, pendingChannelsRateLimiter), name = peerActorName(remoteNodeId))
+      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, register, router, pendingChannelsRateLimiter), name = peerActorName(remoteNodeId))
   }
 
   def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))

@@ -17,11 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.NodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
-import fr.acinq.eclair.{TimestampSecond, UInt64}
+import fr.acinq.eclair.{NodeId, TimestampSecond, UInt64}
 import scodec.{Attempt, Codec, Err}
 import scodec.codecs._
 
@@ -59,6 +61,8 @@ object OfferCodecs {
   private val shortChannelIdDirCodec: Codec[ShortChannelIdDir] =
     (("isNode1" | isNode1) ::
       ("scid" | realshortchannelid)).as[ShortChannelIdDir]
+
+  val nodeIdCodec: Codec[NodeId] = choice(shortChannelIdDirCodec.upcast[NodeId], publicKey.as[NodeId.Standard].upcast[NodeId])
 
   private val compactBlindedPathCodec: Codec[CompactBlindedPath] =
     (("introductionNode" | shortChannelIdDirCodec) ::

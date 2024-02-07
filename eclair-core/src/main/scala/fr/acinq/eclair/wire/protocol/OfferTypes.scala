@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
+import fr.acinq.eclair.NodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
@@ -35,8 +36,6 @@ import scala.util.{Failure, Try}
  * see https://github.com/lightning/bolts/blob/master/12-offer-encoding.md
  */
 object OfferTypes {
-  case class ShortChannelIdDir(isNode1: Boolean, scid: RealShortChannelId)
-
   // @formatter:off
   /** Data provided to reach the issuer of an offer or invoice. */
   sealed trait ContactInfo
