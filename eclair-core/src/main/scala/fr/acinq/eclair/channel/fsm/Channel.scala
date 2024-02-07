@@ -1626,12 +1626,18 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // which would otherwise stay locked forever in our bitcoind wallet.
           d.commitments.all
             .collect { case c: Commitment if commitment.fundingTxIndex <= c.fundingTxIndex => c.fundingTxId }
-            .foreach { txId => wallet.abandon(txId) }
+            .foreach { txId =>
+              log.warning("abandoning splice txId={} (alternative commitment was confirmed)", txId)
+              wallet.abandon(txId)
+            }
           // Any anchor transaction that we created based on the latest local or remote commit will never confirm either
           // so we need to abandon them to unlock their wallet inputs.
           nodeParams.db.audit.listPublished(d.channelId).collect {
-            case tx if tx.desc == "local-anchor" => wallet.abandon(tx.txId)
-            case tx if tx.desc == "remote-anchor" => wallet.abandon(tx.txId)
+            case tx if tx.desc == "local-anchor" => tx
+            case tx if tx.desc == "remote-anchor" => tx
+          }.foreach { tx =>
+            log.warning("abandoning {} txId={} (alternative commitment was confirmed)", tx.desc, tx.txId)
+            wallet.abandon(tx.txId)
           }
           val commitments1 = d.commitments.copy(
             active = commitment +: Nil,
@@ -1723,15 +1729,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // if the local or remote commitment tx just got confirmed, we abandon anchor transactions that were created based
       // on the other commitment: they will never confirm so we must free their wallet inputs.
       if (d1.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
-        nodeParams.db.audit.listPublished(d.channelId).collect { case tx if tx.desc == "remote-anchor" => wallet.abandon(tx.txId) }
+        nodeParams.db.audit.listPublished(d.channelId).collect {
+          case tx if tx.desc == "remote-anchor" =>
+            log.warning("abandoning remote-anchor txId={} (local commit was confirmed)", tx.txId)
+            wallet.abandon(tx.txId)
+        }
       }
       if (d1.remoteCommitPublished.exists(_.commitTx.txid == tx.txid) || d1.nextRemoteCommitPublished.exists(_.commitTx.txid == tx.txid)) {
-        nodeParams.db.audit.listPublished(d.channelId).collect { case tx if tx.desc == "local-anchor" => wallet.abandon(tx.txId) }
+        nodeParams.db.audit.listPublished(d.channelId).collect {
+          case tx if tx.desc == "local-anchor" =>
+            log.warning("abandoning local-anchor txId={} (local commit was confirmed)", tx.txId)
+            wallet.abandon(tx.txId)
+        }
       }
       if (d1.futureRemoteCommitPublished.exists(_.commitTx.txid == tx.txid) || d1.revokedCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         nodeParams.db.audit.listPublished(d.channelId).collect {
-          case tx if tx.desc == "local-anchor" => wallet.abandon(tx.txId)
-          case tx if tx.desc == "remote-anchor" => wallet.abandon(tx.txId)
+          case tx if tx.desc == "local-anchor" => tx
+          case tx if tx.desc == "remote-anchor" => tx
+        }.foreach { tx =>
+          log.warning("abandoning {} txId={} (future or revoked commitment was confirmed)", tx.desc, tx.txId)
+          wallet.abandon(tx.txId)
         }
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
