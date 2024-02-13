@@ -1678,7 +1678,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     // We must call abandontransaction to unlock the corresponding wallet inputs.
     Seq(spliceTx, anchorTx).foreach { walletTx =>
-      wallet.abandonTransaction(walletTx.txid).pipeTo(sender.ref)
+      wallet.abandon(walletTx.txid).pipeTo(sender.ref)
       sender.expectMsg(true)
     }
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
