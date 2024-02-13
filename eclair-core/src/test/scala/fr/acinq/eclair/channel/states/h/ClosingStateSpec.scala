@@ -646,9 +646,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val closingState = localClose(alice, alice2blockchain)
     val htlcTimeoutTx = getHtlcTimeoutTxs(closingState).head
 
-    // simulate a node restart
+    // simulate a node restart after a feerate increase
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
     alice ! INPUT_RESTORED(beforeRestart)
     alice2blockchain.expectMsgType[SetChannelId]
     awaitCond(alice.stateName == CLOSING)
@@ -683,6 +684,80 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcTimeoutTx.tx)
     closingState.claimMainDelayedOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid))
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcTimeoutTx.tx.txid)
+  }
+
+  test("recv INPUT_RESTORED (local commit with htlc-delayed transactions)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    // Alice has one incoming and one outgoing HTLC.
+    addHtlc(75_000_000 msat, alice, bob, alice2bob, bob2alice)
+    val (preimage, incomingHtlc) = addHtlc(80_000_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // Alice force-closes.
+    val closingState1 = localClose(alice, alice2blockchain)
+    assert(closingState1.claimMainDelayedOutputTx.nonEmpty)
+    val claimMainTx = closingState1.claimMainDelayedOutputTx.get.tx
+    assert(getHtlcSuccessTxs(closingState1).isEmpty)
+    assert(getHtlcTimeoutTxs(closingState1).length == 1)
+    val htlcTimeoutTx = getHtlcTimeoutTxs(closingState1).head.tx
+
+    // The commit tx confirms.
+    alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState1.commitTx)
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // Alice receives the preimage for the incoming HTLC.
+    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, commit = true)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimMainTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[HtlcTimeoutTx])
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[HtlcSuccessTx])
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainTx.txid)
+    alice2blockchain.expectMsgType[WatchOutputSpent]
+    alice2blockchain.expectMsgType[WatchOutputSpent]
+    alice2blockchain.expectMsgType[WatchOutputSpent]
+    alice2blockchain.expectNoMessage(100 millis)
+    val closingState2 = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    assert(getHtlcSuccessTxs(closingState2).length == 1)
+    val htlcSuccessTx = getHtlcSuccessTxs(closingState2).head.tx
+
+    // The HTLC txs confirms, so we publish 3rd-stage txs.
+    alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, htlcTimeoutTx)
+    val claimHtlcTimeoutDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcTimeoutDelayedTx.txid)
+    Transaction.correctlySpends(claimHtlcTimeoutDelayedTx, Seq(htlcTimeoutTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, htlcSuccessTx)
+    val claimHtlcSuccessDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcSuccessDelayedTx.txid)
+    Transaction.correctlySpends(claimHtlcSuccessDelayedTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    // We simulate a node restart after a feerate increase.
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    alice2blockchain.expectMsgType[SetChannelId]
+    awaitCond(alice.stateName == CLOSING)
+
+    // We re-publish closing transactions.
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimMainTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimHtlcTimeoutDelayedTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimHtlcSuccessDelayedTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcTimeoutDelayedTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcSuccessDelayedTx.txid)
+    alice2blockchain.expectMsgType[WatchOutputSpent]
+
+    // We replay the HTLC fulfillment: nothing happens since we already published a 3rd-stage transaction.
+    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, commit = true)
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // The remaining transactions confirm.
+    alice ! WatchTxConfirmedTriggered(BlockHeight(43), 0, claimMainTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(43), 1, claimHtlcTimeoutDelayedTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(43), 2, claimHtlcSuccessDelayedTx)
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with htlcs only signed by local in next remote commit)") { f =>
