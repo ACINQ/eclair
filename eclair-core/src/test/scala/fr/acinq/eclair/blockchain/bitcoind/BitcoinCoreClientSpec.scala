@@ -547,10 +547,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val wallet = new BitcoinCoreClient(createWallet("mempool_double_spend", sender))
     wallet.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    Seq(200_000 sat, 200_000 sat).foreach(amount => {
+    Seq(200_000 sat, 200_000 sat).foreach { amount =>
       miner.sendToAddress(address, amount, 1).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
-    })
+    }
     generateBlocks(1)
 
     // We create the following transactions:
@@ -574,7 +574,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       signedTx
     }
     val commitOutpoint = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))))
-    val Seq(anchorTx1, anchorTx2) = Seq(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat)).map(feerate => {
+    val Seq(anchorTx1, anchorTx2) = Seq(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat)).map { feerate =>
       val externalInput = Map(commitOutpoint -> Transactions.claimP2WPKHOutputWeight.toLong)
       val txNotFunded = Transaction(2, Seq(TxIn(commitOutpoint, Nil, 0)), Seq(TxOut(200_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
       wallet.fundTransaction(txNotFunded, feerate, replaceable = true, externalInput).pipeTo(sender.ref)
@@ -587,7 +587,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       wallet.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
       signedTx
-    })
+    }
     val Some(walletInput1) = anchorTx1.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
     val Some(walletInput2) = anchorTx2.txIn.collectFirst { case i if i.outPoint != commitOutpoint => i.outPoint }
     assert(walletInput1 != walletInput2)
@@ -619,12 +619,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We initialize two separate wallets:
     val wallet1 = new BitcoinCoreClient(createWallet("external_double_spend_1", sender))
     val wallet2 = new BitcoinCoreClient(createWallet("external_double_spend_2", sender))
-    Seq(wallet1, wallet2).foreach(wallet => {
+    Seq(wallet1, wallet2).foreach { wallet =>
       wallet.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
       miner.sendToAddress(address, 200_000 sat, 1).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
-    })
+    }
     generateBlocks(1)
 
     // We create the following transactions:
@@ -1478,7 +1478,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // This will let us fill the mempool by creating large transactions spending those utxos.
     val bigInputScript = Script.write(Seq.fill(200)(Seq(OP_PUSHDATA(ByteVector.fill(15)(42)), OP_DROP)).flatten)
     val largeInputsCount = 110
-    val parentTxs = (1 to 15).map(_ => {
+    val parentTxs = (1 to 15).map { _ =>
       val outputs = Seq.fill(largeInputsCount)(TxOut(50_000 sat, Script.pay2wsh(bigInputScript)))
       val txNotFunded = Transaction(2, Nil, outputs, 0)
       miner.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(500 sat), changePosition = Some(outputs.length)), feeBudget_opt = None).pipeTo(sender.ref)
@@ -1488,7 +1488,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       miner.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
       signedTx
-    })
+    }
     generateBlocks(1)
 
     /** Spend all outputs of the given parent transaction, creating a large mempool transaction. */
@@ -1497,10 +1497,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txIn = (fromInput until toInput).map(i => TxIn(OutPoint(parentTx, i), ByteVector.empty, 0, ScriptWitness(Seq(ByteVector(1), bigInputScript))))
       val txOut = Seq(TxOut(outputAmount, Script.pay2wpkh(randomKey().publicKey)))
       var psbt = new Psbt(Transaction(2, txIn, txOut, 0))
-      (fromInput until toInput).foreach(i => {
+      (fromInput until toInput).foreach { i =>
         psbt = psbt.updateWitnessInput(OutPoint(parentTx, i), parentTx.txOut(i), null, null, null, psbt.getInput(i - fromInput).getDerivationPaths).getRight
         psbt = psbt.finalizeWitnessInput(i - fromInput, ScriptWitness(Seq(ByteVector(1), bigInputScript))).getRight
-      })
+      }
       val signedTx: Transaction = psbt.extract().getRight
       assert(signedTx.weight() <= 400_000) // standard transactions cannot exceed 400 000 WU
       miner.publishTransaction(signedTx).pipeTo(sender.ref)
@@ -1511,7 +1511,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val (priv1, priv2) = (randomKey(), randomKey())
     val fundingRedeemScript = Scripts.multiSig2of2(priv1.publicKey, priv2.publicKey)
     val fundingScript = Script.pay2wsh(fundingRedeemScript)
-    val fundingUtxos = (1 to 2).map(_ => {
+    val fundingUtxos = (1 to 2).map { _ =>
       val txNotFunded = Transaction(2, Nil, Seq(TxOut(500_000 sat, fundingScript)), 0)
       miner.fundTransaction(txNotFunded, FeeratePerKw(2500 sat), replaceable = true).pipeTo(sender.ref)
       val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
@@ -1520,7 +1520,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       miner.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
       OutPoint(signedTx.txid, signedTx.txOut.indexWhere(_.amount == 500_000.sat))
-    })
+    }
 
     /** Spend the given utxo using the 2-of-2 funding script specified above and send to the same script. */
     def spendFundingScript(fundingUtxo: OutPoint, previousAmount: Satoshi, nextAmount: Satoshi): Transaction = {
@@ -1537,10 +1537,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val wallet = new BitcoinCoreClient(createWallet("mempool_eviction", sender))
     wallet.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    (1 to 2).foreach(_ => {
+    (1 to 2).foreach { _ =>
       miner.sendToAddress(address, 500_000 sat, 1).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
-    })
+    }
     generateBlocks(1)
 
     wallet.listUnspent().pipeTo(sender.ref)
@@ -1620,19 +1620,22 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We start with very large transactions and then use smaller transaction to completely fill the mempool.
     parentTxs.take(12).foreach(tx => publishLargeTx(tx, 0, largeInputsCount, FeeratePerKw(5_000 sat)))
     (0 until largeInputsCount).foreach(i => publishLargeTx(parentTxs.last, i, i + 1, FeeratePerKw(5_000 sat)))
-    Seq(spliceTx, anchorTx).foreach(walletTx => {
+    Seq(spliceTx, anchorTx).foreach { walletTx =>
       wallet.getMempoolTx(walletTx.txid).pipeTo(sender.ref)
       assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
-    })
+    }
 
     // The wallet transactions have been evicted, but they must be kept inside the wallet and not be double-spent.
     val txNotFunded = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
-    Seq(spliceTx, anchorTx).foreach(walletTx => {
-      wallet.rpcClient.invoke("gettransaction", walletTx.txid).map(json => Transaction.read((json \ "hex").extract[String])).pipeTo(sender.ref)
-      assert(sender.expectMsgType[Transaction].txid == walletTx.txid)
-    })
+    Seq(spliceTx, anchorTx).foreach { walletTx =>
+      wallet.rpcClient.invoke("gettransaction", walletTx.txid).pipeTo(sender.ref)
+      val json = sender.expectMsgType[JValue]
+      assert(!(json \ "trusted").extract[Boolean])
+      assert(!(json \ "details" \\ "abandoned").extract[Boolean])
+      assert(Transaction.read((json \ "hex").extract[String]).txid == walletTx.txid)
+    }
 
     // We now double-spend parent transactions, which permanently invalidates our wallet transactions:
     //                   +------------------+     +------------------+     +-----------+
@@ -1655,29 +1658,29 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     generateBlocks(1)
 
     // Both funding outputs have been spent by transactions that are external to our wallet.
-    fundingUtxos.foreach(utxo => {
+    fundingUtxos.foreach { utxo =>
       wallet.isTransactionOutputSpendable(utxo.txid, utxo.index.toInt, includeMempool = false).pipeTo(sender.ref)
       sender.expectMsg(false)
-    })
-    Seq(remoteCommitTx1, remoteCommitTx2).foreach(tx => {
+    }
+    Seq(remoteCommitTx1, remoteCommitTx2).foreach { tx =>
       wallet.getTxConfirmations(tx.txid).pipeTo(sender.ref)
       sender.expectMsg(Some(1))
-    })
+    }
 
     // Wallet transaction are still kept inside the wallet and cannot be double-spent, even though they have been
-    // permanently double-spent.
+    // permanently double-spent at their ancestors' level.
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
-    Seq(spliceTx, anchorTx).foreach(walletTx => {
+    Seq(spliceTx, anchorTx).foreach { walletTx =>
       wallet.rpcClient.invoke("gettransaction", walletTx.txid).map(json => Transaction.read((json \ "hex").extract[String])).pipeTo(sender.ref)
       assert(sender.expectMsgType[Transaction].txid == walletTx.txid)
-    })
+    }
 
     // We must call abandontransaction to unlock the corresponding wallet inputs.
-    Seq(spliceTx, anchorTx).foreach(walletTx => {
+    Seq(spliceTx, anchorTx).foreach { walletTx =>
       wallet.abandonTransaction(walletTx.txid).pipeTo(sender.ref)
       sender.expectMsg(true)
-    })
+    }
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
     sender.expectMsgType[FundTransactionResponse]
   }
