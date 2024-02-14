@@ -21,7 +21,7 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe =
 import akka.actor.typed.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.NodeId.ShortChannelIdDir
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.message.OnionMessages.RoutingStrategy.FindRoute
 import fr.acinq.eclair.message.Postman

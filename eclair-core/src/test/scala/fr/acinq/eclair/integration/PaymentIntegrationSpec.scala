@@ -23,7 +23,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, SatoshiLong}
-import fr.acinq.eclair.NodeId.ShortChannelIdDir
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}

@@ -12,7 +12,7 @@ import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, OutgoingNodeId, PathId, PaymentConstraints, PaymentRelay}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeId, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, EncodedNodeId, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -30,7 +30,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       assert(decoded == expected)
       val nextNodeId = randomKey().publicKey
       val Right(payload) = IntermediatePayload.validate(decoded, TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)), randomKey().publicKey)
-      assert(payload.nextNode == Right(NodeId(nextNodeId)))
+      assert(payload.nextNode == Right(EncodedNodeId(nextNodeId)))
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
     }

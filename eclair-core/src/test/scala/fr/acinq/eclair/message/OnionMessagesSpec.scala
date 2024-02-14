@@ -27,7 +27,7 @@ import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage, OnionMessagePayloadTlv, OnionRoutingCodecs, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
-import fr.acinq.eclair.{NodeId, ShortChannelId, UInt64, randomBytes, randomKey}
+import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64, randomBytes, randomKey}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.funsuite.AnyFunSuite
@@ -116,13 +116,13 @@ class OnionMessagesSpec extends AnyFunSuite {
     // Checking that the onion is relayed properly
     process(alice, onionForAlice) match {
       case SendMessage(Right(nextNodeId), onionForBob) =>
-        assert(nextNodeId == NodeId(bob.publicKey))
+        assert(nextNodeId == EncodedNodeId(bob.publicKey))
         process(bob, onionForBob) match {
           case SendMessage(Right(nextNodeId), onionForCarol) =>
-            assert(nextNodeId == NodeId(carol.publicKey))
+            assert(nextNodeId == EncodedNodeId(carol.publicKey))
             process(carol, onionForCarol) match {
               case SendMessage(Right(nextNodeId), onionForDave) =>
-                assert(nextNodeId == NodeId(dave.publicKey))
+                assert(nextNodeId == EncodedNodeId(dave.publicKey))
                 process(dave, onionForDave) match {
                   case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
                   case x => fail(x.toString)
@@ -235,10 +235,10 @@ class OnionMessagesSpec extends AnyFunSuite {
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {
       case SendMessage(Right(nextNodeId), onionForBob) =>
-        assert(nextNodeId == NodeId(bob.publicKey))
+        assert(nextNodeId == EncodedNodeId(bob.publicKey))
         process(bob, onionForBob) match {
           case SendMessage(Right(nextNodeId), onionForCarol) =>
-            assert(nextNodeId == NodeId(carol.publicKey))
+            assert(nextNodeId == EncodedNodeId(carol.publicKey))
             process(carol, onionForCarol) match {
               case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
               case x => fail(x.toString)
@@ -329,13 +329,13 @@ class OnionMessagesSpec extends AnyFunSuite {
     // Checking that the onion is relayed properly
     process(alice, message) match {
       case SendMessage(Right(nextNodeId), onionForBob) =>
-        assert(nextNodeId == NodeId(bob.publicKey))
+        assert(nextNodeId == EncodedNodeId(bob.publicKey))
         process(bob, onionForBob) match {
           case SendMessage(Right(nextNodeId), onionForCarol) =>
-            assert(nextNodeId == NodeId(carol.publicKey))
+            assert(nextNodeId == EncodedNodeId(carol.publicKey))
             process(carol, onionForCarol) match {
               case SendMessage(Right(nextNodeId), onionForDave) =>
-                assert(nextNodeId == NodeId(dave.publicKey))
+                assert(nextNodeId == EncodedNodeId(dave.publicKey))
                 process(dave, onionForDave) match {
                   case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
                   case x => fail(x.toString)

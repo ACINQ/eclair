@@ -23,7 +23,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{NodeId, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{EncodedNodeId, NodeParams, ShortChannelId}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
@@ -37,7 +37,7 @@ object MessageRelay {
   sealed trait Command
   case class RelayMessage(messageId: ByteVector32,
                           prevNodeId: PublicKey,
-                          nextNode: Either[ShortChannelId, NodeId],
+                          nextNode: Either[ShortChannelId, EncodedNodeId],
                           msg: OnionMessage,
                           policy: RelayPolicy,
                           replyTo_opt: Option[typed.ActorRef[Status]]) extends Command
@@ -79,10 +79,10 @@ object MessageRelay {
       case (context, RelayMessage(messageId, prevNodeId, Left(outgoingChannelId), msg, policy, replyTo_opt)) =>
         register ! Register.GetNextNodeId(context.messageAdapter(WrappedOptionalNodeId), outgoingChannelId)
         waitForNextNodeId(nodeParams, messageId, switchboard, register, router, prevNodeId, outgoingChannelId, msg, policy, replyTo_opt)
-      case (context, RelayMessage(messageId, prevNodeId, Right(NodeId.ShortChannelIdDir(isNode1, scid)), msg, policy, replyTo_opt)) =>
+      case (context, RelayMessage(messageId, prevNodeId, Right(EncodedNodeId.ShortChannelIdDir(isNode1, scid)), msg, policy, replyTo_opt)) =>
         router ! Router.GetNodeId(context.messageAdapter(WrappedOptionalNodeId), scid, isNode1)
         waitForNextNodeId(nodeParams, messageId, switchboard, register, router, prevNodeId, scid, msg, policy, replyTo_opt)
-      case (context, RelayMessage(messageId, prevNodeId, Right(NodeId.Standard(nextNodeId)), msg, policy, replyTo_opt)) =>
+      case (context, RelayMessage(messageId, prevNodeId, Right(EncodedNodeId.Plain(nextNodeId)), msg, policy, replyTo_opt)) =>
         withNextNodeId(context, nodeParams, messageId, switchboard, register, router, prevNodeId, nextNodeId, msg, policy, replyTo_opt)
     }
   }

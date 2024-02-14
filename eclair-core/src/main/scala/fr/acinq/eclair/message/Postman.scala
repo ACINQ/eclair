@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Router.{MessageRoute, MessageRouteNotFound, Messag
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoiceRequestPayload}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{CompactBlindedPath, ContactInfo}
 import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{NodeId, NodeParams, randomBytes32, randomKey}
+import fr.acinq.eclair.{EncodedNodeId, NodeParams, randomBytes32, randomKey}
 
 import scala.collection.mutable
 
@@ -215,7 +215,7 @@ private class SendingMessage(nodeParams: NodeParams,
         Behaviors.stopped
       case Right((nextNodeId, message)) =>
         val relay = context.spawn(Behaviors.supervise(MessageRelay(nodeParams, switchboard, register, router)).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
-        relay ! MessageRelay.RelayMessage(messageId, nodeParams.nodeId, Right(NodeId(nextNodeId)), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
+        relay ! MessageRelay.RelayMessage(messageId, nodeParams.nodeId, Right(EncodedNodeId(nextNodeId)), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
         waitForSent()
     }
   }

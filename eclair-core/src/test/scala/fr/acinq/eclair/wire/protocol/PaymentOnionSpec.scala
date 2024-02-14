@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion._
 import fr.acinq.eclair.wire.protocol.PaymentOnionCodecs._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, NodeId, RealShortChannelId, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, EncodedNodeId, RealShortChannelId, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -167,7 +167,7 @@ class PaymentOnionSpec extends AnyFunSuite {
   test("encode/decode node relay to blinded paths per-hop payload") {
     val features = Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional).toByteVector
     val blindedRoute = OfferTypes.CompactBlindedPath(
-      NodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(468)),
+      EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(468)),
       PublicKey(hex"0232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e"),
       Seq(RouteBlinding.BlindedNode(PublicKey(hex"03823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac980"), hex""))
     )
