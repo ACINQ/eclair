@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.BitcoinError.ChainHashMismatch
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Script, TxHash, TxId, addressToPublicKeyScript}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
@@ -56,7 +57,7 @@ class PackageSpec extends AnyFunSuite {
 
     // wrong chain
     val Left(failure) = addressToPublicKeyScript(Block.TestnetGenesisBlock.hash, Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160))
-    assert(failure.toString.contains("chain hash mismatch"))
+    assert(failure.isInstanceOf[ChainHashMismatch])
 
     assert(addressToPublicKeyScript(Block.TestnetGenesisBlock.hash, Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160)).isLeft)
     assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, Base58Check.encode(Base58.Prefix.PubkeyAddress, pub.hash160)).isLeft)
