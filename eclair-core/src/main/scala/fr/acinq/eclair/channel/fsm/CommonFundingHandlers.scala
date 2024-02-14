@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -83,6 +84,12 @@ trait CommonFundingHandlers extends CommonHandlers {
     }
     val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
+    // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
+    // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
+    // clean-up the htlc data that we were storing for the matching penalty transactions.
+    d.commitments.all.find(_.fundingTxId == w.tx.txid).map(_.firstRemoteCommitIndex).foreach {
+      commitIndex => context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = commitIndex))
+    }
     d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
       case (commitments1, commitment) =>
         // First of all, we watch the funding tx that is now confirmed.

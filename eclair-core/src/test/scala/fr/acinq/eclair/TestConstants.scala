@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
@@ -225,7 +226,8 @@ object TestConstants {
         timeout = 200 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -391,7 +393,8 @@ object TestConstants {
         timeout = 100 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

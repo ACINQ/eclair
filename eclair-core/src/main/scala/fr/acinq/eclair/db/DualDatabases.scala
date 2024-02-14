@@ -231,6 +231,16 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.removeChannel(channelId)
   }
 
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = {
+    runAsync(secondary.markHtlcInfosForRemoval(channelId, beforeCommitIndex))
+    primary.markHtlcInfosForRemoval(channelId, beforeCommitIndex)
+  }
+
+  override def removeHtlcInfos(batchSize: Int): Unit = {
+    runAsync(secondary.removeHtlcInfos(batchSize))
+    primary.removeHtlcInfos(batchSize)
+  }
+
   override def listLocalChannels(): Seq[PersistentChannelData] = {
     runAsync(secondary.listLocalChannels())
     primary.listLocalChannels()

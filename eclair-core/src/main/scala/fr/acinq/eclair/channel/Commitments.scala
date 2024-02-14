@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
@@ -266,12 +265,16 @@ case class NextRemoteCommit(sig: CommitSig, commit: RemoteCommit)
 /**
  * A minimal commitment for a given funding tx.
  *
- * @param fundingTxIndex index of the funding tx in the life of the channel:
- *                       - initial funding tx has index 0
- *                       - splice txs have index 1, 2, ...
- *                       - commitments that share the same index are rbfed
+ * @param fundingTxIndex         index of the funding tx in the life of the channel:
+ *                                - initial funding tx has index 0
+ *                                - splice txs have index 1, 2, ...
+ *                                - commitments that share the same index are rbfed
+ * @param firstRemoteCommitIndex index of the first remote commitment we signed that spends the funding transaction.
+ *                               Once the funding transaction confirms, our peer won't be able to publish revoked
+ *                               commitments with lower commitment indices.
  */
 case class Commitment(fundingTxIndex: Long,
+                      firstRemoteCommitIndex: Long,
                       remoteFundingPubKey: PublicKey,
                       localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
@@ -730,6 +733,7 @@ object Commitment {
 /** Subset of Commitments when we want to work with a single, specific commitment. */
 case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           fundingTxIndex: Long,
+                          firstRemoteCommitIndex: Long,
                           remoteFundingPubKey: PublicKey,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
@@ -739,7 +743,7 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
   val commitInput = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId = commitInput.outPoint.txid
   val capacity = commitInput.txOut.amount
-  val commitment = Commitment(fundingTxIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
+  val commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 
   def localChannelReserve: Satoshi = commitment.localChannelReserve(params)
 
@@ -803,7 +807,7 @@ case class Commitments(params: ChannelParams,
   lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
   val all: Seq[Commitment] = active ++ inactive
 
