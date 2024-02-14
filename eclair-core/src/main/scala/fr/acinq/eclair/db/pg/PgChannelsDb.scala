@@ -235,7 +235,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
       // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
       // We instead run an asynchronous job to clean up that data in small batches.
-      forgetHtlcInfos(channelId, Long.MaxValue)
+      markHtlcInfosForRemoval(channelId, Long.MaxValue)
 
       using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE, closed_timestamp=? WHERE channel_id=?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.now()))
@@ -245,7 +245,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
-  override def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Postgres) {
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO local.htlc_infos_to_remove (channel_id, before_commitment_number) VALUES(?, ?) ON CONFLICT (channel_id) DO UPDATE SET before_commitment_number = EXCLUDED.before_commitment_number")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -273,6 +273,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.setLong(3, beforeCommitmentNumber)
           statement.executeUpdate()
         }
+        logger.info(s"deleted $deletedCount rows from htlc_infos for channelId=$channelId beforeCommitmentNumber=$beforeCommitmentNumber")
         // If we've deleted all HTLC information for that channel, we can now remove it from the DB.
         if (deletedCount < batchSize) {
           using(pg.prepareStatement("DELETE FROM local.htlc_infos_to_remove WHERE channel_id=?")) { statement =>

@@ -88,7 +88,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
     // clean-up the htlc data that we were storing for the matching penalty transactions.
     d.commitments.all.find(_.fundingTxId == w.tx.txid).map(_.firstRemoteCommitIndex).foreach {
-      commitIndex => context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, commitIndex))
+      commitIndex => context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = commitIndex))
     }
     d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
       case (commitments1, commitment) =>

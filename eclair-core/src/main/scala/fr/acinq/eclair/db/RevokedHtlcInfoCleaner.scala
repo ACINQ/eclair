@@ -46,7 +46,7 @@ object RevokedHtlcInfoCleaner {
         timers.startTimerWithFixedDelay(DeleteBatch, config.interval)
         Behaviors.receiveMessage {
           case ForgetHtlcInfos(channelId, beforeCommitIndex) =>
-            db.forgetHtlcInfos(channelId, beforeCommitIndex)
+            db.markHtlcInfosForRemoval(channelId, beforeCommitIndex)
             Behaviors.same
           case DeleteBatch =>
             db.removeHtlcInfos(config.batchSize)

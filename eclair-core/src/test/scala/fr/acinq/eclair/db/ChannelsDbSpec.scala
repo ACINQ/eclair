@@ -119,7 +119,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.addHtlcInfo(channel1.channelId, 49, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
-      db.forgetHtlcInfos(channel1.channelId, commitNumberSplice1)
+      db.markHtlcInfosForRemoval(channel1.channelId, commitNumberSplice1)
       db.addHtlcInfo(channel1.channelId, 51, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel1.channelId, 52, randomBytes32(), CltvExpiry(561))
       db.removeChannel(channel1.channelId)
@@ -129,11 +129,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel2.channelId, 49, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel2.channelId, 50, randomBytes32(), CltvExpiry(561))
-      db.forgetHtlcInfos(channel2.channelId, commitNumberSplice1)
+      db.markHtlcInfosForRemoval(channel2.channelId, commitNumberSplice1)
       db.addHtlcInfo(channel2.channelId, 74, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel2.channelId, 75, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel2.channelId, 76, randomBytes32(), CltvExpiry(561))
-      db.forgetHtlcInfos(channel2.channelId, commitNumberSplice2)
+      db.markHtlcInfosForRemoval(channel2.channelId, commitNumberSplice2)
 
       // We asynchronously clean-up the HTLC data from the DB in small batches.
       val obsoleteHtlcInfo = Seq(

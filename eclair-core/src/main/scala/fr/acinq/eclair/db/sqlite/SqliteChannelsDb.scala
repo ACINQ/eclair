@@ -162,7 +162,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
     // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
     // We instead run an asynchronous job to clean up that data in small batches.
-    forgetHtlcInfos(channelId, Long.MaxValue)
+    markHtlcInfosForRemoval(channelId, Long.MaxValue)
 
     using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1, closed_timestamp=? WHERE channel_id=?")) { statement =>
       statement.setLong(1, TimestampMilli.now().toLong)
@@ -171,7 +171,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Sqlite) {
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE htlc_infos_to_remove SET before_commitment_number=? WHERE channel_id=?")) { update =>
       update.setLong(1, beforeCommitIndex)
       update.setBytes(2, channelId.toArray)
@@ -202,6 +202,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         statement.setLong(3, beforeCommitmentNumber)
         statement.executeUpdate()
       }
+      logger.info(s"deleted $deletedCount rows from htlc_infos for channelId=$channelId beforeCommitmentNumber=$beforeCommitmentNumber")
       // If we've deleted all HTLC information for that channel, we can now remove it from the DB.
       if (deletedCount < batchSize) {
         using(sqlite.prepareStatement("DELETE FROM htlc_infos_to_remove WHERE channel_id=?")) { statement =>

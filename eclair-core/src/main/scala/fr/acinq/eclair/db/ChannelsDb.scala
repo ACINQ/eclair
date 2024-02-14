@@ -34,7 +34,7 @@ trait ChannelsDb {
   def removeChannel(channelId: ByteVector32): Unit
 
   /** Mark revoked HTLC information as obsolete. It will be removed from the DB once [[removeHtlcInfos]] is called. */
-  def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit
+  def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit
 
   /** Remove up to batchSize obsolete revoked HTLC information. */
   def removeHtlcInfos(batchSize: Int): Unit

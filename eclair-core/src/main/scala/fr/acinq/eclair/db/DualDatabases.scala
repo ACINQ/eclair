@@ -225,9 +225,9 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.removeChannel(channelId)
   }
 
-  override def forgetHtlcInfos(channelId: ByteVector32, beforeCommitIndex: Long): Unit = {
-    runAsync(secondary.forgetHtlcInfos(channelId, beforeCommitIndex))
-    primary.forgetHtlcInfos(channelId, beforeCommitIndex)
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = {
+    runAsync(secondary.markHtlcInfosForRemoval(channelId, beforeCommitIndex))
+    primary.markHtlcInfosForRemoval(channelId, beforeCommitIndex)
   }
 
   override def removeHtlcInfos(batchSize: Int): Unit = {
