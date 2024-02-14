@@ -45,7 +45,7 @@ private[channel] object ChannelTypes3 {
     def migrate(): channel.Commitments = channel.Commitments(
       ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams.migrate(), channelFlags),
       CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
-      Seq(Commitment(fundingTxIndex = 0, remoteFundingPubKey = remoteParams.fundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit)))),
+      Seq(Commitment(fundingTxIndex = 0, firstRemoteCommitIndex = 0, remoteFundingPubKey = remoteParams.fundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit)))),
       inactive = Nil,
       remoteNextCommitInfo.fold(w => Left(WaitForRev(w.sentAfterLocalCommitIndex)), remotePerCommitmentPoint => Right(remotePerCommitmentPoint)),
       remotePerCommitmentSecrets,

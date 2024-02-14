@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.pattern.pipe
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, TxHash}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -277,6 +277,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               )
               val commitment = Commitment(
                 fundingTxIndex = 0,
+                firstRemoteCommitIndex = 0,
                 remoteFundingPubKey = remoteFundingPubKey,
                 localFundingStatus = SingleFundedUnconfirmedFundingTx(None),
                 remoteFundingStatus = RemoteFundingStatus.NotLocked,
@@ -323,6 +324,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Success(_) =>
           val commitment = Commitment(
             fundingTxIndex = 0,
+            firstRemoteCommitIndex = 0,
             remoteFundingPubKey = remoteFundingPubKey,
             localFundingStatus = SingleFundedUnconfirmedFundingTx(Some(fundingTx)),
             remoteFundingStatus = RemoteFundingStatus.NotLocked,
@@ -389,7 +391,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       stay() using d.copy(deferred = Some(remoteChannelReady)) // no need to store, they will re-send if we get disconnected
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, None, None)
+      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, None)
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
         case Right((commitments1, _)) =>
           log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)

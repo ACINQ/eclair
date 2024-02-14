@@ -183,7 +183,6 @@ class ChannelCodecs4Spec extends AnyFunSuite {
         )),
         remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
         localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)),
-      firstCommitIndex_opt = None
     )
     assert(decoded == dualFundedUnconfirmedFundingTx)
   }
