@@ -56,7 +56,7 @@ class SqliteNetworkDb(val sqlite: Connection) extends NetworkDb with Logging {
       case None =>
         statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
-      case Some(v@1) =>
+      case Some(v) if v >= 1 && v < CURRENT_VERSION =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
       case Some(CURRENT_VERSION) =>

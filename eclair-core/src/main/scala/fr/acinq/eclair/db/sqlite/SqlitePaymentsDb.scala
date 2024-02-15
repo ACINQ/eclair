@@ -118,7 +118,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
         statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON sent_payments(offer_id)")
         statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
-      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
+      case Some(v) if v >= 1 && v < CURRENT_VERSION =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)

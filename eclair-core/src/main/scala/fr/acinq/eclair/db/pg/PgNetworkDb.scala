@@ -70,7 +70,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
           statement.executeUpdate("CREATE SCHEMA network")
           statement.executeUpdate("CREATE TABLE network.nodes (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL)")
           statement.executeUpdate("CREATE TABLE network.public_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat BIGINT NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL, channel_announcement_json JSONB NOT NULL, channel_update_1_json JSONB NULL, channel_update_2_json JSONB NULL)")
-        case Some(v@(2 | 3)) =>
+        case Some(v) if v >= 2 && v < CURRENT_VERSION =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)

@@ -47,7 +47,7 @@ class SqlitePendingCommandsDb(val sqlite: Connection) extends PendingCommandsDb 
       case None =>
         // note: should we use a foreign key to local_channels table here?
         statement.executeUpdate("CREATE TABLE pending_settlement_commands (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
-      case Some(v@1) =>
+      case Some(v) if v >= 1 && v < CURRENT_VERSION =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do

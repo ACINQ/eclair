@@ -50,7 +50,7 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       case None =>
         statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
-      case Some(v@1) =>
+      case Some(v) if v >= 1 && v < CURRENT_VERSION =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do

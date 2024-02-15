@@ -89,7 +89,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           statement.executeUpdate("CREATE INDEX sent_payment_offer_idx ON payments.sent(offer_id)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
-        case Some(v@(4 | 5 | 6 | 7)) =>
+        case Some(v) if v >= 4 && v < CURRENT_VERSION =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)

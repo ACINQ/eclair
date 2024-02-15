@@ -60,7 +60,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
           statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
-        case Some(v@(1 | 2)) =>
+        case Some(v) if v >= 1 && v < CURRENT_VERSION =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 2) {
             migration12(statement)

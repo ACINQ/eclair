@@ -58,7 +58,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
           // note: should we use a foreign key to local_channels table here?
           statement.executeUpdate("CREATE TABLE local.pending_settlement_commands (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
-        case Some(v@(1 | 2)) =>
+        case Some(v) if v >= 1 && v < CURRENT_VERSION =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 2) {
             migration12(statement)
