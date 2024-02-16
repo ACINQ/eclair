@@ -137,6 +137,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   val pubkey = privkey.publicKey
   // We create a new dummy input transaction for every funding request.
   var inputs = Seq.empty[Transaction]
+  val published = collection.concurrent.TrieMap.empty[TxId, Transaction]
   var rolledback = Seq.empty[Transaction]
   var doubleSpent = Set.empty[TxId]
   var abandoned = Set.empty[TxId]
@@ -187,6 +188,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
     inputs = inputs :+ tx
+    published += (tx.txid -> tx)
     Future.successful(tx.txid)
   }
 

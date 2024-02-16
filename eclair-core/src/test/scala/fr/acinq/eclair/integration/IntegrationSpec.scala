@@ -103,6 +103,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${ShutdownAnySegwit.rfcName}" -> "optional",
     s"eclair.features.${ChannelType.rfcName}" -> "optional",
     s"eclair.features.${RouteBlinding.rfcName}" -> "optional",
+    // We keep dual-funding disabled in tests, unless explicitly requested, as most of the network doesn't support it yet.
+    s"eclair.features.${DualFunding.rfcName}" -> "disabled",
   ).asJava)
 
   val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
