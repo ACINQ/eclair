@@ -21,6 +21,7 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe =
 import akka.actor.typed.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.message.OnionMessages.RoutingStrategy.FindRoute
 import fr.acinq.eclair.message.Postman
@@ -30,7 +31,7 @@ import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedContactInfo}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.InvoicePayload
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo, ShortChannelIdDir}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, RealShortChannelId, TestConstants, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome

@@ -64,6 +64,7 @@ class PeerSpec extends FixtureSpec {
     val channel = TestProbe()
     val switchboard = TestProbe()
     val register = TestProbe()
+    val router = TestProbe()
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
@@ -99,7 +100,7 @@ class PeerSpec extends FixtureSpec {
       case _ => KeepRunning
     })
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, register.ref, mockLimiter.ref))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref, register.ref, router.ref, mockLimiter.ref))
 
     FixtureParam(aliceParams, remoteNodeId, system, peer, peerConnection, channel, switchboard, register, mockLimiter.ref)
   }

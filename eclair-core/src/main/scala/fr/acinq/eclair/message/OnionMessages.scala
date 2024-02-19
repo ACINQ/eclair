@@ -17,7 +17,7 @@
 package fr.acinq.eclair.message
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{EncodedNodeId, ShortChannelId}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
@@ -105,9 +105,9 @@ object OnionMessages {
           case Left(_) => None
           case Right(decoded) =>
             decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId] match {
-              case None => None
-              case Some(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)) =>
+              case Some(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.Plain(nextNodeId))) =>
                 Some(Sphinx.RouteBlinding.BlindedRoute(nextNodeId, decoded.nextBlinding, route.blindedNodes.tail))
+              case _ => None // TODO: allow compact node id and OutgoingChannelId
             }
         }
       case BlindedPath(route) if intermediateNodes.isEmpty => Some(route)
@@ -165,7 +165,7 @@ object OnionMessages {
   // @formatter:off
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
-  case class SendMessage(nextNode: Either[ShortChannelId, PublicKey], message: OnionMessage) extends Action
+  case class SendMessage(nextNode: Either[ShortChannelId, EncodedNodeId], message: OnionMessage) extends Action
   case class ReceiveMessage(finalPayload: FinalPayload) extends Action
 
   sealed trait DropReason
@@ -211,8 +211,8 @@ object OnionMessages {
               case Left(f) => DropMessage(f)
               case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
                 case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-                  case SendMessage(Right(nextNodeId), nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
-                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg)
+                  case SendMessage(Right(EncodedNodeId.Plain(publicKey)), nextMsg) if publicKey == privateKey.publicKey => process(privateKey, nextMsg) // TODO: remove and rely on MessageRelay
+                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg) // TODO: remove and rely on MessageRelay
                   case action => action
                 }
                 case None => validateFinalPayload(payload, blindedPayload)

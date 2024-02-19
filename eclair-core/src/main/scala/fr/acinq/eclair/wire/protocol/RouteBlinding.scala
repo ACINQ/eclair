@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, featuresCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, EncodedNodeId, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -40,8 +40,14 @@ object RouteBlindingEncryptedDataTlv {
   /** Id of the outgoing channel, used to identify the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends RouteBlindingEncryptedDataTlv
 
-  /** Id of the next node. */
-  case class OutgoingNodeId(nodeId: PublicKey) extends RouteBlindingEncryptedDataTlv
+  /**
+   * Id of the next node.
+   * Warning: the spec only allows a public key here. We allow reading a ShortChannelIdDir for phoenix but we should never write one.
+   */
+  case class OutgoingNodeId(nodeId: EncodedNodeId) extends RouteBlindingEncryptedDataTlv
+  object OutgoingNodeId {
+    def apply(publicKey: PublicKey): OutgoingNodeId = OutgoingNodeId(EncodedNodeId(publicKey))
+  }
 
   /**
    * The final recipient may store some data in the encrypted payload for itself to avoid storing it locally.
@@ -109,12 +115,13 @@ object RouteBlindingEncryptedDataCodecs {
 
   import RouteBlindingEncryptedDataTlv._
   import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, varint}
+  import fr.acinq.eclair.wire.protocol.OfferCodecs.encodedNodeIdCodec
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult}
 
   private val padding: Codec[Padding] = tlvField(bytes)
   private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid)
-  private val outgoingNodeId: Codec[OutgoingNodeId] = fixedLengthTlvField(33, publicKey)
+  private val outgoingNodeId: Codec[OutgoingNodeId] = tlvField(encodedNodeIdCodec)
   private val pathId: Codec[PathId] = tlvField(bytes)
   private val nextBlinding: Codec[NextBlinding] = fixedLengthTlvField(33, publicKey)
   private val paymentRelay: Codec[PaymentRelay] = tlvField(("cltv_expiry_delta" | cltvExpiryDelta) :: ("fee_proportional_millionths" | uint32) :: ("fee_base_msat" | tmillisatoshi32))

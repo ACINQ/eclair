@@ -19,12 +19,13 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -280,6 +281,24 @@ class OfferTypesSpec extends AnyFunSuite {
       case TestCase(encoded, decoded) =>
         assert(OfferCodecs.pathCodec.encode(decoded).require.bytes == encoded)
         assert(OfferCodecs.pathCodec.decode(encoded.bits).require.value == decoded)
+    }
+  }
+
+  test("encoded node id") {
+    val testCases = Map(
+      hex"00 0d950b0001c80000" ->
+        EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(BlockHeight(890123), 456, 0)),
+      hex"01 0c0a14000d800005" ->
+        EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(BlockHeight(789012), 3456, 5)),
+      hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" ->
+        EncodedNodeId.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+      hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" ->
+        EncodedNodeId.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+    )
+
+    for ((encoded, decoded) <- testCases) {
+      assert(OfferCodecs.encodedNodeIdCodec.encode(decoded).require.bytes == encoded)
+      assert(OfferCodecs.encodedNodeIdCodec.decode(encoded.bits).require.value == decoded)
     }
   }
 }
