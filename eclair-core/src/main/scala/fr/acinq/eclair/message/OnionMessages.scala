@@ -107,7 +107,7 @@ object OnionMessages {
             decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId] match {
               case Some(RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.Plain(nextNodeId))) =>
                 Some(Sphinx.RouteBlinding.BlindedRoute(nextNodeId, decoded.nextBlinding, route.blindedNodes.tail))
-              case _ => None // TODO: allow compact node id
+              case _ => None // TODO: allow compact node id and OutgoingChannelId
             }
         }
       case BlindedPath(route) if intermediateNodes.isEmpty => Some(route)
@@ -211,8 +211,8 @@ object OnionMessages {
               case Left(f) => DropMessage(f)
               case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
                 case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-                  case SendMessage(Right(EncodedNodeId.Plain(publicKey)), nextMsg) if publicKey == privateKey.publicKey => process(privateKey, nextMsg)
-                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg)
+                  case SendMessage(Right(EncodedNodeId.Plain(publicKey)), nextMsg) if publicKey == privateKey.publicKey => process(privateKey, nextMsg) // TODO: remove and rely on MessageRelay
+                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg) // TODO: remove and rely on MessageRelay
                   case action => action
                 }
                 case None => validateFinalPayload(payload, blindedPayload)
