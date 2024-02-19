@@ -145,7 +145,9 @@ trait ErrorHandlers extends CommonHandlers {
           spendLocalCurrent(hasCommitments)
         }
       // When there is no commitment yet, we just go to CLOSED state in case an error occurs.
-      case _: ChannelDataWithoutCommitments => goto(CLOSED)
+      case waitForDualFundingSigned: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
+        rollbackFundingAttempt(waitForDualFundingSigned.signingSession.fundingTx.tx, Nil)
+        goto(CLOSED)
       case _: TransientChannelData => goto(CLOSED)
     }
   }
