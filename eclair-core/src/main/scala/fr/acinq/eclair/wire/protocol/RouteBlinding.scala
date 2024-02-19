@@ -40,8 +40,10 @@ object RouteBlindingEncryptedDataTlv {
   /** Id of the outgoing channel, used to identify the next node. */
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends RouteBlindingEncryptedDataTlv
 
-  /** Id of the next node.
-   *  Warning: the spec only allows a public key here. We allow reading a ShortChannelIdDir to phoenix but we should never write one. */
+  /**
+   * Id of the next node.
+   * Warning: the spec only allows a public key here. We allow reading a ShortChannelIdDir for phoenix but we should never write one.
+   */
   case class OutgoingNodeId(nodeId: EncodedNodeId) extends RouteBlindingEncryptedDataTlv
   object OutgoingNodeId {
     def apply(publicKey: PublicKey): OutgoingNodeId = OutgoingNodeId(EncodedNodeId(publicKey))
