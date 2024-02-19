@@ -436,7 +436,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       handleFastClose(c, d.channelId) sending Error(d.channelId, DualFundingAborted(d.channelId).getMessage)
 
     case Event(e: Error, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
-      rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+      // handleRemoteError takes care of rolling back the funding tx
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
