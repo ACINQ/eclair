@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
@@ -55,7 +55,6 @@ object ReplaceableTxPublisher {
   private case class WrappedFundingResult(result: ReplaceableTxFunder.FundingResult) extends Command
   private case class WrappedTxResult(result: MempoolTxMonitor.TxResult) extends Command
   private case class BumpFee(targetFeerate: FeeratePerKw) extends Command
-  private case object UnlockUtxos extends Command
   private case object UtxosUnlocked extends Command
   // @formatter:on
 
@@ -252,7 +251,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case UpdateConfirmationTarget(target) =>
         confirmationTarget = target
         Behaviors.same
-      case Stop => unlockAndStop(cmd.input, Seq(tx.signedTx))
+      case Stop => unlockAndStop(Seq(tx.signedTx))
     }
   }
 
@@ -321,13 +320,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case Stop =>
         // We don't know yet which transaction won, so we try abandoning both and unlocking their utxos.
         // One of the calls will fail (for the transaction that is in the mempool), but we will simply ignore that failure.
-        unlockAndStop(cmd.input, Seq(previousTx.signedTx, bumpedTx.signedTx))
+        unlockAndStop(Seq(previousTx.signedTx, bumpedTx.signedTx))
     }
   }
 
   // Clean up the failed transaction attempt. Once that's done, go back to the waiting state with the new transaction.
   def cleanUpFailedTxAndWait(failedTx: Transaction, mempoolTx: FundedTx): Behavior[Command] = {
-    val toUnlock = failedTx.txIn.map(_.outPoint).toSet -- mempoolTx.signedTx.txIn.map(_.outPoint).toSet
+    // Note that we don't need to filter inputs from the previous transaction, they have already been unlocked when the
+    // previous transaction was published (but the bitcoin wallet ensures that they won't be double-spent).
+    val toUnlock = failedTx.txIn.map(_.outPoint).toSet
     if (toUnlock.isEmpty) {
       context.self ! UtxosUnlocked
     } else {
@@ -358,12 +359,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   def sendResult(result: TxPublisher.PublishTxResult, toUnlock_opt: Option[Seq[Transaction]]): Behavior[Command] = {
     replyTo ! result
     toUnlock_opt match {
-      case Some(txs) => unlockAndStop(cmd.input, txs)
+      case Some(txs) => unlockAndStop(txs)
       case None => stop()
     }
   }
 
-  def unlockAndStop(input: OutPoint, txs: Seq[Transaction]): Behavior[Command] = {
+  def unlockAndStop(txs: Seq[Transaction]): Behavior[Command] = {
     // Note that we unlock utxos but we don't abandon failed transactions:
     //  - if they were successfully published:
     //    - the utxos have automatically been unlocked, so the call to unlock is a (safe) no-op
@@ -371,7 +372,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     //  - if they failed to be published:
     //    - we must unlock the utxos, otherwise they would stay locked forever
     //    - abandoning the transaction would be a no-op, as it was never added to our wallet
-    val toUnlock = txs.flatMap(_.txIn).filterNot(_.outPoint == input).map(_.outPoint).toSet
+    val toUnlock = txs.flatMap(_.txIn).map(_.outPoint).toSet
     if (toUnlock.isEmpty) {
       context.self ! UtxosUnlocked
     } else {

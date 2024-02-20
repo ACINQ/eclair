@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.psbt.Psbt
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
@@ -364,7 +364,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     psbt match {
       case Left(failure) =>
         log.error(s"cannot sign ${cmd.desc}: $failure")
-        unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
+        unlockAndStop(locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
       case Right(psbt1) =>
         // The transaction that we want to fund/replace has one input, the first one. Additional inputs are provided by our on-chain wallet.
         val ourWalletInputs = locallySignedTx.txInfo.tx.txIn.indices.tail
@@ -402,13 +402,13 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
             log.error(s"cannot sign ${cmd.desc}: ", reason)
             // We reply with the failure only once the utxos are unlocked, otherwise there is a risk that our parent stops
             // itself, which will automatically stop us before we had a chance to unlock them.
-            unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
+            unlockAndStop(locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
         }
     }
   }
 
-  def unlockAndStop(input: OutPoint, tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
-    val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint)
+  def unlockAndStop(tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
+    val toUnlock = tx.txIn.map(_.outPoint)
     log.debug("unlocking utxos={}", toUnlock.mkString(", "))
     context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock))(_ => UtxosUnlocked)
     Behaviors.receiveMessagePartial {

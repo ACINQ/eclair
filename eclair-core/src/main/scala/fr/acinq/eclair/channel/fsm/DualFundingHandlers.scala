@@ -117,7 +117,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
-    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
+    val inputs = txs.flatMap(sharedTx => sharedTx.tx.localInputs ++ sharedTx.tx.sharedInput_opt.toSeq).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
     if (inputs.nonEmpty) {
       wallet.rollback(Transaction(2, inputs, Nil, 0))
     }
