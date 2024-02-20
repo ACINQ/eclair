@@ -167,7 +167,8 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
         nodeParams.pluginOpenChannelInterceptor match {
           case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
           case None =>
-            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, request.peerConnection.toClassic)
+            // NB: we don't add a contribution to the funding amount.
+            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, None, request.peerConnection.toClassic)
             waitForRequest()
         }
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.ChannelRateLimited) =>
@@ -186,7 +187,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, request.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, pluginResponse.localFundingAmount_opt, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
