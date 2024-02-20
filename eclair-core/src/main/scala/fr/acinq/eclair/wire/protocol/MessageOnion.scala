@@ -17,11 +17,11 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64}
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
+import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
@@ -148,11 +148,7 @@ object MessageOnionCodecs {
   import scodec.Codec
   import scodec.codecs._
 
-  private val replyHopCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
-
-  val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | listOfN(uint8, replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
-
-  private val replyPathCodec: Codec[ReplyPath] = tlvField(blindedRouteCodec)
+  private val replyPathCodec: Codec[ReplyPath] = tlvField(OfferCodecs.blindedRouteCodec)
 
   private val encryptedDataCodec: Codec[EncryptedData] = tlvField(bytes)
 

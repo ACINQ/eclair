@@ -17,15 +17,14 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.{Attempt, Codec, Err}
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
 
 object OfferCodecs {
   private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
@@ -42,17 +41,6 @@ object OfferCodecs {
 
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
-  private val blindedNodeCodec: Codec[BlindedNode] =
-    (("nodeId" | publicKey) ::
-      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
-
-  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
-
-  private val blindedPathCodec: Codec[BlindedPath] =
-    (("firstNodeId" | publicKey) ::
-      ("blinding" | publicKey) ::
-      ("path" | blindedNodesCodec)).as[BlindedRoute].as[BlindedPath]
-
   private val isNode1: Codec[Boolean] = uint8.narrow(
     n => if (n == 0) Attempt.Successful(true) else if (n == 1) Attempt.Successful(false) else Attempt.Failure(new Err.MatchingDiscriminatorNotFound(n)),
     b => if (b) 0 else 1
@@ -64,14 +52,18 @@ object OfferCodecs {
 
   val encodedNodeIdCodec: Codec[EncodedNodeId] = choice(shortChannelIdDirCodec.upcast[EncodedNodeId], publicKey.as[EncodedNodeId.Plain].upcast[EncodedNodeId])
 
-  private val compactBlindedPathCodec: Codec[CompactBlindedPath] =
-    (("introductionNode" | shortChannelIdDirCodec) ::
+  private val blindedNodeCodec: Codec[BlindedNode] =
+    (("nodeId" | publicKey) ::
+      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+
+  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
+
+  val blindedRouteCodec: Codec[BlindedRoute] =
+    (("firstNodeId" | encodedNodeIdCodec) ::
       ("blinding" | publicKey) ::
-      ("path" | blindedNodesCodec)).as[CompactBlindedPath]
+      ("path" | blindedNodesCodec)).as[BlindedRoute]
 
-  val pathCodec: Codec[BlindedContactInfo] = choice(compactBlindedPathCodec.upcast[BlindedContactInfo], blindedPathCodec.upcast[BlindedContactInfo])
-
-  private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
+  private val offerPaths: Codec[OfferPaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
   private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
 
@@ -133,7 +125,7 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete
 
-  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
+  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
   val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::

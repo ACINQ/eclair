@@ -24,6 +24,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.PaymentType
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
@@ -31,7 +32,6 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, NodeParams, randomBytes32}
 
 import java.util.UUID
-import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 29/08/2016.
@@ -299,7 +299,7 @@ object PaymentInitiator {
   case class SendPaymentToNode(replyTo: ActorRef,
                                recipientAmount: MilliSatoshi,
                                invoice: Invoice,
-                               resolvedPaths: Seq[PaymentBlindedRoute],
+                               resolvedPaths: Seq[ResolvedPath],
                                maxAttempts: Int,
                                externalId: Option[String] = None,
                                routeParams: RouteParams,
@@ -363,7 +363,7 @@ object PaymentInitiator {
    */
   case class SendPaymentToRoute(recipientAmount: MilliSatoshi,
                                 invoice: Invoice,
-                                resolvedPaths: Seq[PaymentBlindedRoute],
+                                resolvedPaths: Seq[ResolvedPath],
                                 route: PredefinedRoute,
                                 externalId: Option[String],
                                 parentId: Option[UUID],

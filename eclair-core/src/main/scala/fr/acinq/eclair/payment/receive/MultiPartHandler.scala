@@ -26,9 +26,10 @@ import akka.pattern.ask
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
-import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -370,22 +371,22 @@ object MultiPartHandler {
                   createBlindedRouteFromHops(dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                 }
                 val contactInfo = route.shortChannelIdDir_opt match {
-                  case Some(shortChannelIdDir) => OfferTypes.CompactBlindedPath(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
-                  case None => OfferTypes.BlindedPath(blindedRoute.route)
+                  case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                  case None => blindedRoute.route
                 }
                 val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                Future.successful(PaymentBlindedContactInfo(contactInfo, paymentInfo))
+                Future.successful(PaymentBlindedRoute(contactInfo, paymentInfo))
               } else {
                 implicit val timeout: Timeout = 10.seconds
                 r.router.ask(Router.FinalizeRoute(Router.PredefinedNodeRoute(r.amount, route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
                   val clearRoute = routeResponse.routes.head
                   val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                   val contactInfo = route.shortChannelIdDir_opt match {
-                    case Some(shortChannelIdDir) => OfferTypes.CompactBlindedPath(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
-                    case None => OfferTypes.BlindedPath(blindedRoute.route)
+                    case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                    case None => blindedRoute.route
                   }
                   val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
-                  PaymentBlindedContactInfo(contactInfo, paymentInfo)
+                  PaymentBlindedRoute(contactInfo, paymentInfo)
                 })
               }
             })).map(paths => {

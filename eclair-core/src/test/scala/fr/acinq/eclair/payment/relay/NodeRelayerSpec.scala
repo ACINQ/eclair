@@ -828,9 +828,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
   }
 
-  def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedContactInfo = {
+  def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedRoute = {
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
-    PaymentBlindedContactInfo(OfferTypes.BlindedPath(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route), PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
+    PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
   }
 
   test("relay to blinded paths without multi-part") { f =>
@@ -918,9 +918,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val offer = Offer(None, "test offer", outgoingNodeId, Features.empty, chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features.empty, payerKey, chain)
     val paymentBlindedRoute = createPaymentBlindedRoute(outgoingNodeId)
-    val BlindedPath(blindedRoute) = paymentBlindedRoute.route
     val scidDir = ShortChannelIdDir(isNode1 = true, RealShortChannelId(123456L))
-    val compactPaymentBlindedRoute = paymentBlindedRoute.copy(route = CompactBlindedPath(scidDir, blindedRoute.blindingKey, blindedRoute.blindedNodes))
+    val compactPaymentBlindedRoute = paymentBlindedRoute.copy(route = paymentBlindedRoute.route.copy(introductionNodeId = scidDir))
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features.empty, Seq(compactPaymentBlindedRoute))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
       incoming.innerPayload.amountToForward, outgoingExpiry, invoice
@@ -931,7 +930,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val getNodeId = router.expectMessageType[Router.GetNodeId]
     assert(getNodeId.isNode1 == scidDir.isNode1)
     assert(getNodeId.shortChannelId == scidDir.scid)
-    getNodeId.replyTo ! Some(blindedRoute.introductionNodeId)
+    getNodeId.replyTo ! Some(outgoingNodeId)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(p => Upstream.ReceivedHtlc(p.add, TimestampMilli.now()))), ignoreNodeId = true)
@@ -966,9 +965,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val offer = Offer(None, "test offer", outgoingNodeId, Features.empty, chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features.empty, payerKey, chain)
     val paymentBlindedRoute = createPaymentBlindedRoute(outgoingNodeId)
-    val BlindedPath(blindedRoute) = paymentBlindedRoute.route
     val scidDir = ShortChannelIdDir(isNode1 = true, RealShortChannelId(123456L))
-    val compactPaymentBlindedRoute = paymentBlindedRoute.copy(route = CompactBlindedPath(scidDir, blindedRoute.blindingKey, blindedRoute.blindedNodes))
+    val compactPaymentBlindedRoute = paymentBlindedRoute.copy(route = paymentBlindedRoute.route.copy(introductionNodeId = scidDir))
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features.empty, Seq(compactPaymentBlindedRoute))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
       incoming.innerPayload.amountToForward, outgoingExpiry, invoice

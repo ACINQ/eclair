@@ -18,6 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.eclair.EncodedNodeId
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
@@ -341,14 +342,14 @@ object Sphinx extends Logging {
   object RouteBlinding {
 
     /**
-     * @param publicKey            introduction node's public key (which cannot be blinded since the sender need to find a route to it).
+     * @param nodeId introduction node's id (which cannot be blinded since the sender need to find a route to it).
      * @param blindedPublicKey     blinded public key, which hides the real public key.
      * @param blindingEphemeralKey blinding tweak that can be used by the receiving node to derive the private key that
      *                             matches the blinded public key.
      * @param encryptedPayload     encrypted payload that can be decrypted with the introduction node's private key and the
      *                             blinding ephemeral key.
      */
-    case class IntroductionNode(publicKey: PublicKey, blindedPublicKey: PublicKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector)
+    case class IntroductionNode(nodeId: EncodedNodeId, blindedPublicKey: PublicKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
      * @param blindedPublicKey blinded public key, which hides the real public key.
@@ -363,7 +364,7 @@ object Sphinx extends Logging {
      *                           matches the blinded public key.
      * @param blindedNodes       blinded nodes (including the introduction node).
      */
-    case class BlindedRoute(introductionNodeId: PublicKey, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
+    case class BlindedRoute(introductionNodeId: EncodedNodeId, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
       require(blindedNodes.nonEmpty, "blinded route must not be empty")
       val introductionNode: IntroductionNode = IntroductionNode(introductionNodeId, blindedNodes.head.blindedPublicKey, blindingKey, blindedNodes.head.encryptedPayload)
       val subsequentNodes: Seq[BlindedNode] = blindedNodes.tail
@@ -398,7 +399,7 @@ object Sphinx extends Logging {
         e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
         (BlindedNode(blindedPublicKey, encryptedPayload ++ mac), blindingKey)
       }.unzip
-      BlindedRouteDetails(BlindedRoute(publicKeys.head, blindingKeys.head, blindedHops), blindingKeys.last)
+      BlindedRouteDetails(BlindedRoute(EncodedNodeId(publicKeys.head), blindingKeys.head, blindedHops), blindingKeys.last)
     }
 
     /**

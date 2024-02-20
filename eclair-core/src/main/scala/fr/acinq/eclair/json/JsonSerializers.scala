@@ -357,7 +357,7 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
     case Some(hop: NodeHop) if channelNodeIds.nonEmpty => Seq(hop.nextNodeId)
     case Some(hop: NodeHop) => Seq(hop.nodeId, hop.nextNodeId)
     case Some(hop: BlindedHop) if channelNodeIds.nonEmpty => hop.route.blindedNodeIds.tail
-    case Some(hop: BlindedHop) => hop.route.introductionNodeId +: hop.route.blindedNodeIds.tail
+    case Some(hop: BlindedHop) => hop.nodeId +: hop.route.blindedNodeIds.tail
     case None => Nil
   }
   RouteNodeIdsJson(route.amount, channelNodeIds ++ finalNodeIds)
@@ -468,14 +468,8 @@ object InvoiceSerializer extends MinimalSerializer({
           UnknownFeatureSerializer
       )),
       JField("blindedPaths", JArray(p.blindedPaths.map(path => {
-        val introductionNode = path.route match {
-          case OfferTypes.BlindedPath(route) => route.introductionNodeId.toString
-          case OfferTypes.CompactBlindedPath(shortIdDir, _, _) => s"${if (shortIdDir.isNode1) '0' else '1'}x${shortIdDir.scid.toString}"
-        }
-        val blindedNodes = path.route match {
-          case OfferTypes.BlindedPath(route) => route.blindedNodes
-          case OfferTypes.CompactBlindedPath(_, _, nodes) => nodes
-        }
+        val introductionNode = path.route.introductionNodeId.toString
+        val blindedNodes = path.route.blindedNodes
         JObject(List(
           JField("introductionNodeId", JString(introductionNode)),
           JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))

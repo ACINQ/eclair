@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe => TypedProbe}
 import akka.actor.typed.ActorRef
+import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
@@ -62,8 +63,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("relay with new connection") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId(bobId)), message, RelayAll, None)
 
@@ -76,8 +76,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("relay with existing peer") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId(bobId)), message, RelayAll, None)
 
@@ -90,8 +89,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("can't open new connection") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId(bobId)), message, RelayAll, Some(probe.ref))
 
@@ -104,8 +102,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("no channel with previous node") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
     relay ! RelayMessage(messageId, previousNodeId, Right(EncodedNodeId(bobId)), message, RelayChannelsOnly, Some(probe.ref))
@@ -121,8 +118,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("no channel with next node") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
     relay ! RelayMessage(messageId, previousNodeId, Right(EncodedNodeId(bobId)), message, RelayChannelsOnly, Some(probe.ref))
@@ -142,8 +138,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("channels on both ends") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
     relay ! RelayMessage(messageId, previousNodeId, Right(EncodedNodeId(bobId)), message, RelayChannelsOnly, None)
@@ -162,8 +157,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("next node specified with channel id") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val scid = ShortChannelId(123456L)
     relay ! RelayMessage(messageId, randomKey().publicKey, Left(scid), message, RelayAll, None)
@@ -181,8 +175,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("next node is compact node id") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
-    assert(nextNode == bobId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val scid = RealShortChannelId(234567L)
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.ShortChannelIdDir(isNode1 = false, scid)), message, RelayAll, None)
@@ -201,8 +194,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   test("next node is us as compact node id") { f =>
     import f._
 
-    val Right((nextNode, message)) = OnionMessages.buildMessage(randomKey(), randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Recipient(bobId, None), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(31), hex"f3ed"))))
-    assert(nextNode == aliceId)
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Recipient(bobId, None), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(31), hex"f3ed"))))
     val messageId = randomBytes32()
     val scid = RealShortChannelId(345678L)
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.ShortChannelIdDir(isNode1 = true, scid)), message, RelayAll, None)
@@ -218,5 +210,28 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val messageToBob = peer.expectMessageType[Peer.RelayOnionMessage].msg
     val OnionMessages.ReceiveMessage(payload) = OnionMessages.process(Bob.nodeParams.privateKey, messageToBob)
     assert(payload.records.unknown == Set(GenericTlv(UInt64(31), hex"f3ed")))
+  }
+
+  test("relay to self and receive") { f =>
+    import f._
+
+    val probe = TypedProbe[OnionMessages.ReceiveMessage]()
+    system.eventStream ! EventStream.Subscribe(probe.ref)
+
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(
+      IntermediateNode(aliceId, EncodedNodeId(aliceId), outgoingChannel_opt = Some(ShortChannelId.toSelf)),
+      IntermediateNode(aliceId),
+      IntermediateNode(aliceId, EncodedNodeId.ShortChannelIdDir(isNode1 = false, scid = RealShortChannelId(123L)))
+    ), Recipient(aliceId, None), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))))
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId(aliceId)), message, RelayAll, None)
+
+    val getNodeId = router.expectMessageType[Router.GetNodeId]
+    assert(getNodeId.isNode1 == false)
+    assert(getNodeId.shortChannelId == RealShortChannelId(123L))
+    getNodeId.replyTo ! Some(aliceId)
+
+    val OnionMessages.ReceiveMessage(finalPayload) = probe.expectMessageType[OnionMessages.ReceiveMessage]
+    assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
   }
 }

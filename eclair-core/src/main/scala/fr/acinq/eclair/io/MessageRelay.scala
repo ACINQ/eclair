@@ -59,8 +59,8 @@ object MessageRelay {
   case class Disconnected(messageId: ByteVector32) extends Failure {
     override def toString: String = "Peer is not connected"
   }
-  case class UnknownOutgoingChannel(messageId: ByteVector32, outgoingChannelId: ShortChannelId) extends Failure {
-    override def toString: String = s"Unknown outgoing channel: $outgoingChannelId"
+  case class UnknownChannel(messageId: ByteVector32, channelId: ShortChannelId) extends Failure {
+    override def toString: String = s"Unknown channel: $channelId"
   }
   case class DroppedMessage(messageId: ByteVector32, reason: DropReason) extends Failure {
     override def toString: String = s"Message dropped: $reason"
@@ -99,6 +99,8 @@ private class MessageRelay(nodeParams: NodeParams,
 
   def queryNextNodeId(msg: OnionMessage, nextNode: Either[ShortChannelId, EncodedNodeId]): Behavior[Command] = {
     nextNode match {
+      case Left(outgoingChannelId) if outgoingChannelId == ShortChannelId.toSelf =>
+        withNextNodeId(msg, nodeParams.nodeId)
       case Left(outgoingChannelId) =>
         register ! Register.GetNextNodeId(context.messageAdapter(WrappedOptionalNodeId), outgoingChannelId)
         waitForNextNodeId(msg, outgoingChannelId)
@@ -110,14 +112,15 @@ private class MessageRelay(nodeParams: NodeParams,
     }
   }
 
-  private def waitForNextNodeId(msg: OnionMessage, outgoingChannelId: ShortChannelId): Behavior[Command] =
+  private def waitForNextNodeId(msg: OnionMessage, channelId: ShortChannelId): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedOptionalNodeId(None) =>
-        replyTo_opt.foreach(_ ! UnknownOutgoingChannel(messageId, outgoingChannelId))
+        replyTo_opt.foreach(_ ! UnknownChannel(messageId, channelId))
         Behaviors.stopped
       case WrappedOptionalNodeId(Some(nextNodeId)) =>
         withNextNodeId(msg, nextNodeId)
     }
+  }
 
   private def withNextNodeId(msg: OnionMessage, nextNodeId: PublicKey): Behavior[Command] = {
     if (nextNodeId == nodeParams.nodeId) {
