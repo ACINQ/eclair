@@ -133,21 +133,33 @@ case class TxInitRbf(channelId: ByteVector32,
                      feerate: FeeratePerKw,
                      tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
 }
 
 object TxInitRbf {
-  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi): TxInitRbf =
-    TxInitRbf(channelId, lockTime, feerate, TlvStream[TxInitRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean): TxInitRbf = {
+    val tlvs: Set[TxInitRbfTlv] = Set(
+      Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+    ).flatten
+    TxInitRbf(channelId, lockTime, feerate, TlvStream(tlvs))
+  }
 }
 
 case class TxAckRbf(channelId: ByteVector32,
                     tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
 }
 
 object TxAckRbf {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi): TxAckRbf =
-    TxAckRbf(channelId, TlvStream[TxAckRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean): TxAckRbf = {
+    val tlvs: Set[TxAckRbfTlv] = Set(
+      Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+    ).flatten
+    TxAckRbf(channelId, TlvStream(tlvs))
+  }
 }
 
 case class TxAbort(channelId: ByteVector32,

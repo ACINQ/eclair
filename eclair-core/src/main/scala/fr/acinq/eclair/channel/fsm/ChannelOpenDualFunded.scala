@@ -500,7 +500,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution)
+              val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+              stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending txInitRbf
             }
           case _ =>
             log.warning("cannot initiate rbf, another one is already in progress")
@@ -541,7 +542,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 // we don't change our funding contribution
                 remoteContribution = msg.fundingContribution,
                 lockTime = msg.lockTime,
-                targetFeerate = msg.feerate
+                targetFeerate = msg.feerate,
+                requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
               )
               val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                 randomBytes32(),
@@ -552,7 +554,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 wallet))
               txBuilder ! InteractiveTxBuilder.Start(self)
               val toSend = Seq(
-                Some(TxAckRbf(d.channelId, fundingParams.localContribution)),
+                Some(TxAckRbf(d.channelId, fundingParams.localContribution, nodeParams.channelConf.requireConfirmedInputsForDualFunding)),
                 if (remainingRbfAttempts <= 3) Some(Warning(d.channelId, s"will accept at most ${remainingRbfAttempts - 1} future rbf attempts")) else None,
               ).flatten
               stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = None, txBuilder, remoteCommitSig = None)) sending toSend

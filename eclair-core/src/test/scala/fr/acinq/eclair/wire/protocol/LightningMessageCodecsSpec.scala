@@ -30,7 +30,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.wire.protocol.TxRbfTlv.SharedOutputContributionTlv
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -195,13 +194,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TxSignatures(channelId2, tx1, Nil, None) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000",
       TxSignatures(channelId2, tx1, Nil, Some(signature)) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000 fd0259 40 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       TxInitRbf(channelId1, 8388607, FeeratePerKw(4000 sat)) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 007fffff 00000fa0",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(1_500_000 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(0 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(-25_000 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 1_500_000 sat, requireConfirmedInputs = true) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), -25_000 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
       TxAckRbf(channelId2) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(450_000 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
-      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(0 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
-      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(-250_000 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70",
+      TxAckRbf(channelId2, 450_000 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
+      TxAckRbf(channelId2, 0 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
+      TxAckRbf(channelId2, -250_000 sat, requireConfirmedInputs = true) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
       TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000",
       TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 000e 696e7465726e616c206572726f72",
     )
@@ -458,8 +457,6 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
-  case class TestItem(msg: Any, hex: String)
-
   test("test vectors for extended channel queries ") {
     val refs = Map(
       QueryChannelRange(Block.RegtestGenesisBlock.hash, BlockHeight(100000), 1500, TlvStream.empty) ->
@@ -494,61 +491,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(14200), RealShortChannelId(46645), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
         hex"010506226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
-
-    val items = refs.map { case (obj, refbin) =>
+    refs.map { case (obj, refbin) =>
       val bin = lightningMessageCodec.encode(obj).require
       assert(refbin.bits == bin)
-      TestItem(obj, bin.toHex)
     }
-
-    // NB: uncomment this to update the test vectors
-
-    /*class EncodingTypeSerializer extends CustomSerializer[EncodingType](format => ( {
-      null
-    }, {
-      case EncodingType.UNCOMPRESSED => JString("UNCOMPRESSED")
-      case EncodingType.COMPRESSED_ZLIB => JString("COMPRESSED_ZLIB")
-    }))
-
-    class ExtendedQueryFlagsSerializer extends CustomSerializer[QueryChannelRangeTlv.QueryFlags](format => ( {
-      null
-    }, {
-      case QueryChannelRangeTlv.QueryFlags(flag) =>
-        JString(((if (QueryChannelRangeTlv.QueryFlags.wantTimestamps(flag)) List("WANT_TIMESTAMPS") else List()) ::: (if (QueryChannelRangeTlv.QueryFlags.wantChecksums(flag)) List("WANT_CHECKSUMS") else List())) mkString (" | "))
-    }))
-
-    implicit val formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") +
-      new EncodingTypeSerializer +
-      new ExtendedQueryFlagsSerializer +
-      new ByteVectorSerializer +
-      new ByteVector32Serializer +
-      new UInt64Serializer +
-      new MilliSatoshiSerializer +
-      new ShortChannelIdSerializer +
-      new StateSerializer +
-      new ShaChainSerializer +
-      new PublicKeySerializer +
-      new PrivateKeySerializer +
-      new TransactionSerializer +
-      new TransactionWithInputInfoSerializer +
-      new InetSocketAddressSerializer +
-      new OutPointSerializer +
-      new OutPointKeySerializer +
-      new InputInfoSerializer +
-      new ColorSerializer +
-      new RouteResponseSerializer +
-      new ThrowableSerializer +
-      new FailureMessageSerializer +
-      new NodeAddressSerializer +
-      new DirectionSerializer +
-      new InvoiceSerializer +
-      ShortTypeHints(List(
-        classOf[QueryChannelRange],
-        classOf[ReplyChannelRange],
-        classOf[QueryShortChannelIds]))
-
-    val json = Serialization.writePretty(items)
-    println(json)*/
   }
 
   test("decode channel_update with htlc_maximum_msat") {
