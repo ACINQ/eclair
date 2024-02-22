@@ -571,6 +571,25 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("remote commit tx not published, not spending remote anchor output") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      val commitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
+      // Note that we don't publish the remote commit, to simulate the case where the watch triggers but the remote commit is then evicted from our mempool.
+      probe.send(alice, WatchFundingSpentTriggered(commitTx))
+      val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
+      assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
+      publisher ! Publish(probe.ref, anchorTx)
+
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd == anchorTx)
+      assert(result.reason == TxSkipped(retryNextBlock = true))
+    }
+  }
+
   test("commit tx feerate too low, spending anchor outputs with multiple wallet inputs") {
     val utxos = Seq(
       // channel funding

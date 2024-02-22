@@ -48,6 +48,7 @@ object ReplaceableTxPrePublisher {
   private case object ParentTxOk extends Command
   private case object FundingTxNotFound extends RuntimeException with Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
+  private case object RemoteCommitTxNotInMempool extends RuntimeException with Command
   private case object LocalCommitTxConfirmed extends Command
   private case object RemoteCommitTxConfirmed extends Command
   private case object RemoteCommitTxPublished extends Command
@@ -139,8 +140,11 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             val remoteCommits = Set(Some(cmd.commitment.remoteCommit.txid), cmd.commitment.nextRemoteCommit_opt.map(_.commit.txid)).flatten
             if (remoteCommits.contains(localAnchorTx.input.outPoint.txid)) {
               // We're trying to bump the remote commit tx: we must make sure it is in our mempool first.
-              // If it isn't, we will publish our local commit tx instead.
-              bitcoinClient.getMempoolTx(localAnchorTx.input.outPoint.txid).map(_.txid)
+              bitcoinClient.getMempoolTx(localAnchorTx.input.outPoint.txid).map(_.txid).transformWith {
+                // We could improve this: we've seen the remote commit in our mempool at least once, so we could try to republish it ourselves.
+                case Failure(_) => Future.failed(RemoteCommitTxNotInMempool)
+                case Success(remoteCommitTxId) => Future.successful(remoteCommitTxId)
+              }
             } else {
               // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
               // If it's already published, this call will be a no-op.
@@ -155,6 +159,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case Success(_) => ParentTxOk
       case Failure(FundingTxNotFound) => FundingTxNotFound
       case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
+      case Failure(RemoteCommitTxNotInMempool) => RemoteCommitTxNotInMempool
       case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
       case Failure(reason) => UnknownFailure(reason)
     }
@@ -169,6 +174,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case CommitTxAlreadyConfirmed =>
         log.debug("commit tx is already confirmed, no need to claim our anchor")
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
+        Behaviors.stopped
+      case RemoteCommitTxNotInMempool =>
+        log.debug("remote commit tx cannot be found in our mempool: we can't spend our anchor")
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case RemoteCommitTxPublished =>
         log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
