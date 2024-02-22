@@ -832,12 +832,15 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   }
 
   private def unlockAndStop(session: InteractiveTxSession): Behavior[Command] = {
-    val localInputs = session.localInputs ++ session.toSend.collect { case addInput: Input.Local => addInput }
+    val localInputs = session.localInputs ++ session.toSend.collect {
+      case addInput: Input.Local => addInput
+      case addInput: Input.Shared => addInput
+    }
     unlockAndStop(localInputs.map(_.outPoint).toSet)
   }
 
   private def unlockAndStop(tx: SharedTransaction): Behavior[Command] = {
-    val localInputs = tx.localInputs.map(_.outPoint).toSet
+    val localInputs = tx.localInputs.map(_.outPoint).toSet ++ tx.sharedInput_opt.map(_.outPoint).toSet
     unlockAndStop(localInputs)
   }
 

@@ -719,14 +719,23 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("unlock outpoints correctly") {
+    assume(!useEclairSigner)
+
     val sender = TestProbe()
-    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val bitcoinClient = makeBitcoinCoreClient()
+    val nonWalletScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
+    val nonWalletUtxo = {
+      bitcoinClient.sendToPubkeyScript(nonWalletScript, 150_000 sat, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
+      val txId = sender.expectMsgType[TxId]
+      bitcoinClient.getTransaction(txId).pipeTo(sender.ref)
+      val tx = sender.expectMsgType[Transaction]
+      OutPoint(tx, tx.txOut.indexWhere(_.publicKeyScript == nonWalletScript))
+    }
 
     {
-      // test #1: unlock outpoints that are actually locked
+      // test #1: unlock wallet outpoints that are actually locked
       // create a huge tx so we make sure it has > 1 inputs
-      bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
+      bitcoinClient.makeFundingTx(nonWalletScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
       val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
       assert(fundingTx.txIn.size > 2)
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
@@ -736,7 +745,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     {
       // test #2: some outpoints are locked, some are unlocked
-      bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
+      bitcoinClient.makeFundingTx(nonWalletScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
       val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
       assert(fundingTx.txIn.size > 2)
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
@@ -751,6 +760,23 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
       // and try to unlock all outpoints: it should work too
       bitcoinClient.rollback(fundingTx).pipeTo(sender.ref)
+      sender.expectMsg(true)
+      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      sender.expectMsg(Set.empty[OutPoint])
+    }
+    {
+      // test #3: lock and unlock non-wallet inputs
+      val txNotFunded = Transaction(2, Seq(TxIn(nonWalletUtxo, Nil, 0)), Seq(TxOut(250_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      bitcoinClient.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true, externalInputsWeight = Map(nonWalletUtxo -> 400L)).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      assert(fundedTx.txIn.size > 1)
+
+      // the external input is also considered locked
+      bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
+      sender.expectMsg(fundedTx.txIn.map(_.outPoint).toSet)
+
+      // unlocking works for both wallet and non-wallet utxos
+      bitcoinClient.unlockOutpoints(fundedTx.txIn.map(_.outPoint)).pipeTo(sender.ref)
       sender.expectMsg(true)
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
       sender.expectMsg(Set.empty[OutPoint])
