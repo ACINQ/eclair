@@ -431,6 +431,8 @@ case class Commitment(fundingTxIndex: Long,
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
     val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, capacity)
     val remoteFeerate = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+    // What we want to avoid is having an HTLC in a commitment transaction that has a very low feerate, which we won't
+    // be able to confirm in time to claim the HTLC, so we only need to check that the feerate isn't too low.
     remoteFeerate.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(params.commitmentFormat, localFeerate, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = feerate))
       case None =>
