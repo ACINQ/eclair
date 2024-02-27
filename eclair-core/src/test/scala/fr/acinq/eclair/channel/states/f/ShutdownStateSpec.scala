@@ -707,7 +707,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { f =>
     import f._
-    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(1000 sat)))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(25000 sat)))
     bob.setFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectMsgType[Error]

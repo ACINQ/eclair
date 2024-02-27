@@ -78,6 +78,8 @@ object ChannelStateTestsTags {
   val HighDustLimitDifferenceAliceBob = "high_dust_limit_difference_alice_bob"
   /** If set, Bob will have a much higher dust limit than Alice. */
   val HighDustLimitDifferenceBobAlice = "high_dust_limit_difference_bob_alice"
+  /** If set, Alice and Bob will use a very large tolerance for feerate mismatch. */
+  val HighFeerateMismatchTolerance = "high_feerate_mismatch_tolerance"
   /** If set, channels will use option_channel_type. */
   val ChannelType = "option_channel_type"
   /** If set, channels will use option_zeroconf. */
@@ -145,6 +147,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+      .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioLow).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(0.000001)
+      .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val finalNodeParamsB = nodeParamsB
@@ -154,6 +158,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
       .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.RejectRbfAttempts))(0)
       .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.DelayRbfAttempts))(1)
+      .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioLow).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(0.000001)
+      .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val wallet = wallet_opt match {

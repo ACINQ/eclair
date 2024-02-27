@@ -17,7 +17,6 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
-import fr.acinq.eclair.channel.ChannelTypes
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import org.scalatest.funsuite.AnyFunSuite
@@ -87,7 +86,6 @@ class OnChainFeeConfSpec extends AnyFunSuite {
 
   test("fee difference too high") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
-    val channelType = ChannelTypes.Standard()
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(250 sat), false),
@@ -107,21 +105,19 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   test("fee difference too high (anchor outputs)") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
     val testCases = Seq(
-      (FeeratePerKw(500 sat), FeeratePerKw(500 sat)),
-      (FeeratePerKw(500 sat), FeeratePerKw(2500 sat)),
-      (FeeratePerKw(500 sat), FeeratePerKw(10000 sat)),
-      (FeeratePerKw(500 sat), FeeratePerKw(10001 sat)),
-      (FeeratePerKw(2500 sat), FeeratePerKw(10000 sat)),
-      (FeeratePerKw(2500 sat), FeeratePerKw(10001 sat)),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1250 sat)),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1249 sat)),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1000 sat)),
-      (FeeratePerKw(1000 sat), FeeratePerKw(500 sat)),
-      (FeeratePerKw(1000 sat), FeeratePerKw(499 sat)),
+      (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
+      (FeeratePerKw(500 sat), FeeratePerKw(1000 sat), false),
+      (FeeratePerKw(500 sat), FeeratePerKw(2000 sat), false),
+      (FeeratePerKw(500 sat), FeeratePerKw(2001 sat), true),
+      (FeeratePerKw(2500 sat), FeeratePerKw(10000 sat), false),
+      (FeeratePerKw(2500 sat), FeeratePerKw(10001 sat), true),
+      (FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), false),
+      (FeeratePerKw(2500 sat), FeeratePerKw(1000 sat), false),
+      (FeeratePerKw(1000 sat), FeeratePerKw(500 sat), false),
     )
-    testCases.foreach { case (networkFeerate, proposedFeerate) =>
-      assert(!tolerance.isFeeDiffTooHigh(UnsafeLegacyAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate))
-      assert(!tolerance.isFeeDiffTooHigh(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate))
+    testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
+      assert(tolerance.isFeeDiffTooHigh(UnsafeLegacyAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate) == expected)
+      assert(tolerance.isFeeDiffTooHigh(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate) == expected)
     }
   }
 
