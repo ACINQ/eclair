@@ -67,7 +67,7 @@ case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelRe
 }
 
 sealed trait InterceptOpenChannelResponse
-case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams) extends InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams, localFundingAmount_opt: Option[Satoshi]) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
 // @formatter:on
 

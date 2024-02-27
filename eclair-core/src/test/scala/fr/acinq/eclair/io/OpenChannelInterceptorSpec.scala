@@ -87,13 +87,14 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
-    val updatedLocalParams = peer.expectMessageType[SpawnChannelNonInitiator].localParams
-    assert(updatedLocalParams.dustLimit == defaultParams.dustLimit)
-    assert(updatedLocalParams.htlcMinimum == defaultParams.htlcMinimum)
-    assert(updatedLocalParams.maxAcceptedHtlcs == defaultParams.maxAcceptedHtlcs)
-    assert(updatedLocalParams.maxHtlcValueInFlightMsat == defaultParams.maxHtlcValueInFlightMsat)
-    assert(updatedLocalParams.toSelfDelay == defaultParams.toSelfDelay)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(50_000 sat))
+    val response = peer.expectMessageType[SpawnChannelNonInitiator]
+    assert(response.localFundingAmount_opt.contains(50_000 sat))
+    assert(response.localParams.dustLimit == defaultParams.dustLimit)
+    assert(response.localParams.htlcMinimum == defaultParams.htlcMinimum)
+    assert(response.localParams.maxAcceptedHtlcs == defaultParams.maxAcceptedHtlcs)
+    assert(response.localParams.maxHtlcValueInFlightMsat == defaultParams.maxHtlcValueInFlightMsat)
+    assert(response.localParams.toSelfDelay == defaultParams.toSelfDelay)
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>
@@ -146,7 +147,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // original request accepted after plugin accepts it
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, None)
     assert(peer.expectMessageType[SpawnChannelNonInitiator].open == Left(openChannel))
     eventListener.expectMessageType[ChannelAborted]
   }

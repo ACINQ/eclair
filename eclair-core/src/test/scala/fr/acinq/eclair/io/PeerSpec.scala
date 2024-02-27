@@ -629,7 +629,7 @@ class PeerSpec extends FixtureSpec {
     val open = createOpenChannelMessage()
     system.eventStream.subscribe(probe.ref, classOf[ChannelAborted])
     connect(remoteNodeId, peer, peerConnection, switchboard)
-    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), localParams, ActorRef.noSender)
+    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), localParams, None, ActorRef.noSender)
     val channelAborted = probe.expectMsgType[ChannelAborted]
     assert(channelAborted.remoteNodeId == remoteNodeId)
     assert(channelAborted.channelId == open.temporaryChannelId)
