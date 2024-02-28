@@ -66,13 +66,13 @@ We introduced a new parameter to control the maximum fee that will be paid durin
 eclair.on-chain-fees.anchor-without-htlcs-max-fee-satoshis = 10000
 ```
 
-We also limit the feerate used to be at most the same order of magnitude of `fatest` feerate provided by our fee estimator.
+We also limit the feerate used to be at most of the same order of magnitude as the `fastest` feerate provided by our fee estimator.
 
 ### Managing Bitcoin Core wallet keys
 
 You can now use Eclair to manage the private keys for on-chain funds monitored by a Bitcoin Core watch-only wallet.
 
-See `docs/BitcoinCoreKeys.md` for more details.
+See `docs/ManagingBitcoinCoreKeys.md` for more details.
 
 ### Advertise low balance with `htlc_maximum_msat`
 
