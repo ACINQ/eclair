@@ -8,11 +8,12 @@
 
 After many years of work and refining the protocol, [dual funding](https://github.com/lightning/bolts/pull/851) has been added to the BOLTs.
 
-This release of eclair activates this new feature, that will be used with [cln](https://github.com/ElementsProject/lightning/) nodes automatically. When opening channels to nodes that don't support dual funding, the older funding protocol will be used automatically.
+This release of eclair activates dual funding, and it will automatically be used with [cln](https://github.com/ElementsProject/lightning/) nodes. When opening channels to nodes that don't support dual funding, the older funding protocol will be used automatically.
 
 One of the immediate benefits of dual funding is that the funding transaction can now be RBF-ed, using the `rbfopen` RPC.
 
-There is currently no way to automatically add funds to channels that are being opened to your node, as deciding whether to do so or not really depends on each node operator's peering strategy. We are however working on plugin examples that node operators can fork to implement their own strategy for contributing to inbound channels.
+There is currently no way to automatically add funds to channels that are being opened to your node, as deciding whether to do so or not really depends on each node operator's peering strategy.
+We have however created a [sample plugin](https://github.com/ACINQ/eclair-plugins/tree/master/channel-funding) that node operators can fork to implement their own strategy for contributing to inbound channels.
 
 ### Update minimal version of Bitcoin Core
 
