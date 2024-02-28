@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
-import fr.acinq.eclair.blockchain.DummyOnChainWallet
+import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered, WatchFundingDeeplyBuried, WatchFundingDeeplyBuriedTriggered}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Re
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -56,7 +56,7 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       offerManager: typed.ActorRef[OfferManager.Command],
                                       postman: typed.ActorRef[Postman.Command],
                                       watcher: TestProbe,
-                                      wallet: DummyOnChainWallet,
+                                      wallet: SingleKeyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
   val nodeId = nodeParams.nodeId
   val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
@@ -88,7 +88,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val readyListener = TestProbe("ready-listener")
     system.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
     val bitcoinClient = new TestBitcoinCoreClient()
-    val wallet = new DummyOnChainWallet()
+    val wallet = new SingleKeyOnChainWallet()
     val watcher = TestProbe("watcher")
     val triggerer = TestProbe("payment-triggerer")
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
@@ -187,14 +187,15 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   }
 
   def fundingTx(node: MinimalNodeFixture, channelId: ByteVector32)(implicit system: ActorSystem): Transaction = {
-    val fundingTxid = getChannelData(node, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.latest.fundingTxId
-    node.wallet.funded(fundingTxid)
+    getChannelData(node, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.latest.localFundingStatus.signedTx_opt.get
   }
 
   def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): Option[RealScidStatus.Temporary] = {
-    assert(getChannelState(node1, channelId) == WAIT_FOR_FUNDING_CONFIRMED)
-    val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    val fundingTx = data1Before.fundingTx_opt.get
+    val fundingTx = getChannelData(node1, channelId) match {
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.signingSession.fundingTx.tx.buildUnsignedTx()
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.latestFundingTx.sharedTx.tx.buildUnsignedTx()
+      case d => fail(s"unexpected channel=$d")
+    }
 
     val watch1 = node1.watcher.fishForMessage() { case w: WatchFundingConfirmed if w.txId == fundingTx.txid => true; case _ => false }.asInstanceOf[WatchFundingConfirmed]
     val watch2 = node2.watcher.fishForMessage() { case w: WatchFundingConfirmed if w.txId == fundingTx.txid => true; case _ => false }.asInstanceOf[WatchFundingConfirmed]
@@ -218,8 +219,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   def confirmChannelDeep(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): RealScidStatus.Final = {
     assert(getChannelState(node1, channelId) == NORMAL)
     val data1Before = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
-    val fundingTxid = data1Before.commitments.latest.fundingTxId
-    val fundingTx = node1.wallet.funded(fundingTxid)
+    val fundingTx = data1Before.commitments.latest.localFundingStatus.signedTx_opt.get
 
     val watch1 = node1.watcher.fishForMessage() { case w: WatchFundingDeeplyBuried if w.txId == fundingTx.txid => true; case _ => false }.asInstanceOf[WatchFundingDeeplyBuried]
     val watch2 = node2.watcher.fishForMessage() { case w: WatchFundingDeeplyBuried if w.txId == fundingTx.txid => true; case _ => false }.asInstanceOf[WatchFundingDeeplyBuried]
@@ -269,17 +269,6 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[Router.Data]
   }
 
-  /**
-   * Computes a deterministic [[RealShortChannelId]] based on a txid. We need this so that watchers can verify
-   * transactions in a independent and stateless fashion, since there is no actual blockchain in those tests.
-   */
-  def deterministicShortId(txId: TxId): RealShortChannelId = {
-    val blockHeight = txId.value.take(3).toInt(signed = false)
-    val txIndex = txId.value.takeRight(2).toInt(signed = false)
-    val outputIndex = 0 // funding txs created by the dummy wallet used in tests only have one output
-    RealShortChannelId(BlockHeight(blockHeight), txIndex, outputIndex)
-  }
-
   /** All known funding txs (we don't evaluate immediately because new ones could be created) */
   def knownFundingTxs(nodes: MinimalNodeFixture*): () => Iterable[Transaction] = () => nodes.flatMap(_.wallet.published.values)
 
@@ -306,9 +295,9 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
         Behaviors.withTimers { timers =>
           Behaviors.receiveMessagePartial {
             case vr: ZmqWatcher.ValidateRequest =>
-              val res = knownFundingTxs().find(tx => deterministicShortId(tx.txid) == vr.ann.shortChannelId) match {
+              val res = knownFundingTxs().find(tx => deterministicTxCoordinates(tx.txid) == (vr.ann.shortChannelId.blockHeight, txIndex(vr.ann.shortChannelId))) match {
                 case Some(fundingTx) => Right(fundingTx, ZmqWatcher.UtxoStatus.Unspent)
-                case None => Left(new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicShortId(tx.txid)).mkString(",")}"))
+                case None => Left(new RuntimeException(s"unknown realScid=${vr.ann.shortChannelId}, known=${knownFundingTxs().map(tx => deterministicTxCoordinates(tx.txid)).mkString(",")}"))
               }
               vr.replyTo ! ZmqWatcher.ValidateResult(vr.ann, res)
               Behaviors.same
@@ -319,16 +308,16 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
               }
               Behaviors.same
             case watch: ZmqWatcher.WatchFundingConfirmed if confirm =>
-              val realScid = deterministicShortId(watch.txId)
+              val (blockHeight, txIndex) = deterministicTxCoordinates(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
-                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
+                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same
             case watch: ZmqWatcher.WatchFundingDeeplyBuried if deepConfirm =>
-              val realScid = deterministicShortId(watch.txId)
+              val (blockHeight, txIndex) = deterministicTxCoordinates(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
-                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(realScid.blockHeight, txIndex(realScid), fundingTx)
+                case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same
@@ -337,6 +326,16 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
           }
         }
       }
+    }
+
+    /**
+     * We don't use a blockchain in this test setup, but we want to simulate channels being confirmed.
+     * We choose a block height and transaction index at which the channel confirms deterministically from its txid.
+     */
+    def deterministicTxCoordinates(txId: TxId): (BlockHeight, Int) = {
+      val blockHeight = txId.value.take(3).toInt(signed = false)
+      val txIndex = txId.value.takeRight(2).toInt(signed = false)
+      (BlockHeight(blockHeight), txIndex)
     }
   }
 

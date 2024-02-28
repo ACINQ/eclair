@@ -4,6 +4,22 @@
 
 ## Major changes
 
+### Dual funding
+
+After many years of work and refining the protocol, [dual funding](https://github.com/lightning/bolts/pull/851) has been added to the BOLTs.
+
+This release of eclair activates dual funding, and it will automatically be used with [cln](https://github.com/ElementsProject/lightning/) nodes. When opening channels to nodes that don't support dual funding, the older funding protocol will be used automatically.
+
+One of the immediate benefits of dual funding is that the funding transaction can now be RBF-ed, using the `rbfopen` RPC.
+
+There is currently no way to automatically add funds to channels that are being opened to your node, as deciding whether to do so or not really depends on each node operator's peering strategy.
+We have however created a [sample plugin](https://github.com/ACINQ/eclair-plugins/tree/master/channel-funding) that node operators can fork to implement their own strategy for contributing to inbound channels.
+
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 24.1.
+Newer versions of Bitcoin Core may be used, but haven't been extensively tested.
+
 ### Use priority instead of block target for feerates
 
 Eclair now uses a `slow`/`medium`/`fast` notation for feerates (in the style of mempool.space),
@@ -75,7 +91,45 @@ This feature leaks a bit of information about the balance when the channel is al
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
+#### Use bitcoinheaders.net v2
+
+Eclair uses <https://bitcoinheaders.net/> as one of its sources of blockchain data to detect when our node is being eclipsed.
+The format of this service is changing, and the older format will be deprecated soon.
+We thus encourage eclair nodes to update to ensure that they still have access to this blockchain watchdog.
+
+#### Force-closing anchor channels fee management
+
+Various improvements have been made to force-closing channels that need fees to be attached using CPFP or RBF.
+Those changes ensure that eclair nodes don't end up paying unnecessarily high fees to force-close channels, even when the mempool is full.
+
+#### Improve DB usage when closing channels
+
+When channels that have relayed a lot of HTLCs are closed, we can forget the revocation data for all of those HTLCs and free up space in our DB. We previously did that synchronously, which meant deleting potentially millions of rows synchronously. This isn't a high priority task, so we're now asynchronously deleting that data in smaller batches.
+
+Node operators can control the rate at which that data is deleted by updating the following values in `eclair.conf`:
+
+```conf
+// During normal channel operation, we need to store information about past HTLCs to be able to punish our peer if
+// they publish a revoked commitment. Once a channel closes or a splice transaction confirms, we can clean up past
+// data (which reduces the size of our DB). Since there may be millions of rows to delete and we don't want to slow
+// down the node, we delete those rows in batches at regular intervals.
+eclair.db.revoked-htlc-info-cleaner {
+  // Number of rows to delete per batch: a higher value will clean up the DB faster, but may have a higher impact on performance.
+  batch-size = 50000
+  // Frequency at which batches of rows are deleted: a lower value will clean up the DB faster, but may have a higher impact on performance.
+  interval = 15 minutes
+}
+```
+
+See <https://github.com/ACINQ/eclair/pull/2705> for more details.
+
+#### Correctly unlock wallet inputs during transaction eviction
+
+When the mempool is full and transactions are evicted, and potentially double-spent, the Bitcoin Core wallet cannot always safely unlock inputs.
+
+Eclair is now automatically detecting such cases and telling Bitcoin Core to unlock inputs that are safe to use. This ensures that node operators don't end up with unavailable liquidity.
+
+See <https://github.com/ACINQ/eclair/pull/2817> and <https://github.com/ACINQ/eclair/pull/2818> for more details.
 
 ## Verifying signatures
 

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.integration.basic
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
-import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL, RealScidStatus, WAIT_FOR_FUNDING_CONFIRMED}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.getPeerChannels
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
@@ -51,7 +51,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val channelId2 = openChannel(bob, alice, 110_000 sat).channelId
     val channels = getPeerChannels(alice, bob.nodeId)
     assert(channels.map(_.data.channelId).toSet == Set(channelId1, channelId2))
-    channels.foreach(c => assert(c.state == WAIT_FOR_FUNDING_CONFIRMED))
+    channels.foreach(c => assert(c.state == WAIT_FOR_DUAL_FUNDING_SIGNED || c.state == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
     confirmChannel(alice, bob, channelId1, BlockHeight(420_000), 21)
     confirmChannel(bob, alice, channelId2, BlockHeight(420_000), 22)
     getPeerChannels(bob, alice.nodeId).foreach(c => assert(c.data.isInstanceOf[DATA_NORMAL]))
