@@ -1,4 +1,4 @@
-# Eclair vnext
+# Eclair v0.10.0
 
 This release adds official support for the dual-funding feature, an up-to-date implementation of Bolt 12 offers, and a fully working splicing prototype.
 We're waiting for the specification work to be finalized for some of those features, and other implementations to be ready for cross-compatibility tests.
@@ -170,7 +170,7 @@ $ sha256sum -c SHA256SUMS.stripped
 Eclair builds are deterministic. To reproduce our builds, please use the following environment (*):
 
 - Ubuntu 22.04
-- AdoptOpenJDK 11.0.6
+- AdoptOpenJDK 11.0.22
 - Maven 3.9.2
 
 Use the following command to generate the eclair-node package:
