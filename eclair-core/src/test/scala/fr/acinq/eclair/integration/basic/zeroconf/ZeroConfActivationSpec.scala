@@ -60,12 +60,9 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!bob.nodeParams.features.activated.contains(ZeroConf))
 
     val channelId = createChannel(f)
-    Seq(alice, bob).foreach { node =>
-      getChannelData(node, channelId) match {
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => assert(!d.channelParams.channelFeatures.hasFeature(ZeroConf))
-        case d: ChannelDataWithCommitments => assert(!d.commitments.params.channelFeatures.hasFeature(ZeroConf))
-        case d => fail(s"unexpected channel state: ${d.getClass.getSimpleName}")
-      }
+    eventually {
+      assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+      assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
     }
   }
 
