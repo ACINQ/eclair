@@ -206,10 +206,10 @@ nodeId    | The **nodeId** of the node you want to disconnect from | No       | 
 ## Open
 
 ```shell
-curl -s -u :<eclair_api_password> -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> "http://localhost:8080/open"
+curl -s -u :<eclair_api_password> -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis> "http://localhost:8080/open"
 
 # with eclair-cli
-eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
+eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis> --fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis>
 ```
 
 > The above command returns the channelId of the newly created channel:
@@ -232,23 +232,24 @@ If you want to override the routing fees that will be used, you must use the `up
 
 ### Parameters
 
-Parameter             | Description                                                                | Optional | Type
---------------------- | -------------------------------------------------------------------------- | -------- | ---------------------------
-nodeId                | The **nodeId** of the node you want to open a channel with                 | No       | 33-bytes-HexString (String)
-fundingSatoshis       | Amount of satoshis to spend in the funding of the channel                  | No       | Satoshis (Integer)
-channelType           | Channel type (standard, static_remotekey, anchor_outputs_zero_fee_htlc_tx) | Yes      | String
-pushMsat              | Amount of millisatoshi to unilaterally push to the counterparty            | Yes      | Millisatoshis (Integer)
-fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction                    | Yes      | Satoshis (Integer)
-announceChannel       | True for public channels, false otherwise                                  | Yes      | Boolean
-openTimeoutSeconds    | Timeout for the operation to complete                                      | Yes      | Seconds (Integer)
+Parameter                | Description                                                                | Optional | Type
+------------------------ | -------------------------------------------------------------------------- | -------- | ---------------------------
+nodeId                   | The **nodeId** of the node you want to open a channel with                 | No       | 33-bytes-HexString (String)
+fundingSatoshis          | Amount of satoshis to spend in the funding of the channel                  | No       | Satoshis (Integer)
+fundingFeeBudgetSatoshis | Maximum fees (in satoshis) of the funding transaction                      | No       | Satoshis (Integer)
+channelType              | Channel type (standard, static_remotekey, anchor_outputs_zero_fee_htlc_tx) | Yes      | String
+pushMsat                 | Amount of millisatoshi to unilaterally push to the counterparty            | Yes      | Millisatoshis (Integer)
+fundingFeerateSatByte    | Feerate in sat/byte to apply to the funding transaction                    | Yes      | Satoshis (Integer)
+announceChannel          | True for public channels, false otherwise                                  | Yes      | Boolean
+openTimeoutSeconds       | Timeout for the operation to complete                                      | Yes      | Seconds (Integer)
 
 ## RbfOpen
 
 ```shell
-curl -s -u :<eclair_api_password> -X POST -F channelId=<channel_id> -F targetFeerateSatByte=<target_feerate> "http://localhost:8080/rbfopen"
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel_id> -F targetFeerateSatByte=<target_feerate> fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis> "http://localhost:8080/rbfopen"
 
 # with eclair-cli
-eclair-cli rbfopen --channelId=<channel_id> --targetFeerateSatByte=<target_feerate>
+eclair-cli rbfopen --channelId=<channel_id> --targetFeerateSatByte=<target_feerate> --fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis>
 ```
 
 > The above command returns:
@@ -267,11 +268,12 @@ A negotiation will start with your channel peer, and if they agree, your node wi
 
 ### Parameters
 
-Parameter            | Description                                             | Optional | Type
--------------------- | ------------------------------------------------------- | -------- | ---------------------------
-channelId            | The **channelId** of the channel that should be RBF-ed  | No       | 33-bytes-HexString (String)
-targetFeerateSatByte | Feerate in sat/byte to apply to the funding transaction | No       | Satoshis (Integer)
-lockTime             | The nLockTime to apply to the funding transaction       | Yes      | Integer
+Parameter                | Description                                             | Optional | Type
+------------------------ | ------------------------------------------------------- | -------- | ---------------------------
+channelId                | The **channelId** of the channel that should be RBF-ed  | No       | 33-bytes-HexString (String)
+targetFeerateSatByte     | Feerate in sat/byte to apply to the funding transaction | No       | Satoshis (Integer)
+fundingFeeBudgetSatoshis | Maximum fees (in satoshis) of the funding transaction   | No       | Satoshis (Integer)
+lockTime                 | The nLockTime to apply to the funding transaction       | Yes      | Integer
 
 ## CpfpBumpFees
 
@@ -381,6 +383,40 @@ channelId      | The channelId of the channel you want to close      | No       
 shortChannelId | The shortChannelId of the channel you want to close | Yes      | ShortChannelId (String)
 channelIds     | List of channelIds to force-close                   | Yes      | CSV or JSON list of channelId
 shortChannelIds| List of shortChannelIds to force-close              | Yes      | CSV or JSON list of shortChannelId
+
+## BumpForceClose
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel> -F priority=<priority> "http://localhost:8080/bumpforceclose"
+
+# with eclair-cli
+eclair-cli bumpforceclose --channelId=<channel> --priority=<priority>
+```
+> The above command returns:
+
+```shell
+{
+  "<channel>": "ok"
+}
+```
+
+Changes the priority of the automatic fee-bumping that is applied to a closing channel.
+This can be useful when you want to get your funds back faster and don't mind paying more fees for that.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
+
+### HTTP Request
+
+`POST http://localhost:8080/bumpforceclose`
+
+### Parameters
+
+Parameter      | Description                                            | Optional | Type
+-------------- | ------------------------------------------------------ | -------- | ---------------------------
+channelId      | The channelId of the channel you want to bump          | No       | 32-bytes-HexString (String)
+priority       | The priority for that transaction (slow, medium, fast) | No       | Priority (String)
+shortChannelId | The shortChannelId of the channel you want to bump     | Yes      | ShortChannelId (String)
+channelIds     | List of closing channelIds to bump                     | Yes      | CSV or JSON list of channelId
+shortChannelIds| List of closing shortChannelIds to bump                | Yes      | CSV or JSON list of shortChannelId
 
 # UpdateRelayFee
 
@@ -1582,6 +1618,48 @@ externalId                | Extra payment identifier specified by the caller    
 pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 blocking                  | Block until the payment completes                                                              | Yes      | Boolean
 
+## PayOffer
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F offer=<some_offer> amountMsat=<amount_msat> "http://localhost:8080/payoffer"
+
+# with eclair-cli
+eclair-cli payoffer --offer=<some_offer> --amountMsat=<amount_msat>
+```
+
+> The above command returns:
+
+```json
+"e4227601-38b3-404e-9aa0-75a829e9bec0"
+```
+
+Pays a **BOLT12** offer. In case of failure, the payment will be retried up to `maxAttempts` times.
+The default number of attempts is read from the configuration.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+It's possible to add an extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+
+When `--blocking=true` is provided, the API will instead block until the payment completes.
+It will then return full details about the payment (succeeded or failed).
+
+### HTTP Request
+
+`POST http://localhost:8080/payoffer`
+
+### Parameters
+
+Parameter                 | Description                                                                                    | Optional | Type
+------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ----------------------
+offer                     | The Bolt12 offer you want to pay                                                               | No       | String
+amountMsat                | Amount to pay                                                                                  | No       | Millisatoshi (Integer)
+quantity                  | Number of items to pay for, if the offer supports it                                           | Yes      | Integer
+connectDirectly           | If true, directly connect to the offer's introduction node to request an invoice               | Yes      | Boolean
+maxAttempts               | Max number of retries                                                                          | Yes      | Integer
+maxFeeFlatSat             | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Integer (between 0 and 100)
+externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
+pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
+blocking                  | Block until the payment completes                                                              | Yes      | Boolean
+
 ## SendToNode
 
 ```shell
@@ -2509,7 +2587,10 @@ Parameter          | Description                          | Optional | Type
 ------------------ | ------------------------------------ | -------- | ------------------------
 address            | The bitcoin address of the recipient | No       | Bitcoin address (String)
 amountSatoshis     | The amount that should be sent       | No       | Satoshi (Integer)
-confirmationTarget | The confirmation target (blocks)     | No       | Satoshi (Integer)
+confirmationTarget | The confirmation target (blocks)     | Yes (*)  | Satoshi (Integer)
+feeRatePerByte     | The feerate in sat/byte              | Yes (*)  | Satoshi (Integer)
+
+(*) You must provide either `confirmationTarget` or `feeRatePerByte`.
 
 ## OnChainBalance
 
@@ -2661,10 +2742,10 @@ The API will then wait for a response (or timeout if it doesn't receive a respon
 Parameter             | Description                                                | Optional | Type
 --------------------- | ---------------------------------------------------------- | -------- | -----------------------------------------------
 content               | Message sent to the recipient (encoded as a tlv stream)    | No       | HexString (String)
+expectsReply          | Whether a response to that message is expected             | No       | Boolean
 recipientNode         | NodeId of the recipient, if known.                         | Yes (*)  | 33-bytes-HexString (String)
 recipientBlindedRoute | Blinded route provided by the recipient (encoded as a tlv) | Yes (*)  | HexString (String)
 intermediateNodes     | Intermediates nodes to insert before the recipient         | Yes      | CSV or JSON list of 33-bytes-HexString (String)
-replyPath             | Reply path that must be used if a response is expected     | Yes      | CSV or JSON list of 33-bytes-HexString (String)
 
 (*): you must specify either recipientNode or recipientBlindedRoute, but not both.
 
@@ -3123,6 +3204,77 @@ All amounts are in bitcoin.
 ### HTTP Request
 
 `POST http://localhost:8080/globalbalance`
+
+## GetMasterXpub
+
+```shell
+curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/getmasterxpub"
+
+# with eclair-cli
+eclair-cli getmasterxpub
+```
+
+> The above command returns:
+
+```json
+{
+  "xpub": "xpub6EE2N7jrues5kfjrsyFA5f7hknixqqAEKs8vyMN4QW9vDmYnChzpeBPkBYduBobbe4miQ34xHG4Jpwuq5bHXLZY1xixoGynW31ySUqqVvcU"
+}
+```
+
+Returns the master BIP32 extended public key of your on-chain wallet.
+This is useful when eclair manages the on-chain keys instead of delegating that to Bitcoin Core.
+
+### HTTP Request
+
+`POST http://localhost:8080/getmasterxpub`
+
+### Parameters
+
+Parameter | Description                              | Optional | Type
+--------- | ---------------------------------------- | -------- | --------
+account   | BIP32 account (derived from root key)    | Yes      | Integer
+
+## GetDescriptors
+
+```shell
+curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/getdescriptors"
+
+# with eclair-cli
+eclair-cli getdescriptors
+```
+
+> The above command returns:
+
+```json
+[
+  {
+    "desc": "<receive_descriptor>",
+    "internal": false,
+    "active": true,
+    "timestamp": 0
+  },
+  {
+    "desc": "<change_descriptor>",
+    "internal": true,
+    "active": true,
+    "timestamp": 0
+  }
+]
+```
+
+Returns output script descriptors for the main and change addresses of your on-chain wallet.
+This is useful when eclair manages the on-chain keys instead of delegating that to Bitcoin Core.
+
+### HTTP Request
+
+`POST http://localhost:8080/getdescriptors`
+
+### Parameters
+
+Parameter | Description                              | Optional | Type
+--------- | ---------------------------------------- | -------- | --------
+account   | BIP32 account (derived from root key)    | Yes      | Integer
 
 # WebSocket
 
