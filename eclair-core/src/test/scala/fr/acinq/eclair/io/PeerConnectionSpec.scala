@@ -402,7 +402,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val Right((_, message)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right(message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     probe.send(peerConnection, message)
     probe watch peerConnection
     probe.expectTerminated(peerConnection, max = 1500 millis)
@@ -418,7 +418,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val Right((_, message)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right(message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     probe watch peerConnection
     probe.send(peerConnection, message)
     // The connection is still open for a short while.
@@ -431,7 +431,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
     val probe = TestProbe()
-    val Right((_, message)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right(message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     probe.send(peerConnection, message)
     assert(peerConnection.stateName == PeerConnection.CONNECTED)
     probe.send(peerConnection, ChannelReady(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
@@ -444,7 +444,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("incoming rate limiting") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
-    val Right((_, message)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(nodeParams.nodeId, None), TlvStream.empty)
+    val Right(message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(nodeParams.nodeId, None), TlvStream.empty)
     for (_ <- 1 to 30) {
       transport.send(peerConnection, message)
     }
@@ -463,7 +463,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("outgoing rate limiting") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
-    val Right((_, message)) = buildMessage(nodeParams.privateKey, randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
+    val Right(message) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     for (_ <- 1 to 30) {
       peer.send(peerConnection, message)
     }

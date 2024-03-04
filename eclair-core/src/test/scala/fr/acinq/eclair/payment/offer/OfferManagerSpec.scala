@@ -88,7 +88,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     assert(invoice.blindedPaths.length == 1)
-    val blindedPath = invoice.blindedPaths.head.route.asInstanceOf[OfferTypes.BlindedPath].route
+    val blindedPath = invoice.blindedPaths.head.route
     val Right(RouteBlindingDecryptedData(encryptedDataTlvs, _)) = RouteBlindingEncryptedDataCodecs.decode(nodeParams.privateKey, blindedPath.blindingKey, blindedPath.encryptedPayloads.head)
     val paymentTlvs = TlvStream[OnionPaymentPayloadTlv](
       OnionPaymentPayloadTlv.AmountToForward(invoice.amount),

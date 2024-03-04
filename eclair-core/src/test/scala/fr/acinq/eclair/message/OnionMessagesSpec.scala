@@ -40,12 +40,10 @@ import scodec.bits.{ByteVector, HexStringSyntax}
 class OnionMessagesSpec extends AnyFunSuite {
 
   test("single-hop onion message without path_id") {
-    val nodeKey = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val destination = randomKey()
-    val Right((nextNodeId, message)) = buildMessage(nodeKey, sessionKey, blindingSecret, Nil, Recipient(destination.publicKey, None), TlvStream.empty)
-    assert(nextNodeId == destination.publicKey)
+    val Right(message) = buildMessage(sessionKey, blindingSecret, Nil, Recipient(destination.publicKey, None), TlvStream.empty)
 
     process(destination, message) match {
       case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.isEmpty)
@@ -108,9 +106,9 @@ class OnionMessagesSpec extends AnyFunSuite {
     val onionForAlice = OnionMessage(blindingSecret.publicKey, packet)
 
     // Building the onion with functions from `OnionMessages`
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, EncodedNodeId(carol.publicKey), padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
     assert(replyPath == routeFromCarol)
-    val Right((_, message)) = buildMessage(randomKey(), sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
+    val Right(message) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(message == onionForAlice)
 
     // Checking that the onion is relayed properly
@@ -204,33 +202,35 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("build message with existing route") {
-    val nodeKey = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val blindingOverride = randomKey()
     val destination = randomKey()
     val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567")))
     assert(replyPath.blindingKey == blindingOverride.publicKey)
-    assert(replyPath.introductionNodeId == destination.publicKey)
-    val Right((nextNodeId, message)) = buildMessage(nodeKey, sessionKey, blindingSecret, Nil, BlindedPath(replyPath), TlvStream.empty)
-    assert(nextNodeId == destination.publicKey)
+    assert(replyPath.introductionNodeId == EncodedNodeId(destination.publicKey))
+    val Right(message) = buildMessage(sessionKey, blindingSecret, Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(message.blindingKey == blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
 
     process(destination, message) match {
-      case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
+      case SendMessage(Right(EncodedNodeId.Plain(nextNodeId2)), message2) =>
+        assert(nextNodeId2 == destination.publicKey)
+        process(destination, message2) match {
+          case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
+          case x => fail(x.toString)
+        }
       case x => fail(x.toString)
     }
   }
 
   test("very large multi-hop onion message") {
-    val nodeKey = randomKey()
     val alice = randomKey()
     val bob = randomKey()
     val carol = randomKey()
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val pathId = randomBytes(65201)
-    val Right((_, messageForAlice)) = buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
+    val Right(messageForAlice) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
 
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {
@@ -250,7 +250,6 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("too large multi-hop onion message") {
-    val nodeKey = randomKey()
     val alice = randomKey()
     val bob = randomKey()
     val carol = randomKey()
@@ -259,7 +258,7 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val pathId = randomBytes(65202)
 
-    assert(buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty) == Left(MessageTooLarge(65433)))
+    assert(buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty) == Left(MessageTooLarge(65433)))
   }
 
   test("reference test vector") {
@@ -286,7 +285,7 @@ class OnionMessagesSpec extends AnyFunSuite {
       Recipient(nodeKey.publicKey, Some(ByteVector.fromValidHex((json \ "path_id").extract[String])), (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
 
     def makeIntermediateNode(nodeKey: PrivateKey, json: JValue): IntermediateNode =
-      IntermediateNode(nodeKey.publicKey, None, (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
+      IntermediateNode(nodeKey.publicKey, EncodedNodeId(nodeKey.publicKey), None, (json \ "padding").extract[Option[String]].map(ByteVector.fromValidHex(_)), getCustomTlvs(json))
 
     val blindingSecretBob = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(1) \ "blinding_secret").extract[String]))
     val pathId = ByteVector.fromValidHex(((testVector \ "generate" \ "hops")(3) \ "tlvs" \ "path_id").extract[String])
@@ -296,10 +295,10 @@ class OnionMessagesSpec extends AnyFunSuite {
         makeRecipient(dave, (testVector \ "generate" \ "hops")(3) \ "tlvs"))
     val blindingSecretAlice = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(0) \ "blinding_secret").extract[String]))
     val intermediateAlice = Seq(makeIntermediateNode(alice, (testVector \ "generate" \ "hops")(0) \ "tlvs"))
-    val Some(pathAliceToDave) = buildRouteFrom(alice, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave))
+    val pathAliceToDave = buildRouteFrom(blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave))
 
     val expectedPath = BlindedRoute(
-      PublicKey(ByteVector.fromValidHex((testVector \ "route" \ "introduction_node_id").extract[String])),
+      EncodedNodeId(PublicKey(ByteVector.fromValidHex((testVector \ "route" \ "introduction_node_id").extract[String]))),
       PublicKey(ByteVector.fromValidHex((testVector \ "route" \ "blinding").extract[String])),
       Seq(
         BlindedNode(
@@ -321,7 +320,7 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val sessionKey = PrivateKey(ByteVector32.fromValidHex((testVector \ "generate" \ "session_key").extract[String]))
     val messageContent = TlvStream(Set.empty[OnionMessagePayloadTlv], getCustomTlvs(testVector \ "onionmessage"))
-    val Right((_, message)) = buildMessage(alice, sessionKey, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave), messageContent)
+    val Right(message) = buildMessage(sessionKey, blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave), messageContent)
     val encodedPacket = OnionRoutingCodecs.onionRoutingPacketCodec(1300).encode(message.onionRoutingPacket).require.bytes.toHex
     val expectedPacket = (testVector \ "onionmessage" \ "onion_message_packet").extract[String]
     assert(encodedPacket == expectedPacket)
@@ -349,7 +348,6 @@ class OnionMessagesSpec extends AnyFunSuite {
   }
 
   test("route with channel ids") {
-    val nodeKey = randomKey()
     val alice = randomKey()
     val alice2bob = ShortChannelId(1)
     val bob = randomKey()
@@ -358,7 +356,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val pathId = randomBytes(64)
-    val Right((_, messageForAlice)) = buildMessage(nodeKey, sessionKey, blindingSecret, IntermediateNode(alice.publicKey, outgoingChannel_opt = Some(alice2bob)) :: IntermediateNode(bob.publicKey, outgoingChannel_opt = Some(bob2carol)) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
+    val Right(messageForAlice) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey, EncodedNodeId(alice.publicKey), outgoingChannel_opt = Some(alice2bob)) :: IntermediateNode(bob.publicKey, EncodedNodeId(bob.publicKey), outgoingChannel_opt = Some(bob2carol)) :: Nil, Recipient(carol.publicKey, Some(pathId)), TlvStream.empty)
 
     // Checking that the onion is relayed properly
     process(alice, messageForAlice) match {

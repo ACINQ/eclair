@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
 import fr.acinq.eclair.wire.protocol.{BlindedRouteData, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{ParallelTestExecution, Tag}
 
@@ -31,7 +31,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
     val a = randomKey()
     val pathId = randomBytes32()
     val route = createBlindedRouteWithoutHops(a.publicKey, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
+    assert(route.route.introductionNodeId == EncodedNodeId(a.publicKey))
     assert(route.route.encryptedPayloads.length == 1)
     assert(route.route.blindingKey == route.lastBlinding)
     val Right(decoded) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads.head)
@@ -48,7 +48,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
       ChannelHop(scid2, b.publicKey, c.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid2, b.publicKey, c.publicKey, 20 msat, 150, cltvDelta = CltvExpiryDelta(600)))),
     )
     val route = createBlindedRouteFromHops(hops, pathId, 1 msat, CltvExpiry(500))
-    assert(route.route.introductionNodeId == a.publicKey)
+    assert(route.route.introductionNodeId == EncodedNodeId(a.publicKey))
     assert(route.route.encryptedPayloads.length == 3)
     val Right(decoded1) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.blindingKey, route.route.encryptedPayloads(0))
     assert(BlindedRouteData.validatePaymentRelayData(decoded1.tlvs).isRight)

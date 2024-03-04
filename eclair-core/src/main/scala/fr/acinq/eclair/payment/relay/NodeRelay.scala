@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
-import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.Resolve
+import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.{Resolve, ResolvedPath}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
@@ -63,7 +63,7 @@ object NodeRelay {
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
-  private case class WrappedResolvedPaths(resolved: Seq[PaymentBlindedRoute]) extends Command
+  private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -340,7 +340,7 @@ class NodeRelay private(nodeParams: NodeParams,
             relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
         }
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
-        context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[PaymentBlindedRoute]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
+        context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
         waitForResolvedPaths(upstream, payloadOut, paymentCfg, routeParams)
     }
   }
@@ -378,7 +378,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedResolvedPaths(resolved) =>
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
         // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
-        val blindedNodeId = resolved.head.route.blindedNodeIds.last
+        val blindedNodeId = resolved.head.blindedPath.route.blindedNodeIds.last
         val recipient = BlindedRecipient.fromPaths(blindedNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
         context.log.debug("sending the payment to blinded recipient, useMultiPart={}", features.hasFeature(Features.BasicMultiPartPayment))
         relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, features.hasFeature(Features.BasicMultiPartPayment))

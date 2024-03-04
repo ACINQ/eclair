@@ -18,11 +18,11 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, PaymentBlindedContactInfo}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -186,7 +186,7 @@ object OnionPaymentPayloadTlv {
   case class AsyncPayment() extends OnionPaymentPayloadTlv
 
   /** Blinded paths to relay the payment to */
-  case class OutgoingBlindedPaths(paths: Seq[PaymentBlindedContactInfo]) extends OnionPaymentPayloadTlv
+  case class OutgoingBlindedPaths(paths: Seq[PaymentBlindedRoute]) extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -537,12 +537,12 @@ object PaymentOnionCodecs {
 
   private val trampolineOnion: Codec[TrampolineOnion] = tlvField(OnionRoutingCodecs.variableSizeOnionRoutingPacketCodec)
 
-  private val paymentBlindedContactInfo: Codec[PaymentBlindedContactInfo] =
-    (("route" | OfferCodecs.pathCodec) ::
-      ("paymentInfo" | OfferCodecs.paymentInfo)).as[PaymentBlindedContactInfo]
+  private val paymentBlindedRoute: Codec[PaymentBlindedRoute] =
+    (("route" | OfferCodecs.blindedRouteCodec) ::
+      ("paymentInfo" | OfferCodecs.paymentInfo)).as[PaymentBlindedRoute]
 
   private val outgoingBlindedPaths: Codec[OutgoingBlindedPaths] =
-    tlvField(list(paymentBlindedContactInfo).xmap[Seq[PaymentBlindedContactInfo]](_.toSeq, _.toList))
+    tlvField(list(paymentBlindedRoute).xmap[Seq[PaymentBlindedRoute]](_.toSeq, _.toList))
 
   private val keySend: Codec[KeySend] = tlvField(bytes32)
 
