@@ -161,7 +161,7 @@ private class SendingMessage(nodeParams: NodeParams,
   private def waitForNodeId(compactBlindedPath: BlindedRoute): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedNodeIdResponse(None) =>
-        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path: ${compactBlindedPath.introductionNode}")
+        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path: ${compactBlindedPath.introductionNode.nodeId}")
         Behaviors.stopped
       case WrappedNodeIdResponse(Some(nodeId)) =>
         sendToDestination(OnionMessages.BlindedPath(compactBlindedPath), nodeId)
