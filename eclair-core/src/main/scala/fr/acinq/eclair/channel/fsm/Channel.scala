@@ -853,7 +853,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
         d.spliceStatus match {
           case SpliceStatus.NoSplice if d.commitments.params.useQuiescence =>
-            startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.revocationTimeout)
+            startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
             if (d.commitments.localIsQuiescent) {
               stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, initiator = true)
             } else {
