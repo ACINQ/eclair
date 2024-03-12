@@ -74,10 +74,12 @@ and COMMAND is one of the available commands:
   === Payment ===
     - usablebalances
     - payinvoice
+    - payoffer
     - sendtonode
     - sendtoroute
     - getsentinfo
     - getreceivedinfo
+    - listreceivedpayments
 
   === Message ===
     - signmessage
@@ -91,6 +93,8 @@ and COMMAND is one of the available commands:
     - onchainbalance
     - onchaintransactions
     - globalbalance
+    - getmasterxpub
+    - getdescriptors
 
 Examples
 --------
