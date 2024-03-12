@@ -16,13 +16,15 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
-import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
+import fr.acinq.eclair.channel.{ChannelType, ChannelTypes, PartialSignatureWithNonce}
+import fr.acinq.eclair.wire.protocol.ChannelTlv.nexLocalNonceTlvCodec
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
 import fr.acinq.eclair.{Alias, FeatureSupport, Features, MilliSatoshi, UInt64}
 import scodec.Codec
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 
 sealed trait OpenChannelTlv extends Tlv
@@ -89,6 +91,10 @@ object ChannelTlv {
    */
   case class UseFeeCredit(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with SpliceInitTlv
 
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
+
+  val nexLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
+
 }
 
 object OpenChannelTlv {
@@ -98,6 +104,7 @@ object OpenChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
   )
 
 }
@@ -109,6 +116,7 @@ object AcceptChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(discriminated[AcceptChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
   )
 }
 
@@ -205,16 +213,26 @@ object AcceptDualFundedChannelTlv {
 
 }
 
+case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends FundingCreatedTlv with FundingSignedTlv
+
+object PartialSignatureWithNonceTlv {
+  val codec: Codec[PartialSignatureWithNonceTlv] = tlvField(partialSignatureWithNonce)
+}
+
 sealed trait FundingCreatedTlv extends Tlv
 
 object FundingCreatedTlv {
-  val fundingCreatedTlvCodec: Codec[TlvStream[FundingCreatedTlv]] = tlvStream(discriminated[FundingCreatedTlv].by(varint))
+  val fundingCreatedTlvCodec: Codec[TlvStream[FundingCreatedTlv]] = tlvStream(discriminated[FundingCreatedTlv].by(varint)
+    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
+  )
 }
 
 sealed trait FundingSignedTlv extends Tlv
 
 object FundingSignedTlv {
-  val fundingSignedTlvCodec: Codec[TlvStream[FundingSignedTlv]] = tlvStream(discriminated[FundingSignedTlv].by(varint))
+  val fundingSignedTlvCodec: Codec[TlvStream[FundingSignedTlv]] = tlvStream(discriminated[FundingSignedTlv].by(varint)
+    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
+  )
 }
 
 sealed trait ChannelReadyTlv extends Tlv
@@ -227,6 +245,7 @@ object ChannelReadyTlv {
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
     .typecase(UInt64(1), channelAliasTlvCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
   )
 }
 
@@ -242,6 +261,7 @@ object ChannelReestablishTlv {
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
   )
 }
 
@@ -254,7 +274,13 @@ object UpdateFeeTlv {
 sealed trait ShutdownTlv extends Tlv
 
 object ShutdownTlv {
-  val shutdownTlvCodec: Codec[TlvStream[ShutdownTlv]] = tlvStream(discriminated[ShutdownTlv].by(varint))
+  case class ShutdownNonce(nonce: IndividualNonce) extends ShutdownTlv
+
+  private val shutdownNonceCodec: Codec[ShutdownNonce] = tlvField(publicNonce)
+
+  val shutdownTlvCodec: Codec[TlvStream[ShutdownTlv]] = tlvStream(discriminated[ShutdownTlv].by(varint)
+    .typecase(UInt64(8), shutdownNonceCodec)
+  )
 }
 
 sealed trait ClosingSignedTlv extends Tlv
@@ -265,8 +291,13 @@ object ClosingSignedTlv {
 
   private val feeRange: Codec[FeeRange] = tlvField(("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi))
 
+  case class PartialSignature(partialSignature: ByteVector32) extends ClosingSignedTlv
+
+  private val partialSignature: Codec[PartialSignature] = tlvField(bytes32)
+
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
     .typecase(UInt64(1), feeRange)
+    .typecase(UInt64(6), partialSignature)
   )
 
 }
