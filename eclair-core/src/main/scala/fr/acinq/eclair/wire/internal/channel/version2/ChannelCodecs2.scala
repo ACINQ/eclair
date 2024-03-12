@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version2
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget

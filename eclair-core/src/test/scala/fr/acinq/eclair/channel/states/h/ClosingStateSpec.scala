@@ -285,6 +285,16 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // NB: nominal case is tested in IntegrationSpec
   }
 
+  test("mutual close taproot channel", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    val mutualCloseTx = alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last
+    assert(Script.isPay2tr(Script.parse(mutualCloseTx.input.txOut.publicKeyScript)))
+    
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mutualCloseTx.tx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
   def testMutualCloseBeforeConverge(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
     import f._
     val sender = TestProbe()
@@ -828,6 +838,18 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.claimMainOutputTx.nonEmpty)
     assert(closingState.claimHtlcTxs.isEmpty)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx == bobCommitTx)
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
+  }
+
+  test("recv WatchFundingSpentTriggered (remote commit) taproot channel ", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
+    assert(bobCommitTx.txOut.size == 4) // two main outputs
+    val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
+    assert(closingState.claimMainOutputTx.nonEmpty)
+    assert(closingState.claimHtlcTxs.isEmpty)
     val txPublished = txListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx == bobCommitTx)
     assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit

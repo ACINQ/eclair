@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version3
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
@@ -203,7 +204,7 @@ private[channel] object ChannelCodecs3 {
 
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64)).as[CommitTxAndRemoteSig]
+        ("remoteSig" | either(provide(false), bytes64, partialSignatureWithNonce))).as[CommitTxAndRemoteSig]
 
     val localCommitCodec: Codec[LocalCommit] = (
       ("index" | uint64overflow) ::

@@ -16,15 +16,20 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.Crypto.TaprootTweak.ScriptTweak
 import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
+import fr.acinq.bitcoin.scalacompat.KotlinUtils.scala2kmp
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, NUMS_POINT}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
+
+import scala.jdk.CollectionConverters.SeqHasAsJava
 
 /**
  * Created by PM on 02/12/2016.
@@ -44,12 +49,19 @@ object Scripts {
     case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
+  def sort(pubkeys: Seq[PublicKey]): Seq[PublicKey] = pubkeys.sortWith { (a, b) => fr.acinq.bitcoin.LexicographicalOrdering.isLessThan(a.xOnly.pub.value, b.xOnly.pub.value) }
+
+
   def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
     if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
       Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
     } else {
       Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
     }
+
+  def musig2Aggregate(pubkey1: PublicKey, pubkey2: PublicKey): XonlyPublicKey = Musig2.aggregateKeys(sort(Seq(pubkey1, pubkey2)))
+
+  def musig2FundingScript(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = Script.pay2tr(musig2Aggregate(pubkey1, pubkey2), None)
 
   /**
    * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
@@ -136,6 +148,46 @@ object Scripts {
     // @formatter:on
   }
 
+  def taprootRevokeScript(revocationPubkey: PublicKey, localDelayedPaymentPubkey: PublicKey): Seq[ScriptElt] = {
+    OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_DROP :: OP_PUSHDATA(revocationPubkey.xOnly) :: OP_CHECKSIG :: Nil
+  }
+
+  def taprootToDelayScript(localDelayedPaymentPubkey: PublicKey, toLocalDelay: CltvExpiryDelta): Seq[ScriptElt] = {
+    OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_CHECKSIG :: Scripts.encodeNumber(toLocalDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: Nil
+  }
+
+  /**
+   * Taproot channels to-local key, used for the delayed to-local output
+   * @param revocationPubkey  revocation key
+   * @param toSelfDelay  self CsV delay
+   * @param localDelayedPaymentPubkey local delayed payment key
+   * @return an (XonlyPubkey, Parity) pair
+   */
+  def toLocalKey(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): (XonlyPublicKey, Boolean) = {
+    val revokeScript = taprootRevokeScript(revocationPubkey, localDelayedPaymentPubkey)
+    val toDelayScript = taprootToDelayScript(localDelayedPaymentPubkey, toSelfDelay)
+    val scriptTree = new ScriptTree.Branch(
+      new ScriptTree.Leaf(0, toDelayScript.map(scala2kmp).asJava),
+      new ScriptTree.Leaf(1, revokeScript.map(scala2kmp).asJava),
+    )
+    XonlyPublicKey(NUMS_POINT).outputKey(new ScriptTweak(scriptTree))
+  }
+
+  /**
+   *
+   * @param revocationPubkey revocation key
+   * @param toSelfDelay to-self CSV delay
+   * @param localDelayedPaymentPubkey local delayed payment key
+   * @return a script tree with to leaves (to self with delay, and to revocation key)
+   */
+  def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree = {
+    new ScriptTree.Branch(
+      new ScriptTree.Leaf(0, taprootToDelayScript(localDelayedPaymentPubkey, toSelfDelay).map(scala2kmp).asJava),
+      new ScriptTree.Leaf(1, taprootRevokeScript(revocationPubkey, localDelayedPaymentPubkey).map(scala2kmp).asJava),
+    )
+  }
+
+
   /**
    * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
    */
@@ -154,6 +206,29 @@ object Scripts {
    */
   def toRemoteDelayed(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
     OP_PUSHDATA(remotePaymentPubkey) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
+  }
+  def taprootToRemoteScript(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
+    OP_PUSHDATA(remotePaymentPubkey.xOnly) :: OP_CHECKSIG :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: Nil
+  }
+
+  /**
+   * taproot channel to-remote key, used fot the to-remote output
+   * @param remotePaymentPubkey remote key
+   * @return a (XonlyPubkey, Parity) pair
+   */
+  def toRemoteKey(remotePaymentPubkey: PublicKey): (XonlyPublicKey, Boolean) = {
+    val toRemoteScript = taprootToRemoteScript(remotePaymentPubkey)
+    val scriptTree = new ScriptTree.Leaf(0, toRemoteScript.map(scala2kmp).asJava)
+    XonlyPublicKey(NUMS_POINT).outputKey(scriptTree)
+  }
+
+  /**
+   *
+   * @param remotePaymentPubkey remote key
+   * @return a script tree with a single leaf (to remote key, with a 1-block CSV delay)
+   */
+  def toRemoteScriptTree(remotePaymentPubkey: PublicKey): ScriptTree = {
+    new ScriptTree.Leaf(0, taprootToRemoteScript(remotePaymentPubkey).map(scala2kmp).asJava)
   }
 
   /**
@@ -185,6 +260,10 @@ object Scripts {
    * This witness script spends either a local or remote [[anchor]] output after its CSV delay.
    */
   def witnessAnchorAfterDelay(anchorScript: ByteVector) = ScriptWitness(ByteVector.empty :: anchorScript :: Nil)
+
+  val taprootAnchorScript: Seq[ScriptElt] = OP_16 :: OP_CHECKSEQUENCEVERIFY :: Nil
+
+  val taprootAnchorScriptTree = new ScriptTree.Leaf(0, taprootAnchorScript.map(scala2kmp).asJava)
 
   def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {

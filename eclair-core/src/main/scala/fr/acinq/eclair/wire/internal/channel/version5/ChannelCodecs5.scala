@@ -1,6 +1,5 @@
-package fr.acinq.eclair.wire.internal.channel.version4
+package fr.acinq.eclair.wire.internal.channel.version5
 
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -21,9 +20,9 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
-private[channel] object ChannelCodecs4 {
+private[channel] object ChannelCodecs5 {
 
-  private[version4] object Codecs {
+  private[version5] object Codecs {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
@@ -185,7 +184,7 @@ private[channel] object ChannelCodecs4 {
 
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | either(provide(false), bytes64, partialSignatureWithNonce))).as[CommitTxAndRemoteSig]
+        ("remoteSig" | either(bool8, bytes64, partialSignatureWithNonce))).as[CommitTxAndRemoteSig]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
