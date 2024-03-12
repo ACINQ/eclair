@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol, Transaction, TxOut}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
@@ -40,6 +41,12 @@ trait ChannelKeyManager {
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
+
+  def verificationNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, channelKeyPath: DeterministicWallet.KeyPath, index: Long): (SecretNonce, IndividualNonce)
+
+  def signingNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce)
+
+  def closingNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce)
 
   def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
     if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
@@ -67,6 +74,8 @@ trait ChannelKeyManager {
    * @return a signature generated with the private key that matches the input extended public key
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+
+  def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32]
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
