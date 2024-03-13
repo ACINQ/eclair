@@ -212,7 +212,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       paymentWithoutHint = Left(Left(RouteNotFound)), // alice can't find a route to carol because bob-carol isn't announced
       paymentWithHint_opt = Some(Right(Ok)), // with a routing hint the payment works
       // TODO: we should be able to send payments with the real scid in the routing hint, but this currently doesn't work,
-      //  because the ChannelRelayer relies on the the LocalChannelUpdate event to maintain its scid resolution map, and
+      //  because the ChannelRelayer relies on the LocalChannelUpdate event to maintain its scid resolution map, and
       //  the channel doesn't emit a new one when a real scid is assigned, because we use the remote alias for the
       //  channel_update, not the real scid. So the channel_update remains the same. We used to have the ChannelRelayer
       //  also listen to ShortChannelIdAssigned event, but it's doesn't seem worth it here.
