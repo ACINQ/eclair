@@ -151,7 +151,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     require(chunk.shortChannelIds.forall(keep(chunk.firstBlock, chunk.numBlocks, _)))
   }
 
-  // check that chunks contain exactly the ids they were built from are are consistent i.e each chunk covers a range that immediately follows
+  // check that chunks contain exactly the ids they were built from are consistent i.e each chunk covers a range that immediately follows
   // the previous one even if there are gaps in block heights
   def validate(ids: SortedSet[RealShortChannelId], firstBlock: BlockHeight, numberOfBlocks: Long, chunks: List[ShortChannelIdsChunk]): Unit = {
 

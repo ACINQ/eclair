@@ -232,7 +232,7 @@ object Scripts {
   def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
     ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOffered :: Nil)
 
-  /** Extract the payment preimage from from a fulfilled offered htlc. */
+  /** Extract the payment preimage from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
