@@ -118,7 +118,23 @@ object Transactions {
     }
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
+
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = Transactions.sign(this, key, sighash(txOwner, commitmentFormat))
+
+    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = {
+      // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+      // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
+      val inputIndex = tx.txIn.zipWithIndex.find(_._1.outPoint == input.outPoint).get._2
+      Transactions.sign(tx, input.redeemScript, input.txOut.amount, key, sighashType, inputIndex)
+    }
+
+    def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
+      val sighash = this.sighash(txOwner, commitmentFormat)
+      val data = Transaction.hashForSigning(tx, inputIndex = 0, input.redeemScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
+      Crypto.verifySignature(data, sig, pubKey)
+    }
   }
+
   sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo {
     /** Block before which the transaction must be confirmed. */
     def confirmationTarget: ConfirmationTarget
@@ -852,14 +868,12 @@ object Transactions {
     sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
+  private def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
     // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
     // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
     val inputIndex = txinfo.tx.txIn.zipWithIndex.find(_._1.outPoint == txinfo.input.outPoint).get._2
     sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType, inputIndex)
   }
-
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(txinfo, key, txinfo.sighash(txOwner, commitmentFormat))
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
@@ -935,11 +949,4 @@ object Transactions {
     // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
   }
-
-  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
-    val sighash = txinfo.sighash(txOwner, commitmentFormat)
-    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sighash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
-    Crypto.verifySignature(data, sig, pubKey)
-  }
-
 }
