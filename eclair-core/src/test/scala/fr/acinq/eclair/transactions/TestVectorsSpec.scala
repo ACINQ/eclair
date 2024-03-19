@@ -209,9 +209,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         remotePaymentBasePoint = Remote.payment_basepoint,
         localIsChannelOpener = true,
         outputs = outputs)
-      val local_sig = Transactions.sign(tx, Local.funding_privkey, TxOwner.Local, commitmentFormat)
+      val local_sig = tx.sign(Local.funding_privkey, TxOwner.Local, commitmentFormat)
       logger.info(s"# local_signature = ${Scripts.der(local_sig).dropRight(1).toHex}")
-      val remote_sig = Transactions.sign(tx, Remote.funding_privkey, TxOwner.Remote, commitmentFormat)
+      val remote_sig = tx.sign(Remote.funding_privkey, TxOwner.Remote, commitmentFormat)
       logger.info(s"remote_signature: ${Scripts.der(remote_sig).dropRight(1).toHex}")
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
@@ -248,8 +248,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     val signedTxs = htlcTxs.collect {
       case tx: HtlcSuccessTx =>
-        val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
+        val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat)
+        val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
@@ -260,8 +260,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
-        val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
+        val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat)
+        val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
