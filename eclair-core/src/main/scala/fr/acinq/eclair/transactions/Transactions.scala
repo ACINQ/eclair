@@ -118,7 +118,17 @@ object Transactions {
     }
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
+
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = Transactions.sign(this, key, sighash(txOwner, commitmentFormat))
+
+    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = {
+      // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+      // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
+      val inputIndex = tx.txIn.zipWithIndex.find(_._1.outPoint == input.outPoint).get._2
+      Transactions.sign(tx, input.redeemScript, input.txOut.amount, key, sighashType, inputIndex)
+    }
   }
+
   sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo {
     /** Block before which the transaction must be confirmed. */
     def confirmationTarget: ConfirmationTarget
@@ -852,14 +862,12 @@ object Transactions {
     sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
+  private def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
     // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
     // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
     val inputIndex = txinfo.tx.txIn.zipWithIndex.find(_._1.outPoint == txinfo.input.outPoint).get._2
     sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType, inputIndex)
   }
-
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(txinfo, key, txinfo.sighash(txOwner, commitmentFormat))
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
