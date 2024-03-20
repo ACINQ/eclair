@@ -1,5 +1,6 @@
 package fr.acinq.eclair.wire.internal.channel.version5
 
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -111,7 +112,8 @@ private[channel] object ChannelCodecs5 {
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        ("redeemScript" | lengthDelimited(bytes)) ::
+        ("scriptTee_opt" | provide(Option.empty[ScriptTree]))).as[InputInfo] //TODO: serialise script tree properly
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

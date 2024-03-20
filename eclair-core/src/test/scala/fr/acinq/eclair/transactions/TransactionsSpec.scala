@@ -201,7 +201,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)))
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)), DefaultCommitmentFormat)
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
       assert(claimAnchorOutputTx.confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(1105)))
       // we will always add at least one input and one output to be able to set our desired feerate
@@ -576,7 +576,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends main delayed output
-      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, SimpleTaprootChannelsStagingCommitmentFormat)
       val localSig = claimRemoteDelayedOutputTx.sign(remotePaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimRemoteDelayedOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -884,7 +884,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // local spends main delayed output
       val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, SimpleTaprootChannelsStagingCommitmentFormat)
-      val localSig = sign(claimMainOutputTx, localDelayedPaymentPriv, TxOwner.Local, SimpleTaprootChannelsStagingCommitmentFormat)
+      val localSig = claimMainOutputTx.sign(localDelayedPaymentPriv, TxOwner.Local, SimpleTaprootChannelsStagingCommitmentFormat)
       val signedTx = addSigs(claimMainOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
@@ -895,8 +895,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends main delayed output
-      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
-      val localSig = sign(claimRemoteDelayedOutputTx, remotePaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, SimpleTaprootChannelsStagingCommitmentFormat)
+      val localSig = claimRemoteDelayedOutputTx.sign(remotePaymentPriv, TxOwner.Local, SimpleTaprootChannelsStagingCommitmentFormat)
       val signedTx = addSigs(claimRemoteDelayedOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
@@ -904,7 +904,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // local spends local anchor
       val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
-      val localSig = sign(claimAnchorOutputTx, localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val localSig = claimAnchorOutputTx.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
@@ -912,14 +912,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
-      val localSig = sign(claimAnchorOutputTx, remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val localSig = claimAnchorOutputTx.sign(remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
     {
       // remote spends local main delayed output with revocation key
       val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
-      val sig = sign(mainPenaltyTx, localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val sig = mainPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signed = addSigs(mainPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
     }

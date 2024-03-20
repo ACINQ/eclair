@@ -180,7 +180,7 @@ object Scripts {
    * @param localDelayedPaymentPubkey local delayed payment key
    * @return a script tree with to leaves (to self with delay, and to revocation key)
    */
-  def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree = {
+  def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree.Branch = {
     new ScriptTree.Branch(
       new ScriptTree.Leaf(0, taprootToDelayScript(localDelayedPaymentPubkey, toSelfDelay).map(scala2kmp).asJava),
       new ScriptTree.Leaf(1, taprootRevokeScript(revocationPubkey, localDelayedPaymentPubkey).map(scala2kmp).asJava),
@@ -227,7 +227,7 @@ object Scripts {
    * @param remotePaymentPubkey remote key
    * @return a script tree with a single leaf (to remote key, with a 1-block CSV delay)
    */
-  def toRemoteScriptTree(remotePaymentPubkey: PublicKey): ScriptTree = {
+  def toRemoteScriptTree(remotePaymentPubkey: PublicKey): ScriptTree.Leaf = {
     new ScriptTree.Leaf(0, taprootToRemoteScript(remotePaymentPubkey).map(scala2kmp).asJava)
   }
 

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version1
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxId, TxOut}
@@ -101,7 +102,8 @@ private[channel] object ChannelCodecs1 {
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        ("redeemScript" | lengthDelimited(bytes)) ::
+        ("scriptTee_opt" | provide(Option.empty[ScriptTree]))).as[InputInfo]
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 

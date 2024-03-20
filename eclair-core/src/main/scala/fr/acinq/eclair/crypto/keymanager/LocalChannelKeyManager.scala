@@ -17,15 +17,15 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.SigHash
+import fr.acinq.bitcoin.{ScriptTree, SigHash}
 import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, LexicographicalOrdering, Musig2, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, LexicographicalOrdering, Musig2, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalDelayedOutputTx, CommitmentFormat, NUMS_POINT, SimpleTaprootChannelsStagingCommitmentFormat, TransactionWithInputInfo, TxOwner}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{KamonExt, randomBytes32, randomLong}
 import grizzled.slf4j.Logging
