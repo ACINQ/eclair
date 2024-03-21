@@ -49,7 +49,7 @@ object Scripts {
     case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
-  def sort(pubkeys: Seq[PublicKey]): Seq[PublicKey] = pubkeys.sortWith { (a, b) => fr.acinq.bitcoin.LexicographicalOrdering.isLessThan(a.xOnly.pub.value, b.xOnly.pub.value) }
+  def sort(pubkeys: Seq[PublicKey]): Seq[PublicKey] = pubkeys.sortWith { (a, b) => fr.acinq.bitcoin.LexicographicalOrdering.isLessThan(a.pub.value, b.pub.value) }
 
 
   def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
