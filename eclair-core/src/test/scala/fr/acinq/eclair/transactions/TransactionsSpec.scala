@@ -831,7 +831,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // Different amounts, both outputs untrimmed, local is closer (option_simple_close):
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 250_000_000 msat)
-      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(5_000 sat), localPubKeyScript, remotePubKeyScript)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(5_000 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.localAndRemote_opt.nonEmpty)
       assert(closingTxs.localOnly_opt.nonEmpty)
       assert(closingTxs.remoteOnly_opt.isEmpty)
@@ -868,7 +868,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // Their output is trimmed (option_simple_close):
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 1_000_000 msat)
-      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByThem(800 sat), localPubKeyScript, remotePubKeyScript)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByThem(800 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.all.size == 1)
       assert(closingTxs.localOnly_opt.nonEmpty)
       val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
@@ -886,7 +886,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // Our output is trimmed (option_simple_close):
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 1_000_000 msat, 150_000_000 msat)
-      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(800 sat), localPubKeyScript, remotePubKeyScript)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(800 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.all.size == 1)
       assert(closingTxs.remoteOnly_opt.nonEmpty)
       assert(closingTxs.remoteOnly_opt.flatMap(_.toLocalOutput).isEmpty)

@@ -735,7 +735,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               // there are no pending signed changes, let's directly negotiate a closing transaction
               if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
                 val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates)
-                MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, closingFeerate) match {
+                MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, closingFeerate) match {
                   case Left(f) =>
                     log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
                     goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing() sending sendList
@@ -1331,7 +1331,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
                 if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
                   val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates)
-                  MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
+                  MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
                     case Left(f) =>
                       log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
                       goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing() sending revocation
@@ -1382,7 +1382,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             log.debug("switching to NEGOTIATING spec:\n{}", commitments1.latest.specs2String)
             if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
               val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates)
-              MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
+              MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, closingFeerate) match {
                 case Left(f) =>
                   log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
                   goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing()
@@ -1561,7 +1561,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (remoteShutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
         // Our peer changed their closing script: we sign a new version of our closing transaction using the new script.
         val feerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates)
-        MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, feerate) match {
+        MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, feerate) match {
           case Left(_) => stay() using d.copy(remoteShutdown = remoteShutdown) storing()
           case Right((closingTxs, closingComplete)) => stay() using d.copy(remoteShutdown = remoteShutdown, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) storing() sending closingComplete
         }
@@ -1622,7 +1622,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       if (localShutdown_opt.nonEmpty || c.feerates.nonEmpty) {
         val localScript = localShutdown_opt.map(_.scriptPubKey).getOrElse(d.localShutdown.scriptPubKey)
         val feerate = c.feerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates))
-        MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, localScript, d.remoteShutdown.scriptPubKey, feerate) match {
+        MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localScript, d.remoteShutdown.scriptPubKey, feerate) match {
           case Left(f) => handleCommandError(f, c)
           case Right((closingTxs, closingComplete)) =>
             log.info("new closing transaction created with script={} fees={}", localScript, closingComplete.fees)
@@ -2284,7 +2284,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // We retransmit our shutdown: we may have updated our script and they may not have received it.
       // We also sign a new round of closing transactions since network fees may have changed while we were offline.
       val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentFeerates)
-      Closing.MutualClose.makeSimpleClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingFeerate) match {
+      Closing.MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingFeerate) match {
         case Left(_) => goto(NEGOTIATING_SIMPLE) using d sending d.localShutdown
         case Right((closingTxs, closingComplete)) => goto(NEGOTIATING_SIMPLE) using d.copy(proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) sending Seq(d.localShutdown, closingComplete)
       }

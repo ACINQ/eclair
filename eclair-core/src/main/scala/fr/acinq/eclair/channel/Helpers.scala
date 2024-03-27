@@ -687,11 +687,11 @@ object Helpers {
       }
 
       /** We are the closer: we sign closing transactions for which we pay the fees. */
-      def makeSimpleClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
+      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
         require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit = true, allowOpReturn = true), "invalid localScriptPubkey")
         require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit = true, allowOpReturn = true), "invalid remoteScriptPubkey")
         val closingFee = {
-          val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), localScriptPubkey, remoteScriptPubkey)
+          val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
               val dummySignedTx = Transactions.addSigs(dummyTx, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig)
@@ -699,14 +699,14 @@ object Helpers {
             case None => return Left(CannotGenerateClosingTx(commitment.channelId))
           }
         }
-        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, localScriptPubkey, remoteScriptPubkey)
+        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
         // The actual fee we're paying will be bigger than the one we previously computed if we omit our output.
         val actualFee = closingTxs.preferred_opt match {
           case Some(closingTx) if closingTx.fee > 0.sat => closingTx.fee
           case _ => return Left(CannotGenerateClosingTx(commitment.channelId))
         }
         val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-        val closingComplete = ClosingComplete(commitment.channelId, actualFee, TlvStream(Set(
+        val closingComplete = ClosingComplete(commitment.channelId, actualFee, currentBlockHeight.toLong, TlvStream(Set(
           closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndClosee(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat))),
           closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserNoClosee(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat))),
           closingTxs.remoteOnly_opt.map(tx => ClosingTlv.NoCloserClosee(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat))),
@@ -721,7 +721,7 @@ object Helpers {
        */
       def signSimpleClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete): Either[ChannelException, (ClosingTx, ClosingSig)] = {
         val closingFee = SimpleClosingTxFee.PaidByThem(closingComplete.fees)
-        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, localScriptPubkey, remoteScriptPubkey)
+        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
         // Note that we're the closee, so we look for signatures including the closee output.
         (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {

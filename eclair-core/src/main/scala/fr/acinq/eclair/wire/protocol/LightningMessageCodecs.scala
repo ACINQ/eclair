@@ -230,6 +230,7 @@ object LightningMessageCodecs {
   val closingCompleteCodec: Codec[ClosingComplete] = (
     ("channelId" | bytes32) ::
       ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
       ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
 
   val closingSigCodec: Codec[ClosingSig] = (

@@ -345,7 +345,7 @@ case class ClosingSigned(channelId: ByteVector32,
   val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
 }
 
-case class ClosingComplete(channelId: ByteVector32, fees: Satoshi, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+case class ClosingComplete(channelId: ByteVector32, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val closerNoCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserNoClosee].map(_.sig)
   val noCloserCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.NoCloserClosee].map(_.sig)
   val closerAndCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndClosee].map(_.sig)
