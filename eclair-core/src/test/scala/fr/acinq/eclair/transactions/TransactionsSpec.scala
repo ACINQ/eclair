@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
@@ -829,6 +829,20 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTx.tx.txOut(toRemoteIndex.toInt).amount == 250_000.sat)
     }
     {
+      // Different amounts, both outputs untrimmed, local is closer (option_simple_close):
+      val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 250_000_000 msat)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(5_000 sat), 0, localPubKeyScript, remotePubKeyScript)
+      assert(closingTxs.localAndRemote_opt.nonEmpty)
+      assert(closingTxs.localOnly_opt.nonEmpty)
+      assert(closingTxs.remoteOnly_opt.isEmpty)
+      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput).get
+      assert(localAndRemote.publicKeyScript == localPubKeyScript)
+      assert(localAndRemote.amount == 145_000.sat)
+      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      assert(localOnly.publicKeyScript == localPubKeyScript)
+      assert(localOnly.amount == 145_000.sat)
+    }
+    {
       // Same amounts, both outputs untrimmed, local is fundee:
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 150_000_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = false, localDustLimit, 1000 sat, spec)
@@ -852,18 +866,37 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(toLocal.index == 0)
     }
     {
+      // Their output is trimmed (option_simple_close):
+      val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 1_000_000 msat)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByThem(800 sat), 0, localPubKeyScript, remotePubKeyScript)
+      assert(closingTxs.all.size == 1)
+      assert(closingTxs.localOnly_opt.nonEmpty)
+      val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      assert(toLocal.publicKeyScript == localPubKeyScript)
+      assert(toLocal.amount == 150_000.sat)
+      assert(toLocal.index == 0)
+    }
+    {
       // Our output is trimmed:
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 50_000 msat, 150_000_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = true, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.length == 1)
-      assert(closingTx.toLocalOutput == None)
+      assert(closingTx.toLocalOutput.isEmpty)
+    }
+    {
+      // Our output is trimmed (option_simple_close):
+      val spec = CommitmentSpec(Set.empty, feeratePerKw, 1_000_000 msat, 150_000_000 msat)
+      val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(800 sat), 0, localPubKeyScript, remotePubKeyScript)
+      assert(closingTxs.all.size == 1)
+      assert(closingTxs.remoteOnly_opt.nonEmpty)
+      assert(closingTxs.remoteOnly_opt.flatMap(_.toLocalOutput).isEmpty)
     }
     {
       // Both outputs are trimmed:
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 50_000 msat, 10_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localIsInitiator = true, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.isEmpty)
-      assert(closingTx.toLocalOutput == None)
+      assert(closingTx.toLocalOutput.isEmpty)
     }
   }
 

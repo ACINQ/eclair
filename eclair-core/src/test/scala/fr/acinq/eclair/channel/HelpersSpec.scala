@@ -225,6 +225,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       TxOut(294 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: Nil),
       TxOut(330 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000000000000000000000000000") :: Nil),
       TxOut(354 sat, OP_3 :: OP_PUSHDATA(hex"0000000000") :: Nil),
+      TxOut(0 sat, OP_RETURN :: OP_PUSHDATA(hex"deadbeef") :: Nil),
     )
 
     def toClosingTx(txOut: Seq[TxOut]): ClosingTx = {
