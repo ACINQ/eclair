@@ -761,6 +761,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     // to-remote output script tree,  with a single leaf
     val toRemoteScriptTree = new ScriptTree.Leaf(0, taprootToRemoteScript(remotePaymentPriv.publicKey).map(scala2kmp).asJava)
 
+    // offered HTLC
+    val preimage = ByteVector32.fromValidHex("01" * 32)
+    val paymentHash = Crypto.sha256(preimage)
+    val offeredHtlcTree = Scripts.taprootOfferedHtlcTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash)
+    val receivedHtlcTree = Scripts.taprootReceivedHtlcTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, CltvExpiry(300))
+
     val txNumber = 0x404142434445L
     val (sequence, lockTime) = encodeTxNumber(txNumber)
     val commitTx = {
@@ -772,6 +778,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           TxOut(400.millibtc, Script.pay2tr(XonlyPublicKey(NUMS_POINT), Some(toRemoteScriptTree))),
           TxOut(330.sat, Script.pay2tr(localDelayedPaymentPriv.xOnlyPublicKey(), Some(Scripts.taprootAnchorScriptTree))),
           TxOut(330.sat, Script.pay2tr(remotePaymentPriv.xOnlyPublicKey(), Some(Scripts.taprootAnchorScriptTree))),
+          TxOut(100.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(offeredHtlcTree))),
+          TxOut(150.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(receivedHtlcTree)))
         ),
         lockTime
       )
@@ -866,6 +874,45 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(mainPenaltyTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val offeredHtlcTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 4), Seq(), sequence = 1) :: Nil,
+        txOut = TxOut(100.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val remoteSig = Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), SigHash.SIGHASH_DEFAULT, offeredHtlcTree.getRight.hash())
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), offeredHtlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, preimage)), offeredHtlcTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(offeredHtlcTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val htlcSuccessTree = new ScriptTree.Leaf(0, taprootToDelayScript(localDelayedPaymentPriv.publicKey, toLocalDelay).map(scala2kmp).asJava)
+    val htlcSuccessTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 5), Seq(), sequence = 1) :: Nil,
+        txOut = TxOut(150.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(htlcSuccessTree))) :: Nil,
+        lockTime = 0)
+      val sigHash = SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY
+      val localSig = Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, receivedHtlcTree.getRight.hash()).bytes :+ sigHash.toByte
+      val remoteSig = Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, receivedHtlcTree.getRight.hash()).bytes :+ sigHash.toByte
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), receivedHtlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig, preimage)), receivedHtlcTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(htlcSuccessTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val spendHtlcSuccessTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(htlcSuccessTx, 0), Seq(), sequence = toLocalDelay.toInt) :: Nil,
+        txOut = TxOut(150.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val localSig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(htlcSuccessTx.txOut(0)), SigHash.SIGHASH_DEFAULT, htlcSuccessTree.hash())
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), htlcSuccessTree, ScriptWitness(Seq(localSig)), htlcSuccessTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(spendHtlcSuccessTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("generate valid commitment and htlc transactions (simple taproot channels)") {

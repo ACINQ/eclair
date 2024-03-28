@@ -187,7 +187,6 @@ object Scripts {
     )
   }
 
-
   /**
    * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
    */
@@ -304,6 +303,26 @@ object Scripts {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
+  def taprootOfferedHtlcTimeoutScript(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey): Seq[ScriptElt] = {
+    OP_PUSHDATA(localHtlcPubkey.xOnly) :: OP_CHECKSEQUENCEVERIFY :: OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG :: Nil
+  }
+
+  def taprootOfferedHtlcSuccessScript(remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    // @formatter:off
+    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
+      OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG ::
+      OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: Nil
+    // @formatter:on
+  }
+
+  def taprootOfferedHtlcTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): ScriptTree.Branch = {
+    new ScriptTree.Branch(
+      new ScriptTree.Leaf(0, taprootOfferedHtlcTimeoutScript(localHtlcPubkey, remoteHtlcPubkey).map(scala2kmp).asJava),
+      new ScriptTree.Leaf(1, taprootOfferedHtlcSuccessScript(remoteHtlcPubkey, paymentHash).map(scala2kmp).asJava),
+    )
+  }
+
   /**
    * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
@@ -344,6 +363,30 @@ object Scripts {
     OP_ENDIF :: Nil
     })
     // @formatter:on
+  }
+
+  def taprootReceivedHtlcTimeoutScript(remoteHtlcPubkey: PublicKey, lockTime: CltvExpiry): Seq[ScriptElt] = {
+    // @formatter:off
+    OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG ::
+    OP_1 :: OP_CHECKSEQUENCEVERIFY ::
+    encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY  :: OP_DROP :: Nil
+    // @formatter:on
+  }
+
+  def taprootReceivedHtlcSuccessScript(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    // @formatter:off
+    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
+    OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+    OP_PUSHDATA(localHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY ::
+    OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG :: Nil
+    // @formatter:on
+  }
+
+  def taprootReceivedHtlcTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, lockTime: CltvExpiry): ScriptTree.Branch = {
+    new ScriptTree.Branch(
+      new ScriptTree.Leaf(0, taprootReceivedHtlcTimeoutScript(remoteHtlcPubkey, lockTime).map(scala2kmp).asJava),
+      new ScriptTree.Leaf(1, taprootReceivedHtlcSuccessScript(localHtlcPubkey, remoteHtlcPubkey, paymentHash).map(scala2kmp).asJava),
+    )
   }
 
   /**
