@@ -70,7 +70,7 @@ object ChannelTlv {
 
   val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi)
 
-  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
 
   val nexLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
 
@@ -226,6 +226,7 @@ object ChannelReestablishTlv {
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
   )
 }
 
