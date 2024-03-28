@@ -44,7 +44,7 @@ trait Payment {
           case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
           case _ => complete(eclairApi.send(externalId_opt, amount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
         }
-      case (invoice, Some(overrideAmount), maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
+      case (invoice: Bolt11Invoice, Some(overrideAmount), maxAttempts, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, blocking_opt, pathFindingExperimentName_opt) =>
         blocking_opt match {
           case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
           case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
@@ -62,9 +62,13 @@ trait Payment {
             case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds, maxFee_opt)
             case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds, maxFee_opt)
           }
-          complete(eclairApi.sendToRoute(
-            recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta))
-          )
+          invoice match {
+            case bolt11: Bolt11Invoice =>
+              complete(eclairApi.sendToRoute(
+                recipientAmountMsat_opt, externalId_opt, parentId_opt, bolt11, route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta))
+              )
+            case _: Invoice => reject(MalformedFormFieldRejection("invoice", "Unsupported invoice type"))
+          }
         }
       }
     }

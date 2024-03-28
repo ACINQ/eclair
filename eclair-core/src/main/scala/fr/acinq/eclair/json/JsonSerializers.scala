@@ -441,9 +441,10 @@ object InvoiceSerializer extends MinimalSerializer({
         MilliSatoshiSerializer +
         CltvExpiryDeltaSerializer
     ))
+    import fr.acinq.eclair.json.JsonSerializers.formats
     val fieldList = List(
       JField("prefix", JString(p.prefix)),
-      JField("timestamp", JLong(p.createdAt.toLong)),
+      JField("timestamp", Extraction.decompose(p.createdAt)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(p.toString)),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
@@ -456,6 +457,7 @@ object InvoiceSerializer extends MinimalSerializer({
       routingInfo
     JObject(fieldList)
   case p: Bolt12Invoice =>
+    import fr.acinq.eclair.json.JsonSerializers.formats
     val fieldList = List(
       JField("amount", JLong(p.amount.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -475,8 +477,8 @@ object InvoiceSerializer extends MinimalSerializer({
           JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))
         ))
       }).toList)),
-      JField("createdAt", JLong(p.createdAt.toLong)),
-      JField("expiresAt", JLong((p.createdAt + p.relativeExpiry).toLong)),
+      JField("createdAt", Extraction.decompose(p.createdAt)),
+      JField("expiresAt", Extraction.decompose((p.createdAt + p.relativeExpiry))),
       JField("serialized", JString(p.toString)))
     JObject(fieldList)
 })

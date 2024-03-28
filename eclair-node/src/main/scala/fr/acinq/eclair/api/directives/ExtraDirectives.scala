@@ -27,7 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.ConfirmationPriority
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
 
@@ -47,7 +47,7 @@ trait ExtraDirectives extends Directives {
   val outPointsFormParam: NameUnmarshallerReceptacle[List[OutPoint]] = "outpoints".as[List[OutPoint]](outPointListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](bytes32Unmarshaller)
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
-  val invoiceFormParam: NameReceptacle[Bolt11Invoice] = "invoice".as[Bolt11Invoice]
+  val invoiceFormParam: NameUnmarshallerReceptacle[Invoice] = "invoice".as[Invoice](invoiceUnmarshaller)
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)

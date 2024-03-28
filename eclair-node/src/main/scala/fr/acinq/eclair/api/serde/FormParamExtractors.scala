@@ -25,7 +25,7 @@ import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, FeeratePerByte}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, Invoice, MinimalBolt12Invoice}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
@@ -82,6 +82,10 @@ object FormParamExtractors {
 
   val offerUnmarshaller: Unmarshaller[String, Offer] = Unmarshaller.strict {
     Offer.decode(_).get
+  }
+
+  val invoiceUnmarshaller: Unmarshaller[String, Invoice] = Unmarshaller.strict { str =>
+    Bolt11Invoice.fromString(str).orElse(Bolt12Invoice.fromString(str)).get
   }
 
   val confirmationPriorityUnmarshaller: Unmarshaller[String, ConfirmationPriority] = Unmarshaller.strict {

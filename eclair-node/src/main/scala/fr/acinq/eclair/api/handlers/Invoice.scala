@@ -69,6 +69,12 @@ trait Invoice {
     }
   }
 
-  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice ~ deleteInvoice
+  val parseOffer: Route = postRequest("parseoffer") { implicit t =>
+    formFields(offerFormParam) { offer =>
+      complete(offer)
+    }
+  }
+
+  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice ~ deleteInvoice ~ parseOffer
 
 }

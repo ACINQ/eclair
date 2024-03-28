@@ -138,6 +138,7 @@ private class OfferPayment(replyTo: ActorRef,
             Behaviors.stopped
           case None =>
             context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
+            context.log.info(s"BOLT12 invoice: ${payload.invoice}")
             waitForResolvedPaths(payload.invoice)
         }
       case WrappedMessageResponse(Postman.Response(payload)) =>
