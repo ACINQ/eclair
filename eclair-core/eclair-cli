@@ -69,6 +69,7 @@ and COMMAND is one of the available commands:
     - listinvoices
     - listpendinginvoices
     - parseinvoice
+    - parseoffer
     - deleteinvoice
 
   === Payment ===
