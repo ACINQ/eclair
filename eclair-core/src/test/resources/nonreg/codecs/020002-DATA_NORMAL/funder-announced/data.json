@@ -14,7 +14,8 @@
         "htlcMinimum" : 1,
         "toSelfDelay" : 720,
         "maxAcceptedHtlcs" : 30,
-        "isInitiator" : true,
+        "isChannelOpener" : true,
+        "payCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "00148061b7fbd2d84ed1884177ea785faecb2080b103",
         "walletStaticPaymentBasepoint" : "02e56c8eca8d4f00df84ac34c23f49c006d57d316b7ada5c346e9d4211e11604b3",
         "initFeatures" : {

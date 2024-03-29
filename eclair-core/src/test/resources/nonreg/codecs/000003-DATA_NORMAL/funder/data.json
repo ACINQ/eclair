@@ -14,7 +14,8 @@
         "htlcMinimum" : 1,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 30,
-        "isInitiator" : true,
+        "isChannelOpener" : true,
+        "payCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "a91445e990148599176534ec9b75df92ace9263f7d3487",
         "initFeatures" : {
           "activated" : {

@@ -50,14 +50,14 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
 
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = false)
     val pushAmount = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val requireConfirmedInputs = test.tags.contains(aliceRequiresConfirmedInputs)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Private, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
@@ -77,13 +77,13 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(open.lockTime == TestConstants.defaultBlockHeight)
 
     val initiatorEvent = aliceListener.expectMsgType[ChannelCreated]
-    assert(initiatorEvent.isInitiator)
+    assert(initiatorEvent.isOpener)
     assert(initiatorEvent.temporaryChannelId == ByteVector32.Zeroes)
 
     alice2bob.forward(bob)
 
     val nonInitiatorEvent = bobListener.expectMsgType[ChannelCreated]
-    assert(!nonInitiatorEvent.isInitiator)
+    assert(!nonInitiatorEvent.isOpener)
     assert(nonInitiatorEvent.temporaryChannelId == ByteVector32.Zeroes)
 
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
@@ -133,7 +133,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
     bob ! open.copy(fundingAmount = 100 sat)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, 100 sat, Bob.nodeParams.channelConf.minFundingSatoshis(false)).getMessage))
+    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, 100 sat, Bob.nodeParams.channelConf.minFundingSatoshis(ChannelFlags(announceChannel = false))).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

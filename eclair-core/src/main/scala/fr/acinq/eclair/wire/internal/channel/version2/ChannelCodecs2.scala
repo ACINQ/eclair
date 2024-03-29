@@ -62,7 +62,7 @@ private[channel] object ChannelCodecs2 {
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
-        ("isInitiator" | bool8) ::
+        ("isChannelOpener" | bool) :: ("payCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | lengthDelimited(bytes).map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]

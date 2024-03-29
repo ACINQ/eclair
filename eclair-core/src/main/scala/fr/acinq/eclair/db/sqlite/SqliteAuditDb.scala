@@ -182,7 +182,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setLong(3, e.capacity.toLong)
-      statement.setBoolean(4, e.isInitiator)
+      statement.setBoolean(4, e.isChannelOpener)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event.label)
       statement.setLong(7, TimestampMilli.now().toLong)
