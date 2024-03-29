@@ -45,7 +45,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = false)
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)

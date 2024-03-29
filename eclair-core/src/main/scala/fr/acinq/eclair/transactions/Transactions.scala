@@ -300,14 +300,14 @@ object Transactions {
 
   /**
    * @param commitTxNumber         commit tx number
-   * @param isInitiator            true if local node initiated the channel open
+   * @param localIsChannelOpener   true if local node initiated the channel open
    * @param localPaymentBasePoint  local payment base point
    * @param remotePaymentBasePoint remote payment base point
    * @return the obscured tx number as defined in BOLT #3 (a 48 bits integer)
    */
-  def obscuredCommitTxNumber(commitTxNumber: Long, isInitiator: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
+  def obscuredCommitTxNumber(commitTxNumber: Long, localIsChannelOpener: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
-    val h = if (isInitiator) {
+    val h = if (localIsChannelOpener) {
       Crypto.sha256(localPaymentBasePoint.value ++ remotePaymentBasePoint.value)
     } else {
       Crypto.sha256(remotePaymentBasePoint.value ++ localPaymentBasePoint.value)
@@ -318,14 +318,14 @@ object Transactions {
 
   /**
    * @param commitTx               commit tx
-   * @param isInitiator            true if local node initiated the channel open
+   * @param localIsChannelOpener   true if local node initiated the channel open
    * @param localPaymentBasePoint  local payment base point
    * @param remotePaymentBasePoint remote payment base point
    * @return the actual commit tx number that was blinded and stored in locktime and sequence fields
    */
-  def getCommitTxNumber(commitTx: Transaction, isInitiator: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
+  def getCommitTxNumber(commitTx: Transaction, localIsChannelOpener: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
-    val blind = obscuredCommitTxNumber(0, isInitiator, localPaymentBasePoint, remotePaymentBasePoint)
+    val blind = obscuredCommitTxNumber(0, localIsChannelOpener, localPaymentBasePoint, remotePaymentBasePoint)
     val obscured = decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
     obscured ^ blind
   }
@@ -373,7 +373,7 @@ object Transactions {
     }
   }
 
-  def makeCommitTxOutputs(localIsInitiator: Boolean,
+  def makeCommitTxOutputs(localPaysCommitTxFees: Boolean,
                           localDustLimit: Satoshi,
                           localRevocationPubkey: PublicKey,
                           toLocalDelay: CltvExpiryDelta,
@@ -399,7 +399,7 @@ object Transactions {
 
     val hasHtlcs = outputs.nonEmpty
 
-    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsInitiator) {
+    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysCommitTxFees) {
       (spec.toLocal.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
     } else {
       (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat))
@@ -443,9 +443,9 @@ object Transactions {
                    commitTxNumber: Long,
                    localPaymentBasePoint: PublicKey,
                    remotePaymentBasePoint: PublicKey,
-                   localIsInitiator: Boolean,
+                   localIsChannelOpener: Boolean,
                    outputs: CommitmentOutputs): CommitTx = {
-    val txNumber = obscuredCommitTxNumber(commitTxNumber, localIsInitiator, localPaymentBasePoint, remotePaymentBasePoint)
+    val txNumber = obscuredCommitTxNumber(commitTxNumber, localIsChannelOpener, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, lockTime) = encodeTxNumber(txNumber)
 
     val tx = Transaction(
@@ -793,10 +793,10 @@ object Transactions {
     }
   }
 
-  def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localIsInitiator: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
+  def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localPaysClosingFees: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
 
-    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsInitiator) {
+    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysClosingFees) {
       (spec.toLocal.truncateToSatoshi - closingFee, spec.toRemote.truncateToSatoshi)
     } else {
       (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - closingFee)

@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version0
 
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -69,7 +69,10 @@ private[channel] object ChannelCodecs0 {
         ("isInitiator" | bool) ::
         ("upfrontShutdownScript_opt" | varsizebinarydata.map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
+        ("features" | combinedFeaturesCodec)).map {
+      case nodeId :: channelPath :: dustLimit :: maxHtlcValueInFlightMsat :: channelReserve :: htlcMinimum :: toSelfDelay :: maxAcceptedHtlcs :: isInitiator :: upfrontShutdownScript_opt :: walletStaticPaymentBasepoint :: features :: HNil =>
+        LocalParams(nodeId, channelPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isInitiator, isInitiator, upfrontShutdownScript_opt, walletStaticPaymentBasepoint, features)
+    }.decodeOnly
 
     val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::

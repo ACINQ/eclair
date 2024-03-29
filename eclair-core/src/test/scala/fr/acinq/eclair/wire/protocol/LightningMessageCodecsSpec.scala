@@ -214,7 +214,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode open_channel") {
-    val defaultOpen = OpenChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private)
+    val defaultOpen = OpenChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(announceChannel = false))
     // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
     // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -382,7 +382,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("encode/decode all channel messages") {
     val unknownTlv = GenericTlv(UInt64(5), ByteVector.fromValidHex("deadbeef"))
     val msgs = List(
-      OpenChannel(BlockHash(randomBytes32()), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags.Private),
+      OpenChannel(BlockHash(randomBytes32()), randomBytes32(), 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(announceChannel = false)),
       AcceptChannel(randomBytes32(), 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6)),
       FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()),
       FundingSigned(randomBytes32(), randomBytes64()),

@@ -31,7 +31,7 @@ import fr.acinq.eclair.{BlockHeight, Features, ShortChannelId}
 
 trait ChannelEvent
 
-case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isInitiator: Boolean, temporaryChannelId: ByteVector32, commitTxFeerate: FeeratePerKw, fundingTxFeerate: Option[FeeratePerKw]) extends ChannelEvent
+case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isOpener: Boolean, temporaryChannelId: ByteVector32, commitTxFeerate: FeeratePerKw, fundingTxFeerate: Option[FeeratePerKw]) extends ChannelEvent
 
 // This trait can be used by non-standard channels to inject themselves into Register actor and thus make them usable for routing
 trait AbstractChannelRestored extends ChannelEvent {

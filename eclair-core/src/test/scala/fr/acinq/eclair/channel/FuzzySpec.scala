@@ -42,7 +42,7 @@ import org.scalatest.{Outcome, Tag}
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import scala.concurrent.duration._
-import scala.util.{Random, Success}
+import scala.util.Random
 
 /**
  * Created by PM on 05/07/2016.
@@ -57,6 +57,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val aliceParams = Alice.nodeParams
     val bobParams = Bob.nodeParams
+    val channelFlags = ChannelFlags(announceChannel = false)
     val alicePeer = TestProbe()
     val bobPeer = TestProbe()
     TestUtils.forwardOutgoingToPipe(alicePeer, pipe)
@@ -78,7 +79,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, channelFlags = ChannelFlags.Private, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, Alice.channelParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]

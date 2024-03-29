@@ -82,7 +82,7 @@ object OpenChannelInterceptor {
       }
     }
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
     val maxHtlcValueInFlightMsat = if (unlimitedMaxHtlcValueInFlight) {
       // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
       21e6.btc.toMilliSatoshi
@@ -94,14 +94,15 @@ object OpenChannelInterceptor {
     }
     LocalParams(
       nodeParams.nodeId,
-      nodeParams.channelKeyManager.newFundingKeyPath(isInitiator), // we make sure that initiator and non-initiator key paths end differently
+      nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener), // we make sure that opener and non-opener key paths end differently
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
       initialRequestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
-      isInitiator = isInitiator,
+      isChannelOpener = isChannelOpener,
+      payCommitTxFees = isChannelOpener,
       upfrontShutdownScript_opt = upfrontShutdownScript_opt,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint_opt,
       initFeatures = initFeatures
@@ -139,7 +140,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       val channelType = request.open.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(request.localFeatures, request.remoteFeatures, channelFlags.announceChannel))
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
-      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
+      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
       peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType, localParams)
       waitForRequest()
     }
@@ -150,7 +151,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
-        val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isInitiator = false, dualFunded = dualFunded, request.fundingAmount, disableMaxHtlcValueInFlight = false)
+        val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = false, dualFunded = dualFunded, request.fundingAmount, disableMaxHtlcValueInFlight = false)
         checkRateLimits(request, channelType, localParams)
       case Left(ex) =>
         context.log.warn(s"ignoring remote channel open: ${ex.getMessage}")
@@ -236,13 +237,13 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isInitiator: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
+  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
     val pubkey_opt = if (upfrontShutdownScript || channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None
     makeChannelParams(
       nodeParams, initFeatures,
       if (upfrontShutdownScript) Some(Script.write(Script.pay2wpkh(pubkey_opt.get))) else None,
       if (channelType.paysDirectlyToWallet) Some(pubkey_opt.get) else None,
-      isInitiator = isInitiator,
+      isChannelOpener = isChannelOpener,
       dualFunded = dualFunded,
       fundingAmount,
       disableMaxHtlcValueInFlight
