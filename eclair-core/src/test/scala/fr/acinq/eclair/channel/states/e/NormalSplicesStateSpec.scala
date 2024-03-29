@@ -900,7 +900,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv CMD_ADD_HTLC while a splice is requested") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
     alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
@@ -911,7 +911,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv CMD_ADD_HTLC while a splice is in progress") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -926,7 +926,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv UpdateAddHtlc while a splice is requested") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
     // we're holding the splice_init to create a race
@@ -951,7 +951,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv UpdateAddHtlc while a splice is in progress") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -1089,7 +1089,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -1357,7 +1357,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("don't resend splice_locked when zero-conf channel confirms", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     val fundingTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice2blockchain.expectMsgType[WatchPublished]
     // splice tx gets published, alice sends splice_locked
@@ -1373,11 +1373,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("re-send splice_locked on reconnection") { f =>
     import f._
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     val watchConfirmed1a = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     val watchConfirmed1b = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     val watchConfirmed2a = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     val watchConfirmed2b = bob2blockchain.expectMsgType[WatchFundingConfirmed]
@@ -1643,12 +1643,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // pay 10_000_000 msat to bob that will be paid back to alice after the splices
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = Some(PushAmount.RequestedByNodeOperator(10_000_000 msat)))), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
     // remember bob's commitment for later
     val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     alice2blockchain.expectMsgType[WatchFundingConfirmed]
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
@@ -1721,7 +1721,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // pay 10_000_000 msat to bob that will be paid back to alice after the splices
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = Some(PushAmount.RequestedByNodeOperator(10_000_000 msat)))), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice2blockchain.expectWatchPublished(fundingTx1.txid)
     bob2blockchain.expectWatchPublished(fundingTx1.txid)
@@ -1995,7 +1995,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
 
     // create splice 1
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice2blockchain.expectMsgType[WatchPublished]
     bob2blockchain.expectMsgType[WatchPublished]
@@ -2009,7 +2009,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     // splice 1 has been locked, fundingTx0 is inactive
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
     alice2blockchain.expectMsgType[WatchPublished]
     bob2blockchain.expectMsgType[WatchPublished]
@@ -2047,7 +2047,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
     val htlcs = setupHtlcs(f)
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = Some(PushAmount.RequestedByNodeOperator(10_000_000 msat)))), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
 
     // bob sends an HTLC that is applied to both commitments
     val (preimage, add) = addHtlc(10_000_000 msat, bob, alice, bob2alice, alice2bob)

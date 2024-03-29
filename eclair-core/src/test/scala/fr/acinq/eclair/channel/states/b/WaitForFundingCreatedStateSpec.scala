@@ -49,8 +49,8 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val setup = init(Alice.nodeParams, Bob.nodeParams, tags = test.tags)
     import setup._
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains(FunderBelowCommitFees)) {
-      (1_000_100 sat, (1_000_000 sat).toMilliSatoshi) // toLocal = 100 satoshis
+    val (fundingAmount, pushAmount) = if (test.tags.contains(FunderBelowCommitFees)) {
+      (1_000_100 sat, PushAmount.RequestedByNodeOperator((1_000_000 sat).toMilliSatoshi)) // toLocal = 100 satoshis
     } else if (test.tags.contains(LargeChannel)) {
       (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
@@ -65,7 +65,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val listener = TestProbe()
     within(30 seconds) {
       bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]

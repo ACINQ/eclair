@@ -217,7 +217,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         remoteNodeId = nodeId,
         fundingAmount = fundingAmount,
         channelType_opt = channelType_opt,
-        pushAmount_opt = pushAmount_opt,
+        pushAmount_opt = pushAmount_opt.map(amount => PushAmount.RequestedByNodeOperator(amount)),
         fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
         fundingTxFeeBudget_opt = Some(fundingFeeBudget),
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
@@ -234,7 +234,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     sendToChannelTyped(channel = Left(channelId),
       cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))),
+        spliceIn_opt = Some(SpliceIn(amountIn, pushAmount_opt.map(amount => PushAmount.RequestedByNodeOperator(amount)))),
         spliceOut_opt = None
       ))
   }

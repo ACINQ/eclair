@@ -390,7 +390,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -407,7 +407,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount_opt = None)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectNoMessage(100 millis) // alice isn't quiescent yet
     bob ! cmd

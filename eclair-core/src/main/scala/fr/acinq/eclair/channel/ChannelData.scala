@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, RealShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -97,7 +97,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         commitTxFeerate: FeeratePerKw,
                                         fundingTxFeerate: FeeratePerKw,
                                         fundingTxFeeBudget_opt: Option[Satoshi],
-                                        pushAmount_opt: Option[MilliSatoshi],
+                                        pushAmount_opt: Option[PushAmount],
                                         requireConfirmedInputs: Boolean,
                                         localParams: LocalParams,
                                         remote: ActorRef,
@@ -112,7 +112,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             fundingContribution_opt: Option[Satoshi],
                                             dualFunded: Boolean,
-                                            pushAmount_opt: Option[MilliSatoshi],
+                                            pushAmount_opt: Option[PushAmount],
                                             localParams: LocalParams,
                                             remote: ActorRef,
                                             remoteInit: Init,
@@ -182,6 +182,13 @@ object Origin {
   }
 }
 
+/** We may send funds to our peer during a channel open or splice. */
+sealed trait PushAmount { def amount: MilliSatoshi }
+object PushAmount {
+  /** We push funds because the node operator chose it, for whatever reason they wanted. */
+  case class RequestedByNodeOperator(amount: MilliSatoshi) extends PushAmount
+}
+
 /** should not be used directly */
 sealed trait Command extends PossiblyHarmful
 sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
@@ -209,12 +216,12 @@ final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
 final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long) extends Command
-case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount: MilliSatoshi = 0 msat)
+case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount_opt: Option[PushAmount] = None)
 case class SpliceOut(amount: Satoshi, scriptPubKey: ByteVector)
 final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_SPLICE]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]) extends Command {
   require(spliceIn_opt.isDefined || spliceOut_opt.isDefined, "there must be a splice-in or a splice-out")
   val additionalLocalFunding: Satoshi = spliceIn_opt.map(_.additionalLocalFunding).getOrElse(0 sat)
-  val pushAmount: MilliSatoshi = spliceIn_opt.map(_.pushAmount).getOrElse(0 msat)
+  val pushAmount_opt: Option[PushAmount] = spliceIn_opt.flatMap(_.pushAmount_opt)
   val spliceOutputs: List[TxOut] = spliceOut_opt.toList.map(s => TxOut(s.amount, s.scriptPubKey))
 }
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
@@ -563,19 +570,19 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     channelParams: ChannelParams,
                                                     secondRemotePerCommitmentPoint: PublicKey,
-                                                    localPushAmount: MilliSatoshi,
+                                                    localPushAmount: Option[PushAmount],
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[CommitSig],
                                                     replyTo_opt: Option[akka.actor.typed.ActorRef[Peer.OpenChannelResponse]]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams: ChannelParams,
                                                    secondRemotePerCommitmentPoint: PublicKey,
-                                                   localPushAmount: MilliSatoshi,
+                                                   localPushAmount: Option[PushAmount],
                                                    remotePushAmount: MilliSatoshi,
                                                    signingSession: InteractiveTxSigningSession.WaitingForSigs,
                                                    remoteChannelData_opt: Option[ByteVector]) extends ChannelDataWithoutCommitments
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
-                                                      localPushAmount: MilliSatoshi,
+                                                      localPushAmount: Option[PushAmount],
                                                       remotePushAmount: MilliSatoshi,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent

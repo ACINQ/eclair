@@ -22,13 +22,14 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.channel.PushAmount
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
@@ -180,7 +181,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       remoteNodeId = node2.nodeParams.nodeId,
       fundingAmount = fundingAmount,
       channelType_opt = None,
-      pushAmount_opt = Some(pushMsat),
+      pushAmount_opt = if (pushMsat == 0.msat) None else Some(PushAmount.RequestedByNodeOperator(pushMsat)),
       fundingTxFeerate_opt = None,
       fundingTxFeeBudget_opt = None,
       channelFlags_opt = None,

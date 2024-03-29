@@ -345,7 +345,7 @@ object InteractiveTxBuilder {
             fundingParams: InteractiveTxParams,
             channelParams: ChannelParams,
             purpose: Purpose,
-            localPushAmount: MilliSatoshi,
+            localPushAmount: Option[PushAmount],
             remotePushAmount: MilliSatoshi,
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -387,7 +387,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    channelParams: ChannelParams,
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
                                    purpose: Purpose,
-                                   localPushAmount: MilliSatoshi,
+                                   localPushAmount: Option[PushAmount],
                                    remotePushAmount: MilliSatoshi,
                                    wallet: OnChainChannelFunder,
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
@@ -745,8 +745,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
-      toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
-      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
+      toLocal = completeTx.sharedOutput.localAmount - localPushAmount.map(_.amount).getOrElse(0 msat) + remotePushAmount,
+      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount.map(_.amount).getOrElse(0 msat),
       localHtlcs = purpose.localHtlcs,
       purpose.commitTxFeerate,
       fundingTxIndex = purpose.fundingTxIndex,

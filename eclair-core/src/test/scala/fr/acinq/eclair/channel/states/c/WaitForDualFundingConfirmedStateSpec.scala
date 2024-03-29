@@ -456,7 +456,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val fundingBelowPushAmount = 199_000.sat
     bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, fundingBelowPushAmount, requireConfirmedInputs = false)
-    assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(bob), TestConstants.initiatorPushAmount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
+    assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(bob), TestConstants.initiatorPushAmount.amount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
@@ -467,7 +467,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[TxInitRbf]
     val fundingBelowPushAmount = 99_000.sat
     alice ! TxAckRbf(channelId(alice), fundingBelowPushAmount, requireConfirmedInputs = false)
-    assert(alice2bob.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(alice), TestConstants.nonInitiatorPushAmount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
+    assert(alice2bob.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(alice), TestConstants.nonInitiatorPushAmount.amount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 

@@ -21,7 +21,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
+import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, PushAmount}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
@@ -47,8 +47,8 @@ object TestConstants {
   val defaultBlockHeight = 400_000
   val fundingSatoshis: Satoshi = 1_000_000 sat
   val nonInitiatorFundingSatoshis: Satoshi = 500_000 sat
-  val initiatorPushAmount: MilliSatoshi = 200_000_000L msat
-  val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
+  val initiatorPushAmount: PushAmount = PushAmount.RequestedByNodeOperator(200_000_000L msat)
+  val nonInitiatorPushAmount: PushAmount = PushAmount.RequestedByNodeOperator(100_000_000L msat)
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)

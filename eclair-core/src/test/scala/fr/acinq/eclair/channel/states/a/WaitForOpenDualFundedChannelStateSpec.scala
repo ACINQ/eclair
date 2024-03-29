@@ -99,7 +99,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     import f._
 
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    assert(open.pushAmount == TestConstants.initiatorPushAmount)
+    assert(open.pushAmount == TestConstants.initiatorPushAmount.amount)
     alice2bob.forward(bob)
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     assert(accept.pushAmount == 0.msat)

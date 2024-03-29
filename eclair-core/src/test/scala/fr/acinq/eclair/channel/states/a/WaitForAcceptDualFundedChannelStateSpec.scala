@@ -106,7 +106,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     assert(accept.upfrontShutdownScript_opt.isEmpty)
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
-    assert(accept.pushAmount == TestConstants.nonInitiatorPushAmount)
+    assert(accept.pushAmount == TestConstants.nonInitiatorPushAmount.amount)
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
@@ -139,7 +139,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     alice ! accept.copy(fundingAmount = 25_000 sat)
     val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, TestConstants.nonInitiatorPushAmount, 25_000_000 msat).getMessage))
+    assert(error == Error(accept.temporaryChannelId, InvalidPushAmount(accept.temporaryChannelId, TestConstants.nonInitiatorPushAmount.amount, 25_000_000 msat).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

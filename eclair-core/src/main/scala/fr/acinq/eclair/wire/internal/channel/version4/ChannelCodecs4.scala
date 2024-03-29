@@ -618,17 +618,33 @@ private[channel] object ChannelCodecs4 {
       ("commitments" | versionedCommitmentsCodec) ::
         ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
 
+    private val legacyLocalPushAmountCodec: Codec[Option[PushAmount]] = millisatoshi.xmap(
+      amount => if (amount == 0.msat) None else Some(PushAmount.RequestedByNodeOperator(amount)),
+      push_opt => push_opt.map(_.amount).getOrElse(0 msat),
+    )
+
+    private val localPushAmountCodec: Codec[PushAmount] = discriminated[PushAmount].by(byte)
+      .typecase(0x00, ("amount" | millisatoshi).as[PushAmount.RequestedByNodeOperator])
+
     val DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_09_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED] = (
       ("channelParams" | paramsCodec) ::
         ("secondRemotePerCommitmentPoint" | publicKey) ::
-        ("localPushAmount" | millisatoshi) ::
+        ("localPushAmount" | legacyLocalPushAmountCodec) ::
+        ("remotePushAmount" | millisatoshi) ::
+        ("status" | interactiveTxWaitingForSigsCodec) ::
+        ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED] = (
+      ("channelParams" | paramsCodec) ::
+        ("secondRemotePerCommitmentPoint" | publicKey) ::
+        ("localPushAmount" | optional(bool8, localPushAmountCodec)) ::
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("localPushAmount" | millisatoshi) ::
+        ("localPushAmount" | legacyLocalPushAmountCodec) ::
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
@@ -637,7 +653,16 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("localPushAmount" | millisatoshi) ::
+        ("localPushAmount" | legacyLocalPushAmountCodec) ::
+        ("remotePushAmount" | millisatoshi) ::
+        ("waitingSince" | blockHeight) ::
+        ("lastChecked" | blockHeight) ::
+        ("rbfStatus" | rbfStatusCodec) ::
+        ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_14_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("localPushAmount" | optional(bool8, localPushAmountCodec)) ::
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
@@ -733,6 +758,8 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x14, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_14_Codec)
+    .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec)
     .typecase(0x12, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_12_Codec)
     .typecase(0x11, Codecs.DATA_CLOSING_11_Codec)
     .typecase(0x10, Codecs.DATA_NEGOTIATING_10_Codec)

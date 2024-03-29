@@ -126,56 +126,56 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       FundingTx(commitFeerate, firstPerCommitmentPointB, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       SpliceTx(commitment),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       FundingTx(commitFeerate, firstPerCommitmentPointA, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       SpliceTx(commitment),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      None, 0 msat,
       wallet))
 
     def exchangeSigsAliceFirst(fundingParams: InteractiveTxParams, successA: InteractiveTxBuilder.Succeeded, successB: InteractiveTxBuilder.Succeeded): (FullySignedSharedTransaction, Commitment, FullySignedSharedTransaction, Commitment) = {

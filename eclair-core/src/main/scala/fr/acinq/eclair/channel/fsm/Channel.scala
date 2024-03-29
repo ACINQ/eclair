@@ -947,12 +947,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             log.info("rejecting splice request: feerate too low")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
           } else {
-            log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
+            val pushAmount_opt = Option.empty[PushAmount]
+            val fundingContribution = 0.sat // only remote contributes to the splice
+            log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount} local.in.amount=$fundingContribution local.in.push=${pushAmount_opt.map(_.amount).getOrElse(0 msat)}")
             val parentCommitment = d.commitments.latest.commitment
             val spliceAck = SpliceAck(d.channelId,
-              fundingContribution = 0.sat, // only remote contributes to the splice
+              fundingContribution = fundingContribution,
               fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
-              pushAmount = 0.msat,
+              pushAmount = pushAmount_opt.map(_.amount).getOrElse(0 msat),
               requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
             )
             val fundingParams = InteractiveTxParams(
@@ -974,7 +976,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               nodeParams, fundingParams,
               channelParams = d.commitments.params,
               purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
-              localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
+              localPushAmount = pushAmount_opt, remotePushAmount = msg.pushAmount,
               wallet
             ))
             txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1012,7 +1014,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             nodeParams, fundingParams,
             channelParams = d.commitments.params,
             purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
-            localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
+            localPushAmount = cmd.pushAmount_opt, remotePushAmount = msg.pushAmount,
             wallet
           ))
           txBuilder ! InteractiveTxBuilder.Start(self)
@@ -2768,13 +2770,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         log.warning("cannot do splice: invalid splice-out script")
         Left(InvalidSpliceRequest(d.channelId))
       } else {
-        log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
+        log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount_opt.map(_.amount).getOrElse(0 msat)} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
         val spliceInit = SpliceInit(d.channelId,
           fundingContribution = fundingContribution,
           lockTime = nodeParams.currentBlockHeight.toLong,
           feerate = targetFeerate,
           fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
-          pushAmount = cmd.pushAmount,
+          pushAmount = cmd.pushAmount_opt.map(_.amount).getOrElse(0 msat),
           requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
         )
         Right(spliceInit)

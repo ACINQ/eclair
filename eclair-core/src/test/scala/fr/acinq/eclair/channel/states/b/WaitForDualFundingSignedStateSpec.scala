@@ -175,9 +175,9 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
 
-    val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount - TestConstants.initiatorPushAmount
+    val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount.amount - TestConstants.initiatorPushAmount.amount
     assert(expectedBalanceAlice == 900_000_000.msat)
-    val expectedBalanceBob = TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi + TestConstants.initiatorPushAmount - TestConstants.nonInitiatorPushAmount
+    val expectedBalanceBob = TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi + TestConstants.initiatorPushAmount.amount - TestConstants.nonInitiatorPushAmount.amount
     assert(expectedBalanceBob == 600_000_000.msat)
 
     // Bob sends its signatures first as he contributed less than Alice.

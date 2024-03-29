@@ -52,7 +52,7 @@ object OpenChannelInterceptor {
   sealed trait Command
 
   sealed trait WaitForRequestCommands extends Command
-  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], peerConnection: ActorRef[Any], peerAddress: NodeAddress) extends WaitForRequestCommands {
+  case class OpenChannelNonInitiator(remoteNodeId: PublicKey, open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], pushAmount_opt: Option[PushAmount], peerConnection: ActorRef[Any], peerAddress: NodeAddress) extends WaitForRequestCommands {
     val temporaryChannelId: ByteVector32 = open.fold(_.temporaryChannelId, _.temporaryChannelId)
     val fundingAmount: Satoshi = open.fold(_.fundingSatoshis, _.fundingAmount)
     val channelFlags: ChannelFlags = open.fold(_.channelFlags, _.channelFlags)
@@ -169,7 +169,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
           case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
           case None =>
             // NB: we don't add a contribution to the funding amount.
-            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, None, request.peerConnection.toClassic)
+            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, None, request.pushAmount_opt, request.peerConnection.toClassic)
             waitForRequest()
         }
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.ChannelRateLimited) =>
@@ -188,7 +188,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, pluginResponse.localFundingAmount_opt, request.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, pluginResponse.localFundingAmount_opt, request.pushAmount_opt, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>

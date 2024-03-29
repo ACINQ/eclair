@@ -178,7 +178,7 @@ class Peer(val nodeParams: NodeParams,
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, None, d.peerConnection.toTyped, d.address)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -188,7 +188,7 @@ class Peer(val nodeParams: NodeParams,
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
           case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, None, d.peerConnection.toTyped, d.address)
             stay()
           case None =>
             log.info("rejecting open_channel2: dual funding is not supported")
@@ -199,7 +199,7 @@ class Peer(val nodeParams: NodeParams,
             stay()
         }
 
-      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, localFundingAmount_opt, peerConnection), d: ConnectedData) =>
+      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, localFundingAmount_opt, pushAmount_opt, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
           val channel = spawnChannel()
@@ -209,7 +209,7 @@ class Peer(val nodeParams: NodeParams,
               channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
               channel ! open
             case Right(open) =>
-              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, localFundingAmount_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, localFundingAmount_opt, dualFunded = true, pushAmount_opt, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
               channel ! open
           }
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
@@ -511,7 +511,7 @@ object Peer {
   case class OpenChannel(remoteNodeId: PublicKey,
                          fundingAmount: Satoshi,
                          channelType_opt: Option[SupportedChannelType],
-                         pushAmount_opt: Option[MilliSatoshi],
+                         pushAmount_opt: Option[PushAmount],
                          fundingTxFeerate_opt: Option[FeeratePerKw],
                          fundingTxFeeBudget_opt: Option[Satoshi],
                          channelFlags_opt: Option[ChannelFlags],
@@ -521,9 +521,9 @@ object Peer {
                          channelOrigin: ChannelOrigin = ChannelOrigin.Default) extends PossiblyHarmful {
     require(!(channelType_opt.exists(_.features.contains(Features.ScidAlias)) && channelFlags_opt.exists(_.announceChannel)), "option_scid_alias is not compatible with public channels")
     require(fundingAmount > 0.sat, s"funding amount must be positive")
-    pushAmount_opt.foreach(pushAmount => {
-      require(pushAmount >= 0.msat, s"pushAmount must be positive")
-      require(pushAmount <= fundingAmount, s"pushAmount must be less than or equal to funding amount")
+    pushAmount_opt.foreach(push => {
+      require(push.amount >= 0.msat, "pushAmount must be positive")
+      require(push.amount <= fundingAmount, "pushAmount must be less than or equal to funding amount")
     })
     fundingTxFeerate_opt.foreach(feerate => require(feerate >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feerate is below minimum ${FeeratePerKw.MinimumFeeratePerKw}"))
   }
@@ -544,7 +544,7 @@ object Peer {
   }
 
   case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
-  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localFundingAmount_opt: Option[Satoshi], peerConnection: ActorRef)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localFundingAmount_opt: Option[Satoshi], pushAmount_opt: Option[PushAmount], peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse { def nodeId: PublicKey }
