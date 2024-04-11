@@ -660,9 +660,6 @@ object Helpers {
       }
 
       def makeClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFees: ClosingFees)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
-        val allowAnySegwit = Features.canUseFeature(commitment.localParams.initFeatures, commitment.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-        require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit), "invalid localScriptPubkey")
-        require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit), "invalid remoteScriptPubkey")
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitment.specs2String)
         val dustLimit = commitment.localParams.dustLimit.max(commitment.remoteParams.dustLimit)
         val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.isInitiator, dustLimit, closingFees.preferred, commitment.localCommit.spec)
