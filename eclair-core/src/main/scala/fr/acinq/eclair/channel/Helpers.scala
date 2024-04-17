@@ -218,7 +218,12 @@ object Helpers {
   }
 
   /** Called by the initiator of a dual-funded channel. */
-  def validateParamsDualFundedInitiator(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], open: OpenDualFundedChannel, accept: AcceptDualFundedChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+  def validateParamsDualFundedInitiator(nodeParams: NodeParams,
+                                        remoteNodeId: PublicKey,
+                                        channelType: SupportedChannelType,
+                                        localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature],
+                                        open: OpenDualFundedChannel, accept: AcceptDualFundedChannel,
+                                        requestedFunds_opt: Option[LiquidityAds.RequestRemoteFunding]): Either[ChannelException, (ChannelFeatures, Option[ByteVector], Option[LiquidityAds.Lease])] = {
     validateChannelType(open.temporaryChannelId, channelType, open.channelFlags, open.channelType_opt, accept.channelType_opt, localFeatures, remoteFeatures) match {
       case Some(t) => return Left(t)
       case None => // we agree on channel type
@@ -240,8 +245,14 @@ object Helpers {
     // MAY reject the channel.
     if (accept.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
 
+    // If we're purchasing liquidity, verify the liquidity ads:
+    val liquidityLease_opt = requestedFunds_opt.map(_.validateLease(remoteNodeId, accept.temporaryChannelId, Funding.makeFundingPubKeyScript(open.fundingPubkey, accept.fundingPubkey), accept.fundingAmount, open.fundingFeerate, accept.willFund_opt) match {
+      case Left(t) => return Left(t)
+      case Right(lease) => lease // we agree on liquidity rates, if any
+    })
+
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
+    extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt, liquidityLease_opt))
   }
 
   /**
@@ -351,6 +362,8 @@ object Helpers {
   }
 
   object Funding {
+
+    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey): ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingKey, remoteFundingKey)))
 
     def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)

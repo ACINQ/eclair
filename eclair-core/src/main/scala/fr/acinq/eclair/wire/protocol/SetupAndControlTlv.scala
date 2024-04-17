@@ -41,6 +41,9 @@ object InitTlv {
    */
   case class RemoteAddress(address: NodeAddress) extends InitTlv
 
+  /** Rates at which we sell inbound liquidity to remote peers. */
+  case class LiquidityAdsRates(leaseRates: List[LiquidityAds.LeaseRate]) extends InitTlv
+
 }
 
 object InitTlvCodecs {
@@ -49,10 +52,12 @@ object InitTlvCodecs {
 
   private val networks: Codec[Networks] = tlvField(list(blockHash))
   private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress)
+  private val liquidityAds: Codec[LiquidityAdsRates] = tlvField(list(LiquidityAds.LeaseRate.codec))
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
     .typecase(UInt64(3), remoteAddress)
+    .typecase(UInt64(1337), liquidityAds)
   )
 
 }

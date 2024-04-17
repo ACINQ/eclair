@@ -35,7 +35,16 @@ object AnnouncementSignaturesTlv {
 sealed trait NodeAnnouncementTlv extends Tlv
 
 object NodeAnnouncementTlv {
-  val nodeAnnouncementTlvCodec: Codec[TlvStream[NodeAnnouncementTlv]] = tlvStream(discriminated[NodeAnnouncementTlv].by(varint))
+
+  /** Rates at which we sell inbound liquidity to remote peers. */
+  case class LiquidityAdsRates(leaseRates: List[LiquidityAds.LeaseRate]) extends NodeAnnouncementTlv
+
+  private val liquidityAdsCodec: Codec[LiquidityAdsRates] = tlvField(list(LiquidityAds.LeaseRate.codec))
+
+  val nodeAnnouncementTlvCodec: Codec[TlvStream[NodeAnnouncementTlv]] = tlvStream(discriminated[NodeAnnouncementTlv].by(varint)
+    .typecase(UInt64(1337), liquidityAdsCodec)
+  )
+
 }
 
 sealed trait ChannelAnnouncementTlv extends Tlv

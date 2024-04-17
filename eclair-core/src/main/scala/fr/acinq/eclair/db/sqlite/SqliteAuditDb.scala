@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
@@ -34,7 +35,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 9
+  val CURRENT_VERSION = 10
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -114,6 +115,11 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
     }
 
+    def migration910(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, mining_fee_sat INTEGER NOT NULL, service_fee_sat INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, local_contribution_sat INTEGER NOT NULL, remote_contribution_sat INTEGER NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, outgoing_htlc_count INTEGER NOT NULL, incoming_htlc_count INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, created_at INTEGER NOT NULL, confirmed_at INTEGER)")
+      statement.executeUpdate("CREATE INDEX IF NOT EXISTS liquidity_purchases_node_id_idx ON liquidity_purchases(node_id)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -124,6 +130,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE liquidity_purchases (tx_id BLOB NOT NULL, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, is_buyer BOOLEAN NOT NULL, amount_sat INTEGER NOT NULL, mining_fee_sat INTEGER NOT NULL, service_fee_sat INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, local_contribution_sat INTEGER NOT NULL, remote_contribution_sat INTEGER NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, outgoing_htlc_count INTEGER NOT NULL, incoming_htlc_count INTEGER NOT NULL, seller_sig BLOB NOT NULL, witness BLOB NOT NULL, created_at INTEGER NOT NULL, confirmed_at INTEGER)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
@@ -143,9 +150,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
+        statement.executeUpdate("CREATE INDEX liquidity_purchases_node_id_idx ON liquidity_purchases(node_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -170,6 +178,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         }
         if (v < 9) {
           migration89(statement)
+        }
+        if (v < 10) {
+          migration910(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -252,6 +263,30 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
+  override def add(e: ChannelLiquidityPurchased): Unit = withMetrics("audit/add-liquidity-purchase", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT INTO liquidity_purchases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)")) { statement =>
+      statement.setBytes(1, e.purchase.fundingTxId.value.toArray)
+      statement.setBytes(2, e.channelId.toArray)
+      statement.setBytes(3, e.remoteNodeId.value.toArray)
+      statement.setBoolean(4, e.purchase.isBuyer)
+      statement.setLong(5, e.purchase.lease.amount.toLong)
+      statement.setLong(6, e.purchase.lease.fees.miningFee.toLong)
+      statement.setLong(7, e.purchase.lease.fees.serviceFee.toLong)
+      statement.setLong(8, e.purchase.fundingTxIndex)
+      statement.setLong(9, e.purchase.capacity.toLong)
+      statement.setLong(10, e.purchase.localContribution.toLong)
+      statement.setLong(11, e.purchase.remoteContribution.toLong)
+      statement.setLong(12, e.purchase.localBalance.toLong)
+      statement.setLong(13, e.purchase.remoteBalance.toLong)
+      statement.setLong(14, e.purchase.outgoingHtlcCount)
+      statement.setLong(15, e.purchase.incomingHtlcCount)
+      statement.setBytes(16, e.purchase.lease.sellerSig.toArray)
+      statement.setBytes(17, LiquidityAds.LeaseWitness.codec.encode(e.purchase.lease.witness).require.bytes.toArray)
+      statement.setLong(18, TimestampMilli.now().toLong)
+      statement.executeUpdate()
+    }
+  }
+
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.tx.txid.value.toArray)
@@ -270,6 +305,12 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, TimestampMilli.now().toLong)
+      statement.executeUpdate()
+    }
+    using(sqlite.prepareStatement("UPDATE liquidity_purchases SET confirmed_at=? WHERE node_id=? AND tx_id=?")) { statement =>
+      statement.setLong(1, TimestampMilli.now().toLong)
+      statement.setBytes(2, e.remoteNodeId.value.toArray)
+      statement.setBytes(3, e.tx.txid.value.toArray)
       statement.executeUpdate()
     }
   }
@@ -429,6 +470,32 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     paginated_opt match {
       case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
       case None => result
+    }
+  }
+
+  override def listLiquidityPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
+    using(sqlite.prepareStatement("SELECT * FROM liquidity_purchases WHERE node_id=? AND confirmed_at IS NOT NULL")) { statement =>
+      statement.setBytes(1, remoteNodeId.value.toArray)
+      statement.executeQuery().map { rs =>
+        LiquidityPurchase(
+          fundingTxId = TxId(rs.getByteVector32("tx_id")),
+          fundingTxIndex = rs.getLong("funding_tx_index"),
+          isBuyer = rs.getBoolean("is_buyer"),
+          lease = LiquidityAds.Lease(
+            amount = Satoshi(rs.getLong("amount_sat")),
+            fees = LiquidityAds.LeaseFees(miningFee = Satoshi(rs.getLong("mining_fee_sat")), serviceFee = Satoshi(rs.getLong("service_fee_sat"))),
+            sellerSig = ByteVector64(rs.getByteVector("seller_sig")),
+            witness = LiquidityAds.LeaseWitness.codec.decode(rs.getByteVector("witness").bits).require.value,
+          ),
+          capacity = Satoshi(rs.getLong("capacity_sat")),
+          localContribution = Satoshi(rs.getLong("local_contribution_sat")),
+          remoteContribution = Satoshi(rs.getLong("remote_contribution_sat")),
+          localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+          remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
+          outgoingHtlcCount = rs.getLong("outgoing_htlc_count"),
+          incomingHtlcCount = rs.getLong("incoming_htlc_count")
+        )
+      }.toSeq
     }
   }
 

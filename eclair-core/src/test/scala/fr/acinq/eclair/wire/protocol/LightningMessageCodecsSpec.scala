@@ -27,9 +27,11 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
+import fr.acinq.eclair.wire.protocol.ChannelTlv._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
+import fr.acinq.eclair.wire.protocol.LiquidityAds.LeaseRate
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.protocol.TxRbfTlv.SharedOutputContributionTlv
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -54,28 +56,30 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
-    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[BlockHash], address: Option[IPAddress], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[BlockHash], address: Option[IPAddress], liquidityRates: Seq[LiquidityAds.LeaseRate], valid: Boolean, reEncoded: Option[ByteVector] = None)
     val chainHash1 = BlockHash(ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"))
     val chainHash2 = BlockHash(ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202"))
     val remoteAddress1 = IPv4(InetAddress.getByAddress(Array[Byte](140.toByte, 82.toByte, 121.toByte, 3.toByte)).asInstanceOf[Inet4Address], 9735)
     val remoteAddress2 = IPv6(InetAddress.getByAddress(hex"b643 8bb1 c1f9 0556 487c 0acb 2ba3 3cc2".toArray).asInstanceOf[Inet6Address], 9736)
     val testCases = Seq(
-      TestCase(hex"0000 0000", hex"", Nil, None, valid = true), // no features
-      TestCase(hex"0000 0002088a", hex"088a", Nil, None, valid = true), // no global features
-      TestCase(hex"00020200 0000", hex"0200", Nil, None, valid = true, Some(hex"0000 00020200")), // no local features
-      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, None, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
-      TestCase(hex"00020200 0003020002", hex"020202", Nil, None, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
-      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, None, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
-      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, None, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
-      TestCase(hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, None, valid = true), // unknown odd records
-      TestCase(hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, None, valid = false), // unknown even records
-      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, None, valid = false), // invalid tlv stream
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), None, valid = true), // single network
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 0307018c5279032607", hex"088a", List(chainHash1), Some(remoteAddress1), valid = true), // single network and IPv4 address
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 031302b6438bb1c1f90556487c0acb2ba33cc22608", hex"088a", List(chainHash1), Some(remoteAddress2), valid = true), // single network and IPv6 address
-      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), None, valid = true), // multiple networks
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 c9012a", hex"088a", List(chainHash1), None, valid = true), // network and unknown odd records
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a", hex"088a", Nil, None, valid = false) // network and unknown even records
+      TestCase(hex"0000 0000", hex"", Nil, None, Nil, valid = true), // no features
+      TestCase(hex"0000 0002088a", hex"088a", Nil, None, Nil, valid = true), // no global features
+      TestCase(hex"00020200 0000", hex"0200", Nil, None, Nil, valid = true, Some(hex"0000 00020200")), // no local features
+      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, None, Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
+      TestCase(hex"00020200 0003020002", hex"020202", Nil, None, Nil, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
+      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, None, Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
+      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, None, Nil, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
+      TestCase(hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, None, Nil, valid = true), // unknown odd records
+      TestCase(hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, None, Nil, valid = false), // unknown even records
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, None, Nil, valid = false), // invalid tlv stream
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), None, Nil, valid = true), // single network
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 0307018c5279032607", hex"088a", List(chainHash1), Some(remoteAddress1), Nil, valid = true), // single network and IPv4 address
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 031302b6438bb1c1f90556487c0acb2ba33cc22608", hex"088a", List(chainHash1), Some(remoteAddress2), Nil, valid = true), // single network and IPv6 address
+      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), None, Nil, valid = true), // multiple networks
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 c9012a", hex"088a", List(chainHash1), None, Nil, valid = true), // network and unknown odd records
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a", hex"088a", Nil, None, Nil, valid = false), // network and unknown even records
+      TestCase(hex"0000 0002088a fd05391007d001f4003200000000025800000000", hex"088a", Nil, None, Seq(LiquidityAds.LeaseRate(2000, 500, 50, 0 sat, 600, 0 msat)), valid = true), // one liquidity ads
+      TestCase(hex"0000 0002088a fd05392003f0019000c8000061a80064000186a00fc001f401f4000027100096000249f0", hex"088a", Nil, None, Seq(LiquidityAds.LeaseRate(1008, 400, 200, 25_000 sat, 100, 100_000 msat), LiquidityAds.LeaseRate(4032, 500, 500, 10_000 sat, 150, 150_000 msat)), valid = true), // two liquidity ads
     )
 
     for (testCase <- testCases) {
@@ -84,6 +88,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         assert(init.features.toByteVector == testCase.rawFeatures)
         assert(init.networks == testCase.networks)
         assert(init.remoteAddress_opt == testCase.address)
+        assert(init.liquidityRates == testCase.liquidityRates)
         val encoded = initCodec.encode(init).require
         assert(encoded.bytes == testCase.reEncoded.getOrElse(testCase.encoded))
         assert(initCodec.decode(encoded).require.value == init)
@@ -194,13 +199,15 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TxSignatures(channelId2, tx1, Nil, None) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000",
       TxSignatures(channelId2, tx1, Nil, Some(signature)) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000 fd0259 40 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       TxInitRbf(channelId1, 8388607, FeeratePerKw(4000 sat)) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 007fffff 00000fa0",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 1_500_000 sat, requireConfirmedInputs = true) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), -25_000 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(1_500_000 sat), RequireConfirmedInputsTlv())) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(0 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(-25_000 sat))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), TlvStream[TxInitRbfTlv](SharedOutputContributionTlv(100_000 sat), RequestFunds(100_000 sat, 4000, BlockHeight(850_000)))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 000800000000000186a0 fd05390e00000000000186a00fa0000cf850",
       TxAckRbf(channelId2) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      TxAckRbf(channelId2, 450_000 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
-      TxAckRbf(channelId2, 0 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
-      TxAckRbf(channelId2, -250_000 sat, requireConfirmedInputs = true) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
+      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(450_000 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
+      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(0 sat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
+      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(-250_000 sat), RequireConfirmedInputsTlv())) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
+      TxAckRbf(channelId2, TlvStream[TxAckRbfTlv](SharedOutputContributionTlv(100_000 sat), WillFund(ByteVector64.Zeroes, 750, 150, 250 sat, 100, 0 msat))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 000800000000000186a0 fd05394e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ee0096000000fa006400000000",
       TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000",
       TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 000e 696e7465726e616c206572726f72",
     )
@@ -293,7 +300,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(UpfrontShutdownScriptTlv(hex"00143adb2d0445c4d491cc7568b10323bd6615a91283"), ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))) -> (defaultEncoded ++ hex"001600143adb2d0445c4d491cc7568b10323bd6615a91283 0103401000"),
       defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1105 msat))) -> (defaultEncoded ++ hex"0103401000 fe47000007020451"),
-      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 0200")
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"0103401000 0200"),
+      defaultOpen.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), RequestFunds(50_000 sat, 2500, BlockHeight(500_000)))) -> (defaultEncoded ++ hex"0103401000 fd05390e000000000000c35009c40007a120")
     )
     testCases.foreach { case (open, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -350,7 +358,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultAccept -> defaultEncoded,
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))) -> (defaultEncoded ++ hex"01021000"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fe470000070206c1"),
-      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200")
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), WillFund(ByteVector64.Zeroes, 750, 150, 250 sat, 100, 5 msat))) -> (defaultEncoded ++ hex"0103401000 fd05394e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002ee0096000000fa006400000005"),
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -376,6 +385,23 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(decoded == expected)
       val reEncoded = closingSignedCodec.encode(decoded).require.bytes
       assert(reEncoded == encoded)
+    }
+  }
+
+  test("encode/decode node announcement") {
+    val color = Color(100, 125, 75)
+    val sig = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
+    val testCases = Seq(
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000",
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil, TlvStream(NodeAnnouncementTlv.LiquidityAdsRates(LeaseRate(2000, 500, 50, 0 sat, 600, 0 msat) :: Nil))) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000 fd05391007d001f4003200000000025800000000",
+      NodeAnnouncement(sig, Features.empty, 0 unixsec, publicKey(1), color, "alice", Nil, TlvStream(NodeAnnouncementTlv.LiquidityAdsRates(LeaseRate(1008, 400, 200, 25_000 sat, 100, 100_000 msat) :: LeaseRate(4032, 500, 500, 10_000 sat, 150, 150_000 msat) :: Nil))) -> hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 0000 00000000 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 647d4b 616c696365000000000000000000000000000000000000000000000000000000 0000 fd05392003f0019000c8000061a80064000186a00fc001f401f4000027100096000249f0",
+    )
+
+    testCases.foreach { case (ann, bin) =>
+      val decoded = nodeAnnouncementCodec.decode(bin.bits).require.value
+      assert(decoded == ann)
+      val encoded = nodeAnnouncementCodec.encode(ann).require.bytes
+      assert(encoded == bin)
     }
   }
 
@@ -491,7 +517,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(RealShortChannelId(14200), RealShortChannelId(46645), RealShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4)))) ->
         hex"010506226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f001801789c63600001f30a30c5b0cd144cb92e3b020017c6034a010c01789c6364620100000e0008"
     )
-    refs.map { case (obj, refbin) =>
+
+    refs.foreach { case (obj, refbin) =>
       val bin = lightningMessageCodec.encode(obj).require
       assert(refbin.bits == bin)
     }

@@ -4,11 +4,19 @@
 
 ## Major changes
 
-<insert changes>
+### Liquidity Ads
+
+This release includes an early prototype for [liquidity ads](https://github.com/lightning/bolts/pull/878).
+Liquidity ads allow nodes to rent their liquidity in a trustless and decentralized manner.
+Every node advertizes the rates at which they lease their liquidity, and buyers connect to sellers that offer interesting rates.
+
+The liquidity ads specification is still under review and will likely change.
+This feature isn't meant to be used on mainnet yet and is thus disabled by default.
 
 ### API changes
 
-<insert changes>
+- `nodes` allows filtering nodes that offer liquidity ads (#2550)
+- `open` allows requesting inbound liquidity from the remote node using liquidity ads (#2550)
 
 ### Miscellaneous improvements and bug fixes
 

@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, TxId}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, txIdAsHash, varint}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, bytes64, satoshiSigned, txIdAsHash, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
 import scodec.codecs.discriminated

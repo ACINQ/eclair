@@ -86,13 +86,13 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
 
-  def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
+  def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams], lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
-  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
-  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
@@ -206,7 +206,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[Peer.DisconnectResponse].map(_.toString)
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     // if no budget is provided for the mining fee of the funding tx, we use a default of 0.1% of the funding amount as a safety measure
@@ -220,26 +220,28 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         pushAmount_opt = pushAmount_opt,
         fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
         fundingTxFeeBudget_opt = Some(fundingFeeBudget),
+        requestRemoteFunding_opt = requestRemoteFunding_opt.map(_.withLeaseStart(appKit.nodeParams.currentBlockHeight)),
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
         timeout_opt = Some(openTimeout))
       res <- (appKit.switchboard ? open).mapTo[OpenChannelResponse]
     } yield res
   }
 
-  override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
+  override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams], lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
     sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong)))
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestRemoteFunding_opt.map(_.withLeaseStart(appKit.nodeParams.currentBlockHeight))))
   }
 
-  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     sendToChannelTyped(channel = Left(channelId),
       cmdBuilder = CMD_SPLICE(_,
         spliceIn_opt = Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))),
-        spliceOut_opt = None
+        spliceOut_opt = None,
+        requestRemoteFunding_opt = requestRemoteFunding_opt.map(_.withLeaseStart(appKit.nodeParams.currentBlockHeight)),
       ))
   }
 
-  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], requestRemoteFunding_opt: Option[LiquidityAds.RequestRemoteFundingParams])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     val script = scriptOrAddress match {
       case Left(script) => script
       case Right(address) => addressToPublicKeyScript(this.appKit.nodeParams.chainHash, address) match {
@@ -250,7 +252,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sendToChannelTyped(channel = Left(channelId),
       cmdBuilder = CMD_SPLICE(_,
         spliceIn_opt = None,
-        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script))
+        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script)),
+        requestRemoteFunding_opt = requestRemoteFunding_opt.map(_.withLeaseStart(appKit.nodeParams.currentBlockHeight)),
       ))
   }
 
