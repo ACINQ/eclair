@@ -73,13 +73,13 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   }
 
   @tailrec
-  private def receive(privateKeys: Seq[PrivateKey], message: OnionMessage): MessageOnion.FinalPayload = {
+  private def receive(privateKeys: Seq[PrivateKey], message: OnionMessage): ReceiveMessage = {
     OnionMessages.process(privateKeys.head, message) match {
       case OnionMessages.SendMessage(nextNode, nextMessage) if nextNode == Left(ShortChannelId.toSelf) || nextNode == Right(EncodedNodeId(privateKeys.head.publicKey)) =>
         receive(privateKeys, nextMessage)
       case OnionMessages.SendMessage(nextNode, nextMessage) if nextNode == Right(EncodedNodeId(privateKeys(1).publicKey)) =>
         receive(privateKeys.tail, nextMessage)
-      case ReceiveMessage(finalPayload) => finalPayload
+      case r: ReceiveMessage => r
       case _ => fail()
     }
   }
@@ -98,15 +98,15 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
     val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
-    val replyPayload = receive(Seq(recipientKey, nodeParams.privateKey), reply)
+    val ReceiveMessage(replyPayload, blindedKey) = receive(Seq(recipientKey, nodeParams.privateKey), reply)
 
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
 
     messageSender.expectMessage(Response(replyPayload))
     messageSender.expectNoMessage(10 millis)
@@ -145,15 +145,15 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
 
     messageSender.expectMessage(NoReply)
 
     val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
-    val replyPayload = receive(Seq(recipientKey, nodeParams.privateKey), reply)
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload))
+    val receiveReply = receive(Seq(recipientKey, nodeParams.privateKey), reply)
+    testKit.system.eventStream ! EventStream.Publish(receiveReply)
 
     messageSender.expectNoMessage(10 millis)
   }
@@ -172,7 +172,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
@@ -190,7 +190,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
     replyTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
@@ -205,7 +205,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val invoiceRequest = OfferTypes.InvoiceRequest(offer, 1000 msat, 1, Features.empty, randomKey(), Block.LivenetGenesisBlock.hash)
     val replyPath = BlindedRoute(EncodedNodeId(randomKey().publicKey), randomKey().publicKey, Seq(BlindedNode(randomKey().publicKey, hex"")))
     val invoiceRequestPayload = MessageOnion.InvoiceRequestPayload(TlvStream(InvoiceRequest(invoiceRequest.records), ReplyPath(replyPath)), TlvStream(PathId(hex"abcd")))
-    postman ! WrappedMessage(invoiceRequestPayload)
+    postman ! WrappedMessage(invoiceRequestPayload, randomKey())
 
     val request = offerManager.expectMessageType[RequestInvoice]
     assert(request.messagePayload.pathId_opt.contains(hex"abcd"))
@@ -231,7 +231,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(next3 == EncodedNodeId(c.publicKey))
     val OnionMessages.SendMessage(Right(next4), message4) = OnionMessages.process(c, message3)
     assert(next4 == EncodedNodeId(d.publicKey))
-    val OnionMessages.ReceiveMessage(payload) = OnionMessages.process(d, message4)
+    val OnionMessages.ReceiveMessage(payload, _) = OnionMessages.process(d, message4)
     assert(payload.records.unknown == Set(GenericTlv(UInt64(11), hex"012345")))
     assert(payload.records.get[ReplyPath].nonEmpty)
     val replyPath = payload.records.get[ReplyPath].get.blindedRoute
@@ -240,10 +240,11 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(nodeParams.onionMessageConfig.minIntermediateHops > 5)
 
     val Right(reply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, OnionMessages.BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(13), hex"6789"))))
-    val replyPayload = receive(Seq(d, c, b, a, nodeParams.privateKey), reply)
+    val receiveReply = receive(Seq(d, c, b, a, nodeParams.privateKey), reply)
+    assert(receiveReply.finalPayload.records.unknown == Set(GenericTlv(UInt64(13), hex"6789")))
 
-    postman ! WrappedMessage(replyPayload)
-    assert(replyPayload.records.unknown == Set(GenericTlv(UInt64(13), hex"6789")))
+    postman ! WrappedMessage(receiveReply.finalPayload, receiveReply.blindedKey)
+    messageSender.expectMessage(Response(receiveReply.finalPayload))
   }
 
   test("send to compact route") { f =>
@@ -272,7 +273,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     replyConnectedTo ! ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
     val Peer.RelayOnionMessage(messageId, message, Some(replySentTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
     replySentTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 
@@ -301,7 +302,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     replyConnectedTo ! ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
     val Peer.RelayOnionMessage(messageId, message, Some(replySentTo)) = peer.expectMessageType[Peer.RelayOnionMessage]
     replySentTo ! Sent(messageId)
-    val ReceiveMessage(finalPayload) = OnionMessages.process(recipientKey, message)
+    val ReceiveMessage(finalPayload, _) = OnionMessages.process(recipientKey, message)
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
     assert(finalPayload.records.get[ReplyPath].isEmpty)
 

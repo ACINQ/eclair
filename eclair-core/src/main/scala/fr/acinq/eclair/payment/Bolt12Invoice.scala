@@ -57,10 +57,10 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   val signature: ByteVector64 = records.get[Signature].get.signature
 
   // It is assumed that the request is valid for this offer.
-  def validateFor(request: InvoiceRequest): Either[String, Unit] = {
+  def validateFor(request: InvoiceRequest, pathNodeId: PublicKey): Either[String, Unit] = {
     if (invoiceRequest.unsigned != request.unsigned) {
       Left("Invoice does not match request")
-    } else if (nodeId != invoiceRequest.offer.nodeId) {
+    } else if (nodeId != invoiceRequest.offer.nodeId.getOrElse(pathNodeId)) {
       Left("Wrong node id")
     } else if (isExpired()) {
       Left("Invoice expired")
@@ -203,7 +203,7 @@ object MinimalBolt12Invoice {
       OfferTypes.InvoiceCreatedAt(createdAt),
       OfferTypes.InvoicePaymentHash(paymentHash),
       OfferTypes.InvoiceAmount(amount),
-      OfferTypes.InvoiceNodeId(offer.nodeId),
+      OfferTypes.InvoiceNodeId(offer.contactInfos.head.nodeId),
     ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
   }
 

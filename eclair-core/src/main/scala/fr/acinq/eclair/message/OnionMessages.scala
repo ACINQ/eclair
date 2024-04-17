@@ -156,7 +156,7 @@ object OnionMessages {
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
   case class SendMessage(nextNode: Either[ShortChannelId, EncodedNodeId], message: OnionMessage) extends Action
-  case class ReceiveMessage(finalPayload: FinalPayload) extends Action
+  case class ReceiveMessage(finalPayload: FinalPayload, blindedKey: PrivateKey) extends Action
 
   sealed trait DropReason
   case class CannotDecryptOnion(message: String) extends DropReason { override def toString = s"can't decrypt onion: $message" }
@@ -200,12 +200,12 @@ object OnionMessages {
               case Left(f) => DropMessage(f)
               case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
                 case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket)
-                case None => validateFinalPayload(payload, blindedPayload)
+                case None => validateFinalPayload(payload, blindedPayload, blindedPrivateKey)
               }
             }
           case None => nextPacket_opt match {
             case Some(_) => DropMessage(CannotDecryptBlindedPayload("encrypted_data is missing"))
-            case None => validateFinalPayload(payload, TlvStream.empty)
+            case None => validateFinalPayload(payload, TlvStream.empty, blindedPrivateKey)
           }
         }
     }
@@ -218,10 +218,10 @@ object OnionMessages {
     }
   }
 
-  private def validateFinalPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv]): Action = {
+  private def validateFinalPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], blindedKey: PrivateKey): Action = {
     FinalPayload.validate(payload, blindedPayload) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
-      case Right(finalPayload) => ReceiveMessage(finalPayload)
+      case Right(finalPayload) => ReceiveMessage(finalPayload, blindedKey)
     }
   }
 

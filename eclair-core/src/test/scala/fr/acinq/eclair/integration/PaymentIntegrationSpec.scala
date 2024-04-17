@@ -700,7 +700,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     )
     val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("D").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(offerPaths)))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("D").system.toTyped)
-    nodes("D").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
+    nodes("D").offerManager ! RegisterOffer(offer, Some(recipientKey), Some(pathId), offerHandler.ref)
 
     val sender = TestProbe()
     val bob = new EclairImpl(nodes("B"))
@@ -733,7 +733,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val chain = nodes("C").nodeParams.chainHash
     val offer = Offer(Some(amount), "test offer", nodes("C").nodeParams.nodeId, nodes("C").nodeParams.features.bolt12Features(), chain)
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
-    nodes("C").offerManager ! RegisterOffer(offer, nodes("C").nodeParams.privateKey, None, offerHandler.ref)
+    nodes("C").offerManager ! RegisterOffer(offer, Some(nodes("C").nodeParams.privateKey), None, offerHandler.ref)
 
     val sender = TestProbe()
     val dave = new EclairImpl(nodes("D"))
@@ -769,7 +769,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerPath = buildRoute(randomKey(), Seq(IntermediateNode(nodes("A").nodeParams.nodeId), IntermediateNode(nodes("A").nodeParams.nodeId)), Recipient(nodes("A").nodeParams.nodeId, Some(pathId)))
     val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("A").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("A").system.toTyped)
-    nodes("A").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
+    nodes("A").offerManager ! RegisterOffer(offer, Some(recipientKey), Some(pathId), offerHandler.ref)
 
     val sender = TestProbe()
     val bob = new EclairImpl(nodes("B"))
@@ -803,7 +803,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerPath = buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId)))
     val offer = Offer(Some(amount), "tricky test offer", recipientKey.publicKey, nodes("C").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
-    nodes("C").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
+    nodes("C").offerManager ! RegisterOffer(offer, Some(recipientKey), Some(pathId), offerHandler.ref)
 
     val sender = TestProbe()
     val bob = new EclairImpl(nodes("B"))
@@ -834,7 +834,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val chain = nodes("D").nodeParams.chainHash
     val offer = Offer(Some(amount), "test offer", nodes("D").nodeParams.nodeId, nodes("D").nodeParams.features.bolt12Features(), chain)
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("D").system.toTyped)
-    nodes("D").offerManager ! RegisterOffer(offer, nodes("D").nodeParams.privateKey, None, offerHandler.ref)
+    nodes("D").offerManager ! RegisterOffer(offer, Some(nodes("D").nodeParams.privateKey), None, offerHandler.ref)
 
     val sender = TestProbe()
     val alice = new EclairImpl(nodes("A"))
@@ -879,7 +879,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerPath = BlindedRoute(scidDirEB, offerBlindedRoute.blindingKey, offerBlindedRoute.blindedNodes)
     val offer = Offer(Some(amount), "test offer", recipientKey.publicKey, nodes("C").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
-    nodes("C").offerManager ! RegisterOffer(offer, recipientKey, Some(pathId), offerHandler.ref)
+    nodes("C").offerManager ! RegisterOffer(offer, Some(recipientKey), Some(pathId), offerHandler.ref)
 
     val sender = TestProbe()
     val alice = new EclairImpl(nodes("A"))

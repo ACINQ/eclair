@@ -181,4 +181,30 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     TypedProbe().expectTerminated(offerPayment)
   }
+
+  test("offer with implicit node id") { f =>
+    import f._
+
+    val probe = TestProbe()
+
+    val merchantKey = randomKey()
+    val route = RouteBlinding.create(randomKey(), Seq.fill(2)(randomKey().publicKey) :+ merchantKey.publicKey, Seq.fill(3)(randomBytes(10)))
+    val offer = Offer.withPaths(None, "implicit node id", Seq(route.route), Features.empty, nodeParams.chainHash)
+
+    offerPayment ! PayOffer(probe.ref, offer, 10_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
+    val Postman.SendMessage(OfferTypes.BlindedPath(blindedRoute), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
+    assert(blindedRoute == route.route)
+    assert(message.get[OnionMessagePayloadTlv.InvoiceRequest].nonEmpty)
+    assert(expectsReply)
+    val Right(invoiceRequest) = InvoiceRequest.validate(message.get[OnionMessagePayloadTlv.InvoiceRequest].get.tlvs)
+
+    val preimage = randomBytes32()
+    val paymentRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(merchantKey.publicKey), Seq(hex"7777")).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty))
+    val blindedMerchantKey = RouteBlinding.derivePrivateKey(merchantKey, route.lastBlinding)
+    val invoice = Bolt12Invoice(invoiceRequest, preimage, blindedMerchantKey, 1 minute, Features.empty, Seq(paymentRoute))
+    replyTo ! Postman.Response(InvoicePayload(TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), TlvStream.empty))
+    val send = paymentInitiator.expectMsgType[SendPaymentToNode]
+    assert(send.invoice == invoice)
+    TypedProbe().expectTerminated(offerPayment)
+  }
 }

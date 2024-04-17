@@ -208,7 +208,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(connectToNextPeer.nodeId == bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
     val messageToBob = peer.expectMessageType[Peer.RelayOnionMessage].msg
-    val OnionMessages.ReceiveMessage(payload) = OnionMessages.process(Bob.nodeParams.privateKey, messageToBob)
+    val OnionMessages.ReceiveMessage(payload, _) = OnionMessages.process(Bob.nodeParams.privateKey, messageToBob)
     assert(payload.records.unknown == Set(GenericTlv(UInt64(31), hex"f3ed")))
   }
 
@@ -231,7 +231,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(getNodeId.shortChannelId == RealShortChannelId(123L))
     getNodeId.replyTo ! Some(aliceId)
 
-    val OnionMessages.ReceiveMessage(finalPayload) = probe.expectMessageType[OnionMessages.ReceiveMessage]
+    val OnionMessages.ReceiveMessage(finalPayload, _) = probe.expectMessageType[OnionMessages.ReceiveMessage]
     assert(finalPayload.records.unknown == Set(GenericTlv(UInt64(33), hex"abcd")))
   }
 }

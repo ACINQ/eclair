@@ -49,7 +49,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
     assert(offer.description == "basic offer")
-    assert(offer.nodeId == nodeId)
+    assert(offer.nodeId.contains(nodeId))
     // Removing any TLV from the minimal offer makes it invalid.
     for (tlv <- tlvs) {
       val incomplete = TlvStream[OfferTlv](tlvs.filterNot(_ == tlv))
@@ -71,7 +71,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.contains(50 msat))
     assert(offer.description == "offer with quantity")
-    assert(offer.nodeId == nodeId)
+    assert(offer.nodeId.contains(nodeId))
     assert(offer.issuer.contains("alice@bigshop.com"))
     assert(offer.quantityMax.contains(Long.MaxValue))
   }
@@ -194,7 +194,7 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
     assert(invoiceRequest.offer.amount.isEmpty)
     assert(invoiceRequest.offer.description == "basic offer")
-    assert(invoiceRequest.offer.nodeId == nodeId)
+    assert(invoiceRequest.offer.nodeId.contains(nodeId))
     assert(invoiceRequest.metadata == hex"abcdef")
     assert(invoiceRequest.payerId == payerKey.publicKey)
     // Removing any TLV from the minimal invoice request makes it invalid.

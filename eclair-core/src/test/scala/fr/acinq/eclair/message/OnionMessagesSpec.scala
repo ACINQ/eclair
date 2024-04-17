@@ -46,7 +46,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val Right(message) = buildMessage(sessionKey, blindingSecret, Nil, Recipient(destination.publicKey, None), TlvStream.empty)
 
     process(destination, message) match {
-      case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.isEmpty)
+      case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.isEmpty)
       case x => fail(x.toString)
     }
   }
@@ -122,7 +122,7 @@ class OnionMessagesSpec extends AnyFunSuite {
               case SendMessage(Right(nextNodeId), onionForDave) =>
                 assert(nextNodeId == EncodedNodeId(dave.publicKey))
                 process(dave, onionForDave) match {
-                  case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
+                  case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
                   case x => fail(x.toString)
                 }
               case x => fail(x.toString)
@@ -216,7 +216,7 @@ class OnionMessagesSpec extends AnyFunSuite {
       case SendMessage(Right(EncodedNodeId.Plain(nextNodeId2)), message2) =>
         assert(nextNodeId2 == destination.publicKey)
         process(destination, message2) match {
-          case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
+          case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(hex"01234567"))
           case x => fail(x.toString)
         }
       case x => fail(x.toString)
@@ -240,7 +240,7 @@ class OnionMessagesSpec extends AnyFunSuite {
           case SendMessage(Right(nextNodeId), onionForCarol) =>
             assert(nextNodeId == EncodedNodeId(carol.publicKey))
             process(carol, onionForCarol) match {
-              case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
+              case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(pathId))
               case x => fail(x.toString)
             }
           case x => fail(x.toString)
@@ -336,7 +336,7 @@ class OnionMessagesSpec extends AnyFunSuite {
               case SendMessage(Right(nextNodeId), onionForDave) =>
                 assert(nextNodeId == EncodedNodeId(dave.publicKey))
                 process(dave, onionForDave) match {
-                  case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
+                  case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(pathId))
                   case x => fail(x.toString)
                 }
               case x => fail(x.toString)
@@ -366,7 +366,7 @@ class OnionMessagesSpec extends AnyFunSuite {
           case SendMessage(Left(outgoingChannelId), onionForCarol) =>
             assert(outgoingChannelId == bob2carol)
             process(carol, onionForCarol) match {
-              case ReceiveMessage(finalPayload) => assert(finalPayload.pathId_opt.contains(pathId))
+              case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(pathId))
               case x => fail(x.toString)
             }
           case x => fail(x.toString)

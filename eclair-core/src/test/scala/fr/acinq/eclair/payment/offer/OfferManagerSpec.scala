@@ -20,7 +20,7 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter._
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.message.OnionMessages.Recipient
 import fr.acinq.eclair.message.{OnionMessages, Postman}
@@ -59,17 +59,17 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     }
   }
 
-  def requestInvoice(payerKey: PrivateKey, offer: Offer, amount: MilliSatoshi, offerManager: ActorRef[Command], postman: ActorRef[Postman.Command], pathId_opt: Option[ByteVector32] = None): Unit = {
+  def requestInvoice(payerKey: PrivateKey, offer: Offer, offerKey: PrivateKey, amount: MilliSatoshi, offerManager: ActorRef[Command], postman: ActorRef[Postman.Command], pathId_opt: Option[ByteVector32] = None): Unit = {
     val invoiceRequest = InvoiceRequest(offer, amount, 1, Features.empty, payerKey, offer.chains.head)
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Recipient(payerKey.publicKey, None))
     val Right(messagePayload: MessageOnion.InvoiceRequestPayload) = MessageOnion.FinalPayload.validate(
       TlvStream(OnionMessagePayloadTlv.InvoiceRequest(invoiceRequest.records), OnionMessagePayloadTlv.ReplyPath(replyPath)),
       pathId_opt.map(pathId => TlvStream[RouteBlindingEncryptedDataTlv](RouteBlindingEncryptedDataTlv.PathId(pathId))).getOrElse(TlvStream.empty),
     )
-    offerManager ! RequestInvoice(messagePayload, postman)
+    offerManager ! RequestInvoice(messagePayload, offerKey, postman)
   }
 
-  def receiveInvoice(f: FixtureParam, amount: MilliSatoshi, payerKey: PrivateKey, handler: TestProbe[HandlerCommand], pluginData_opt: Option[ByteVector] = None): Bolt12Invoice = {
+  def receiveInvoice(f: FixtureParam, amount: MilliSatoshi, payerKey: PrivateKey, pathNodeId: PublicKey, handler: TestProbe[HandlerCommand], pluginData_opt: Option[ByteVector] = None): Bolt12Invoice = {
     import f._
 
     val handleInvoiceRequest = handler.expectMessageType[HandleInvoiceRequest]
@@ -78,7 +78,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, Seq(ReceivingRoute(Seq(nodeParams.nodeId), CltvExpiryDelta(1000), Nil)), pluginData_opt)
     val invoiceMessage = postman.expectMessageType[Postman.SendMessage]
     val Right(invoice) = Bolt12Invoice.validate(invoiceMessage.message.get[OnionMessagePayloadTlv.Invoice].get.tlvs)
-    assert(invoice.validateFor(handleInvoiceRequest.invoiceRequest).isRight)
+    assert(invoice.validateFor(handleInvoiceRequest.invoiceRequest, pathNodeId).isRight)
     assert(invoice.invoiceRequest.payerId == payerKey.publicKey)
     assert(invoice.amount == amount)
     invoice
@@ -104,11 +104,11 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val amount = 10_000_000 msat
     val offer = Offer(Some(amount), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, pathId_opt, handler.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), pathId_opt, handler.ref)
     // Request invoice.
     val payerKey = randomKey()
-    requestInvoice(payerKey, offer, amount, offerManager, postman.ref, pathId_opt)
-    val invoice = receiveInvoice(f, amount, payerKey, handler, pluginData_opt = Some(hex"deadbeef"))
+    requestInvoice(payerKey, offer, nodeParams.privateKey, amount, offerManager, postman.ref, pathId_opt)
+    val invoice = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler, pluginData_opt = Some(hex"deadbeef"))
     // Pay invoice.
     val paymentPayload = createPaymentPayload(f, invoice)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload)
@@ -135,8 +135,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val handler = TestProbe[HandlerCommand]()
     val offer = Offer(Some(10_000_000 msat), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
-    requestInvoice(randomKey(), offer, 9_000_000 msat, offerManager, postman.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
+    requestInvoice(randomKey(), offer, nodeParams.privateKey, 9_000_000 msat, offerManager, postman.ref)
     handler.expectNoMessage(50 millis)
   }
 
@@ -146,8 +146,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val pathId = randomBytes32()
     val offer = Offer(Some(10_000_000 msat), "offer with path_id", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, Some(pathId), handler.ref)
-    requestInvoice(randomKey(), offer, 10_000_000 msat, offerManager, postman.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), Some(pathId), handler.ref)
+    requestInvoice(randomKey(), offer, nodeParams.privateKey, 10_000_000 msat, offerManager, postman.ref)
     handler.expectNoMessage(50 millis)
   }
 
@@ -157,8 +157,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val pathId = randomBytes32()
     val offer = Offer(Some(10_000_000 msat), "offer with path_id", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, Some(pathId), handler.ref)
-    requestInvoice(randomKey(), offer, 10_000_000 msat, offerManager, postman.ref, pathId_opt = Some(pathId.reverse))
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), Some(pathId), handler.ref)
+    requestInvoice(randomKey(), offer, nodeParams.privateKey, 10_000_000 msat, offerManager, postman.ref, pathId_opt = Some(pathId.reverse))
     handler.expectNoMessage(50 millis)
   }
 
@@ -167,9 +167,9 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val handler = TestProbe[HandlerCommand]()
     val offer = Offer(Some(10_000_000 msat), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
     offerManager ! DisableOffer(offer)
-    requestInvoice(randomKey(), offer, 10_000_000 msat, offerManager, postman.ref)
+    requestInvoice(randomKey(), offer, nodeParams.privateKey, 10_000_000 msat, offerManager, postman.ref)
     handler.expectNoMessage(50 millis)
   }
 
@@ -178,8 +178,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val handler = TestProbe[HandlerCommand]()
     val offer = Offer(Some(10_000_000 msat), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
-    requestInvoice(randomKey(), offer, 10_000_000 msat, offerManager, postman.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
+    requestInvoice(randomKey(), offer, nodeParams.privateKey, 10_000_000 msat, offerManager, postman.ref)
     val handleInvoiceRequest = handler.expectMessageType[HandleInvoiceRequest]
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.RejectRequest("internal error")
     val invoiceMessage = postman.expectMessageType[Postman.SendMessage]
@@ -195,14 +195,14 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val amount = 10_000_000 msat
     val offer1 = Offer(Some(amount), "offer #1", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
     val offer2 = Offer(Some(amount), "offer #2", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer1, nodeParams.privateKey, None, handler.ref)
-    offerManager ! RegisterOffer(offer2, nodeParams.privateKey, None, handler.ref)
+    offerManager ! RegisterOffer(offer1, Some(nodeParams.privateKey), None, handler.ref)
+    offerManager ! RegisterOffer(offer2, Some(nodeParams.privateKey), None, handler.ref)
     // Request invoices for offers #1 and #2.
     val payerKey = randomKey()
-    requestInvoice(payerKey, offer1, amount, offerManager, postman.ref)
-    val invoice1 = receiveInvoice(f, amount, payerKey, handler)
-    requestInvoice(payerKey, offer2, amount, offerManager, postman.ref)
-    val invoice2 = receiveInvoice(f, amount, payerKey, handler)
+    requestInvoice(payerKey, offer1, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice1 = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler)
+    requestInvoice(payerKey, offer2, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice2 = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler)
     // Try paying invoice #1 with data from invoice #2.
     val paymentPayload = createPaymentPayload(f, invoice2)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice1.paymentHash, paymentPayload)
@@ -216,11 +216,11 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val amount = 10_000_000 msat
     val offer = Offer(Some(amount), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
     // Request invoice.
     val payerKey = randomKey()
-    requestInvoice(payerKey, offer, amount, offerManager, postman.ref)
-    val invoice = receiveInvoice(f, amount, payerKey, handler)
+    requestInvoice(payerKey, offer, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler)
     // Try paying the invoice with a modified path_id.
     val paymentPayload = createPaymentPayload(f, invoice)
     val Some(pathId) = paymentPayload.blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
@@ -239,11 +239,11 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val amount = 10_000_000 msat
     val offer = Offer(Some(amount), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
     // Request invoice.
     val payerKey = randomKey()
-    requestInvoice(payerKey, offer, amount, offerManager, postman.ref)
-    val invoice = receiveInvoice(f, amount, payerKey, handler)
+    requestInvoice(payerKey, offer, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler)
     // Try paying the invoice, but the plugin handler doesn't respond.
     val paymentPayload = createPaymentPayload(f, invoice)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload)
@@ -257,11 +257,11 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handler = TestProbe[HandlerCommand]()
     val amount = 10_000_000 msat
     val offer = Offer(Some(amount), "offer", nodeParams.nodeId, Features.empty, nodeParams.chainHash)
-    offerManager ! RegisterOffer(offer, nodeParams.privateKey, None, handler.ref)
+    offerManager ! RegisterOffer(offer, Some(nodeParams.privateKey), None, handler.ref)
     // Request invoice.
     val payerKey = randomKey()
-    requestInvoice(payerKey, offer, amount, offerManager, postman.ref)
-    val invoice = receiveInvoice(f, amount, payerKey, handler)
+    requestInvoice(payerKey, offer, nodeParams.privateKey, amount, offerManager, postman.ref)
+    val invoice = receiveInvoice(f, amount, payerKey, nodeParams.nodeId, handler)
     // Try paying the invoice, but the plugin handler rejects the payment.
     val paymentPayload = createPaymentPayload(f, invoice)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload)

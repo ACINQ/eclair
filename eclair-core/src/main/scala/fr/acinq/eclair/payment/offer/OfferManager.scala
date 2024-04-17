@@ -50,7 +50,7 @@ object OfferManager {
    * @param pathId_opt If the offer uses a blinded path, the path id of this blinded path.
    * @param handler    An actor that will be in charge of accepting or rejecting invoice requests and payments for this offer.
    */
-  case class RegisterOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command
+  case class RegisterOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command
 
   /**
    * Forget about an offer. Invoice requests and payment attempts for this offer will be ignored.
@@ -59,7 +59,7 @@ object OfferManager {
    */
   case class DisableOffer(offer: Offer) extends Command
 
-  case class RequestInvoice(messagePayload: MessageOnion.InvoiceRequestPayload, postman: ActorRef[Postman.SendMessage]) extends Command
+  case class RequestInvoice(messagePayload: MessageOnion.InvoiceRequestPayload, blindedKey: PrivateKey, postman: ActorRef[Postman.SendMessage]) extends Command
 
   case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
 
@@ -87,7 +87,7 @@ object OfferManager {
    */
   case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, pluginData_opt: Option[ByteVector] = None) extends HandlerCommand
 
-  private case class RegisteredOffer(offer: Offer, nodeKey: PrivateKey, pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
+  private case class RegisteredOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
   def apply(nodeParams: NodeParams, router: akka.actor.ActorRef, paymentTimeout: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -104,10 +104,10 @@ object OfferManager {
           normal(registeredOffers + (offer.offerId -> RegisteredOffer(offer, nodeKey, pathId_opt, handler)))
         case DisableOffer(offer) =>
           normal(registeredOffers - offer.offerId)
-        case RequestInvoice(messagePayload, postman) =>
+        case RequestInvoice(messagePayload, blindedKey, postman) =>
           registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
             case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
-              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey, router, messagePayload.replyPath, postman))
+              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey.getOrElse(blindedKey), router, messagePayload.replyPath, postman))
               child ! InvoiceRequestActor.RequestInvoice
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }
@@ -116,8 +116,8 @@ object OfferManager {
           MinimalInvoiceData.decode(payload.pathId) match {
             case Some(signed) =>
               registeredOffers.get(signed.offerId) match {
-                case Some(RegisteredOffer(offer, nodeKey, _, handler)) =>
-                  MinimalInvoiceData.verify(nodeKey.publicKey, signed) match {
+                case Some(RegisteredOffer(offer, _, _, handler)) =>
+                  MinimalInvoiceData.verify(nodeParams.nodeId, signed) match {
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, paymentTimeout))
                       handler ! HandlePayment(child, signed.offerId, metadata.pluginData_opt)
@@ -196,7 +196,7 @@ object OfferManager {
           case ApproveRequest(amount, routes, pluginData_opt, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
             val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, pluginData_opt)
-            val pathId = MinimalInvoiceData.encode(nodeKey, invoiceRequest.offer.offerId, metadata)
+            val pathId = MinimalInvoiceData.encode(nodeParams.privateKey, invoiceRequest.offer.offerId, metadata)
             val receivePayment = MultiPartHandler.ReceiveOfferPayment(context.messageAdapter[CreateInvoiceActor.Bolt12InvoiceResponse](WrappedInvoiceResponse), nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
             child ! CreateInvoiceActor.CreateBolt12Invoice(receivePayment)
