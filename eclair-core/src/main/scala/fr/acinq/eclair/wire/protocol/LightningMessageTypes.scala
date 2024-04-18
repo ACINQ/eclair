@@ -118,7 +118,9 @@ case class TxRemoveOutput(channelId: ByteVector32,
                           tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxComplete(channelId: ByteVector32,
-                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
+                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId {
+
+}
 
 case class TxSignatures(channelId: ByteVector32,
                         txId: TxId,
@@ -261,6 +263,7 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
 // NB: this message is named accept_channel2 in the specification.
@@ -285,6 +288,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,

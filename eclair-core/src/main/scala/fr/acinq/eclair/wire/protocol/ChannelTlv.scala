@@ -128,6 +128,7 @@ object OpenDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
@@ -205,6 +206,7 @@ object AcceptDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), provideFundingCodec)
     .typecase(UInt64(41042), feeCreditUsedCodec)

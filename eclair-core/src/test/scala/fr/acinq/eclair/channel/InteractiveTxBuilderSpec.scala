@@ -33,13 +33,14 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Transactions.InputInfo
+import fr.acinq.eclair.transactions.Transactions.{InputInfo, SimpleTaprootChannelsStagingCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
-import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
+import org.scalatest.{BeforeAndAfterAll, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
@@ -103,7 +104,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, ChannelConfig.standard), 0)
     private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
-    val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
+    private val nextLocalNonceA = nodeParamsA.channelKeyManager.verificationNonce(channelParamsA.localParams.fundingKeyPath, 0, nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, channelParamsA.channelConfig), 0)
+    private val nextLocalNonceB = nodeParamsB.channelKeyManager.verificationNonce(channelParamsB.localParams.fundingKeyPath, 0, nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, channelParamsB.channelConfig), 0)
+    assert(channelParamsA.commitmentFormat == channelParamsB.commitmentFormat)
+    val fundingPubkeyScript: ByteVector = channelParamsA.commitmentFormat match {
+      case SimpleTaprootChannelsStagingCommitmentFormat => Script.write(Scripts.musig2FundingScript(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey))
+      case _ => Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
+    }
+
+    Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
       val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript), Nil)
@@ -127,56 +136,60 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       nodeParamsA, fundingParams, channelParamsA,
       FundingTx(commitFeerate, firstPerCommitmentPointB, feeBudget_opt = None),
       0 msat, 0 msat, liquidityPurchase_opt,
-      wallet))
+      wallet,
+      Some(nextLocalNonceB._2)
+    ))
 
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
-      wallet))
+      wallet, None))
 
     def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
-      wallet))
+      wallet, None))
 
     def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
-      wallet))
+      wallet, None))
 
     def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       FundingTx(commitFeerate, firstPerCommitmentPointA, feeBudget_opt = None),
       0 msat, 0 msat, liquidityPurchase_opt,
-      wallet))
+      wallet,
+      Some(nextLocalNonceA._2)
+    ))
 
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
-      wallet))
+      wallet, None))
 
     def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
-      wallet))
+      wallet, None))
 
     def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
-      wallet))
+      wallet, None))
 
     def exchangeSigsAliceFirst(fundingParams: InteractiveTxParams, successA: InteractiveTxBuilder.Succeeded, successB: InteractiveTxBuilder.Succeeded): (FullySignedSharedTransaction, Commitment, FullySignedSharedTransaction, Commitment) = {
       implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
@@ -211,8 +224,19 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
-    val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
+  private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false, useTaprootChannels: Boolean = false): FixtureParams = {
+    val channelFeatures = if (useTaprootChannels)
+      ChannelFeatures(
+        ChannelTypes.SimpleTaprootChannelsStaging,
+        Features[InitFeature](Features.SimpleTaprootStaging -> FeatureSupport.Optional, Features.DualFunding -> FeatureSupport.Optional),
+        Features[InitFeature](Features.SimpleTaprootStaging -> FeatureSupport.Optional, Features.DualFunding -> FeatureSupport.Optional),
+        announceChannel = true)
+    else
+      ChannelFeatures(
+        ChannelTypes.AnchorOutputsZeroFeeHtlcTx(),
+        Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional),
+        Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional),
+        announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
     val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
     val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
@@ -276,7 +300,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def withFixture(fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None)(testFun: Fixture => Any): Unit = {
+  private def withFixture(fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None, useTaprootChannels: Boolean = false)(testFun: Fixture => Any): Unit = {
     // Initialize wallets with a few confirmed utxos.
     val probe = TestProbe()
     val rpcClientA = createWallet(UUID.randomUUID().toString)
@@ -287,7 +311,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     utxosB.foreach(amount => addUtxo(walletB, amount, probe))
     generateBlocks(1)
 
-    val fixtureParams = createFixtureParams(fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs, nonInitiatorPaysCommitTxFees = liquidityPurchase_opt.nonEmpty)
+    val fixtureParams = createFixtureParams(fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs, nonInitiatorPaysCommitTxFees = liquidityPurchase_opt.nonEmpty, useTaprootChannels)
     val alice = fixtureParams.spawnTxBuilderAlice(walletA, liquidityPurchase_opt = liquidityPurchase_opt)
     val bob = fixtureParams.spawnTxBuilderBob(walletB, liquidityPurchase_opt = liquidityPurchase_opt)
     testFun(Fixture(alice, bob, fixtureParams, walletA, rpcClientA, walletB, rpcClientB, TestProbe(), TestProbe()))
@@ -370,13 +394,13 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  test("initiator funds less than non-initiator") {
+  test("initiator funds less than non-initiator (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
     val targetFeerate = FeeratePerKw(3000 sat)
     val fundingA = 10_000 sat
     val utxosA = Seq(50_000 sat)
     val fundingB = 50_000 sat
     val utxosB = Seq(80_000 sat)
-    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true), useTaprootChannels = true) { f =>
       import f._
 
       alice ! Start(alice2bob.ref)
