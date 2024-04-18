@@ -175,7 +175,7 @@ object Transactions {
     override def desc: String = "commit-tx"
 
     override def checkSig(commitSig:  CommitSig, pubKey:  PublicKey, txOwner:  TxOwner, commitmentFormat:  CommitmentFormat): Boolean = commitmentFormat match {
-      case SimpleTaprootChannelsStagingCommitmentFormat => true // TODO: export necessary methods
+      case SimpleTaprootChannelsStagingCommitmentFormat => commitSig.sigOrPartialSig.isRight // TODO: export necessary methods
       case _ => super.checkSig(commitSig, pubKey, txOwner, commitmentFormat)
     }
   }

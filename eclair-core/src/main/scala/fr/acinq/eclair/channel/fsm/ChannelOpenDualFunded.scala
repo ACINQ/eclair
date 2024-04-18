@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsStaging
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs}
@@ -27,6 +28,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
+import fr.acinq.eclair.transactions.Transactions.SimpleTaprootChannelsStagingCommitmentFormat
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ToMilliSatoshiConversion, UInt64, randomBytes32}
 
@@ -112,6 +114,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         Some(ChannelTlv.ChannelTypeTlv(input.channelType)),
         input.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
         if (input.requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+        if (input.channelType == SimpleTaprootChannelsStaging) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2)) else None
       ).flatten
       val open = OpenDualFundedChannel(
         chainHash = nodeParams.chainHash,
@@ -159,6 +162,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
+          log.info(s"received $open")
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
           val revocationBasePoint = keyManager.revocationPoint(channelKeyPath).publicKey
@@ -177,6 +181,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             Some(ChannelTlv.ChannelTypeTlv(d.init.channelType)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
             if (nodeParams.channelConf.requireConfirmedInputsForDualFunding) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+            if (channelParams.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2)) else None
           ).flatten
           val accept = AcceptDualFundedChannel(
             temporaryChannelId = open.temporaryChannelId,
@@ -218,9 +223,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             nodeParams, fundingParams,
             channelParams, purpose,
             localPushAmount = accept.pushAmount, remotePushAmount = open.pushAmount,
-            wallet))
+            wallet,
+            open.nexLocalNonce_opt))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, deferred = None, replyTo_opt = None) sending accept
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, deferred = None, remoteNextLocalNonce = open.nexLocalNonce_opt, replyTo_opt = None) sending accept
       }
 
     case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
@@ -281,9 +287,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             nodeParams, fundingParams,
             channelParams, purpose,
             localPushAmount = d.lastSent.pushAmount, remotePushAmount = accept.pushAmount,
-            wallet))
+            wallet,
+            accept.nexLocalNonce_opt))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, deferred = None, replyTo_opt = Some(d.init.replyTo))
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, deferred = None, remoteNextLocalNonce = accept.nexLocalNonce_opt, replyTo_opt = Some(d.init.replyTo))
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
@@ -551,7 +558,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 channelParams = d.commitments.params,
                 purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx), feeBudget_opt = None),
                 localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
-                wallet))
+                wallet,
+                None))
               txBuilder ! InteractiveTxBuilder.Start(self)
               val toSend = Seq(
                 Some(TxAckRbf(d.channelId, fundingParams.localContribution, nodeParams.channelConf.requireConfirmedInputsForDualFunding)),
@@ -589,7 +597,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             channelParams = d.commitments.params,
             purpose = InteractiveTxBuilder.PreviousTxRbf(d.commitments.active.head, 0 msat, 0 msat, previousTransactions = d.allFundingTxs.map(_.sharedTx), feeBudget_opt = Some(cmd.fundingFeeBudget)),
             localPushAmount = d.localPushAmount, remotePushAmount = d.remotePushAmount,
-            wallet))
+            wallet,
+            None))
           txBuilder ! InteractiveTxBuilder.Start(self)
           stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = Some(cmd), txBuilder, remoteCommitSig = None))
         case _ =>

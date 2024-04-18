@@ -107,6 +107,7 @@ object OpenDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 }
@@ -173,6 +174,7 @@ object AcceptDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNonceTlvCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 
