@@ -9,7 +9,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SessionContext, SharedTransaction}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
@@ -135,6 +135,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       fundingInput,
       Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
     )
+    val sessionContext = SessionContext.Unspecified(sessionId = randomBytes32())
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
       InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false)),
       fundingTxIndex = 0,
@@ -145,8 +146,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val testCases = Map(
       RbfStatus.NoRbf -> RbfStatus.NoRbf,
       RbfStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), fundingFeeBudget = 100_000.sat, 0)) -> RbfStatus.NoRbf,
-      RbfStatus.RbfInProgress(None, null, None) -> RbfStatus.NoRbf,
-      RbfStatus.RbfWaitingForSigs(waitingForSigs) -> RbfStatus.RbfWaitingForSigs(waitingForSigs),
+      RbfStatus.RbfInProgress(None, null, null, None) -> RbfStatus.NoRbf,
+      RbfStatus.RbfWaitingForSigs(sessionContext, waitingForSigs) -> RbfStatus.RbfWaitingForSigs(sessionContext, waitingForSigs),
       RbfStatus.RbfAborted -> RbfStatus.NoRbf,
     )
     testCases.foreach { case (status, expected) =>

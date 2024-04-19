@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{Purpose, SessionContext}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
@@ -340,7 +340,16 @@ object InteractiveTxBuilder {
   }
   // @formatter:on
 
-  def apply(sessionId: ByteVector32,
+  // @formatter:off
+  sealed trait SessionContext {
+    def sessionId: ByteVector32
+  }
+  object SessionContext {
+    case class Unspecified(sessionId: ByteVector32) extends SessionContext
+  }
+  // @formatter:on
+
+  def apply(sessionContext: SessionContext,
             nodeParams: NodeParams,
             fundingParams: InteractiveTxParams,
             channelParams: ChannelParams,
@@ -366,7 +375,7 @@ object InteractiveTxBuilder {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped
               } else {
-                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
+                val actor = new InteractiveTxBuilder(replyTo, sessionContext, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
                 actor.start()
               }
             case Abort => Behaviors.stopped
@@ -382,7 +391,7 @@ object InteractiveTxBuilder {
 }
 
 private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Response],
-                                   sessionId: ByteVector32,
+                                   sessionContext: SessionContext,
                                    nodeParams: NodeParams,
                                    channelParams: ChannelParams,
                                    fundingParams: InteractiveTxBuilder.InteractiveTxParams,
@@ -396,6 +405,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   import InteractiveTxBuilder._
 
   private val log = context.log
+  private val sessionId = sessionContext.sessionId
   private val keyManager = nodeParams.channelKeyManager
   private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
   private val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, fundingParams.remoteFundingPubKey)))

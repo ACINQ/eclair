@@ -2,11 +2,11 @@ package fr.acinq.eclair.wire.internal.channel.version4
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction, SessionContext}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
@@ -589,13 +589,20 @@ private[channel] object ChannelCodecs4 {
       waitingForSigsCodec
     }
 
-    val rbfStatusCodec: Codec[RbfStatus] = discriminated[RbfStatus].by(uint8)
-      .\(0x01) { case status: RbfStatus if !status.isInstanceOf[RbfStatus.RbfWaitingForSigs] => RbfStatus.NoRbf }(provide(RbfStatus.NoRbf))
-      .\(0x02) { case status: RbfStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[RbfStatus.RbfWaitingForSigs])
+    private val sessionContextCodec: Codec[SessionContext] = discriminated[SessionContext].by(uint8)
+      .typecase(0x01, bytes32.as[SessionContext.Unspecified])
 
+    // Order matters!
+    val rbfStatusCodec: Codec[RbfStatus] = discriminated[RbfStatus].by(uint8)
+      .\(0x03) { case status: RbfStatus.RbfWaitingForSigs => status }((sessionContextCodec :: interactiveTxWaitingForSigsCodec).as[RbfStatus.RbfWaitingForSigs])
+      .\(0x02) { case status: RbfStatus.RbfWaitingForSigs => status }((provide[SessionContext](SessionContext.Unspecified(ByteVector32.Zeroes)) :: interactiveTxWaitingForSigsCodec).as[RbfStatus.RbfWaitingForSigs])
+      .\(0x01) { case _: RbfStatus => RbfStatus.NoRbf }(provide(RbfStatus.NoRbf))
+
+    // Order matters!
     val spliceStatusCodec: Codec[SpliceStatus] = discriminated[SpliceStatus].by(uint8)
-      .\(0x01) { case status: SpliceStatus if !status.isInstanceOf[SpliceStatus.SpliceWaitingForSigs] => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
-      .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }((sessionContextCodec :: interactiveTxWaitingForSigsCodec).as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }((provide[SessionContext](SessionContext.Unspecified(ByteVector32.Zeroes)) :: interactiveTxWaitingForSigsCodec).as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x01) { case _: SpliceStatus => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
