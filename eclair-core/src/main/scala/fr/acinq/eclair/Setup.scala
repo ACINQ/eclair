@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, addressToPublicKeyScript}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
@@ -187,8 +187,11 @@ class Setup(val datadir: File,
       await(getBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind did not respond after 30 seconds")
     }
     logger.info(s"bitcoind version=${bitcoinStatus.version}")
-    assert(bitcoinStatus.version >= 240100, "Eclair requires Bitcoin Core 24.1 or higher")
-    assert(bitcoinStatus.unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+    assert(bitcoinStatus.version >= 260100, "Eclair requires Bitcoin Core 26.1 or higher")
+    bitcoinStatus.unspentAddresses.foreach { address =>
+      val isSegwit = addressToPublicKeyScript(bitcoinStatus.chainHash, address).map(script => Script.isNativeWitnessScript(script)).getOrElse(false)
+      assert(isSegwit, s"Your wallet contains non-segwit UTXOs (e.g. address=$address). You must send those UTXOs to a segwit address to use Eclair (check out our README for more details).")
+    }
     if (bitcoinStatus.chainHash != Block.RegtestGenesisBlock.hash) {
       assert(!bitcoinStatus.initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=${bitcoinStatus.initialBlockDownload})")
       assert(bitcoinStatus.verificationProgress > 0.999, s"bitcoind should be synchronized (progress=${bitcoinStatus.verificationProgress})")

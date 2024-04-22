@@ -235,7 +235,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
   //------------------------- FUNDING  -------------------------//
 
   /**
-   * @param feeBudget max allowed fee, if the transaction returned by bitcoin core has a higher fee a funding error is returned.
+   * @param feeBudget_opt max allowed fee, if the transaction returned by bitcoin core has a higher fee a funding error is returned.
    */
   def fundTransaction(tx: Transaction, options: FundTransactionOptions, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     rpcClient.invoke("fundrawtransaction", tx.toString(), options).flatMap(json => {

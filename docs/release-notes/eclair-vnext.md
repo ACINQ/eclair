@@ -4,7 +4,10 @@
 
 ## Major changes
 
-<insert changes>
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 26.1.
+Newer versions of Bitcoin Core may be used, but haven't been extensively tested.
 
 ### API changes
 

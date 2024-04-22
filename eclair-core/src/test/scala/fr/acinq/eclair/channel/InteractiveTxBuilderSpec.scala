@@ -34,7 +34,7 @@ import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
@@ -1469,7 +1469,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA3 = alice2bob.expectMsgType[Succeeded]
       val successB3 = bob2alice.expectMsgType[Succeeded]
       val (spliceTxA2, _, _, _) = fixtureParams.exchangeSigsBobFirst(fundingParamsB2, successA3, successB3)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet == spliceTxA2.signedTx.txIn.map(_.outPoint).toSet)
       (spliceOutputsA ++ spliceOutputsB).foreach(txOut => assert(spliceTxA2.signedTx.txOut.contains(txOut)))
       assert(spliceTxA1.txId != spliceTxA2.txId)
@@ -1561,8 +1563,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       probe.expectMsg(spliceTxA1.txId)
 
       // Alice wants to make a large increase to the feerate of the splice transaction, which requires additional inputs.
-      val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(10_000 sat))
-      val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(10_000 sat))
+      val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(5_000 sat))
+      val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(5_000 sat))
       val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1, replacedCommitment = commitmentA2, Seq(spliceTxA1), walletA)
       val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1, replacedCommitment = commitmentB2, Seq(spliceTxB1), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
@@ -1600,7 +1602,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA3 = alice2bob.expectMsgType[Succeeded]
       val successB3 = bob2alice.expectMsgType[Succeeded]
       val (spliceTxA2, _, _, _) = fixtureParams.exchangeSigsBobFirst(fundingParamsB2, successA3, successB3)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       // Alice and Bob both added a new input to fund the feerate increase.
       assert(spliceTxA2.signedTx.txIn.length == spliceTxA1.signedTx.txIn.length + 2)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet.subsetOf(spliceTxA2.signedTx.txIn.map(_.outPoint).toSet))
@@ -1757,7 +1761,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.getMempoolTx(spliceTxA2.txId).pipeTo(probe.ref)
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == spliceTxA2.tx.fees)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet.subsetOf(spliceTxA2.signedTx.txIn.map(_.outPoint).toSet))
       assert(spliceTxA1.txId != spliceTxA2.txId)
       assert(spliceTxA1.tx.fees < spliceTxA2.tx.fees)
