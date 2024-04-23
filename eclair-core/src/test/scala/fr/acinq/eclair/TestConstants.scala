@@ -19,7 +19,7 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, InteractiveTxConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
@@ -149,7 +149,11 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
-        acceptIncomingStaticRemoteKeyChannels = false
+        acceptIncomingStaticRemoteKeyChannels = false,
+        interactiveTxConf = InteractiveTxConf(
+          maxLocalInputCount = 10,
+          maxChangeRatio = 10_000
+        )
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -331,7 +335,11 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
-        acceptIncomingStaticRemoteKeyChannels = false
+        acceptIncomingStaticRemoteKeyChannels = false,
+        interactiveTxConf = InteractiveTxConf(
+          maxLocalInputCount = 10,
+          maxChangeRatio = 10_000
+        )
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),

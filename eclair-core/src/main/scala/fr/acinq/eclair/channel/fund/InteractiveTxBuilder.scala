@@ -484,7 +484,19 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             Behaviors.stopped
           }
         case fundingContributions: InteractiveTxFunder.FundingContributions =>
-          stash.unstashAll(buildTx(fundingContributions))
+          val changeAmount = fundingContributions.outputs.collectFirst { case o: Output.Local.Change => o.amount }.getOrElse(0.sat)
+          val maxChangeAmount = (fundingParams.localContribution * nodeParams.channelConf.interactiveTxConf.maxChangeRatio).max(0.sat)
+          if (fundingParams.localOutputs.isEmpty && changeAmount > maxChangeAmount) {
+            log.warn("invalid interactive tx: change amount is too large  (max={}, actual={})", maxChangeAmount, changeAmount)
+            replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+            unlockAndStop(fundingContributions.inputs.map(_.outPoint).toSet)
+          } else if (fundingContributions.inputs.collect { case i: Input.Local => i }.size > nodeParams.channelConf.interactiveTxConf.maxLocalInputCount) {
+            log.warn("invalid interactive tx: too many local inputs (max={}, actual={})", nodeParams.channelConf.interactiveTxConf.maxLocalInputCount, fundingContributions.inputs.size)
+            replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+            unlockAndStop(fundingContributions.inputs.map(_.outPoint).toSet)
+          } else {
+            stash.unstashAll(buildTx(fundingContributions))
+          }
       }
       case msg: ReceiveMessage =>
         stash.stash(msg)

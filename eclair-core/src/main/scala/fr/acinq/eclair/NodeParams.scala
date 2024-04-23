@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiL
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, InteractiveTxConf, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
@@ -159,7 +159,7 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
 /**
  * @param writeDelay       delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
  * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
- * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.                    
+ * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.
  */
 case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration)
 
@@ -594,7 +594,11 @@ object NodeParams extends Logging {
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
-        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
+        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels"),
+        interactiveTxConf = InteractiveTxConf(
+          maxLocalInputCount = config.getInt("channel.interactive-tx.max-local-input-count"),
+          maxChangeRatio = config.getInt("channel.interactive-tx.max-change-ratio")
+        )
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
