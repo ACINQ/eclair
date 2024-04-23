@@ -50,11 +50,9 @@ package object eclair {
   }
 
   def serializationResult(attempt: Attempt[BitVector]): ByteVector = attempt match {
-    case Attempt.Successful(bin) => bin.toByteVector
+    case Attempt.Successful(bin) => bin.bytes
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
-
-  def isPay2PubkeyHash(address: String): Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
   /**
    * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)

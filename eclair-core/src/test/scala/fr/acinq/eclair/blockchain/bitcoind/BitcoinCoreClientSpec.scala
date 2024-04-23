@@ -253,12 +253,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(amountIn2 == fundedTx2.amountIn)
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx2.tx, 0, inputScript1, SigHash.SIGHASH_ALL, 250_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
-      // And let bitcoind sign the wallet input.
-      walletExternalFunds.signPsbt(new Psbt(fundedTx2.tx), fundedTx2.tx.txIn.indices, Nil).pipeTo(sender.ref)
-      val psbt = sender.expectMsgType[ProcessPsbtResponse].psbt
-      val signedTx: Transaction = psbt.updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of()).getRight
+      val psbt = new Psbt(fundedTx2.tx)
+        .updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, bobPriv).map(_.publicKey), Seq(externalSig))).getRight
-        .extract().getRight
+      // And let bitcoind sign the wallet input.
+      walletExternalFunds.signPsbt(psbt, fundedTx2.tx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx: Transaction = sender.expectMsgType[ProcessPsbtResponse].psbt.extract().getRight
 
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
@@ -281,15 +281,14 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       walletExternalFunds.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = Seq(InputWeight(externalOutpoint, externalInputWeight)), changePosition = Some(1)), feeBudget_opt = None).pipeTo(sender.ref)
       val fundedTx = sender.expectMsgType[FundTransactionResponse]
       assert(fundedTx.tx.txIn.length >= 2)
-      // bitcoind signs the wallet input.
-      walletExternalFunds.signPsbt(new Psbt(fundedTx.tx), fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
-      val psbt = sender.expectMsgType[ProcessPsbtResponse].psbt
-
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
-      val signedTx: Transaction = psbt.updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
+      val psbt = new Psbt(fundedTx.tx)
+        .updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))).getRight
-        .extract().getRight
+      // bitcoind signs the wallet input.
+      walletExternalFunds.signPsbt(psbt, fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx: Transaction = sender.expectMsgType[ProcessPsbtResponse].psbt.extract().getRight
 
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
@@ -298,10 +297,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val mempoolTx = sender.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == fundedTx.fee)
       assert(mempoolTx.fees < mempoolTx.ancestorFees)
-      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation (expected in Bitcoin Core 25).
-      // val actualFee = mempoolTx.ancestorFees
-      // val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
-      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      val actualFee = mempoolTx.ancestorFees
+      val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
+      assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
       signedTx
     }
 
@@ -319,15 +317,15 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       assert(fundedTx.tx.txIn.length >= 2)
       assert(fundedTx.tx.txOut.length == 2)
 
-      // bitcoind signs the wallet input.
-      walletExternalFunds.signPsbt(new Psbt(fundedTx.tx), fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
-      val psbt = sender.expectMsgType[ProcessPsbtResponse].psbt
-
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
-      val signedTx: Transaction = psbt.updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
+      val psbt = new Psbt(fundedTx.tx)
+        .updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))).getRight
-        .extract().getRight
+      // bitcoind signs the wallet input.
+      walletExternalFunds.signPsbt(psbt, fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx: Transaction = sender.expectMsgType[ProcessPsbtResponse].psbt.extract().getRight
+
       walletExternalFunds.publishTransaction(signedTx).pipeTo(sender.ref)
       sender.expectMsg(signedTx.txid)
       // We have replaced the previous transaction.
@@ -338,10 +336,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val mempoolTx = sender.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == fundedTx.fee)
       assert(mempoolTx.fees < mempoolTx.ancestorFees)
-      // TODO: uncomment the lines below once bitcoind takes into account unconfirmed ancestors in feerate estimation (expected in Bitcoin Core 25).
-      // val actualFee = mempoolTx.ancestorFees
-      // val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
-      // assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+      val actualFee = mempoolTx.ancestorFees
+      val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
+      assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
     }
   }
 

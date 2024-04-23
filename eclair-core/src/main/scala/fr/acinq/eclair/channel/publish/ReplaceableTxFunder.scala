@@ -427,34 +427,26 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def addInputs(anchorTx: ClaimLocalAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimLocalAnchorWithWitnessData, Satoshi)] = {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils
-
     val dustLimit = commitment.localParams.dustLimit
-    val commitTxWeight = commitWeight(commitment)
     // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
     // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
     // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
     // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
-    val dummyChangeOutput = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey))
-    val txNotFunded = anchorTx.txInfo.tx.copy(txOut = dummyChangeOutput :: Nil)
-    // The anchor transaction is paying for the weight of the commitment transaction.
-    // We remove the weight of the artificially added change output, because we will remove that output after funding.
-    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight + commitTxWeight - KotlinUtils.scala2kmp(dummyChangeOutput).weight()))
+    val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
+    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight))
     bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight), feeBudget_opt = None).flatMap { fundTxResponse =>
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
-      // The commitment transaction was already paying some fees that we're paying again in the anchor transaction since
-      // we included the commit weight, so we need to increase our change output to avoid overshooting the feerate.
-      val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
+      // We merge our dummy change output with the one added by Bitcoin Core, if any.
       fundTxResponse.changePosition match {
         case Some(changePos) =>
-          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum + commitFee)
+          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum)
           val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
           Future.successful(anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
         case None =>
           bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
-            // replace PlaceHolderPubKey with a real wallet key
-            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit + commitFee, Script.pay2wpkh(pubkeyHash))))
+            // We must have a change output, otherwise the transaction is invalid: we replace the PlaceHolderPubKey with a real wallet key.
+            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
             (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
           })
       }
