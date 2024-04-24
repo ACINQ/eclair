@@ -19,12 +19,12 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes, PartialSignatureWithNonce}
-import fr.acinq.eclair.wire.protocol.ChannelTlv.nexLocalNonceTlvCodec
+import fr.acinq.eclair.wire.protocol.ChannelTlv.{nexLocalNonceTlvCodec, nexLocalNoncesTlvCodec}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
 import fr.acinq.eclair.{Alias, FeatureSupport, Features, MilliSatoshi, UInt64}
 import scodec.Codec
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 import scodec.codecs._
 
 sealed trait OpenChannelTlv extends Tlv
@@ -91,10 +91,13 @@ object ChannelTlv {
    */
   case class UseFeeCredit(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with SpliceInitTlv
 
-  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv with ChannelReestablishTlv with SpliceInitTlv with SpliceAckTlv
 
   val nexLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
 
+  case class NextLocalNoncesTlv(nonces: List[IndividualNonce]) extends OpenChannelTlv with AcceptChannelTlv with OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with ChannelReadyTlv with ChannelReestablishTlv with SpliceInitTlv with SpliceAckTlv
+
+  val nexLocalNoncesTlvCodec: Codec[NextLocalNoncesTlv] = tlvField(list(publicNonce))
 }
 
 object OpenChannelTlv {
@@ -128,7 +131,7 @@ object OpenDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
-    .typecase(UInt64(4), nexLocalNonceTlvCodec)
+    .typecase(UInt64(4), nexLocalNoncesTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
@@ -175,6 +178,7 @@ object SpliceInitTlv {
 
   val spliceInitTlvCodec: Codec[TlvStream[SpliceInitTlv]] = tlvStream(discriminated[SpliceInitTlv].by(varint)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNoncesTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
@@ -187,6 +191,7 @@ object SpliceAckTlv {
 
   val spliceAckTlvCodec: Codec[TlvStream[SpliceAckTlv]] = tlvStream(discriminated[SpliceAckTlv].by(varint)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    .typecase(UInt64(4), nexLocalNoncesTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), provideFundingCodec)
     .typecase(UInt64(41042), feeCreditUsedCodec)
@@ -206,7 +211,7 @@ object AcceptDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
-    .typecase(UInt64(4), nexLocalNonceTlvCodec)
+    .typecase(UInt64(4), nexLocalNoncesTlvCodec)
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), provideFundingCodec)
     .typecase(UInt64(41042), feeCreditUsedCodec)
@@ -263,7 +268,7 @@ object ChannelReestablishTlv {
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
-    .typecase(UInt64(4), nexLocalNonceTlvCodec)
+    .typecase(UInt64(4), nexLocalNoncesTlvCodec)
   )
 }
 

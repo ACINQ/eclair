@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
@@ -75,7 +76,11 @@ trait ChannelKeyManager {
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
 
-  def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32]
+  def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
+    partialSign(tx.tx, tx.tx.txIn.indexWhere(_.outPoint == tx.input.outPoint), Seq(tx.input.txOut), localPublicKey, remotePublicKey, txOwner, localNonce, remoteNextLocalNonce)
+  }
+
+  def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32]
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys

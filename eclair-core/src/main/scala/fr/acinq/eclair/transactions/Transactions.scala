@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.PartialSignatureWithNonce
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.protocol.{CommitSig, UpdateAddHtlc}
@@ -178,7 +179,21 @@ object Transactions {
       case SimpleTaprootChannelsStagingCommitmentFormat => commitSig.sigOrPartialSig.isRight // TODO: export necessary methods
       case _ => super.checkSig(commitSig, pubKey, txOwner, commitmentFormat)
     }
+
+    def checkPartialSignature(psig: PartialSignatureWithNonce, localPubKey: PublicKey, localNonce: IndividualNonce, remotePubKey: PublicKey): Boolean = {
+      import KotlinUtils._
+      val session = fr.acinq.bitcoin.crypto.musig2.Musig2.taprootSession(
+          this.tx,
+          0,
+          java.util.List.of(this.input.txOut),
+          Scripts.sort(Seq(localPubKey, remotePubKey)).map(scala2kmp).asJava,
+          java.util.List.of(localNonce, psig.nonce),
+          null
+        ).getRight
+      session.verify(psig.partialSig, psig.nonce, remotePubKey)
+    }
   }
+
   /**
    * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
    * anchor outputs htlc transactions are replaceable. We should have used different types for these different kinds of
@@ -1257,8 +1272,7 @@ object Transactions {
                   localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey,
                   localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
     val inputIndex = txinfo.tx.txIn.indexWhere(_.outPoint == txinfo.input.outPoint)
-    val publicKeys = Scripts.sort(Seq(localFundingPublicKey, remoteFundingPublicKey))
-    Musig2.signTaprootInput(key, txinfo.tx, inputIndex, Seq(txinfo.input.txOut), publicKeys, localNonce._1, Seq(localNonce._2, remoteNextLocalNonce), None)
+    partialSign(key, txinfo.tx, inputIndex, Seq(txinfo.input.txOut), localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey, localNonce, remoteNextLocalNonce)
   }
 
   def aggregatePartialSignatures(txinfo: TransactionWithInputInfo,

@@ -116,7 +116,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         if (input.requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
         input.requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
         input.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
-        if (input.channelType == SimpleTaprootChannelsStaging) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2)) else None
+        if (input.channelType.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) Some(ChannelTlv.NextLocalNoncesTlv(
+          List(
+            keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2,
+            keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 1)._2
+          )
+        )) else None
       ).flatten
       val open = OpenDualFundedChannel(
         chainHash = nodeParams.chainHash,
@@ -185,8 +190,13 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             willFund_opt.map(l => ChannelTlv.ProvideFundingTlv(l.willFund)),
             open.useFeeCredit_opt.map(c => ChannelTlv.FeeCreditUsedTlv(c)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
-            if (channelParams.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2)) else None
+            if (channelParams.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) Some(ChannelTlv.NextLocalNoncesTlv(
+              List(
+                keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2,
+                keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 1)._2
+              ))) else None
           ).flatten
+          log.debug("sending AcceptDualFundedChannel with {}", tlvs)
           val accept = AcceptDualFundedChannel(
             temporaryChannelId = open.temporaryChannelId,
             fundingAmount = localAmount,
@@ -229,9 +239,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             localPushAmount = accept.pushAmount, remotePushAmount = open.pushAmount,
             willFund_opt.map(_.purchase),
             wallet,
-            open.nexLocalNonce_opt))
+            open.firstRemoteNonce))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, deferred = None, remoteNextLocalNonce = open.nexLocalNonce_opt, replyTo_opt = None) sending accept
+          setRemoteNextLocalNonces("received OpenDualFundedChannel", open.secondRemoteNonce.toList)
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, open.secondPerCommitmentPoint, accept.pushAmount, open.pushAmount, txBuilder, deferred = None, replyTo_opt = None) sending accept
       }
 
     case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
@@ -294,9 +305,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             localPushAmount = d.lastSent.pushAmount, remotePushAmount = accept.pushAmount,
             liquidityPurchase_opt = liquidityPurchase_opt,
             wallet,
-            accept.nexLocalNonce_opt))
+            accept.firstRemoteNonce))
           txBuilder ! InteractiveTxBuilder.Start(self)
-          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, deferred = None, remoteNextLocalNonce = accept.nexLocalNonce_opt, replyTo_opt = Some(d.init.replyTo))
+          setRemoteNextLocalNonces("received AcceptDualFundedChannel", accept.secondRemoteNonce.toList)
+          goto(WAIT_FOR_DUAL_FUNDING_CREATED) using DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId, channelParams, accept.secondPerCommitmentPoint, d.lastSent.pushAmount, accept.pushAmount, txBuilder, deferred = None, replyTo_opt = Some(d.init.replyTo))
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>

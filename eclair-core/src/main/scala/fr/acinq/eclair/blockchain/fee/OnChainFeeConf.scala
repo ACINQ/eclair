@@ -121,7 +121,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
 
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
-      case _: Transactions.AnchorOutputsCommitmentFormat  =>
+      case _: Transactions.AnchorOutputsCommitmentFormat =>
         val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
         // We make sure the feerate is always greater than the propagation threshold.
         targetFeerate.max(networkMinFee * 1.25)

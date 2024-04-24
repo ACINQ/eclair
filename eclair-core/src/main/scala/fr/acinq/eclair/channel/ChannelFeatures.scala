@@ -131,18 +131,16 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case object SimpleTaprootChannelsStaging extends SupportedChannelType {
+  case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
     override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
       Some(Features.SimpleTaprootStaging)
     ).flatten
-
-        /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
     override def paysDirectlyToWallet: Boolean = false
-    /** Format of the channel transactions. */
     override def commitmentFormat: CommitmentFormat = SimpleTaprootChannelsStagingCommitmentFormat
-
-    override def toString: String = "simple_taproot_channel_staging"
+    override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
@@ -168,7 +166,11 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsStaging)
+    SimpleTaprootChannelsStaging(),
+    SimpleTaprootChannelsStaging(zeroConf = true),
+    SimpleTaprootChannelsStaging(scidAlias = true),
+    SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
+  )
     .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
 
@@ -184,7 +186,7 @@ object ChannelTypes {
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
     if (canUse(Features.SimpleTaprootStaging)) {
-      SimpleTaprootChannelsStaging
+      SimpleTaprootChannelsStaging(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {

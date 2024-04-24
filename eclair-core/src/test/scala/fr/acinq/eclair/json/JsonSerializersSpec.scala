@@ -361,7 +361,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("TransactionWithInputInfo serializer") {
     // the input info is ignored when serializing to JSON
-    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
+    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), ByteVector.fromValidHex("deadbeef"))
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
     val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, ConfirmationTarget.Absolute(BlockHeight(1105)))

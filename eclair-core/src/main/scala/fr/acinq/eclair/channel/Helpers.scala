@@ -166,7 +166,7 @@ object Helpers {
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    if (channelFeatures.hasFeature(Features.SimpleTaprootStaging) && open.tlvStream.get[ChannelTlv.NextLocalNonceTlv].isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if (channelFeatures.hasFeature(Features.SimpleTaprootStaging) && open.tlvStream.get[ChannelTlv.NextLocalNoncesTlv].isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelFeatures.commitmentFormat, open.fundingAmount)
@@ -266,7 +266,7 @@ object Helpers {
       liquidityPurchase_opt <- LiquidityAds.validateRemoteFunding(open.requestFunding_opt, remoteNodeId, accept.temporaryChannelId, fundingScript, accept.fundingAmount, open.fundingFeerate, isChannelCreation = true, accept.willFund_opt)
     } yield {
       val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-      if (channelFeatures.hasFeature(Features.SimpleTaprootStaging) && accept.tlvStream.get[ChannelTlv.NextLocalNonceTlv].isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+      if (channelFeatures.hasFeature(Features.SimpleTaprootStaging) && accept.tlvStream.get[ChannelTlv.NextLocalNoncesTlv].isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
       (channelFeatures, script_opt, liquidityPurchase_opt)
     }
   }
@@ -484,7 +484,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(keyManager: ChannelKeyManager, commitments: Commitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+    def checkSync(keyManager: ChannelKeyManager, commitments: Commitments, remoteChannelReestablish: ChannelReestablish)(implicit log: LoggingAdapter): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
@@ -545,8 +545,8 @@ object Helpers {
         val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
         val tlvStream: TlvStream[RevokeAndAckTlv] = commitments.params.commitmentFormat match {
           case SimpleTaprootChannelsStagingCommitmentFormat =>
-            val (_, nonce) = keyManager.verificationNonce(commitments.params.localParams.fundingKeyPath, commitments.latest.fundingTxIndex, channelKeyPath, commitments.localCommitIndex + 1)
-            TlvStream(RevokeAndAckTlv.NextLocalNonceTlv(nonce))
+            val nonces = commitments.active.map(c => keyManager.verificationNonce(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex, channelKeyPath, commitments.localCommitIndex + 1))
+            TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
           case _ =>
             TlvStream.empty
         }
