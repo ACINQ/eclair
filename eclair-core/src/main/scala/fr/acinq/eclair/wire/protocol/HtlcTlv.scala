@@ -98,13 +98,13 @@ object CommitSigTlv {
 sealed trait RevokeAndAckTlv extends Tlv
 
 object RevokeAndAckTlv {
-  case class NextLocalNonceTlv(nonce: IndividualNonce) extends RevokeAndAckTlv
+  case class NextLocalNoncesTlv(nonces: List[IndividualNonce]) extends RevokeAndAckTlv
 
-  object NextLocalNonceTlv {
-    val codec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
+  object NextLocalNoncesTlv {
+    val codec: Codec[NextLocalNoncesTlv] = tlvField(list(publicNonce))
   }
 
   val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint)
-    .typecase(UInt64(4), NextLocalNonceTlv.codec)
+    .typecase(UInt64(4), NextLocalNoncesTlv.codec)
   )
 }
