@@ -80,7 +80,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
       val localShutdownScript = input.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
-      val tlvStream: TlvStream[OpenChannelTlv] = if (input.channelType == SimpleTaprootChannelsStaging) {
+      val tlvStream: TlvStream[OpenChannelTlv] = if (input.channelType.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
         val localNonce = keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
         TlvStream(
           ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
@@ -145,7 +145,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = d.initFundee.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
-          val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType == SimpleTaprootChannelsStaging) {
+          val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
             val localNonce = keyManager.verificationNonce(d.initFundee.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
             TlvStream(
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
@@ -213,7 +213,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           }
           wallet.makeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate, init.fundingTxFeeBudget_opt).pipeTo(self)
           val params = ChannelParams(init.temporaryChannelId, init.channelConfig, channelFeatures, init.localParams, remoteParams, open.channelFlags)
-          this.remoteNextLocalNonce_opt = accept.nexLocalNonce_opt
+          setRemoteNextLocalNonces("received AcceptChannel", accept.nexLocalNonce_opt.toList)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(params, init.fundingAmount, init.pushAmount_opt.getOrElse(0 msat), init.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, d.initFunder.replyTo)
       }
 
@@ -250,7 +250,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val inputIndex = remoteCommitTx.tx.txIn.zipWithIndex.find(_._1.outPoint == OutPoint(fundingTx.txid, fundingTxOutputIndex)).get._2
               val Right(sig) = keyManager.partialSign(remoteCommitTx,
                 fundingPubkey, remoteFundingPubKey, TxOwner.Remote,
-                localNonce, remoteNextLocalNonce_opt.get
+                localNonce, remoteNextLocalNonces.head
               )
               FundingCreated(
                 temporaryChannelId = temporaryChannelId,

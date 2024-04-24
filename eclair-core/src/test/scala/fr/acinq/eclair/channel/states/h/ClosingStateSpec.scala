@@ -409,36 +409,6 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData == initialState) // this was a no-op
   }
 
-  test("recv WatchOutputSpentTriggered (simple taproot channels", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    import f._
-    // alice sends an htlc to bob
-    val (ra1, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-    bob2relayer.expectMsgType[RelayForward]
-    localClose(alice, alice2blockchain)
-    val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    assert(initialState.localCommitPublished.isDefined)
-
-    // actual test starts here
-    channelUpdateListener.expectMsgType[LocalChannelDown]
-
-    // scenario 1: bob claims the htlc output from the commit tx using its preimage
-    val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomTxId(), 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx(Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33))) :: Nil, txOut = Nil, lockTime = 0)
-    alice ! WatchOutputSpentTriggered(claimHtlcSuccessFromCommitTx)
-    val fulfill1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
-    assert(fulfill1.htlc == htlca1)
-    assert(fulfill1.result.paymentPreimage == ra1)
-
-    // scenario 2: bob claims the htlc output from his own commit tx using its preimage (let's assume both parties had published their commitment tx)
-    val claimHtlcSuccessTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(randomTxId(), 0), signatureScript = ByteVector.empty, sequence = 0, witness = Scripts.witnessHtlcSuccess(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ra1, ByteVector.fill(130)(33), Transactions.DefaultCommitmentFormat)) :: Nil, txOut = Nil, lockTime = 0)
-    alice ! WatchOutputSpentTriggered(claimHtlcSuccessTx)
-    val fulfill2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFulfill]]
-    assert(fulfill2.htlc == htlca1)
-    assert(fulfill2.result.paymentPreimage == ra1)
-
-    assert(alice.stateData == initialState) // this was a no-op
-  }
-
   test("recv WatchOutputSpentTriggered (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // alice sends an htlc to bob

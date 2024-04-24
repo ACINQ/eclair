@@ -107,7 +107,8 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
   override def verificationNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long, channelKeyPath: KeyPath, index: Long): (SecretNonce, IndividualNonce) = {
     val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
     val sessionId = Generators.perCommitSecret(nonceSeed(channelKeyPath), index).value
-    Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+    val nonce = Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+    nonce
   }
 
   override def signingNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce) = {
@@ -139,16 +140,16 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     }
   }
 
-  override def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
-    // NB: not all those transactions are actually commit txs (especially during closing), but this is good enough for monitoring purposes
+  override def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(localPublicKey.path).privateKey
-      Transactions.partialSign(tx, privateKey, localPublicKey.publicKey, remotePublicKey, localNonce, remoteNextLocalNonce)
+      val psig = Transactions.partialSign(privateKey, tx, inputIndex, spentOutputs, localPublicKey.publicKey, remotePublicKey, localNonce, remoteNextLocalNonce)
+      psig
     }
   }
-
+  
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
    *

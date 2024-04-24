@@ -145,7 +145,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
     val commitments1 = commitments
       .modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
-    this.remoteNextLocalNonce_opt = channelReady.nexLocalNonce_opt // TODO: this is wrong, there should be a different nonce for each commitment
+    setRemoteNextLocalNonces("received ChannelReady", channelReady.nexLocalNonce_opt.toList) // TODO: this is wrong, there should be a different nonce for each commitment
     DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 

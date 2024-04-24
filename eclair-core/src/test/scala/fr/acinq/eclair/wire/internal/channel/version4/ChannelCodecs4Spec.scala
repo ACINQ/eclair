@@ -12,7 +12,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, ScriptTreeAndInternalKey}
 import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs._
@@ -27,6 +27,13 @@ import scala.util.Random
 class ChannelCodecs4Spec extends AnyFunSuite {
 
   test("basic serialization test (NORMAL)") {
+    val tx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
+    val sig = fr.acinq.bitcoin.scalacompat.ByteVector64.fromValidHex("01" * 64)
+    val commitTxAndRemoteSig = CommitTxAndRemoteSig(CommitTx(InputInfo(OutPoint(tx, 42), tx.txOut.head, tx.txOut.head.publicKeyScript), tx), Left(sig))
+    val encoded = commitTxAndRemoteSigCodec.encode(commitTxAndRemoteSig).require
+    val decoded = commitTxAndRemoteSigCodec.decodeValue(encoded)
+    println(decoded)
+
     val data = normal
     val bin = channelDataCodec.encode(data).require
     val check = channelDataCodec.decodeValue(bin).require.asInstanceOf[ChannelDataWithCommitments]
