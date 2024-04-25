@@ -167,7 +167,6 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val nodeKey = randomKey()
     val tlvs = Set[InvoiceTlv](
       InvoiceRequestMetadata(hex"012345"),
-      OfferDescription("minimal invoice"),
       OfferNodeId(nodeKey.publicKey),
       InvoiceRequestPayerId(randomKey().publicKey),
       InvoicePaths(Seq(createPaymentBlindedRoute(randomKey().publicKey).route)),
@@ -238,7 +237,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val Success(codedDecoded) = Bolt12Invoice.fromString(invoice.toString)
     assert(codedDecoded.invoiceRequest.chain == chain)
     assert(codedDecoded.amount == amount)
-    assert(codedDecoded.description == Left(description))
+    assert(codedDecoded.description.contains(description))
     assert(codedDecoded.features == features)
     assert(codedDecoded.invoiceRequest.offer.issuer.contains(issuer))
     assert(codedDecoded.nodeId.value.drop(1) == nodeKey.publicKey.value.drop(1))
@@ -357,6 +356,6 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(invoice.amount == 10000000.msat)
     assert(invoice.nodeId == PublicKey(hex"024cc50d604f657094f8a2ff031ad6d888f9ac220a86b5949cdaaa5a5c03055d69"))
     assert(invoice.paymentHash == ByteVector32(hex"14805a7006b96286e7b0a3f618c1cd7f1059f76da766044c5bfc3fa31d5e9442"))
-    assert(invoice.description == Left("yolo"))
+    assert(invoice.description.contains("yolo"))
   }
 }

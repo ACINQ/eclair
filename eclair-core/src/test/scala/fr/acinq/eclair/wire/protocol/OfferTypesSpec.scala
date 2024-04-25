@@ -41,14 +41,12 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("minimal offer") {
-    val tlvs = Set[OfferTlv](
-      OfferDescription("basic offer"),
-      OfferNodeId(nodeId))
+    val tlvs = Set[OfferTlv](OfferNodeId(nodeId))
     val offer = Offer(TlvStream(tlvs))
-    val encoded = "lno1pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
+    val encoded = "lno1zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
-    assert(offer.description == "basic offer")
+    assert(offer.description.isEmpty)
     assert(offer.nodeId.contains(nodeId))
     // Removing any TLV from the minimal offer makes it invalid.
     for (tlv <- tlvs) {
@@ -70,7 +68,7 @@ class OfferTypesSpec extends AnyFunSuite {
     val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.contains(50 msat))
-    assert(offer.description == "offer with quantity")
+    assert(offer.description.contains("offer with quantity"))
     assert(offer.nodeId.contains(nodeId))
     assert(offer.issuer.contains("alice@bigshop.com"))
     assert(offer.quantityMax.contains(Long.MaxValue))
@@ -183,17 +181,16 @@ class OfferTypesSpec extends AnyFunSuite {
     val payerKey = PrivateKey(hex"527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
     val tlvsWithoutSignature = Set[InvoiceRequestTlv](
       InvoiceRequestMetadata(hex"abcdef"),
-      OfferDescription("basic offer"),
       OfferNodeId(nodeId),
       InvoiceRequestPayerId(payerKey.publicKey),
     )
     val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream[InvoiceRequestTlv](tlvsWithoutSignature), OfferCodecs.invoiceRequestTlvCodec), payerKey)
     val tlvs = tlvsWithoutSignature + Signature(signature)
     val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
-    val encoded = "lnr1qqp6hn00pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrjkppqfxajawru7sa7rt300hfzs2lyk2jrxduxrkx9lmzy6lxcvfhk0j7ruzqc4mtjj5fwukrqp7faqrxn664nmwykad76pu997terewcklsx47apag59wf8exly4tky7y63prr7450n28stqssmzuf48w7e6rjad2eq"
+    val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupetqssynwewhp70gwlp4chhm53g90jt9fpnx7rpmrzla3zd0nvxymm8e0p7pq06rwacy8756zgl3hdnsyfepq573astyz94rgn9uhxlyqj4gdyk6q8q0yrv6al909v3435amuvjqvkuq6k8fyld78r8srdyx7wnmwsdu"
     assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
     assert(invoiceRequest.offer.amount.isEmpty)
-    assert(invoiceRequest.offer.description == "basic offer")
+    assert(invoiceRequest.offer.description.isEmpty)
     assert(invoiceRequest.offer.nodeId.contains(nodeId))
     assert(invoiceRequest.metadata == hex"abcdef")
     assert(invoiceRequest.payerId == payerKey.publicKey)

@@ -31,7 +31,6 @@ trait Invoice {
   def amount_opt: Option[MilliSatoshi]
   def createdAt: TimestampSecond
   def paymentHash: ByteVector32
-  def description: Either[String, ByteVector32]
   def relativeExpiry: FiniteDuration
   def features: Features[InvoiceFeature]
   def isExpired(now: TimestampSecond = TimestampSecond.now()): Boolean = createdAt + relativeExpiry.toSeconds <= now

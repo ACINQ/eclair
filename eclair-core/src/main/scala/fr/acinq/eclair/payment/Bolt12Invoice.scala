@@ -44,7 +44,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
   override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
   override val paymentHash: ByteVector32 = records.get[InvoicePaymentHash].get.hash
-  override val description: Either[String, ByteVector32] = Left(invoiceRequest.offer.description)
+  val description: Option[String] = invoiceRequest.offer.description
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val features: Features[InvoiceFeature] = {
@@ -169,7 +169,7 @@ case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice 
   override val amount_opt: Option[MilliSatoshi] = records.get[InvoiceAmount].map(_.amount)
   override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
   override val paymentHash: ByteVector32 = records.get[InvoicePaymentHash].get.hash
-  override val description: Either[String, ByteVector32] = Left(records.get[OfferDescription].get.description)
+  val description: Option[String] = records.get[OfferDescription].map(_.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val features: Features[InvoiceFeature] = {

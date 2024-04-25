@@ -457,27 +457,27 @@ object InvoiceSerializer extends MinimalSerializer({
     JObject(fieldList)
   case p: Bolt12Invoice =>
     val fieldList = List(
-      JField("amount", JLong(p.amount.toLong)),
-      JField("nodeId", JString(p.nodeId.toString())),
-      JField("paymentHash", JString(p.paymentHash.toString())),
-      p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
-      JField("features", Extraction.decompose(p.features)(
+      Some(JField("amount", JLong(p.amount.toLong))),
+      Some(JField("nodeId", JString(p.nodeId.toString()))),
+      Some(JField("paymentHash", JString(p.paymentHash.toString()))),
+      p.description.map(string => JField("description", JString(string))),
+      Some(JField("features", Extraction.decompose(p.features)(
         DefaultFormats +
           FeatureKeySerializer +
           FeatureSupportSerializer +
           UnknownFeatureSerializer
-      )),
-      JField("blindedPaths", JArray(p.blindedPaths.map(path => {
+      ))),
+      Some(JField("blindedPaths", JArray(p.blindedPaths.map(path => {
         val introductionNode = path.route.introductionNodeId.toString
         val blindedNodes = path.route.blindedNodes
         JObject(List(
           JField("introductionNodeId", JString(introductionNode)),
           JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))
         ))
-      }).toList)),
-      JField("createdAt", JLong(p.createdAt.toLong)),
-      JField("expiresAt", JLong((p.createdAt + p.relativeExpiry).toLong)),
-      JField("serialized", JString(p.toString)))
+      }).toList))),
+      Some(JField("createdAt", JLong(p.createdAt.toLong))),
+      Some(JField("expiresAt", JLong((p.createdAt + p.relativeExpiry).toLong))),
+      Some(JField("serialized", JString(p.toString)))).flatten
     JObject(fieldList)
 })
 

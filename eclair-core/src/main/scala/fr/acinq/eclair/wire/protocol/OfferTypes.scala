@@ -237,7 +237,7 @@ object OfferTypes {
       case Some(_) => None // TODO: add exchange rates
       case None => records.get[OfferAmount].map(_.amount)
     }
-    val description: String = records.get[OfferDescription].get.description
+    val description: Option[String] = records.get[OfferDescription].map(_.description)
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
     private val paths: Option[Seq[BlindedPath]] = records.get[OfferPaths].map(_.paths.map(BlindedPath))
@@ -302,7 +302,7 @@ object OfferTypes {
     }
 
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
-      if (records.get[OfferDescription].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+      if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
       if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(22)))
       if (records.unknown.exists(_.tag >= UInt64(80))) return Left(ForbiddenTlv(records.unknown.find(_.tag >= UInt64(80)).get.tag))
       Right(Offer(records))

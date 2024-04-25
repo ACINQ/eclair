@@ -291,7 +291,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.nodeId == privKey.publicKey)
     assert(invoice.blindedPaths.nonEmpty)
     assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
-    assert(invoice.description == Left("a blinded coffee please"))
+    assert(invoice.description.contains("a blinded coffee please"))
     assert(invoice.invoiceRequest.offer == offer)
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPaths(0).route.blindedNodeIds.length == 4)
