@@ -185,7 +185,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val recipientKey = randomKey()
 
-    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
+    val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None)).route
     postman ! SendMessage(OfferTypes.BlindedPath(blindedRoute), FindRoute, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), expectsReply = false, messageSender.ref)
 
     val Peer.RelayOnionMessage(messageId, message, Some(replyTo)) = expectRelayToConnected(switchboard, recipientKey.publicKey)
@@ -201,7 +201,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("forward invoice request to offer manager") { f =>
     import f._
 
-    val offer = OfferTypes.Offer(None, "", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = OfferTypes.Offer(None, None, randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val invoiceRequest = OfferTypes.InvoiceRequest(offer, 1000 msat, 1, Features.empty, randomKey(), Block.LivenetGenesisBlock.hash)
     val replyPath = BlindedRoute(EncodedNodeId(randomKey().publicKey), randomKey().publicKey, Seq(BlindedNode(randomKey().publicKey, hex"")))
     val invoiceRequestPayload = MessageOnion.InvoiceRequestPayload(TlvStream(InvoiceRequest(invoiceRequest.records), ReplyPath(replyPath)), TlvStream(PathId(hex"abcd")))
@@ -252,7 +252,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val recipientKey = randomKey()
 
-    val route = buildRoute(randomKey(), Seq(), Recipient(recipientKey.publicKey, None))
+    val route = buildRoute(randomKey(), Seq(), Recipient(recipientKey.publicKey, None)).route
     val compactRoute = OfferTypes.BlindedPath(route.copy(introductionNodeId = EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(1234))))
     postman ! SendMessage(compactRoute, FindRoute, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), expectsReply = false, messageSender.ref)
 
@@ -286,7 +286,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val recipientKey = randomKey()
 
-    val route = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None))
+    val route = buildRoute(randomKey(), Seq(IntermediateNode(nodeParams.nodeId)), Recipient(recipientKey.publicKey, None)).route
     val compactRoute = OfferTypes.BlindedPath(route.copy(introductionNodeId = EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(1234))))
     postman ! SendMessage(compactRoute, FindRoute, TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(33), hex"abcd"))), expectsReply = false, messageSender.ref)
 

@@ -22,6 +22,9 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, VariableLengthOnion}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
+import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.payment.Bolt12Invoice.hrp
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, invoiceTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
@@ -56,7 +59,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   test("check invoice signature") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
+    val offer = Offer(Some(10000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.checkSignature())
@@ -73,7 +76,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   test("check invoice signature with unknown field from invoice request") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
+    val offer = Offer(Some(10000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, chain)
     val basicRequest = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val requestWithUnknownTlv = basicRequest.copy(records = TlvStream(basicRequest.records.records, Set(GenericTlv(UInt64(87), hex"0404"))))
     val invoice = Bolt12Invoice(requestWithUnknownTlv, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
@@ -84,7 +87,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   test("check that invoice matches offer") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(Some(10000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
+    val offer = Offer(Some(10000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.validateFor(request, nodeKey.publicKey).isRight)
@@ -103,9 +106,23 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(withOtherIssuer.validateFor(request, nodeKey.publicKey).isLeft)
   }
 
+  test("check that invoice matches offer with implicit node id") {
+    val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
+    val path1 = OnionMessages.buildRoute(randomKey(), Seq(IntermediateNode(randomKey().publicKey)), Recipient(nodeKey.publicKey, None))
+    val path2 = OnionMessages.buildRoute(randomKey(), Seq(IntermediateNode(randomKey().publicKey)), Recipient(nodeKey.publicKey, None))
+    val offer = Offer.withPaths(None, None, Seq(path1.route, path2.route), Features.empty, chain)
+    val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
+    // Invoice is requested using path1.
+    assert(RouteBlinding.derivePrivateKey(nodeKey, path1.lastBlinding).publicKey == path1.route.blindedNodeIds.last)
+    val invoice = Bolt12Invoice(request, randomBytes32(), RouteBlinding.derivePrivateKey(nodeKey, path1.lastBlinding), 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
+    assert(invoice.validateFor(request, nodeKey.publicKey).isLeft)
+    assert(invoice.validateFor(request, path1.route.blindedNodeIds.last).isRight)
+    assert(invoice.validateFor(request, path2.route.blindedNodeIds.last).isLeft)
+  }
+
   test("check that invoice matches invoice request") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(Some(15000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
+    val offer = Offer(Some(15000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 15000 msat, 1, Features.empty, payerKey, chain)
     assert(request.quantity_opt.isEmpty) // when paying for a single item, the quantity field must not be present
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features(BasicMultiPartPayment -> Optional), Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
@@ -146,7 +163,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   test("check invoice expiry") {
     val (nodeKey, payerKey, chain) = (randomKey(), randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(Some(5000 msat), "test offer", nodeKey.publicKey, Features.empty, chain)
+    val offer = Offer(Some(5000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, chain)
     val request = InvoiceRequest(offer, 5000 msat, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(!invoice.isExpired())
@@ -259,13 +276,13 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val payerKey = PrivateKey(hex"d817e8896c67d0bcabfdb93da7eb7fc698c829a181f994dd0ad866a8eda745e8")
     assert(payerKey.publicKey == PublicKey(hex"031ef4439f638914de79220483dda32dfb7a431e799a5ce5a7643fbd70b2118e4e"))
     val preimage = ByteVector32(hex"317d1fd8fec5f3ea23044983c2ba2a8043395b2a0790a815c9b12719aa5f1516")
-    val offer = Offer(None, "minimal tip", nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
-    val encodedOffer = "lno1pg9k66twd9kkzmpqw35hq93pqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqw"
+    val offer = Offer(None, None, nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val encodedOffer = "lno1zcssynl4x9ls28rld6kqyek9en4wkmzhwk55p74es48y00lt76785pq8"
     assert(offer.toString == encodedOffer)
     assert(Offer.decode(encodedOffer).get == offer)
     val request = InvoiceRequest(offer, 12000000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     // Invoice request generation is not reproducible because we add randomness in the first TLV.
-    val encodedRequest = "lnr1qqs289chx8swkpmwf3uzexfxr0kk9syavsjcmkuur5qgjqt60ayjdec2pdkkjmnfd4skcgr5d9cpvggzfl6nzlc9r3lkatqzvmzue6htd3tht22ql2uc2nj8hl4ld0r6qsr4qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfq8dcmqpvzzqc773pe7cufzn08jgsys0w6xt0m0fp3u7v6tnj6weplh4ctyyvwfmcypemfjk6kryqxycnnmu2vp9tuw00eslf0grp6rf3hk6v76aynyn4lclra0fyyk2gxyf9hx73rnm775204tn8cltacw4s0fzd5c0lxm58s"
+    val encodedRequest = "lnr1qqswluyyp7j9aamd8l2ma23jyvvuvujqu5wq73jp38t02yr72s23evskyypylaf30uz3clmw4spxd3wvat4kc4m449q04wv9ferml6lkh3aqgp6syph79rq2kmcmxukp563ydtnr7a8ex85rvhs45zyudrtpjqqqqqqqq5srkudsqkppqv00gsulvwy3fhneygzg8hdr9hah5sc70xd9eed8vslm6u9jzx8yauzqylul6xp50xd4hn9shs7nhe02yasj9yfxsgkxych4q52hmny95kgtxj73n74m3dkt988r2xppa5xpwxespv8hukqf8mh3m6t277plwmc"
     val decodedRequest = InvoiceRequest.decode(encodedRequest).get
     assert(decodedRequest.unsigned.records.filterNot(_.isInstanceOf[InvoiceRequestMetadata]) == request.unsigned.records.filterNot(_.isInstanceOf[InvoiceRequestMetadata]))
     assert(request.isValid)
@@ -274,7 +291,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.validateFor(decodedRequest, nodeKey.publicKey).isRight)
     // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
-    val encodedInvoice = "lni1qqs289chx8swkpmwf3uzexfxr0kk9syavsjcmkuur5qgjqt60ayjdec2pdkkjmnfd4skcgr5d9cpvggzfl6nzlc9r3lkatqzvmzue6htd3tht22ql2uc2nj8hl4ld0r6qsr4qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfq8dcmqpvzzqc773pe7cufzn08jgsys0w6xt0m0fp3u7v6tnj6weplh4ctyyvwf6s2qqj075ch7pgu0ah2cqnxchxw46mv2a66js86hxz5u3ala0mtc7syqup2a4g7lywy0zytzjzdhlar5uegx8qj8el2a2hpl7z30cv56fxkhwqpqgpnv93lzfep3m5ppkt3jry0kanpk3uxku733nr03snlzqjls3pejqp65tnf8nf8te9h67ge0lgzum5kypuvqrdz50t238n6g0wrdtv49nrgjk7k26rw7a24arfx9z4dup8379etdpw0tfkg3mwtngsuqqqqqqgqqqqqyqqrqqqqqqqqqqqqgqqqqqqqqqqqq5qqpfqyvwv9m2dxqgqje2pqshlyweee7p4m365legtkdgvy6s02rdqsv38mwnmk8p88cz03dt725qahrvqtqggzfl6nzlc9r3lkatqzvmzue6htd3tht22ql2uc2nj8hl4ld0r6qsrlqsxuf5rcjutppkh79vr6q7vma5yccxhf79ghfg5zkc6z4u3zqzyh0nf50g7w7q4gk32hqg97pn7p9kaz0ddm5fza65ztdqj2sry3gw6l2"
+    val encodedInvoice = "lni1qqswluyyp7j9aamd8l2ma23jyvvuvujqu5wq73jp38t02yr72s23evskyypylaf30uz3clmw4spxd3wvat4kc4m449q04wv9ferml6lkh3aqgp6syph79rq2kmcmxukp563ydtnr7a8ex85rvhs45zyudrtpjqqqqqqqq5srkudsqkppqv00gsulvwy3fhneygzg8hdr9hah5sc70xd9eed8vslm6u9jzx8yag9qqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqwqahgwxsycqwtqlvu32j8mqxln456sxzh50k6avmgsndugtcp6wqcvqsxft50dexrade3n9us6tegq60tjjuc5f50jg8h43jr02r263wjfnwqqapd2vrfrwj2es7ne0wla08xnndgg655spddpn0zlru8fvqk6776fff60jphldzuw6wxgtxlne7ttvlp4tpmsghfh54atau5gwqqqqqqyqqqqqzqqpsqqqqqqqqqqqyqqqqqqqqqqqq2qqq5szxvtagn6nqyqfv4qsgtlj8vuulq6aca20u59mx5xzdg84pksgxgnahfamrsnnup8ck4l92qwm3kq9syypylaf30uz3clmw4spxd3wvat4kc4m449q04wv9ferml6lkh3aqgplsgrznfv8aysjyphv0usapr06mc4svfj9hlg4k9s263xd50dp0qdttrffypamzdxz84ftcvd52afx0je8adu4ppxq9z7yse0zh9qjmdwgz"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
     assert(decodedInvoice.nodeId == invoice.nodeId)
@@ -283,19 +300,19 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(decodedInvoice.invoiceRequest.unsigned == invoice.invoiceRequest.unsigned)
   }
 
-  test("minimal offer") {
+  test("minimal offer with amount") {
     val nodeKey = PrivateKey(hex"3b7a19e8320bb86431cf92cd7c69cc1dc0181c37d5a09875e4603c4e37d3705d")
     assert(nodeKey.publicKey == PublicKey(hex"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5"))
     val payerKey = PrivateKey(hex"0e00a9ef505292f90a0e8a7aa99d31750e885c42a3ef8866dd2bf97919aa3891")
     assert(payerKey.publicKey == PublicKey(hex"033e94f2afd568d128f02ece844ad4a0a1ddf2a4e3a08beb2dba11b3f1134b0517"))
     val preimage = ByteVector32(hex"09ad5e952ec39d45461ebdeceac206fb45574ae9054b5a454dd02c65f5ba1b7c")
-    val offer = Offer(Some(456000000 msat), "minimal offer", nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
-    val encodedOffer = "lno1pqzpktszqq9q6mtfde5k6ctvyphkven9wgtzzq7y3tyhuz0newawkdds924x6pet2aexssdrf5je2g2het9xpgw275"
+    val offer = Offer(Some(456000000 msat), Some("minimal offer with amount"), nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val encodedOffer = "lno1pqzpktszqq9pjmtfde5k6ctvyphkven9wgs8w6t5dqsxzmt0w4h8g93pq0zg4jt7p8euhwhtxkcz42ndqu44wunggx356fv4y9tu4jnq58902"
     assert(offer.toString == encodedOffer)
     assert(Offer.decode(encodedOffer).get == offer)
     val request = InvoiceRequest(offer, 456001234 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     // Invoice request generation is not reproducible because we add randomness in the first TLV.
-    val encodedRequest = "lnr1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh7pq2hlvh7twke5830a44wc0zlrs2kph4ghndm60ahwcznhcd0pcpl332qv5xuemksazy3zx5s63kqmqkphrn9jg4ln55pc6syrwqukejeq"
+    val encodedRequest = "lnr1qqswg5pzt6anzaxaypy8y46zknl8zn2a2jqyzrp74gtfm4lp6utpkzcgqsdjuqsqpgvk66twd9kkzmpqdanxvetjypmkjargypsk6mm4de6pvggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet64qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfqgxewqmf9sggr86209t74drgj3upwe6zy449q58wl9f8r5z97ktd6zxelzy6tq5tlqspdwx0zfhzu3mua0q2r7lgstw09p4qwtpgpewyuwytkpy2jm3hyupk52vc9tgx9dwvngdlgtgg335j029h0whqfxy28gkwewyu860g5x"
     val decodedRequest = InvoiceRequest.decode(encodedRequest).get
     assert(decodedRequest.unsigned.records.filterNot(_.isInstanceOf[InvoiceRequestMetadata]) == request.unsigned.records.filterNot(_.isInstanceOf[InvoiceRequestMetadata]))
     assert(request.isValid)
@@ -304,7 +321,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.validateFor(decodedRequest, nodeKey.publicKey).isRight)
     // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
-    val encodedInvoice = "lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4qfjynufc627cuspz9lqzyk387xgzs4txcw0q97ugxfqm8x5zgj02gqgz4mnucmtxr620e5ttewtsg0s5n88euljnf7puagqje9j6gvaxk3pqqwsmahw79nhuq05zh8k29jk5qngpuny5l2vhjdrexg8hejukaee8fr7963dfag9q3lpcq9tt23f8s4h89cmjqa43u4fhk6l2y8qqqqqqzqqqqqpqqqcqqqqqqqqqqqzqqqqqqqqqqqq9qqq2gprrnp0zefszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsy3s64amqgnlel7hn6fjrnk32xrn0ugr2xzct22ew28zftgmj70q9x2akqm34que8u2qe643cm38jpka6nfca4lfhuq6hgpnpwkpexrc"
+    val encodedInvoice = "lni1qqswg5pzt6anzaxaypy8y46zknl8zn2a2jqyzrp74gtfm4lp6utpkzcgqsdjuqsqpgvk66twd9kkzmpqdanxvetjypmkjargypsk6mm4de6pvggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet64qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfqgxewqmf9sggr86209t74drgj3upwe6zy449q58wl9f8r5z97ktd6zxelzy6tq5t6pgqrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6s9x0wj2xtjxkql2urqn70fsyyhy8pcervfcaxdygsu74qe9jcss8uqypwa9rd3q0jh7tpruvr7xq7e4uzrk8z3mn68n5vzhxu4ds6d83qr4cq8f0mp833xq58twvuwlpm4gqkv5uwv07gl665ye2a33mk0tdkkzls04h25z3943cv5nq6e64dharmudq37remmgdvdv2vpt4zrsqqqqqpqqqqqqsqqvqqqqqqqqqqqpqqqqqqqqqqqqzsqq9yq3nzl2gl5cpqzt9gyqktpeas2gmx0p69psea4akj7tpukcfjygfjdcwpkjdvjl7a06mjp2syrvhqd54syypufzkf0cyl8ja6av6mq242d5rjk4mjdpq6xnf9j5s40jk2vzsu4a0sgq5pde5afeshaze029mqk5r48v07ph0uykc3ks034czmw58khfcw9gpv6d9l3nea06ajl4dqjr7ryrv9alx0eff9rklp7gnrkra0vuj3"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
     assert(decodedInvoice.nodeId == invoice.nodeId)

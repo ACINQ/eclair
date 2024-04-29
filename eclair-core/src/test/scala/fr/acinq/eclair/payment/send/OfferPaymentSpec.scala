@@ -66,7 +66,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val probe = TestProbe()
     val merchantKey = randomKey()
 
-    val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
+    val offer = Offer(None, Some("amountless offer"), merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(OfferTypes.RecipientNodeId(recipientId), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
@@ -90,7 +90,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val probe = TestProbe()
     val merchantKey = randomKey()
 
-    val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
+    val offer = Offer(None, Some("amountless offer"), merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     for (_ <- 1 to nodeParams.onionMessageConfig.maxAttempts) {
       val Postman.SendMessage(OfferTypes.RecipientNodeId(recipientId), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
@@ -113,7 +113,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val probe = TestProbe()
     val merchantKey = randomKey()
 
-    val offer = Offer(None, "amountless offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
+    val offer = Offer(None, Some("amountless offer"), merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(OfferTypes.RecipientNodeId(recipientId), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
@@ -138,7 +138,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val probe = TestProbe()
     val merchantKey = randomKey()
 
-    val offer = Offer(None, "offer", merchantKey.publicKey, Features.empty, nodeParams.chainHash)
+    val offer = Offer(None, Some("offer"), merchantKey.publicKey, Features.empty, nodeParams.chainHash)
     offerPayment ! PayOffer(probe.ref, offer, 40_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(OfferTypes.RecipientNodeId(recipientId), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]
     assert(recipientId == merchantKey.publicKey)
@@ -189,7 +189,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val merchantKey = randomKey()
     val route = RouteBlinding.create(randomKey(), Seq.fill(2)(randomKey().publicKey) :+ merchantKey.publicKey, Seq.fill(3)(randomBytes(10)))
-    val offer = Offer.withPaths(None, "implicit node id", Seq(route.route), Features.empty, nodeParams.chainHash)
+    val offer = Offer.withPaths(None, Some("implicit node id"), Seq(route.route), Features.empty, nodeParams.chainHash)
 
     offerPayment ! PayOffer(probe.ref, offer, 10_000_000 msat, 1, SendPaymentConfig(None, connectDirectly = false, 1, routeParams, blocking = false))
     val Postman.SendMessage(OfferTypes.BlindedPath(blindedRoute), FindRoute, message, expectsReply, replyTo) = postman.expectMessageType[Postman.SendMessage]

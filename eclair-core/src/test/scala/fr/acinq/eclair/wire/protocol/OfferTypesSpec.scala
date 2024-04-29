@@ -34,7 +34,7 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("invoice request is signed") {
     val sellerKey = randomKey()
-    val offer = Offer(Some(100_000 msat), "test offer", sellerKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(100_000 msat), Some("test offer"), sellerKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 100_000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.checkSignature())
@@ -83,7 +83,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer") {
-    val offer = Offer(Some(2500 msat), "basic offer", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(2500 msat), Some("basic offer"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
@@ -98,7 +98,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer (with features)") {
-    val offer = Offer(Some(2500 msat), "offer with features", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(2500 msat), Some("offer with features"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Optional), payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
@@ -112,7 +112,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer (without amount)") {
-    val offer = Offer(None, "offer without amount", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(None, Some("offer without amount"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)

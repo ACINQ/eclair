@@ -92,18 +92,18 @@ object OnionMessages {
 
   def buildRoute(blindingSecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
-                 recipient: Recipient): Sphinx.RouteBlinding.BlindedRoute = {
+                 recipient: Recipient): Sphinx.RouteBlinding.BlindedRouteDetails = {
     val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId(recipient.nodeId))
     val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
     val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs, recipient.customTlvs)).require.bytes
-    Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.publicKey) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
+    Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.publicKey) :+ recipient.nodeId, intermediatePayloads :+ lastPayload)
   }
 
   private[message] def buildRouteFrom(blindingSecret: PrivateKey,
                                       intermediateNodes: Seq[IntermediateNode],
                                       destination: Destination): Sphinx.RouteBlinding.BlindedRoute = {
     destination match {
-      case recipient: Recipient => buildRoute(blindingSecret, intermediateNodes, recipient)
+      case recipient: Recipient => buildRoute(blindingSecret, intermediateNodes, recipient).route
       case BlindedPath(route) if intermediateNodes.isEmpty => route
       case BlindedPath(route) =>
         val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, route.introductionNodeId, Some(route.blindingKey))
@@ -112,11 +112,7 @@ object OnionMessages {
     }
   }
 
-  // @formatter:off
-  sealed trait BuildMessageError
-  case class MessageTooLarge(payloadSize: Long) extends BuildMessageError
-  case class InvalidDestination(destination: Destination) extends BuildMessageError
-  // @formatter:on
+  case class MessageTooLarge(payloadSize: Long)
 
   /**
    * Builds an encrypted onion containing a message that should be relayed to the destination.
@@ -132,7 +128,7 @@ object OnionMessages {
                    blindingSecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Destination,
-                   content: TlvStream[OnionMessagePayloadTlv]): Either[BuildMessageError, OnionMessage] = {
+                   content: TlvStream[OnionMessagePayloadTlv]): Either[MessageTooLarge, OnionMessage] = {
     val route = buildRouteFrom(blindingSecret, intermediateNodes, destination)
     val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
     val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload

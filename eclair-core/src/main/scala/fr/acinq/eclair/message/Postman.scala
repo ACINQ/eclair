@@ -200,7 +200,7 @@ private class SendingMessage(nodeParams: NodeParams,
         val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
         val intermediateHops = OnionMessages.IntermediateNode(plainNodeId, destination.introductionNodeId) +: (intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
         val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
-        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
+        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop).route)
       } else {
         None
       }

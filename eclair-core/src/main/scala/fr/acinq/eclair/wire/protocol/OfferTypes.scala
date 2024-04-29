@@ -268,16 +268,17 @@ object OfferTypes {
      * @param chain       chain on which the offer is valid.
      */
     def apply(amount_opt: Option[MilliSatoshi],
-              description: String,
+              description_opt: Option[String],
               nodeId: PublicKey,
               features: Features[Bolt12Feature],
               chain: BlockHash,
               additionalTlvs: Set[OfferTlv] = Set.empty,
               customTlvs: Set[GenericTlv] = Set.empty): Offer = {
+      require(amount_opt.isEmpty || description_opt.nonEmpty)
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
-        Some(OfferDescription(description)),
+        description_opt.map(OfferDescription),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferNodeId(nodeId)),
       ).flatten ++ additionalTlvs
@@ -285,16 +286,17 @@ object OfferTypes {
     }
 
     def withPaths(amount_opt: Option[MilliSatoshi],
-                  description: String,
+                  description_opt: Option[String],
                   paths: Seq[BlindedRoute],
                   features: Features[Bolt12Feature],
                   chain: BlockHash,
                   additionalTlvs: Set[OfferTlv] = Set.empty,
                   customTlvs: Set[GenericTlv] = Set.empty): Offer = {
+      require(amount_opt.isEmpty || description_opt.nonEmpty)
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
-        Some(OfferDescription(description)),
+        description_opt.map(OfferDescription),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferPaths(paths))
       ).flatten ++ additionalTlvs

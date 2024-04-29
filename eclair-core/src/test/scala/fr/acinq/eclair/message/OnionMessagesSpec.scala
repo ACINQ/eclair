@@ -106,7 +106,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val onionForAlice = OnionMessage(blindingSecret.publicKey, packet)
 
     // Building the onion with functions from `OnionMessages`
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, EncodedNodeId(carol.publicKey), padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, EncodedNodeId(carol.publicKey), padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Recipient(dave.publicKey, pathId = Some(hex"01234567"))).route
     assert(replyPath == routeFromCarol)
     val Right(message) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, BlindedPath(replyPath), TlvStream.empty)
     assert(message == onionForAlice)
@@ -206,7 +206,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val blindingSecret = randomKey()
     val blindingOverride = randomKey()
     val destination = randomKey()
-    val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567")))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Recipient(destination.publicKey, pathId = Some(hex"01234567"))).route
     assert(replyPath.blindingKey == blindingOverride.publicKey)
     assert(replyPath.introductionNodeId == EncodedNodeId(destination.publicKey))
     val Right(message) = buildMessage(sessionKey, blindingSecret, Nil, BlindedPath(replyPath), TlvStream.empty)
@@ -292,7 +292,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val pathBobToDave =
       buildRoute(blindingSecretBob,
         Seq(makeIntermediateNode(bob, (testVector \ "generate" \ "hops")(1) \ "tlvs"), makeIntermediateNode(carol, (testVector \ "generate" \ "hops")(2) \ "tlvs")),
-        makeRecipient(dave, (testVector \ "generate" \ "hops")(3) \ "tlvs"))
+        makeRecipient(dave, (testVector \ "generate" \ "hops")(3) \ "tlvs")).route
     val blindingSecretAlice = PrivateKey(ByteVector32.fromValidHex(((testVector \ "generate" \ "hops")(0) \ "blinding_secret").extract[String]))
     val intermediateAlice = Seq(makeIntermediateNode(alice, (testVector \ "generate" \ "hops")(0) \ "tlvs"))
     val pathAliceToDave = buildRouteFrom(blindingSecretAlice, intermediateAlice, BlindedPath(pathBobToDave))

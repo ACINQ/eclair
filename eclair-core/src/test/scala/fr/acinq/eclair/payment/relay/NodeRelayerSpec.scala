@@ -837,7 +837,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val (payerKey, chain) = (randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(None, "test offer", outgoingNodeId, Features.empty, chain)
+    val offer = Offer(None, Some("test offer"), outgoingNodeId, Features.empty, chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features.empty, payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(outgoingNodeId)))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
@@ -876,7 +876,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val (payerKey, chain) = (randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(None, "test offer", outgoingNodeId, Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional), chain)
+    val offer = Offer(None, Some("test offer"), outgoingNodeId, Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional), chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional), payerKey, chain)
     val invoice = Bolt12Invoice(request, randomBytes32(), outgoingNodeKey, 300 seconds, Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional), Seq(createPaymentBlindedRoute(outgoingNodeId)))
     val incomingPayments = incomingMultiPart.map(incoming => RelayToBlindedPathsPacket(incoming.add, incoming.outerPayload, IntermediatePayload.NodeRelay.ToBlindedPaths(
@@ -915,7 +915,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val (payerKey, chain) = (randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(None, "test offer", outgoingNodeId, Features.empty, chain)
+    val offer = Offer(None, Some("test offer"), outgoingNodeId, Features.empty, chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features.empty, payerKey, chain)
     val paymentBlindedRoute = createPaymentBlindedRoute(outgoingNodeId)
     val scidDir = ShortChannelIdDir(isNode1 = true, RealShortChannelId(123456L))
@@ -962,7 +962,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val (payerKey, chain) = (randomKey(), BlockHash(randomBytes32()))
-    val offer = Offer(None, "test offer", outgoingNodeId, Features.empty, chain)
+    val offer = Offer(None, Some("test offer"), outgoingNodeId, Features.empty, chain)
     val request = InvoiceRequest(offer, outgoingAmount, 1, Features.empty, payerKey, chain)
     val paymentBlindedRoute = createPaymentBlindedRoute(outgoingNodeId)
     val scidDir = ShortChannelIdDir(isNode1 = true, RealShortChannelId(123456L))
