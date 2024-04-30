@@ -91,7 +91,7 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
 
   test("validate final payloads") {
     val nodeKey = randomKey()
-    val offer = OfferTypes.Offer(Some(100_000 msat), "test offer", nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = OfferTypes.Offer(Some(100_000 msat), Some("test offer"), nodeKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = OfferTypes.InvoiceRequest(offer, 100_000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(randomBytes32()), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes

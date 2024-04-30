@@ -21,7 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.io.MessageRelay
 import fr.acinq.eclair.message.OnionMessages.{Destination, RoutingStrategy}
@@ -54,7 +54,7 @@ object Postman {
                          replyTo: ActorRef[OnionMessageResponse]) extends Command
   case class Subscribe(pathId: ByteVector32, replyTo: ActorRef[OnionMessageResponse]) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
-  case class WrappedMessage(finalPayload: FinalPayload) extends Command
+  case class WrappedMessage(finalPayload: FinalPayload, blindedKey: PrivateKey) extends Command
 
   sealed trait OnionMessageResponse
   case object NoReply extends OnionMessageResponse
@@ -66,16 +66,16 @@ object Postman {
 
   def apply(nodeParams: NodeParams, switchboard: akka.actor.ActorRef, router: ActorRef[Router.PostmanRequest], register: akka.actor.ActorRef, offerManager: typed.ActorRef[OfferManager.RequestInvoice]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload, r.blindedKey)))
 
       // For messages expecting a reply, send reply or failure to send
       val subscribed = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
 
       Behaviors.receiveMessage {
-        case WrappedMessage(invoiceRequestPayload: InvoiceRequestPayload) =>
-          offerManager ! OfferManager.RequestInvoice(invoiceRequestPayload, context.self)
+        case WrappedMessage(invoiceRequestPayload: InvoiceRequestPayload, blindedKey) =>
+          offerManager ! OfferManager.RequestInvoice(invoiceRequestPayload, blindedKey, context.self)
           Behaviors.same
-        case WrappedMessage(finalPayload) =>
+        case WrappedMessage(finalPayload, _) =>
           finalPayload.pathId_opt match {
             case Some(pathId) if pathId.length == 32 =>
               val id = ByteVector32(pathId)
@@ -200,7 +200,7 @@ private class SendingMessage(nodeParams: NodeParams,
         val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
         val intermediateHops = OnionMessages.IntermediateNode(plainNodeId, destination.introductionNodeId) +: (intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
         val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
-        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
+        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop).route)
       } else {
         None
       }

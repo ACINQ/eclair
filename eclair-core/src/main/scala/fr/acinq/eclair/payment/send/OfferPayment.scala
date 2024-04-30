@@ -126,12 +126,12 @@ private class OfferPayment(replyTo: ActorRef,
     val messageContent = TlvStream[OnionMessagePayloadTlv](OnionMessagePayloadTlv.InvoiceRequest(invoiceRequest.records))
     val routingStrategy = if (sendPaymentConfig.connectDirectly) OnionMessages.RoutingStrategy.connectDirectly else OnionMessages.RoutingStrategy.FindRoute
     postman ! SendMessage(contactInfo, routingStrategy, messageContent, expectsReply = true, context.messageAdapter(WrappedMessageResponse))
-    waitForInvoice(attemptNumber + 1)
+    waitForInvoice(attemptNumber + 1, contactInfo.nodeId)
   }
 
-  private def waitForInvoice(attemptNumber: Int): Behavior[Command] = {
+  private def waitForInvoice(attemptNumber: Int, pathNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(invoiceRequest).isRight =>
+      case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(invoiceRequest, pathNodeId).isRight =>
         sendPaymentConfig.trampoline match {
           case Some(trampoline) =>
             paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)

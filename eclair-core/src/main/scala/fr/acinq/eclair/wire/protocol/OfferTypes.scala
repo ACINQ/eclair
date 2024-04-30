@@ -37,11 +37,15 @@ import scala.util.{Failure, Try}
 object OfferTypes {
   // @formatter:off
   /** Data provided to reach the issuer of an offer or invoice. */
-  sealed trait ContactInfo
+  sealed trait ContactInfo {
+    val nodeId: PublicKey
+  }
   /** If the offer or invoice issuer doesn't want to hide their identity, they can directly share their public nodeId. */
   case class RecipientNodeId(nodeId: PublicKey) extends ContactInfo
   /** If the offer or invoice issuer wants to hide their identity, they instead provide blinded paths. */
-  case class BlindedPath(route: BlindedRoute) extends ContactInfo
+  case class BlindedPath(route: BlindedRoute) extends ContactInfo {
+    override val nodeId: PublicKey = route.blindedNodeIds.last
+  }
   // @formatter:on
 
   sealed trait Bolt12Tlv extends Tlv
@@ -233,15 +237,15 @@ object OfferTypes {
       case Some(_) => None // TODO: add exchange rates
       case None => records.get[OfferAmount].map(_.amount)
     }
-    val description: String = records.get[OfferDescription].get.description
+    val description: Option[String] = records.get[OfferDescription].map(_.description)
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
     private val paths: Option[Seq[BlindedPath]] = records.get[OfferPaths].map(_.paths.map(BlindedPath))
     val issuer: Option[String] = records.get[OfferIssuer].map(_.issuer)
     val quantityMax: Option[Long] = records.get[OfferQuantityMax].map(_.max).map { q => if (q == 0) Long.MaxValue else q }
-    val nodeId: PublicKey = records.get[OfferNodeId].map(_.publicKey).get
+    val nodeId: Option[PublicKey] = records.get[OfferNodeId].map(_.publicKey)
 
-    val contactInfos: Seq[ContactInfo] = paths.getOrElse(Seq(RecipientNodeId(nodeId)))
+    val contactInfos: Seq[ContactInfo] = paths.getOrElse(Seq(RecipientNodeId(nodeId.get)))
 
     def encode(): String = {
       val data = OfferCodecs.offerTlvCodec.encode(records).require.bytes
@@ -264,25 +268,44 @@ object OfferTypes {
      * @param chain       chain on which the offer is valid.
      */
     def apply(amount_opt: Option[MilliSatoshi],
-              description: String,
+              description_opt: Option[String],
               nodeId: PublicKey,
               features: Features[Bolt12Feature],
               chain: BlockHash,
               additionalTlvs: Set[OfferTlv] = Set.empty,
               customTlvs: Set[GenericTlv] = Set.empty): Offer = {
+      require(amount_opt.isEmpty || description_opt.nonEmpty)
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(OfferAmount),
-        Some(OfferDescription(description)),
+        description_opt.map(OfferDescription),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferNodeId(nodeId)),
       ).flatten ++ additionalTlvs
       Offer(TlvStream(tlvs, customTlvs))
     }
 
+    def withPaths(amount_opt: Option[MilliSatoshi],
+                  description_opt: Option[String],
+                  paths: Seq[BlindedRoute],
+                  features: Features[Bolt12Feature],
+                  chain: BlockHash,
+                  additionalTlvs: Set[OfferTlv] = Set.empty,
+                  customTlvs: Set[GenericTlv] = Set.empty): Offer = {
+      require(amount_opt.isEmpty || description_opt.nonEmpty)
+      val tlvs: Set[OfferTlv] = Set(
+        if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
+        amount_opt.map(OfferAmount),
+        description_opt.map(OfferDescription),
+        if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
+        Some(OfferPaths(paths))
+      ).flatten ++ additionalTlvs
+      Offer(TlvStream(tlvs, customTlvs))
+    }
+
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
-      if (records.get[OfferDescription].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
-      if (records.get[OfferNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(22)))
+      if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+      if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(22)))
       if (records.unknown.exists(_.tag >= UInt64(80))) return Left(ForbiddenTlv(records.unknown.find(_.tag >= UInt64(80)).get.tag))
       Right(Offer(records))
     }

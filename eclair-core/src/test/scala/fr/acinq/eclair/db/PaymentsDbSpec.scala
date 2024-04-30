@@ -665,7 +665,8 @@ class PaymentsDbSpec extends AnyFunSuite {
 
       val paidInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #7"), CltvExpiryDelta(18), timestamp = TimestampSecond.now() - 5.seconds)
       val paidInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #8"), CltvExpiryDelta(18), expirySeconds = Some(60), timestamp = TimestampSecond.now() - 4.seconds)
-      val offer = Offer(None, "offer", randomKey().publicKey, Features.empty, Block.TestnetGenesisBlock.hash)
+      val nodeId = randomKey().publicKey
+      val offer = Offer(None, Some("offer"), nodeId, Features.empty, Block.TestnetGenesisBlock.hash)
       val paidInvoice3 = MinimalBolt12Invoice(offer, Block.TestnetGenesisBlock.hash, 1729 msat, 1, randomBytes32(), randomKey().publicKey, TimestampSecond.now() - 3.seconds)
       val receivedAt1 = TimestampMilli.now() + 1.milli
       val receivedAt2 = TimestampMilli.now() + 2.milli
@@ -799,7 +800,7 @@ object PaymentsDbSpec {
   val (paymentHash1, paymentHash2, paymentHash3, paymentHash4) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3), Crypto.sha256(preimage4))
 
   def createBolt12Invoice(amount: MilliSatoshi, payerKey: PrivateKey, recipientKey: PrivateKey, preimage: ByteVector32): Bolt12Invoice = {
-    val offer = Offer(Some(amount), "some offer", recipientKey.publicKey, Features.empty, Block.TestnetGenesisBlock.hash)
+    val offer = Offer(Some(amount), Some("some offer"), recipientKey.publicKey, Features.empty, Block.TestnetGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, 789 msat, 1, Features.empty, payerKey, Block.TestnetGenesisBlock.hash)
     val dummyRoute = PaymentBlindedRoute(RouteBlinding.create(randomKey(), Seq(randomKey().publicKey), Seq(randomBytes(100))).route, PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 0 msat, Features.empty))
     Bolt12Invoice(invoiceRequest, preimage, recipientKey, 1 hour, Features.empty, Seq(dummyRoute))
