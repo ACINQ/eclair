@@ -71,15 +71,15 @@ object ChannelRelay {
    */
   def translateLocalError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
     (error, channelUpdate_opt) match {
-      case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
+      case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(Some(channelUpdate))
       case (_: ExpiryTooBig, _) => ExpiryTooFar()
-      case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: HtlcValueTooHighInFlight, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: LocalDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: RemoteDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
+      case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: HtlcValueTooHighInFlight, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: LocalDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: RemoteDustHtlcExposureTooHigh, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(Some(channelUpdate))
+      case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, Some(channelUpdate))
       case (_: ChannelUnavailable, None) => PermanentChannelFailure()
       case _ => TemporaryNodeFailure()
     }
@@ -91,7 +91,7 @@ object ChannelRelay {
       case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, Right(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), commit = true)
       case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure()), commit = true)
       case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure()), commit = true)
-      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
+      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(Some(f.channelUpdate))), commit = true)
     }
   }
 
@@ -294,16 +294,16 @@ class ChannelRelay private(nodeParams: NodeParams,
       case None =>
         RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
       case Some(c) if !c.channelUpdate.channelFlags.isEnabled =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, c.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(c.channelUpdate.messageFlags, c.channelUpdate.channelFlags, Some(c.channelUpdate))), commit = true))
       case Some(c) if r.amountToForward < c.channelUpdate.htlcMinimumMsat =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(r.amountToForward, c.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(r.amountToForward, Some(c.channelUpdate))), commit = true))
       case Some(c) if r.expiryDelta < c.channelUpdate.cltvExpiryDelta =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(r.outgoingCltv, c.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(r.outgoingCltv, Some(c.channelUpdate))), commit = true))
       case Some(c) if r.relayFeeMsat < nodeFee(c.channelUpdate.relayFees, r.amountToForward) &&
         // fees also do not satisfy the previous channel update for `enforcementDelay` seconds after current update
         (TimestampSecond.now() - c.channelUpdate.timestamp > nodeParams.relayParams.enforcementDelay ||
           outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, r.amountToForward))) =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, c.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(c.channelUpdate))), commit = true))
       case Some(c: OutgoingChannel) =>
         val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, r.add, r.amountToForward)
         val nextBlindingKey_opt = r.payload match {

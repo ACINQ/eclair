@@ -211,7 +211,7 @@ object PaymentFailure {
     case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
       ignore + nodeId
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
-      if (Announcements.checkSig(failureMessage.update, nodeId)) {
+      if (failureMessage.update.forall(update => Announcements.checkSig(update, nodeId))) {
         val shouldIgnore = failureMessage match {
           case _: TemporaryChannelFailure => true
           case _: ChannelDisabled => true
@@ -224,7 +224,7 @@ object PaymentFailure {
           ignore
         }
       } else {
-        // This node is fishy, it gave us a bad signature, so let's filter it out.
+        // This node is fishy, it gave us a bad channel update signature, so let's filter it out.
         ignore + nodeId
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
@@ -257,7 +257,10 @@ object PaymentFailure {
         // We're only interested in the last channel update received per channel.
         val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
           case (current, failure) => failure match {
-            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f.update match {
+              case Some(update) => current.updated(update.shortChannelId, update)
+              case None => current
+            }
             case _ => current
           }
         }

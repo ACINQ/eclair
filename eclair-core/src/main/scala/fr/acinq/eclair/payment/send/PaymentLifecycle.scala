@@ -181,11 +181,18 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           router ! Router.RouteCouldRelay(stoppedRoute)
         }
         failureMessage match {
-          case TemporaryChannelFailure(update, _) =>
+          case TemporaryChannelFailure(update_opt, _) =>
             route.hops.find(_.nodeId == nodeId) match {
-              case Some(failingHop) if HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true) =>
-                router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
-              case _ => // otherwise the relay parameters may have changed, so it's not necessarily a liquidity issue
+              case Some(failingHop) =>
+                val isLiquidityIssue = update_opt match {
+                  // If the relay parameters have changed, it's not necessarily a liquidity issue.
+                  case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
+                  case None => true
+                }
+                if (isLiquidityIssue) {
+                  router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+                }
+              case _ => ()
             }
           case _ => // other errors should not be used for liquidity issues
         }
@@ -227,7 +234,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
         val failure = RemoteFailure(request.amount, route.fullRoute, e)
-        if (Announcements.checkSig(failureMessage.update, nodeId)) {
+        if (failureMessage.update.forall(update => Announcements.checkSig(update, nodeId))) {
           val recipient1 = handleUpdate(nodeId, failureMessage, d)
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
@@ -240,7 +247,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(request.copy(recipient = recipient1), failures :+ failure, ignore1)
           }
         } else {
-          // this node is fishy, it gave us a bad sig!! let's filter it out
+          // this node is fishy, it gave us a bad channel update signature: let's filter it out.
           log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
           request match {
             case _: SendPaymentToRoute =>
@@ -289,38 +296,49 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val extraEdges1 = data.route.hops.find(_.nodeId == nodeId) match {
       case Some(hop) => hop.params match {
         case ann: HopRelayParams.FromAnnouncement =>
-          if (ann.channelUpdate.shortChannelId != failure.update.shortChannelId) {
-            // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
-            log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", ann.channelUpdate.shortChannelId, failure.update.shortChannelId, failure.update)
-          } else if (Announcements.areSame(ann.channelUpdate, failure.update)) {
-            // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
-            // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
-            log.info("received exact same update from nodeId={}, excluding the channel from futures routes", nodeId)
-            router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
-          } else if (PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures)) {
-            // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
-            log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, ann.channelUpdate, failure.update)
-            router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
-          } else {
-            log.info("got a new update for shortChannelId={}: old={} new={}", ann.channelUpdate.shortChannelId, ann.channelUpdate, failure.update)
+          failure.update match {
+            case Some(update) if ann.channelUpdate.shortChannelId != update.shortChannelId =>
+              // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
+              log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", ann.channelUpdate.shortChannelId, update.shortChannelId, update)
+            case Some(update) if Announcements.areSame(ann.channelUpdate, update) =>
+              // node returned the exact same update we used, this can happen e.g. if the channel is imbalanced
+              // in that case, let's temporarily exclude the channel from future routes, giving it time to recover
+              log.info("received exact same update from nodeId={}, excluding the channel from futures routes", nodeId)
+              router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
+            case Some(_) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) =>
+              // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
+              log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, ann.channelUpdate, failure.update)
+              router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
+            case Some(update) =>
+              log.info("got a new update for shortChannelId={}: old={} new={}", ann.channelUpdate.shortChannelId, ann.channelUpdate, update)
+            case None =>
+              // this isn't a relay parameter issue, so it's probably a liquidity issue
+              log.info("update not provided for shortChannelId={}", ann.channelUpdate.shortChannelId)
+              router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
           }
           data.recipient.extraEdges
-        case _: HopRelayParams.FromHint =>
-          log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", failure.update.shortChannelId, nodeId, failure.update.channelFlags.isEnabled, failure.update)
-          if (failure.update.channelFlags.isEnabled) {
-            data.recipient.extraEdges.map {
-              case edge: ExtraEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(failure.update)
-              case edge: ExtraEdge => edge
-            }
-          } else {
-            // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't
-            // contain channel flags to indicate that it's disabled
-            // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
-            data.recipient.extraEdges
-              .find(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
-              .foreach(edge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)))
-            // we remove this edge for our next payment attempt
-            data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
+        case hint: HopRelayParams.FromHint =>
+          failure.update match {
+            case Some(update) =>
+              log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", update.shortChannelId, nodeId, update.channelFlags.isEnabled, failure.update)
+              if (update.channelFlags.isEnabled) {
+                data.recipient.extraEdges.map {
+                  case edge: ExtraEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(update)
+                  case edge: ExtraEdge => edge
+                }
+              } else {
+                // if the channel is disabled, we temporarily exclude it: this is necessary because the routing hint doesn't
+                // contain channel flags to indicate that it's disabled
+                // we want the exclusion to be router-wide so that sister payments in the case of MPP are aware the channel is faulty
+                data.recipient.extraEdges
+                  .find(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
+                  .foreach(edge => router ! ExcludeChannel(ChannelDesc(edge.shortChannelId, edge.sourceNodeId, edge.targetNodeId), Some(nodeParams.routerConf.channelExcludeDuration)))
+                // we remove this edge for our next payment attempt
+                data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
+              }
+            case None =>
+              // this is most likely a liquidity issue, we remove this edge for our next payment attempt
+              data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
           }
       }
       case None =>
