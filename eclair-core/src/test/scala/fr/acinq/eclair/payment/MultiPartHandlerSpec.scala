@@ -171,7 +171,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, privKey, invoiceReq, createEmptyReceivingRoute(), router.ref, preimage, pathId))
       router.expectNoMessage(50 millis)
       val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-      assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
       // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
       assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
 
@@ -290,7 +289,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.amount == 25_000.msat)
     assert(invoice.nodeId == privKey.publicKey)
     assert(invoice.blindedPaths.nonEmpty)
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     assert(invoice.description.contains("a blinded coffee please"))
     assert(invoice.invoiceRequest.offer == offer)
     assert(invoice.blindedPaths.length == 3)
@@ -472,7 +470,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     sender.send(handlerWithRouteBlinding, ReceiveStandardPayment(sender.ref, Some(1000 msat), Left("non blinded payment")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
-    assert(!invoice.features.hasFeature(RouteBlinding))
 
     val packet = createBlindedPacket(1000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), randomBytes32())
     sender.send(handlerWithRouteBlinding, packet)
@@ -492,7 +489,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, randomBytes32(), randomBytes32()))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 5000 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None)
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createPayload(add.amountMsat, add.amountMsat, add.cltvExpiry, randomBytes32(), None)))
@@ -511,7 +507,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathId = randomBytes32()
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, pathId))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
 
     val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathId)
@@ -535,7 +530,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoiceReq = InvoiceRequest(offer, 5000 msat, 1, featuresWithRouteBlinding.bolt12Features(), randomKey(), Block.RegtestGenesisBlock.hash)
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, pathId))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
     val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry, CltvExpiry(nodeParams.currentBlockHeight), pathId)
     sender.send(handlerWithRouteBlinding, packet)
@@ -556,7 +550,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val pathId = randomBytes32()
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, nodeKey, invoiceReq, createEmptyReceivingRoute(), TestProbe().ref, preimage, pathId))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
-    assert(invoice.features.hasFeature(RouteBlinding, Some(Mandatory)))
 
     // We test the case where the HTLC's cltv_expiry is lower than expected and doesn't meet the min_final_expiry_delta.
     val packet = createBlindedPacket(5000 msat, invoice.paymentHash, defaultExpiry - CltvExpiryDelta(1), defaultExpiry, pathId)

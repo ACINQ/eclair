@@ -345,7 +345,7 @@ object MultiPartHandler {
               expirySeconds = Some(expirySeconds),
               extraHops = r.extraHops,
               paymentMetadata = Some(paymentMetadata),
-              features = featuresTrampolineOpt.remove(Features.RouteBlinding)
+              features = featuresTrampolineOpt
             )
             context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
             nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)

@@ -652,7 +652,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("no unknown feature in invoice") {
-    val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features().remove(RouteBlinding)
+    val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features()
     assert(invoiceFeatures.unknown.nonEmpty)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = invoiceFeatures)
     assert(invoice.features == Features(PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory))

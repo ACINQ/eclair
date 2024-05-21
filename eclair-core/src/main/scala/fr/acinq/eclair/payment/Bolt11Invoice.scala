@@ -158,7 +158,6 @@ object Bolt11Invoice {
             paymentMetadata: Option[ByteVector] = None,
             features: Features[Bolt11Feature] = defaultFeatures): Bolt11Invoice = {
     require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), "invoices must require a payment secret")
-    require(!features.hasFeature(Features.RouteBlinding), "bolt11 invoices cannot use route blinding")
     val prefix = prefixes(chainHash)
     val tags = {
       val defaultTags = List(

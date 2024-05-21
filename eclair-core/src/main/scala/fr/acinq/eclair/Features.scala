@@ -249,7 +249,7 @@ object Features {
     val mandatory = 22
   }
 
-  case object RouteBlinding extends Feature with InitFeature with NodeFeature with Bolt11Feature {
+  case object RouteBlinding extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_route_blinding"
     val mandatory = 24
   }
