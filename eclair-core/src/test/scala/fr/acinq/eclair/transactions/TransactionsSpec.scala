@@ -870,7 +870,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   test("BOLT 3 fee tests") {
     val dustLimit = 546 sat
     val bolt3 = {
-      val fetch = Source.fromURL("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
+      val fetch = Source.fromURL("https://raw.githubusercontent.com/lightning/bolts/master/03-transactions.md")
       // We'll use character '$' to separate tests:
       val formatted = fetch.mkString.replace("    name:", "$   name:")
       fetch.close()
@@ -904,7 +904,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     }).toSeq
 
-    assert(tests.size == 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests
+    assert(tests.size == 15, "there were 15 tests at e042c615efb5139a0bfdca0c6391c3c13df70418") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
       logger.info(s"running BOLT 3 test: '${test.name}'")
       val fee = commitTxTotalCost(dustLimit, test.spec, DefaultCommitmentFormat)
