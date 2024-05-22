@@ -47,11 +47,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   val description: Option[String] = invoiceRequest.offer.description
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = {
-    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
-    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
-    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-  }
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
   val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
@@ -172,11 +168,7 @@ case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice 
   val description: Option[String] = records.get[OfferDescription].map(_.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = {
-    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
-    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
-    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-  }
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
 
   override def toString: String = {
     val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes

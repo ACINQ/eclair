@@ -213,7 +213,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val chain = Block.TestnetGenesisBlock.hash
     val amount = 123456 msat
     val description = "invoice with many fields"
-    val features = Features[Feature](Features.VariableLengthOnion -> FeatureSupport.Mandatory, Features.RouteBlinding -> FeatureSupport.Mandatory)
+    val features = Features.empty
     val issuer = "alice"
     val nodeKey = PrivateKey(hex"998cf8ecab46f949bb960813b79d3317cabf4193452a211795cd8af1b9a25d90")
     val path = createPaymentBlindedRoute(nodeKey.publicKey, PrivateKey(hex"f0442c17bdd2cefe4a4ede210f163b068bb3fea6113ffacea4f322de7aa9737b"), hex"76030536ba732cdc4e7bb0a883750bab2e88cb3dddd042b1952c44b4849c86bb").copy(paymentInfo = PaymentInfo(2345 msat, 765, CltvExpiryDelta(324), 1000 msat, amount, Features.empty))
