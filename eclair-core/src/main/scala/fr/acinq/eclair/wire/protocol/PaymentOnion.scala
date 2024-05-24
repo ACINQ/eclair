@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, PaymentBlindedRoute}
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -260,14 +261,11 @@ object PaymentOnion {
        * @param blindedRecords decrypted tlv stream from the encrypted_recipient_data tlv.
        * @param nextBlinding   blinding point that must be forwarded to the next hop.
        */
-      case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends ChannelRelay {
+      case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], paymentRelayData: PaymentRelayData, nextBlinding: PublicKey) extends ChannelRelay {
         // @formatter:off
-        override val outgoingChannelId = blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].get.shortChannelId
-        val paymentRelay = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentRelay].get
-        val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
-        val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
-        override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = ((incomingAmount - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
-        override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
+        override val outgoingChannelId = paymentRelayData.outgoingChannelId
+        override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = paymentRelayData.amountToForward(incomingAmount)
+        override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = paymentRelayData.outgoingCltv(incomingCltv)
         // @formatter:on
       }
 
@@ -284,7 +282,7 @@ object PaymentOnion {
             case Some(_) => return Left(ForbiddenTlv(UInt64(0)))
             case None => // no forbidden tlv found
           }
-          BlindedRouteData.validatePaymentRelayData(blindedRecords).map(blindedRecords => Blinded(records, blindedRecords, nextBlinding))
+          BlindedRouteData.validatePaymentRelayData(blindedRecords).map(paymentRelayData => Blinded(records, paymentRelayData, nextBlinding))
         }
       }
     }

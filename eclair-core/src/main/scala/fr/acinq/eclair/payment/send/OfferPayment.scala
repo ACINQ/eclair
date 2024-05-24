@@ -80,6 +80,7 @@ object OfferPayment {
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
             router: ActorRef,
+            register: ActorRef,
             paymentInitiator: ActorRef): Behavior[Command] = {
     Behaviors.setup(context =>
       Behaviors.receiveMessagePartial {
@@ -102,7 +103,7 @@ object OfferPayment {
           } else {
             val payerKey = randomKey()
             val request = InvoiceRequest(offer, amount, quantity, nodeParams.features.bolt12Features(), payerKey, nodeParams.chainHash)
-            val offerPayment = new OfferPayment(replyTo, nodeParams, postman, router, paymentInitiator, payerKey, request, sendPaymentConfig, context)
+            val offerPayment = new OfferPayment(replyTo, nodeParams, postman, router, register, paymentInitiator, payerKey, request, sendPaymentConfig, context)
             offerPayment.sendInvoiceRequest(attemptNumber = 0)
           }
       })
@@ -113,6 +114,7 @@ private class OfferPayment(replyTo: ActorRef,
                            nodeParams: NodeParams,
                            postman: typed.ActorRef[Postman.Command],
                            router: ActorRef,
+                           register: ActorRef,
                            paymentInitiator: ActorRef,
                            payerKey: PrivateKey,
                            invoiceRequest: InvoiceRequest,
@@ -137,7 +139,7 @@ private class OfferPayment(replyTo: ActorRef,
             paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)
             Behaviors.stopped
           case None =>
-            context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
+            context.spawnAnonymous(CompactBlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
             waitForResolvedPaths(payload.invoice)
         }
       case WrappedMessageResponse(Postman.Response(payload)) =>

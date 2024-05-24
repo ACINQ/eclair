@@ -340,7 +340,7 @@ class NodeRelay private(nodeParams: NodeParams,
             relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
         }
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
-        context.spawnAnonymous(CompactBlindedPathsResolver(router)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
+        context.spawnAnonymous(CompactBlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
         waitForResolvedPaths(upstream, payloadOut, paymentCfg, routeParams)
     }
   }

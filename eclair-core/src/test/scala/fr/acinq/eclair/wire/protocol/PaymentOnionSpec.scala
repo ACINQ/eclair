@@ -113,7 +113,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       assert(payload.outgoingChannelId == ShortChannelId(42))
       assert(payload.amountToForward(10_000 msat) == 9990.msat)
       assert(payload.outgoingCltv(CltvExpiry(1000)) == CltvExpiry(856))
-      assert(payload.allowedFeatures.isEmpty)
+      assert(payload.paymentRelayData.allowedFeatures.isEmpty)
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
     }

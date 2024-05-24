@@ -709,7 +709,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
     val trampoline = trampolineNodeId_opt.map(trampolineNodeId => OfferPayment.TrampolineConfig(trampolineNodeId, trampolineAttempts))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking, trampoline)
-    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.paymentInitiator))
+    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.register, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
       case x => Future.successful(x)

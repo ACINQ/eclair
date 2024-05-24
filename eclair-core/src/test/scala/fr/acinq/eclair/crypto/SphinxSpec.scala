@@ -508,9 +508,9 @@ class SphinxSpec extends AnyFunSuite {
       assert(payloadBob.outgoingChannelId == ShortChannelId(1))
       assert(payloadBob.amountToForward(110_125 msat) == 100_125.msat)
       assert(payloadBob.outgoingCltv(CltvExpiry(749150)) == CltvExpiry(749100))
-      assert(payloadBob.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(50), 0, 10_000 msat))
-      assert(payloadBob.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750150), 50 msat))
-      assert(payloadBob.allowedFeatures.isEmpty)
+      assert(payloadBob.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(50), 0, 10_000 msat))
+      assert(payloadBob.paymentRelayData.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750150), 50 msat))
+      assert(payloadBob.paymentRelayData.allowedFeatures.isEmpty)
 
       // Carol is a blinded hop.
       // She receives the blinding key from Bob (e.g. in a tlv field in update_add_htlc) which she can use to derive the
@@ -526,11 +526,11 @@ class SphinxSpec extends AnyFunSuite {
       assert(payloadCarol.outgoingChannelId == ShortChannelId(2))
       assert(payloadCarol.amountToForward(100_125 msat) == 100_010.msat)
       assert(payloadCarol.outgoingCltv(CltvExpiry(749100)) == CltvExpiry(749025))
-      assert(payloadCarol.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(75), 150, 100 msat))
-      assert(payloadCarol.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750100), 50 msat))
-      assert(payloadCarol.allowedFeatures.isEmpty)
+      assert(payloadCarol.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(75), 150, 100 msat))
+      assert(payloadCarol.paymentRelayData.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750100), 50 msat))
+      assert(payloadCarol.paymentRelayData.allowedFeatures.isEmpty)
       // Carol's payload contains a blinding override.
-      val blindingEphemeralKeyForDaveOverride = payloadCarol.blindedRecords.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
+      val blindingEphemeralKeyForDaveOverride = payloadCarol.paymentRelayData.records.get[RouteBlindingEncryptedDataTlv.NextBlinding].map(_.blinding)
       assert(blindingEphemeralKeyForDaveOverride.contains(blindingOverride))
       assert(blindingEphemeralKeyForDave == blindingOverride)
 
@@ -547,9 +547,9 @@ class SphinxSpec extends AnyFunSuite {
       assert(payloadDave.outgoingChannelId == ShortChannelId(3))
       assert(payloadDave.amountToForward(100_010 msat) == 100_000.msat)
       assert(payloadDave.outgoingCltv(CltvExpiry(749025)) == CltvExpiry(749000))
-      assert(payloadDave.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(25), 100, 0 msat))
-      assert(payloadDave.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750025), 50 msat))
-      assert(payloadDave.allowedFeatures.isEmpty)
+      assert(payloadDave.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(25), 100, 0 msat))
+      assert(payloadDave.paymentRelayData.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750025), 50 msat))
+      assert(payloadDave.paymentRelayData.allowedFeatures.isEmpty)
 
       // Eve is the blinded recipient.
       // She receives the blinding key from Dave (e.g. in a tlv field in update_add_htlc) which she can use to derive

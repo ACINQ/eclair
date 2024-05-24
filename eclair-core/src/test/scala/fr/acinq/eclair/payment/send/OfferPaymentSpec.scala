@@ -42,17 +42,18 @@ import scala.concurrent.duration.DurationInt
 
 class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(offerPayment: ActorRef[Command], nodeParams: NodeParams, postman: TypedProbe[Postman.Command], router: TestProbe, paymentInitiator: TestProbe, routeParams: RouteParams)
+  case class FixtureParam(offerPayment: ActorRef[Command], nodeParams: NodeParams, postman: TypedProbe[Postman.Command], router: TestProbe, register: TestProbe, paymentInitiator: TestProbe, routeParams: RouteParams)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Alice.nodeParams
     val postman = TypedProbe[Postman.Command]("postman")
     val router = TestProbe("router")
+    val register = TestProbe("register")
     val paymentInitiator = TestProbe("paymentInitiator")
-    val offerPayment = testKit.spawn(OfferPayment(nodeParams, postman.ref, router.ref, paymentInitiator.ref))
+    val offerPayment = testKit.spawn(OfferPayment(nodeParams, postman.ref, router.ref, register.ref, paymentInitiator.ref))
     val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
     try {
-      withFixture(test.toNoArgTest(FixtureParam(offerPayment, nodeParams, postman, router, paymentInitiator, routeParams)))
+      withFixture(test.toNoArgTest(FixtureParam(offerPayment, nodeParams, postman, router, register, paymentInitiator, routeParams)))
     } finally {
       testKit.stop(offerPayment)
     }
