@@ -156,12 +156,7 @@ case class BlindedRecipient(nodeId: PublicKey,
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     validateRoute(route).map(blindedHop => {
       val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
-      if (route.hops.isEmpty) {
-        // We are the introduction node of the blinded route.
-        blindedPayloads
-      } else {
-        Recipient.buildPayloads(blindedPayloads.amount, blindedPayloads.expiry, blindedPayloads.payloads, route.hops)
-      }
+      Recipient.buildPayloads(blindedPayloads.amount, blindedPayloads.expiry, blindedPayloads.payloads, route.hops)
     })
   }
 }

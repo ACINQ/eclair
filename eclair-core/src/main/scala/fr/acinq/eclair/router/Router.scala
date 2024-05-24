@@ -616,7 +616,7 @@ object Router {
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
   case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], finalHop_opt: Option[FinalHop]) {
-    require(hops.nonEmpty || finalHop_opt.nonEmpty, "route cannot be empty")
+    require(hops.nonEmpty, "route cannot be empty")
 
     /** Full route including the final hop, if any. */
     val fullRoute: Seq[Hop] = hops ++ finalHop_opt.toSeq

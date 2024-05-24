@@ -293,41 +293,14 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private case class OutgoingPaymentWithChannel(shortChannelId: ShortChannelId, nextBlinding_opt: Option[PublicKey], payment: PaymentPayloads)
-
-  private def getOutgoingChannel(privateKey: PrivateKey, payment: PaymentPayloads, route: Route): Either[OutgoingPaymentError, OutgoingPaymentWithChannel] = {
-    route.hops.headOption match {
-      case Some(hop) => Right(OutgoingPaymentWithChannel(hop.shortChannelId, None, payment))
-      case None => route.finalHop_opt match {
-        case Some(hop: BlindedHop) =>
-          // We are the introduction node of the blinded route: we need to decrypt the first payload.
-          val firstBlinding = hop.route.introductionNode.blindingEphemeralKey
-          val firstEncryptedPayload = hop.route.introductionNode.encryptedPayload
-          RouteBlindingEncryptedDataCodecs.decode(privateKey, firstBlinding, firstEncryptedPayload) match {
-            case Left(e) => Left(CannotDecryptBlindedRoute(e.message))
-            case Right(decoded) =>
-              val tlvs = TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.EncryptedRecipientData(firstEncryptedPayload), OnionPaymentPayloadTlv.BlindingPoint(firstBlinding))
-              IntermediatePayload.ChannelRelay.Blinded.validate(tlvs, decoded.tlvs, decoded.nextBlinding) match {
-                case Left(e) => Left(CannotDecryptBlindedRoute(e.failureMessage.message))
-                case Right(payload) =>
-                  val payment1 = PaymentPayloads(payload.amountToForward(payment.amount), payload.outgoingCltv(payment.expiry), payment.payloads.tail)
-                  Right(OutgoingPaymentWithChannel(payload.outgoingChannelId, Some(decoded.nextBlinding), payment1))
-              }
-          }
-        case _ => Left(EmptyRoute)
-      }
-    }
-  }
-
   /** Build the command to add an HTLC for the given recipient using the provided route. */
-  def buildOutgoingPayment(replyTo: ActorRef, privateKey: PrivateKey, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
+  def buildOutgoingPayment(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
     for {
-      paymentTmp <- recipient.buildPayloads(paymentHash, route)
-      outgoing <- getOutgoingChannel(privateKey, paymentTmp, route)
-      onion <- buildOnion(outgoing.payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
+      payment <- recipient.buildPayloads(paymentHash, route)
+      onion <- buildOnion(payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(replyTo, outgoing.payment.amount, paymentHash, outgoing.payment.expiry, onion.packet, outgoing.nextBlinding_opt, Origin.Hot(replyTo, upstream), commit = true)
-      OutgoingPaymentPacket(cmd, outgoing.shortChannelId, onion.sharedSecrets)
+      val cmd = CMD_ADD_HTLC(replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, None, Origin.Hot(replyTo, upstream), commit = true)
+      OutgoingPaymentPacket(cmd, route.hops.head.shortChannelId, onion.sharedSecrets)
     }
   }
 
