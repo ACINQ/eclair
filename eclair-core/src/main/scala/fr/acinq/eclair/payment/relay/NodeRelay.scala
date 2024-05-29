@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
-import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.{Resolve, ResolvedPath}
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.{Resolve, ResolvedPath}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
@@ -340,7 +340,7 @@ class NodeRelay private(nodeParams: NodeParams,
             relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
         }
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
-        context.spawnAnonymous(CompactBlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
+        context.spawnAnonymous(BlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
         waitForResolvedPaths(upstream, payloadOut, paymentCfg, routeParams)
     }
   }

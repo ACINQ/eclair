@@ -250,7 +250,7 @@ object OutgoingPaymentPacket {
 
   // @formatter:off
   case class NodePayload(nodeId: PublicKey, payload: PerHopPayload)
-  case class PaymentPayloads(amount: MilliSatoshi, expiry: CltvExpiry, payloads: Seq[NodePayload])
+  case class PaymentPayloads(amount: MilliSatoshi, expiry: CltvExpiry, payloads: Seq[NodePayload], nextBlinding_opt: Option[PublicKey])
 
   sealed trait OutgoingPaymentError extends Throwable
   case class CannotCreateOnion(message: String) extends OutgoingPaymentError { override def getMessage: String = message }
@@ -299,7 +299,7 @@ object OutgoingPaymentPacket {
       payment <- recipient.buildPayloads(paymentHash, route)
       onion <- buildOnion(payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, None, Origin.Hot(replyTo, upstream), commit = true)
+      val cmd = CMD_ADD_HTLC(replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.nextBlinding_opt, Origin.Hot(replyTo, upstream), commit = true)
       OutgoingPaymentPacket(cmd, route.hops.head.shortChannelId, onion.sharedSecrets)
     }
   }

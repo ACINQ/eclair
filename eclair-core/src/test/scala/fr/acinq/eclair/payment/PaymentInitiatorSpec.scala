@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
-import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.ResolvedPath
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
@@ -295,7 +295,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features.empty, payerKey)
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPath(path, path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey))
+    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPath(path, path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey, nextNodeIsIntroduction = true))
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -326,7 +326,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features(BasicMultiPartPayment -> Optional), payerKey)
-    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPath(path, path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey))
+    val resolvedPaths = invoice.blindedPaths.map(path => ResolvedPath(path, path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey, nextNodeIsIntroduction = true))
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]

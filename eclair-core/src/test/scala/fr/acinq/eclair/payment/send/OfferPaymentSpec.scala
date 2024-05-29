@@ -177,7 +177,7 @@ class OfferPaymentSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send.invoice == invoice)
-    assert(send.resolvedPaths.map(_.introductionNodeId) == Seq(blindedRoutes(0), blindedRoutes(1), blindedRoutes(2), blindedRoutes(4), blindedRoutes(5)).map(_.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey))
+    assert(send.resolvedPaths.map(_.nextNodeId) == Seq(blindedRoutes(0), blindedRoutes(1), blindedRoutes(2), blindedRoutes(4), blindedRoutes(5)).map(_.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey))
     assert(send.resolvedPaths.map(_.blindedPath.paymentInfo.feeBase) == Seq(0 msat, 1 msat, 2 msat, 4 msat, 5 msat))
 
     TypedProbe().expectTerminated(offerPayment)

@@ -523,13 +523,15 @@ object Router {
    * A directed hop over a blinded route composed of multiple (blinded) channels.
    * Since a blinded route has to be used from start to end, we model it as a single virtual hop.
    *
-   * @param nodeId      introduction node id
-   * @param dummyId     dummy identifier to allow indexing in maps: unlike normal scid aliases, this one doesn't exist
-   *                    in our routing tables and should be used carefully.
-   * @param route       blinded route covered by that hop.
-   * @param paymentInfo payment information about the blinded route.
+   * @param nodeId                        introduction node id
+   * @param dummyId                       dummy identifier to allow indexing in maps: unlike normal scid aliases, this
+   *                                      one doesn't exist in our routing tables and should be used carefully.
+   * @param route                         blinded route covered by that hop.
+   * @param routeStartsAtIntroductionNode whether the route is the one created by the recipient (true) or has been
+   *                                      partially unwrapped (false).
+   * @param paymentInfo                   payment information about the blinded route.
    */
-  case class BlindedHop(nodeId: PublicKey, dummyId: Alias, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends FinalHop {
+  case class BlindedHop(nodeId: PublicKey, dummyId: Alias, route: BlindedRoute, routeStartsAtIntroductionNode: Boolean, paymentInfo: OfferTypes.PaymentInfo) extends FinalHop {
     // @formatter:off
     override val nextNodeId = route.blindedNodes.last.blindedPublicKey
     override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta

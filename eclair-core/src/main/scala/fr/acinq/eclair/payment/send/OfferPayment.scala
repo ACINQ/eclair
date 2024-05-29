@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.message.Postman.{OnionMessageResponse, SendMessage}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
-import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.{Resolve, ResolvedPath}
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.{Resolve, ResolvedPath}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
 import fr.acinq.eclair.router.Router.RouteParams
@@ -139,7 +139,7 @@ private class OfferPayment(replyTo: ActorRef,
             paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)
             Behaviors.stopped
           case None =>
-            context.spawnAnonymous(CompactBlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
+            context.spawnAnonymous(BlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
             waitForResolvedPaths(payload.invoice)
         }
       case WrappedMessageResponse(Postman.Response(payload)) =>
