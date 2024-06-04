@@ -640,7 +640,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.
-              self ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure(d.channelUpdate)), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure(Some(d.channelUpdate))), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
