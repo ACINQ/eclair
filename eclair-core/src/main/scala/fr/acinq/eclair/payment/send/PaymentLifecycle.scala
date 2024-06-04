@@ -234,7 +234,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
         val failure = RemoteFailure(request.amount, route.fullRoute, e)
-        if (failureMessage.update.forall(update => Announcements.checkSig(update, nodeId))) {
+        if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
           val recipient1 = handleUpdate(nodeId, failureMessage, d)
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
@@ -248,7 +248,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           }
         } else {
           // this node is fishy, it gave us a bad channel update signature: let's filter it out.
-          log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
+          log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update_opt}")
           request match {
             case _: SendPaymentToRoute =>
               log.error("unexpected retry during SendPaymentToRoute")
@@ -296,7 +296,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val extraEdges1 = data.route.hops.find(_.nodeId == nodeId) match {
       case Some(hop) => hop.params match {
         case ann: HopRelayParams.FromAnnouncement =>
-          failure.update match {
+          failure.update_opt match {
             case Some(update) if ann.channelUpdate.shortChannelId != update.shortChannelId =>
               // it is possible that nodes in the route prefer using a different channel (to the same N+1 node) than the one we requested, that's fine
               log.info("received an update for a different channel than the one we asked: requested={} actual={} update={}", ann.channelUpdate.shortChannelId, update.shortChannelId, update)
@@ -307,7 +307,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
             case Some(_) if PaymentFailure.hasAlreadyFailedOnce(nodeId, data.failures) =>
               // this node had already given us a new channel update and is still unhappy, it is probably messing with us, let's exclude it
-              log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, ann.channelUpdate, failure.update)
+              log.warning("it is the second time nodeId={} answers with a new update, excluding it: old={} new={}", nodeId, ann.channelUpdate, failure.update_opt)
               router ! ExcludeChannel(ChannelDesc(ann.channelUpdate.shortChannelId, nodeId, hop.nextNodeId), Some(nodeParams.routerConf.channelExcludeDuration))
             case Some(update) =>
               log.info("got a new update for shortChannelId={}: old={} new={}", ann.channelUpdate.shortChannelId, ann.channelUpdate, update)
@@ -318,9 +318,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           }
           data.recipient.extraEdges
         case hint: HopRelayParams.FromHint =>
-          failure.update match {
+          failure.update_opt match {
             case Some(update) =>
-              log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", update.shortChannelId, nodeId, update.channelFlags.isEnabled, failure.update)
+              log.info("received an update for a routing hint (shortChannelId={} nodeId={} enabled={} update={})", update.shortChannelId, nodeId, update.channelFlags.isEnabled, failure.update_opt)
               if (update.channelFlags.isEnabled) {
                 data.recipient.extraEdges.map {
                   case edge: ExtraEdge if edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId => edge.update(update)

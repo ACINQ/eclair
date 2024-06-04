@@ -186,7 +186,7 @@ object PaymentFailure {
    */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
-      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
+      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update_opt }
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
@@ -211,7 +211,7 @@ object PaymentFailure {
     case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
       ignore + nodeId
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
-      if (failureMessage.update.forall(update => Announcements.checkSig(update, nodeId))) {
+      if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
         val shouldIgnore = failureMessage match {
           case _: TemporaryChannelFailure => true
           case _: ChannelDisabled => true
@@ -257,7 +257,7 @@ object PaymentFailure {
         // We're only interested in the last channel update received per channel.
         val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
           case (current, failure) => failure match {
-            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f.update match {
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f.update_opt match {
               case Some(update) => current.updated(update.shortChannelId, update)
               case None => current
             }
