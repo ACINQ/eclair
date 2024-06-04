@@ -187,7 +187,7 @@ class Setup(val datadir: File,
       await(getBitcoinStatus(bitcoinClient), 30 seconds, "bitcoind did not respond after 30 seconds")
     }
     logger.info(s"bitcoind version=${bitcoinStatus.version}")
-    assert(bitcoinStatus.version >= 260100, "Eclair requires Bitcoin Core 26.1 or higher")
+    assert(bitcoinStatus.version >= 270100, "Eclair requires Bitcoin Core 27.1 or higher")
     bitcoinStatus.unspentAddresses.foreach { address =>
       val isSegwit = addressToPublicKeyScript(bitcoinStatus.chainHash, address).map(script => Script.isNativeWitnessScript(script)).getOrElse(false)
       assert(isSegwit, s"Your wallet contains non-segwit UTXOs (e.g. address=$address). You must send those UTXOs to a segwit address to use Eclair (check out our README for more details).")
