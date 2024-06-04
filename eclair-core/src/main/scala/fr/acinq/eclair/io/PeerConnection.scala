@@ -103,14 +103,20 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
+    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync, fundingRates_opt), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
-      val localInit = d.pendingAuth.address match {
-        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
-        case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
+      val remoteAddress_opt = d.pendingAuth.address match {
+        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => Some(InitTlv.RemoteAddress(remoteAddress))
+        case _ => None
       }
+      val tlvs = TlvStream(Set(
+        Some(InitTlv.Networks(chainHash :: Nil)),
+        remoteAddress_opt,
+        fundingRates_opt.map(InitTlv.OptionWillFund)
+      ).flatten[InitTlv])
+      val localInit = protocol.Init(localFeatures, tlvs)
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
@@ -574,7 +580,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean, fundingRates_opt: Option[LiquidityAds.WillFundRates]) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes

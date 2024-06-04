@@ -40,7 +40,7 @@ import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -173,7 +173,7 @@ class Peer(val nodeParams: NodeParams,
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, c.requestFunding_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -200,7 +200,7 @@ class Peer(val nodeParams: NodeParams,
             stay()
         }
 
-      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, localFundingAmount_opt, peerConnection), d: ConnectedData) =>
+      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, addFunding_opt, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
           val channel = spawnChannel()
@@ -210,7 +210,7 @@ class Peer(val nodeParams: NodeParams,
               channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
               channel ! open
             case Right(open) =>
-              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, localFundingAmount_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, addFunding_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
               channel ! open
           }
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
@@ -516,6 +516,7 @@ object Peer {
                          pushAmount_opt: Option[MilliSatoshi],
                          fundingTxFeerate_opt: Option[FeeratePerKw],
                          fundingTxFeeBudget_opt: Option[Satoshi],
+                         requestFunding_opt: Option[LiquidityAds.RequestFunding],
                          channelFlags_opt: Option[ChannelFlags],
                          timeout_opt: Option[Timeout],
                          requireConfirmedInputsOverride_opt: Option[Boolean] = None,
@@ -546,7 +547,7 @@ object Peer {
   }
 
   case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
-  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localFundingAmount_opt: Option[Satoshi], peerConnection: ActorRef)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalParams, peerConnection: ActorRef)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse { def nodeId: PublicKey }
