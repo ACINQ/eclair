@@ -607,4 +607,15 @@ case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRouting
 
 //
 
+/**
+ * This message informs our peers of the feerates we recommend using.
+ * We may reject funding attempts that use values that are too far from our recommended feerates.
+ */
+case class RecommendedFeerates(chainHash: BlockHash, fundingFeerate: FeeratePerKw, commitmentFeerate: FeeratePerKw, tlvStream: TlvStream[RecommendedFeeratesTlv] = TlvStream.empty) extends SetupMessage with HasChainHash {
+  val minFundingFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.FundingFeerateRange].map(_.min).getOrElse(fundingFeerate)
+  val maxFundingFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.FundingFeerateRange].map(_.max).getOrElse(fundingFeerate)
+  val minCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.min).getOrElse(commitmentFeerate)
+  val maxCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.max).getOrElse(commitmentFeerate)
+}
+
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage
