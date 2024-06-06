@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
@@ -85,4 +86,23 @@ sealed trait PongTlv extends Tlv
 
 object PongTlv {
   val pongTlvCodec: Codec[TlvStream[PongTlv]] = tlvStream(discriminated[PongTlv].by(varint))
+}
+
+sealed trait RecommendedFeeratesTlv extends Tlv
+
+object RecommendedFeeratesTlv {
+  /** Detailed range of values that will be accepted until the next [[RecommendedFeerates]] message is sent. */
+  case class FundingFeerateRange(min: FeeratePerKw, max: FeeratePerKw) extends RecommendedFeeratesTlv
+
+  private val fundingFeerateRangeCodec: Codec[FundingFeerateRange] = tlvField(feeratePerKw :: feeratePerKw)
+
+  /** Detailed range of values that will be accepted until the next [[RecommendedFeerates]] message is sent. */
+  case class CommitmentFeerateRange(min: FeeratePerKw, max: FeeratePerKw) extends RecommendedFeeratesTlv
+
+  private val commitmentFeerateRangeCodec: Codec[CommitmentFeerateRange] = tlvField(feeratePerKw :: feeratePerKw)
+
+  val recommendedFeeratesTlvCodec = tlvStream(discriminated[RecommendedFeeratesTlv].by(varint)
+    .typecase(UInt64(1), fundingFeerateRangeCodec)
+    .typecase(UInt64(3), commitmentFeerateRangeCodec)
+  )
 }

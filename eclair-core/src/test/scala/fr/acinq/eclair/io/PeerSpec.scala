@@ -25,8 +25,8 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
@@ -112,6 +112,7 @@ class PeerSpec extends FixtureSpec {
     switchboard.send(peer, Peer.Init(channels))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
+    peerConnection.expectMsgType[RecommendedFeerates]
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo = probe.expectMsgType[Peer.PeerInfo]
@@ -282,6 +283,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    peerConnection2.expectMsgType[RecommendedFeerates]
     // peer should kill previous connection
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
@@ -291,6 +293,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    peerConnection3.expectMsgType[RecommendedFeerates]
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
@@ -323,6 +326,18 @@ class PeerSpec extends FixtureSpec {
 
     // we make sure that the reconnection task has done a full circle
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
+  }
+
+  test("send recommended feerates when feerate changes") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+
+    // We regularly update our internal feerates.
+    peer ! CurrentFeerates(FeeratesPerKw(FeeratePerKw(253 sat), FeeratePerKw(1000 sat), FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), FeeratePerKw(10_000 sat)))
+    val tlvs = TlvStream[RecommendedFeeratesTlv](RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(1250 sat), FeeratePerKw(20_000 sat)), RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(2500 sat), FeeratePerKw(40_000 sat)))
+    val expected = RecommendedFeerates(Block.RegtestGenesisBlock.hash, FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), tlvs)
+    peerConnection.expectMsg(expected)
   }
 
   test("don't spawn a channel with duplicate temporary channel id", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

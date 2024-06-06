@@ -21,9 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
@@ -36,6 +36,7 @@ import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -109,6 +110,27 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
+
+  /** Returns the feerates we'd like our peer to use when funding channels. */
+  def recommendedFeerates(remoteNodeId: PublicKey, currentFeerates: FeeratesPerKw, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+    val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeerates)
+    val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
+      min = fundingFeerate * feerateTolerance.ratioLow,
+      max = fundingFeerate * feerateTolerance.ratioHigh,
+    )
+    // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
+    val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
+      min = commitmentFeerate * feerateTolerance.ratioLow,
+      max = commitmentFormat match {
+        case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
+        case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
+      },
+    )
+    RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
+  }
 }
 
 case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
