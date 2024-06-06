@@ -164,9 +164,13 @@ case class BlindedRecipient(nodeId: PublicKey,
   }
 
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
-    validateRoute(route).map(blindedHop => {
-      val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
-      Recipient.buildPayloads(blindedPayloads, route.hops)
+    validateRoute(route).flatMap(blindedHop => {
+      if (route.hops.length > 1 && blindedHop.resolved.route.isInstanceOf[BlindedPathsResolver.PartialBlindedRoute]) {
+        Left(IndirectRelayInBlindedRoute(blindedHop.nodeId))
+      } else {
+        val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
+        Right(Recipient.buildPayloads(blindedPayloads, route.hops))
+      }
     })
   }
 }

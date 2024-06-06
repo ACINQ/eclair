@@ -259,6 +259,7 @@ object OutgoingPaymentPacket {
   sealed trait OutgoingPaymentError extends Throwable
   case class CannotCreateOnion(message: String) extends OutgoingPaymentError { override def getMessage: String = message }
   case class InvalidRouteRecipient(expected: PublicKey, actual: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"expected route to $expected, got route to $actual" }
+  case class IndirectRelayInBlindedRoute(nextNodeId: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"must relay directly to node $nextNodeId inside blinded route" }
   case class MissingTrampolineHop(trampolineNodeId: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"expected route to trampoline node $trampolineNodeId" }
   case class MissingBlindedHop(introductionNodeIds: Set[PublicKey]) extends OutgoingPaymentError { override def getMessage: String = s"expected blinded route using one of the following introduction nodes: ${introductionNodeIds.mkString(", ")}" }
   case object EmptyRoute extends OutgoingPaymentError { override def getMessage: String = "route cannot be empty" }
