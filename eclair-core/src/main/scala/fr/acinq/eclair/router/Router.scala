@@ -28,12 +28,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
@@ -523,17 +523,16 @@ object Router {
    * A directed hop over a blinded route composed of multiple (blinded) channels.
    * Since a blinded route has to be used from start to end, we model it as a single virtual hop.
    *
-   * @param nodeId                        introduction node id
-   * @param dummyId                       dummy identifier to allow indexing in maps: unlike normal scid aliases, this
-   *                                      one doesn't exist in our routing tables and should be used carefully.
-   * @param route                         blinded route covered by that hop.
-   * @param routeStartsAtIntroductionNode whether the route is the one created by the recipient (true) or has been
-   *                                      partially unwrapped (false).
-   * @param paymentInfo                   payment information about the blinded route.
+   * @param dummyId  dummy identifier to allow indexing in maps: unlike normal scid aliases, this one doesn't exist in
+   *                 our routing tables and should be used carefully.
+   * @param resolved blinded route covered by that hop: it must be resolved to ensure that we know the node_id of the
+   *                 first node that isn't us in the blinded route.
    */
-  case class BlindedHop(nodeId: PublicKey, dummyId: Alias, route: BlindedRoute, routeStartsAtIntroductionNode: Boolean, paymentInfo: OfferTypes.PaymentInfo) extends FinalHop {
+  case class BlindedHop(dummyId: Alias, resolved: ResolvedPath) extends FinalHop {
     // @formatter:off
-    override val nextNodeId = route.blindedNodes.last.blindedPublicKey
+    override val nodeId = resolved.route.firstNodeId
+    override val nextNodeId = resolved.route.blindedNodeIds.last
+    val paymentInfo: OfferTypes.PaymentInfo = resolved.paymentInfo
     override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
     // @formatter:on

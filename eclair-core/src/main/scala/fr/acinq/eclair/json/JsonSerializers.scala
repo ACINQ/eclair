@@ -356,8 +356,8 @@ object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
   val finalNodeIds = route.finalHop_opt match {
     case Some(hop: NodeHop) if channelNodeIds.nonEmpty => Seq(hop.nextNodeId)
     case Some(hop: NodeHop) => Seq(hop.nodeId, hop.nextNodeId)
-    case Some(hop: BlindedHop) if channelNodeIds.nonEmpty => hop.route.blindedNodeIds.tail
-    case Some(hop: BlindedHop) => hop.nodeId +: hop.route.blindedNodeIds.tail
+    case Some(hop: BlindedHop) if channelNodeIds.nonEmpty => hop.resolved.route.blindedNodeIds.tail
+    case Some(hop: BlindedHop) => hop.nodeId +: hop.resolved.route.blindedNodeIds.tail
     case None => Nil
   }
   RouteNodeIdsJson(route.amount, channelNodeIds ++ finalNodeIds)

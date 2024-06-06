@@ -107,6 +107,7 @@ object OfferManager {
         case RequestInvoice(messagePayload, blindedKey, postman) =>
           registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
             case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
+              context.log.debug("received valid invoice request for offerId={}", messagePayload.invoiceRequest.offer.offerId)
               val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey.getOrElse(blindedKey), router, messagePayload.replyPath, postman))
               child ! InvoiceRequestActor.RequestInvoice
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
@@ -191,6 +192,7 @@ object OfferManager {
       def waitForHandler(): Behavior[Command] = {
         Behaviors.receiveMessagePartial {
           case RejectRequest(error) =>
+            context.log.debug("offer handler rejected invoice request: {}", error)
             postman ! Postman.SendMessage(OfferTypes.BlindedPath(pathToSender), OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
             waitForSent()
           case ApproveRequest(amount, routes, pluginData_opt, additionalTlvs, customTlvs) =>
@@ -209,6 +211,7 @@ object OfferManager {
           case WrappedInvoiceResponse(invoiceResponse) =>
             invoiceResponse match {
               case CreateInvoiceActor.InvoiceCreated(invoice) =>
+                context.log.debug("invoice created for offerId={} invoice={}", invoice.invoiceRequest.offer.offerId, invoice.toString)
                 postman ! Postman.SendMessage(OfferTypes.BlindedPath(pathToSender), OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
                 waitForSent()
               case f: CreateInvoiceActor.InvoiceCreationFailed =>

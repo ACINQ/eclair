@@ -27,15 +27,15 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{KeySend, RouteBlinding}
 import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
-import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getPeerChannels, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, watcherAutopilot}
+import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getPeerChannels, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendPayment, watcherAutopilot}
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceivingRoute}
+import fr.acinq.eclair.payment.send.OfferPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendSpontaneousPayment}
-import fr.acinq.eclair.payment.send.{OfferPayment, PaymentLifecycle}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
@@ -54,6 +54,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   val PrivateChannels = "private_channels"
   val RouteBlindingDisabledBob = "route_blinding_disabled_bob"
   val RouteBlindingDisabledCarol = "route_blinding_disabled_carol"
+  val NoChannels = "no_channels"
 
   val maxFinalExpiryDelta = CltvExpiryDelta(1000)
 
@@ -76,7 +77,19 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       .modify(_.channelConf.channelFlags.announceChannel).setTo(!testData.tags.contains(PrivateChannels))
 
     val f = ThreeNodesFixture(aliceParams, bobParams, carolParams, testData.name)
-    createChannels(f, testData)
+    import f._
+
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
+
+    connect(alice, bob)
+    connect(bob, carol)
+
+    if (!testData.tags.contains(NoChannels)) {
+      createChannels(f, testData)
+    }
+
     f
   }
 
@@ -87,24 +100,54 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   private def createChannels(f: FixtureParam, testData: TestData): Unit = {
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
-    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
-    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
-
-    connect(alice, bob)
-    connect(bob, carol)
-
     val channelId_ab = openChannel(alice, bob, 500_000 sat).channelId
     val channelId_bc_1 = openChannel(bob, carol, 100_000 sat).channelId
     val channelId_bc_2 = openChannel(bob, carol, 100_000 sat).channelId
 
+    waitForChannelCreatedAB(f, channelId_ab)
+    waitForChannelCreatedBC(f, channelId_bc_1)
+    waitForChannelCreatedBC(f, channelId_bc_2)
+
     eventually {
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(bob, channelId_bc_1).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(bob, channelId_bc_2).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
+    }
+  }
+
+  private def waitForChannelCreatedAB(f: FixtureParam, channelId: ByteVector32): Unit = {
+    import f._
+
+    eventually {
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+    }
+  }
+
+  private def waitForChannelCreatedBC(f: FixtureParam, channelId: ByteVector32): Unit = {
+    import f._
+
+    eventually {
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelData(carol, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
       // Carol must have received Bob's alias to create usable blinded routes to herself.
       assert(getRouterData(carol).privateChannels.values.forall(_.shortIds.remoteAlias_opt.nonEmpty))
+    }
+  }
+
+  private def waitForAllChannelUpdates(f: FixtureParam, channelsCount: Int): Unit = {
+    import f._
+
+    eventually {
+      // We wait for Alice and Carol to receive channel updates for the path Alice -> Bob -> Carol.
+      Seq(getRouterData(alice), getRouterData(carol)).foreach(routerData => {
+        assert(routerData.channels.size == channelsCount)
+        routerData.channels.values.foreach {
+          case c if c.nodeId1 == alice.nodeId && c.nodeId2 == bob.nodeId => assert(c.update_1_opt.nonEmpty)
+          case c if c.nodeId1 == bob.nodeId && c.nodeId2 == alice.nodeId => assert(c.update_2_opt.nonEmpty)
+          case c if c.nodeId1 == bob.nodeId && c.nodeId2 == carol.nodeId => assert(c.update_1_opt.nonEmpty)
+          case c if c.nodeId1 == carol.nodeId && c.nodeId2 == bob.nodeId => assert(c.update_2_opt.nonEmpty)
+          case _ => () // other channel updates are not necessary
+        }
+      })
     }
   }
 
@@ -119,7 +162,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     }
   }
 
-  def sendOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute]): (Offer, PaymentEvent) = {
+  def sendOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute], maxAttempts: Int = 1): (Offer, PaymentEvent) = {
     import f._
 
     val sender = TestProbe("sender")
@@ -127,12 +170,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, Some(recipient.nodeParams.privateKey), None, handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.register, payer.paymentInitiator))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
   }
 
-  def sendPrivateOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute]): (Offer, PaymentEvent) = {
+  def sendPrivateOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute], maxAttempts: Int = 1): (Offer, PaymentEvent) = {
     import f._
 
     val sender = TestProbe("sender")
@@ -147,7 +190,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, Some(recipientKey), Some(pathId), handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.register, payer.paymentInitiator))
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts, payer.routeParams, blocking = true)
     offerPayment ! OfferPayment.PayOffer(sender.ref, offer, amount, 1, sendPaymentConfig)
     (offer, sender.expectMsgType[PaymentEvent])
   }
@@ -196,9 +239,48 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta),
       ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta),
     )
-    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
+  }
+
+  test("send blinded multi-part payment a->b->c (single channel a->b)", Tag(PrivateChannels)) { f =>
+    import f._
+
+    // Carol advertises a single blinded path from Bob to herself.
+    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    // We make a first set of payments to ensure channels have less than 50 000 sat on Bob's side.
+    Seq(50_000_000 msat, 50_000_000 msat).foreach(amount => {
+      val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes)
+      verifyPaymentSuccess(offer, amount, result)
+    })
+
+    // None of the channels between Bob and Carol have enough balance for the payment: Alice needs to split it.
+    val amount = 50_000_000 msat
+    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length > 1)
+  }
+
+  test("send blinded multi-part payment a->b->c (single channel b->c)", Tag(PrivateChannels), Tag(NoChannels)) { f =>
+    import f._
+
+    // We create two channels between Alice and Bob.
+    val channelId_ab_1 = openChannel(alice, bob, 100_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_1)
+    val channelId_ab_2 = openChannel(alice, bob, 100_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_2)
+
+    // We create a single channel between Bob and Carol.
+    val channelId_bc_1 = openChannel(bob, carol, 250_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_1)
+
+    val route = ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta)
+    val amount1 = 150_000_000 msat
+    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount1, Seq(route), maxAttempts = 3)
+    val payment = verifyPaymentSuccess(offer, amount1, result)
+    assert(payment.parts.length > 1)
   }
 
   test("send blinded payment a->b->c with dummy hops") { f =>
@@ -253,6 +335,30 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     assert(payment.parts.length == 1)
   }
 
+  test("send fully blinded multi-part payment b->c", Tag(PrivateChannels), Tag(NoChannels)) { f =>
+    import f._
+
+    // We create a first channel between Bob and Carol.
+    val channelId_bc_1 = openChannel(bob, carol, 200_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_1)
+
+    // Carol creates a blinded path using that channel.
+    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    // We make a payment to ensure that the channel contains less than 150 000 sat on Bob's side.
+    assert(sendPayment(bob, carol, 50_000_000 msat).isRight)
+
+    // We open another channel between Bob and Carol.
+    val channelId_bc_2 = openChannel(bob, carol, 100_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_2)
+
+    // None of the channels have enough balance for the payment: it must be split.
+    val amount = 150_000_000 msat
+    val (offer, result) = sendOfferPayment(f, bob, carol, amount, routes, maxAttempts = 3)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length > 1)
+  }
+
   test("send fully blinded payment b->c with dummy hops") { f =>
     import f._
 
@@ -261,6 +367,94 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, bob, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
+  }
+
+  test("send fully blinded multi-part payment a->b->c", Tag(NoChannels)) { f =>
+    import f._
+
+    // We create a first channel between Bob and Carol.
+    val channelId_bc_1 = openChannel(bob, carol, 300_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_1)
+
+    // We create a first channel between Alice and Bob.
+    val channelId_ab_1 = openChannel(alice, bob, 300_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_1)
+
+    // We wait for Carol to receive information about the channel between Alice and Bob.
+    waitForAllChannelUpdates(f, channelsCount = 2)
+
+    // Carol receives a first payment through those channels.
+    {
+      val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+      val amount1 = 100_000_000 msat
+      val (offer, result) = sendOfferPayment(f, alice, carol, amount1, routes)
+      val payment = verifyPaymentSuccess(offer, amount1, result)
+      assert(payment.parts.length == 1)
+    }
+
+    // We create another channel route from Alice to Carol.
+    val channelId_bc_2 = openChannel(bob, carol, 150_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_2)
+    val channelId_ab_2 = openChannel(alice, bob, 150_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_2)
+    waitForAllChannelUpdates(f, channelsCount = 4)
+
+    // Carol receives a second payment that requires using MPP.
+    {
+      val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+      val amount2 = 200_000_000 msat
+      val (offer, result) = sendOfferPayment(f, alice, carol, amount2, routes, maxAttempts = 3)
+      val payment = verifyPaymentSuccess(offer, amount2, result)
+      assert(payment.parts.length > 1)
+    }
+  }
+
+  test("send fully blinded multi-part payment a->b->c (single channel b->c)", Tag(NoChannels)) { f =>
+    import f._
+
+    // We create a channel between Bob and Carol.
+    val channelId_bc_1 = openChannel(bob, carol, 500_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_1)
+
+    // We create two channels between Alice and Bob.
+    val channelId_ab_1 = openChannel(alice, bob, 300_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_1)
+    val channelId_ab_2 = openChannel(alice, bob, 200_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_2)
+
+    // We wait for Carol to receive information about the channel between Alice and Bob.
+    waitForAllChannelUpdates(f, channelsCount = 3)
+
+    // Carol receives a payment that requires using MPP.
+    val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val amount = 300_000_000 msat
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length > 1)
+  }
+
+  test("send fully blinded multi-part payment a->b->c (single channel a->b)", Tag(NoChannels)) { f =>
+    import f._
+
+    // We create a channel between Alice and Bob.
+    val channelId_ab_1 = openChannel(alice, bob, 300_000 sat).channelId
+    waitForChannelCreatedAB(f, channelId_ab_1)
+
+    // We create two channels between Bob and Carol.
+    val channelId_bc_1 = openChannel(bob, carol, 100_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_1)
+    val channelId_bc_2 = openChannel(bob, carol, 200_000 sat).channelId
+    waitForChannelCreatedBC(f, channelId_bc_2)
+
+    // We wait for Carol to receive information about the channel between Alice and Bob.
+    waitForAllChannelUpdates(f, channelsCount = 3)
+
+    // Carol receives a payment that requires using MPP.
+    val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val amount = 200_000_000 msat
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length > 1)
   }
 
   def verifyBlindedFailure(payment: PaymentEvent, expectedNode: PublicKey): Unit = {

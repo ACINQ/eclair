@@ -34,39 +34,28 @@ import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, EncodedNodeId, Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
 
 object OfferPayment {
+  // @formatter:off
   sealed trait Failure
-
   case class UnsupportedFeatures(features: Features[InvoiceFeature]) extends Failure
-
   case class UnsupportedChains(chains: Seq[BlockHash]) extends Failure
-
   case class ExpiredOffer(expiryDate: TimestampSecond) extends Failure
-
   case class QuantityTooHigh(quantityMax: Long) extends Failure
-
   case class AmountInsufficient(amountNeeded: MilliSatoshi) extends Failure
-
   case object NoInvoiceResponse extends Failure
-
   case class InvalidInvoiceResponse(request: InvoiceRequest, response: FinalPayload) extends Failure {
     override def toString: String = s"Invalid invoice response: $response, invoice request: $request"
   }
-
   case class UnknownShortChannelIds(scids: Seq[RealShortChannelId]) extends Failure {
     override def toString: String = s"Unknown short channel ids: ${scids.mkString(",")}"
   }
+  // @formatter:on
 
+  // @formatter:off
   sealed trait Command
-
-  case class PayOffer(replyTo: ActorRef,
-                      offer: Offer,
-                      amount: MilliSatoshi,
-                      quantity: Long,
-                      sendPaymentConfig: SendPaymentConfig) extends Command
-
-  case class WrappedMessageResponse(response: OnionMessageResponse) extends Command
-
+  case class PayOffer(replyTo: ActorRef, offer: Offer, amount: MilliSatoshi, quantity: Long, sendPaymentConfig: SendPaymentConfig) extends Command
+  private case class WrappedMessageResponse(response: OnionMessageResponse) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
+  // @formatter:on
 
   case class SendPaymentConfig(externalId_opt: Option[String],
                                connectDirectly: Boolean,
@@ -139,7 +128,7 @@ private class OfferPayment(replyTo: ActorRef,
             paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)
             Behaviors.stopped
           case None =>
-            context.spawnAnonymous(BlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
+            context.spawnAnonymous(BlindedPathsResolver(nodeParams, payload.invoice.paymentHash, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)
             waitForResolvedPaths(payload.invoice)
         }
       case WrappedMessageResponse(Postman.Response(payload)) =>

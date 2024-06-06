@@ -340,7 +340,7 @@ class NodeRelay private(nodeParams: NodeParams,
             relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, useMultiPart = true)
         }
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
-        context.spawnAnonymous(BlindedPathsResolver(nodeParams, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
+        context.spawnAnonymous(BlindedPathsResolver(nodeParams, paymentHash, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payloadOut.outgoingBlindedPaths)
         waitForResolvedPaths(upstream, payloadOut, paymentCfg, routeParams)
     }
   }
@@ -378,7 +378,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedResolvedPaths(resolved) =>
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
         // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
-        val blindedNodeId = resolved.head.blindedPath.route.blindedNodeIds.last
+        val blindedNodeId = resolved.head.route.blindedNodeIds.last
         val recipient = BlindedRecipient.fromPaths(blindedNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
         context.log.debug("sending the payment to blinded recipient, useMultiPart={}", features.hasFeature(Features.BasicMultiPartPayment))
         relayToRecipient(upstream, payloadOut, recipient, paymentCfg, routeParams, features.hasFeature(Features.BasicMultiPartPayment))
