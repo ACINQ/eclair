@@ -180,13 +180,17 @@ object BlindedRecipient {
     BlindedRecipient.fromPaths(invoice.nodeId, invoice.features, totalAmount, expiry, paths, customTlvs)
 
   def fromPaths(nodeId: PublicKey, features: Features[InvoiceFeature], totalAmount: MilliSatoshi, expiry: CltvExpiry, paths: Seq[ResolvedPath], customTlvs: Set[GenericTlv]): BlindedRecipient = {
-    val blindedHops = paths.map(
-      resolved => {
+    val blindedHops = paths.flatMap(resolved => {
+      // We want to be able to split payments *inside* a blinded route, because nodes inside the route may be connected
+      // by multiple channels which may be imbalanced. A simple trick for that is to clone each blinded path three times,
+      // which makes it look like there are 3 channels between each pair of nodes.
+      (0 until 3).map(_ => {
         // We don't know the scids of channels inside the blinded route, but it's useful to have an ID to refer to a
         // given edge in the graph, so we create a dummy one for the duration of the payment attempt.
         val dummyId = ShortChannelId.generateLocalAlias()
         BlindedHop(dummyId, resolved)
       })
+    })
     BlindedRecipient(nodeId, features, totalAmount, expiry, blindedHops, customTlvs)
   }
 }
