@@ -29,7 +29,7 @@ import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{OnChainChannelFunder, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentFeerates, OnChainChannelFunder, OnchainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.MessageRelay.Status
@@ -62,6 +62,8 @@ class Peer(val nodeParams: NodeParams,
            pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
   startWith(INSTANTIATING, Nothing)
 
@@ -345,6 +347,13 @@ class Peer(val nodeParams: NodeParams,
       }
       stay()
 
+    case Event(current: CurrentFeerates, d) =>
+      d match {
+        case d: ConnectedData => d.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, current.feeratesPerKw, d.localFeatures, d.remoteFeatures)
+        case _ => ()
+      }
+      stay()
+
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
 
     case Event(RelayOnionMessage(messageId, _, replyTo_opt), _) =>
@@ -388,6 +397,9 @@ class Peer(val nodeParams: NodeParams,
 
     // let's bring existing/requested channels online
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+
+    // We tell our peer what our current feerates are.
+    connectionReady.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, nodeParams.currentFeerates, connectionReady.localInit.features, connectionReady.remoteInit.features)
 
     goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
   }
