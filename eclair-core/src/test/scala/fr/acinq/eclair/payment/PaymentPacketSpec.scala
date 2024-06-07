@@ -162,7 +162,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   test("build outgoing blinded payment") {
     val (invoice, route, recipient) = longBlindedHops(hex"deadbeef")
-    assert(recipient.extraEdges.length == 3) // Each blinded edge is cloned 3 times.
+    assert(recipient.extraEdges.length == 1)
     assert(recipient.extraEdges.head.sourceNodeId == c)
     assert(recipient.extraEdges.head.targetNodeId == invoice.nodeId)
     val Right(payment) = buildOutgoingPayment(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, route, recipient)
