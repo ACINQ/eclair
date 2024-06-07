@@ -156,6 +156,15 @@ object InteractiveTxBuilder {
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
+
+    def liquidityFees(liquidityPurchase_opt: Option[LiquidityAds.Purchase]): Satoshi = {
+      liquidityPurchase_opt.map(l => l.paymentDetails match {
+        // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
+        case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => if (isInitiator) l.fees.total else -l.fees.total
+        // Fees will be paid later, when relaying HTLCs.
+        case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => 0.sat
+      }).getOrElse(0 sat)
+    }
   }
 
   // @formatter:off
@@ -367,10 +376,7 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelParams.remoteParams.nodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo) =>
-              val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
-                // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-                case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
-              }).getOrElse(0 sat)
+              val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
               // Note that pending HTLCs are ignored: splices only affect the main outputs.
               val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution - localPushAmount + remotePushAmount - liquidityFee
               val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution - remotePushAmount + localPushAmount + liquidityFee
@@ -767,10 +773,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def signCommitTx(completeTx: SharedTransaction): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
-    val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
-      // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-      case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
-    }).getOrElse(0 sat)
+    val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,

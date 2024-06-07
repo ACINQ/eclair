@@ -18,13 +18,13 @@ package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
-import fr.acinq.eclair.{ToMilliSatoshiConversion, UInt64}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.{genericTlv, tlvField, tsatoshi32}
+import fr.acinq.eclair.{MilliSatoshi, ToMilliSatoshiConversion, UInt64}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -47,6 +47,9 @@ object LiquidityAds {
   case class Fees(miningFee: Satoshi, serviceFee: Satoshi) {
     val total: Satoshi = miningFee + serviceFee
   }
+
+  /** Fees paid for the funding transaction that provides liquidity. */
+  case class FundingFee(amount: MilliSatoshi, fundingTxId: TxId)
 
   /**
    * Rate at which a liquidity seller sells its liquidity.
@@ -94,6 +97,12 @@ object LiquidityAds {
     // @formatter:off
     /** Fees are transferred from the buyer's channel balance to the seller's during the interactive-tx construction. */
     case object FromChannelBalance extends PaymentType { override val rfcName: String = "from_channel_balance" }
+    /** Fees will be deducted from future HTLCs that will be relayed to the buyer. */
+    case object FromFutureHtlc extends PaymentType { override val rfcName: String = "from_future_htlc" }
+    /** Fees will be deducted from future HTLCs that will be relayed to the buyer, but the preimage is revealed immediately. */
+    case object FromFutureHtlcWithPreimage extends PaymentType { override val rfcName: String = "from_future_htlc_with_preimage" }
+    /** Similar to [[FromChannelBalance]] but expects HTLCs to be relayed after funding. */
+    case object FromChannelBalanceForFutureHtlc extends PaymentType { override val rfcName: String = "from_channel_balance_for_future_htlc" }
     /** Sellers may support unknown payment types, which we must ignore. */
     case class Unknown(bitIndex: Int) extends PaymentType { override val rfcName: String = s"unknown_$bitIndex" }
     // @formatter:on
@@ -107,6 +116,9 @@ object LiquidityAds {
   object PaymentDetails {
     // @formatter:off
     case object FromChannelBalance extends PaymentDetails { override val paymentType: PaymentType = PaymentType.FromChannelBalance }
+    case class FromFutureHtlc(paymentHashes: List[ByteVector32]) extends PaymentDetails { override val paymentType: PaymentType = PaymentType.FromFutureHtlc }
+    case class FromFutureHtlcWithPreimage(preimages: List[ByteVector32]) extends PaymentDetails { override val paymentType: PaymentType = PaymentType.FromFutureHtlcWithPreimage }
+    case class FromChannelBalanceForFutureHtlc(paymentHashes: List[ByteVector32]) extends PaymentDetails { override val paymentType: PaymentType = PaymentType.FromChannelBalanceForFutureHtlc }
     // @formatter:on
   }
 
@@ -230,6 +242,9 @@ object LiquidityAds {
 
     private val paymentDetails: Codec[PaymentDetails] = discriminated[PaymentDetails].by(varint)
       .typecase(UInt64(0), tlvField(provide(PaymentDetails.FromChannelBalance)))
+      .typecase(UInt64(128), tlvField(list(bytes32).as[PaymentDetails.FromFutureHtlc]))
+      .typecase(UInt64(129), tlvField(list(bytes32).as[PaymentDetails.FromFutureHtlcWithPreimage]))
+      .typecase(UInt64(130), tlvField(list(bytes32).as[PaymentDetails.FromChannelBalanceForFutureHtlc]))
 
     val requestFunding: Codec[RequestFunding] = (
       ("requestedAmount" | satoshi) ::
@@ -247,12 +262,18 @@ object LiquidityAds {
       f = { bytes =>
         bytes.bits.toIndexedSeq.reverse.zipWithIndex.collect {
           case (true, 0) => PaymentType.FromChannelBalance
+          case (true, 128) => PaymentType.FromFutureHtlc
+          case (true, 129) => PaymentType.FromFutureHtlcWithPreimage
+          case (true, 130) => PaymentType.FromChannelBalanceForFutureHtlc
           case (true, idx) => PaymentType.Unknown(idx)
         }.toSet
       },
       g = { paymentTypes =>
         val indexes = paymentTypes.collect {
           case PaymentType.FromChannelBalance => 0
+          case PaymentType.FromFutureHtlc => 128
+          case PaymentType.FromFutureHtlcWithPreimage => 129
+          case PaymentType.FromChannelBalanceForFutureHtlc => 130
           case PaymentType.Unknown(idx) => idx
         }
         // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting bits.

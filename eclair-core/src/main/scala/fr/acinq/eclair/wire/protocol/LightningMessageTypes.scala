@@ -44,6 +44,8 @@ sealed trait InteractiveTxConstructionMessage extends InteractiveTxMessage // <-
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
+sealed trait OnTheFlyFundingMessage extends LightningMessage { def paymentHash: ByteVector32 }
+sealed trait OnTheFlyFundingFailureMessage extends OnTheFlyFundingMessage { def id: ByteVector32 }
 sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSecond }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
@@ -361,8 +363,9 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket,
-                         tlvStream: TlvStream[UpdateAddHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId {
+                         tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
   val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
+  val fundingFee_opt: Option[LiquidityAds.FundingFee] = tlvStream.get[UpdateAddHtlcTlv.FundingFeeTlv].map(_.fee)
 
   val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)
 
@@ -378,8 +381,13 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             blinding_opt: Option[PublicKey],
-            confidence: Double): UpdateAddHtlc = {
-    val tlvs: Set[UpdateAddHtlcTlv] = Set(blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint), Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt))).flatten
+            confidence: Double,
+            fundingFee_opt: Option[LiquidityAds.FundingFee] = None): UpdateAddHtlc = {
+    val tlvs = Set(
+      blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint),
+      fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
+      Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt)),
+    ).flatten[UpdateAddHtlcTlv]
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
 }
@@ -616,6 +624,53 @@ case class RecommendedFeerates(chainHash: BlockHash, fundingFeerate: FeeratePerK
   val maxFundingFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.FundingFeerateRange].map(_.max).getOrElse(fundingFeerate)
   val minCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.min).getOrElse(commitmentFeerate)
   val maxCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.max).getOrElse(commitmentFeerate)
+}
+
+/**
+ * This message is sent when an HTLC couldn't be relayed to our node because we don't have enough inbound liquidity.
+ * This allows us to treat it as an incoming payment, and request on-the-fly liquidity accordingly if we wish to receive that payment.
+ * If we accept the payment, we will send an [[OpenDualFundedChannel]] or [[SpliceInit]] message containing [[ChannelTlv.RequestFundingTlv]].
+ * Our peer will then provide the requested funding liquidity and will relay the corresponding HTLC(s) afterwards.
+ */
+case class WillAddHtlc(chainHash: BlockHash,
+                       id: ByteVector32,
+                       amount: MilliSatoshi,
+                       paymentHash: ByteVector32,
+                       expiry: CltvExpiry,
+                       finalPacket: OnionRoutingPacket,
+                       tlvStream: TlvStream[WillAddHtlcTlv] = TlvStream.empty) extends OnTheFlyFundingMessage {
+  val blinding_opt: Option[PublicKey] = tlvStream.get[WillAddHtlcTlv.BlindingPoint].map(_.publicKey)
+}
+
+object WillAddHtlc {
+  def apply(chainHash: BlockHash,
+            id: ByteVector32,
+            amount: MilliSatoshi,
+            paymentHash: ByteVector32,
+            expiry: CltvExpiry,
+            finalPacket: OnionRoutingPacket,
+            blinding_opt: Option[PublicKey]): WillAddHtlc = {
+    val tlvs = blinding_opt.map(WillAddHtlcTlv.BlindingPoint).toSet[WillAddHtlcTlv]
+    WillAddHtlc(chainHash, id, amount, paymentHash, expiry, finalPacket, TlvStream(tlvs))
+  }
+}
+
+/** This message is similar to [[UpdateFailHtlc]], but for [[WillAddHtlc]]. */
+case class WillFailHtlc(id: ByteVector32, paymentHash: ByteVector32, reason: ByteVector) extends OnTheFlyFundingFailureMessage
+
+/** This message is similar to [[UpdateFailMalformedHtlc]], but for [[WillAddHtlc]]. */
+case class WillFailMalformedHtlc(id: ByteVector32, paymentHash: ByteVector32, onionHash: ByteVector32, failureCode: Int) extends OnTheFlyFundingFailureMessage
+
+/**
+ * This message is sent in response to an [[OpenDualFundedChannel]] or [[SpliceInit]] message containing an invalid [[LiquidityAds.RequestFunding]].
+ * The receiver must consider the funding attempt failed when receiving this message.
+ */
+case class CancelOnTheFlyFunding(channelId: ByteVector32, paymentHashes: List[ByteVector32], reason: ByteVector) extends LightningMessage with HasChannelId {
+  def toAscii: String = if (isAsciiPrintable(reason)) new String(reason.toArray, StandardCharsets.US_ASCII) else "n/a"
+}
+
+object CancelOnTheFlyFunding {
+  def apply(channelId: ByteVector32, paymentHashes: List[ByteVector32], reason: String): CancelOnTheFlyFunding = CancelOnTheFlyFunding(channelId, paymentHashes, ByteVector.view(reason.getBytes(Charsets.US_ASCII)))
 }
 
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

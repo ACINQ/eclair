@@ -504,7 +504,10 @@ object NodeParams extends Logging {
 
     val willFundRates_opt = {
       val supportedPaymentTypes = Map(
-        LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance
+        LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance,
+        LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc.rfcName -> LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+        LiquidityAds.PaymentType.FromFutureHtlc.rfcName -> LiquidityAds.PaymentType.FromFutureHtlc,
+        LiquidityAds.PaymentType.FromFutureHtlcWithPreimage.rfcName -> LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
       )
       val paymentTypes: Set[LiquidityAds.PaymentType] = config.getStringList("liquidity-ads.payment-types").asScala.map(s => {
         supportedPaymentTypes.get(s) match {
