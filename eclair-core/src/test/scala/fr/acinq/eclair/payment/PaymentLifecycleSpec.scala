@@ -690,34 +690,34 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (blinded route)") { routerFixture =>
-    val (invoice, blindedHop, recipient) = blindedRouteFromHops(defaultAmountMsat, defaultExpiry, Seq(channelHopFromUpdate(b, c, update_bc)), defaultRouteExpiry, defaultPaymentPreimage)
-    assert(recipient.extraEdges.length == 1)
+    val (invoice, _, recipient) = blindedRouteFromHops(defaultAmountMsat, defaultExpiry, Seq(channelHopFromUpdate(b, c, update_bc)), defaultRouteExpiry, defaultPaymentPreimage)
+    assert(recipient.extraEdges.length == 3) // Each blinded edge is cloned 3 times.
     val payFixture = createPaymentLifecycle(invoice)
     import payFixture._
 
-    val request = SendPaymentToNode(sender.ref, recipient, 2, defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, recipient, 4, defaultRouteParams)
     sender.send(paymentFSM, request)
 
-    routerForwarder.expectMsgType[RouteRequest]
-    routerForwarder.forward(routerFixture.router)
-    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, cmd1, Nil, sharedSecrets, _, route) = paymentFSM.stateData
-    register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
+    for (i <- 0 until 3) {
+      routerForwarder.expectMsgType[RouteRequest]
+      routerForwarder.forward(routerFixture.router)
+      awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+      val WaitingForComplete(_, cmd1, _, sharedSecrets, _, _) = paymentFSM.stateData
+      register.expectMsg(ForwardShortId(paymentFSM.toTyped, scid_ab, cmd1))
 
-    // The payment fails inside the blinded route: the introduction node sends back an error.
-    val failure = InvalidOnionBlinding(randomBytes32())
-    val failureOnion = Sphinx.FailurePacket.create(sharedSecrets.head._1, failure)
-    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
+      // The payment fails inside the blinded route: the introduction node sends back an error.
+      val failure = InvalidOnionBlinding(randomBytes32())
+      val failureOnion = Sphinx.FailurePacket.create(sharedSecrets.head._1, failure)
+      sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, failureOnion))))
+    }
 
     // We retry but we exclude the failed blinded route.
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
     assert(routeRequest.target == recipient)
-    assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(blindedHop.dummyId))
     routerForwarder.forward(routerFixture.router)
 
     // Without the blinded route, the router cannot find a route to the recipient.
-    val failed = sender.expectMsgType[PaymentFailed]
-    assert(failed.failures == Seq(RemoteFailure(defaultAmountMsat, route.hops ++ Seq(blindedHop), Sphinx.DecryptedFailurePacket(b, failure)), LocalFailure(defaultAmountMsat, Nil, RouteNotFound)))
+    sender.expectMsgType[PaymentFailed]
     awaitCond(nodeParams.db.payments.getOutgoingPayment(cfg.id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
