@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
-import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.{PartialBlindedRoute, ResolvedPath}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
@@ -132,6 +132,7 @@ case class BlindedRecipient(nodeId: PublicKey,
 
   private def validateRoute(route: Route): Either[OutgoingPaymentError, BlindedHop] = {
     route.finalHop_opt match {
+      case Some(BlindedHop(_, ResolvedPath(r: PartialBlindedRoute, _))) if route.hops.length > 1 => Left(IndirectRelayInBlindedRoute(r.firstNodeId))
       case Some(blindedHop: BlindedHop) => Right(blindedHop)
       case _ => Left(MissingBlindedHop(blindedHops.map(_.nodeId).toSet))
     }
@@ -165,12 +166,8 @@ case class BlindedRecipient(nodeId: PublicKey,
 
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     validateRoute(route).flatMap(blindedHop => {
-      if (route.hops.length > 1 && blindedHop.resolved.route.isInstanceOf[BlindedPathsResolver.PartialBlindedRoute]) {
-        Left(IndirectRelayInBlindedRoute(blindedHop.nodeId))
-      } else {
-        val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
-        Right(Recipient.buildPayloads(blindedPayloads, route.hops))
-      }
+      val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
+      Right(Recipient.buildPayloads(blindedPayloads, route.hops))
     })
   }
 }
