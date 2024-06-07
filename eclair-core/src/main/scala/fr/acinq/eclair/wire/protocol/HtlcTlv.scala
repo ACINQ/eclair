@@ -34,15 +34,22 @@ object UpdateAddHtlcTlv {
   /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
   case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
 
-  case class Endorsement(level: Int) extends UpdateAddHtlcTlv
-
   private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
+
+  case class Endorsement(level: Int) extends UpdateAddHtlcTlv
 
   private val endorsement: Codec[Endorsement] = tlvField(uint8.narrow[Endorsement](n => if (n >= 8) Attempt.failure(Err(s"invalid endorsement level: $n")) else Attempt.successful(Endorsement(n)), _.level))
 
+  /** When on-the-fly funding is used, the liquidity fees may be taken from HTLCs relayed after funding. */
+  case class FundingFeeTlv(fee: LiquidityAds.FundingFee) extends UpdateAddHtlcTlv
+
+  private val fundingFee: Codec[FundingFeeTlv] = tlvField((("amount" | millisatoshi) :: ("txId" | txIdAsHash)).as[LiquidityAds.FundingFee])
+
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
     .typecase(UInt64(0), blindingPoint)
-    .typecase(UInt64(106823), endorsement))
+    .typecase(UInt64(41041), fundingFee)
+    .typecase(UInt64(106823), endorsement)
+  )
 }
 
 sealed trait UpdateFulfillHtlcTlv extends Tlv
