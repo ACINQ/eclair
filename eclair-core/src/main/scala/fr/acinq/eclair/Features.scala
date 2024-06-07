@@ -323,6 +323,15 @@ object Features {
     val mandatory = 154
   }
 
+  /**
+   * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
+   * TODO: add NodeFeature once bLIP is merged.
+   */
+  case object OnTheFlyFunding extends Feature with InitFeature {
+    val rfcName = "on_the_fly_funding"
+    val mandatory = 560
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -349,6 +358,7 @@ object Features {
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
+    OnTheFlyFunding
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -361,7 +371,8 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
-    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil)
+    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
+    OnTheFlyFunding -> (SplicePrototype :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
