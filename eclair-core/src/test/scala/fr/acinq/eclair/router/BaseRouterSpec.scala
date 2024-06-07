@@ -280,7 +280,7 @@ object BaseRouterSpec {
       val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
       ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
     })
-    val recipient = BlindedRecipient(invoice, resolvedPaths, amount, expiry, Set.empty)
+    val recipient = BlindedRecipient(invoice, resolvedPaths, amount, expiry, Set.empty, duplicatePaths = 1)
     (invoice, recipient)
   }
 
