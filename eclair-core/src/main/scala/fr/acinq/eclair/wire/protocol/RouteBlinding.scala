@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, featuresCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, EncodedNodeId, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -94,13 +94,25 @@ object BlindedRouteData {
     Right(records)
   }
 
-  def validatePaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
+  case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) {
+    val outgoingChannelId: ShortChannelId = records.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].get.shortChannelId
+    val paymentRelay: PaymentRelay = records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].get
+    val paymentConstraints: PaymentConstraints = records.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
+    val allowedFeatures: Features[Feature] = records.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
+
+    def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi =
+      ((incomingAmount - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
+
+    def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
+  }
+
+  def validatePaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, PaymentRelayData] = {
     if (records.get[OutgoingChannelId].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
     if (records.get[PaymentRelay].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
     if (records.get[PaymentConstraints].isEmpty) return Left(MissingRequiredTlv(UInt64(12)))
     if (records.get[PathId].nonEmpty) return Left(ForbiddenTlv(UInt64(6)))
     if (records.get[AllowedFeatures].exists(!_.features.isEmpty)) return Left(ForbiddenTlv(UInt64(14))) // we don't support custom blinded relay features yet
-    Right(records)
+    Right(PaymentRelayData(records))
   }
 
   def validPaymentRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {

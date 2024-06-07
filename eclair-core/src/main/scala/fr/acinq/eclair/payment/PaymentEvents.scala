@@ -196,7 +196,7 @@ object PaymentFailure {
       case hop: BlindedHop if hop.nodeId == nodeId => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
       // The error comes from inside the blinded route: this is a spec violation, errors should always come from the
       // introduction node, so we definitely want to ignore this blinded route when this happens.
-      case hop: BlindedHop if hop.route.blindedNodeIds.contains(nodeId) => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
+      case hop: BlindedHop if hop.resolved.route.blindedNodeIds.contains(nodeId) => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
     } match {
       case Some(faultyEdge) => ignore + faultyEdge
       case None => ignore

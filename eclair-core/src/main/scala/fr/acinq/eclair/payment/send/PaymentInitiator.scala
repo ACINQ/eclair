@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.PaymentType
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.send.CompactBlindedPathsResolver.ResolvedPath
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._

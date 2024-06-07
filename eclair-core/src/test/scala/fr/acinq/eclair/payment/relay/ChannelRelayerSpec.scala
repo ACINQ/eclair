@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload.ChannelRelay
 import fr.acinq.eclair.wire.protocol._
@@ -664,7 +665,7 @@ object ChannelRelayerSpec {
       RouteBlindingEncryptedDataTlv.PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat),
       RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(500_000), 0 msat),
     )
-    ChannelRelay.Blinded(tlvs, blindedTlvs, randomKey().publicKey)
+    ChannelRelay.Blinded(tlvs, PaymentRelayData(blindedTlvs), randomKey().publicKey)
   }
 
   def createValidIncomingPacket(payload: IntermediatePayload.ChannelRelay, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100)): IncomingPaymentPacket.ChannelRelayPacket = {
