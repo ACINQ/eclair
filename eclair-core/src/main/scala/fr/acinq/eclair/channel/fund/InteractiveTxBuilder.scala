@@ -751,7 +751,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
         }
       case None =>
-        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
+        val feeWithoutWitness = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
+        val minimumFee = liquidityPurchase_opt.map(_.paymentDetails) match {
+          case Some(paymentDetails) => paymentDetails match {
+            case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => feeWithoutWitness
+            // We allow the feerate to be lower than requested when using on-the-fly funding, because our peer may not
+            // be able to contribute as much as expected to the funding transaction itself since they don't have funds.
+            // It's acceptable because they will be paying liquidity fees from future HTLCs.
+            case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => feeWithoutWitness * 0.5
+          }
+          case None => feeWithoutWitness
+        }
         if (sharedTx.fees < minimumFee) {
           log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
@@ -984,7 +994,11 @@ object InteractiveTxSigningSession {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
-    if (fundingParams.localContribution != 0.sat && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
+    // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
+    // If we didn't contribute to the transaction, we don't care if they use a lower feerate than expected.
+    val localContributed = txWithSigs.tx.localInputs.nonEmpty || txWithSigs.tx.localOutputs.nonEmpty
+    val remoteContributed = txWithSigs.tx.remoteInputs.nonEmpty || txWithSigs.tx.remoteOutputs.nonEmpty
+    if (localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
       return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
     }
     val previousOutputs = {
