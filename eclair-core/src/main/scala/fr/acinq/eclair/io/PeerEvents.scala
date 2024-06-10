@@ -25,6 +25,8 @@ import scala.concurrent.duration._
 
 sealed trait PeerEvent
 
+case class PeerCreated(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
+
 case class ConnectionInfo(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init)
 
 case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: ConnectionInfo) extends PeerEvent

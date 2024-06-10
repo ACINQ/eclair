@@ -72,6 +72,7 @@ class Peer(val nodeParams: NodeParams,
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
+      context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
       goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
@@ -374,7 +375,7 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
-  def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
+  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeid: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
@@ -394,7 +395,7 @@ class Peer(val nodeParams: NodeParams,
    * We need to ignore [[LightningMessage]] not sent by the current [[PeerConnection]]. This may happen if we switch
    * between connections.
    */
-  def dropStaleMessages(s: StateFunction): StateFunction = {
+  private def dropStaleMessages(s: StateFunction): StateFunction = {
     case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.peerConnection =>
       log.warning("dropping message from stale connection: {}", msg)
       stay()
@@ -402,13 +403,13 @@ class Peer(val nodeParams: NodeParams,
       s(e)
   }
 
-  def spawnChannel(): ActorRef = {
+  private def spawnChannel(): ActorRef = {
     val channel = channelFactory.spawn(context, remoteNodeId)
     context watch channel
     channel
   }
 
-  def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
+  private def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
     val msg = Error(unknownChannelId, "unknown channel")
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
@@ -416,7 +417,7 @@ class Peer(val nodeParams: NodeParams,
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
-  def stopPeer(): State = {
+  private def stopPeer(): State = {
     log.info("removing peer from db")
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)

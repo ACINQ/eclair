@@ -123,7 +123,9 @@ class PeerSpec extends FixtureSpec {
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[PeerCreated])
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    probe.expectMsg(PeerCreated(peer.ref, remoteNodeId))
     probe.send(peer, Peer.GetPeerInfo(None))
     val peerInfo = probe.expectMsgType[PeerInfo]
     assert(peerInfo.peer == peer)
