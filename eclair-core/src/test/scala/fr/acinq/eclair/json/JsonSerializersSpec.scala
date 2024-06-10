@@ -256,6 +256,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       ),
       blinding_opt = None,
       confidence = 0.7,
+      fundingFee_opt = None,
     )
 
     val expectedIn = """{"direction":"IN","id":926,"amountMsat":12365,"paymentHash":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","cltvExpiry":621500}"""

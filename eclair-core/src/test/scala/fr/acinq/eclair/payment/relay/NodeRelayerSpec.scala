@@ -230,7 +230,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
     // and then one extra
     val extra = IncomingPaymentPacket.RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0, None),
       FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       createTrampolinePacket(outgoingAmount, outgoingExpiry))
@@ -259,7 +259,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // Receive new extraneous multi-part HTLC.
     val i1 = IncomingPaymentPacket.RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0, None),
       FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
       createTrampolinePacket(outgoingAmount, outgoingExpiry))
@@ -272,7 +272,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // Receive new HTLC with different details, but for the same payment hash.
     val i2 = IncomingPaymentPacket.RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 1.0, None),
       PaymentOnion.FinalPayload.Standard.createPayload(1500 msat, 1500 msat, CltvExpiry(499990), incomingSecret, None),
       IntermediatePayload.NodeRelay.Standard(1250 msat, outgoingExpiry, outgoingNodeId),
       createTrampolinePacket(outgoingAmount, outgoingExpiry))
@@ -1008,7 +1008,7 @@ object NodeRelayerSpec {
     val (expiryIn, expiryOut) = (CltvExpiry(500000), CltvExpiry(490000))
     val amountIn = incomingAmount / 2
     RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None, 1.0),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None, 1.0, None),
       FinalPayload.Standard.createPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
       IntermediatePayload.NodeRelay.Standard(outgoingAmount, expiryOut, outgoingNodeId),
       createTrampolinePacket(outgoingAmount, expiryOut))
