@@ -379,7 +379,7 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             blinding_opt: Option[PublicKey],
-            fundingFee_opt: Option[LiquidityAds.FundingFee] = None): UpdateAddHtlc = {
+            fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
     val tlvs = Set(
       blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint),
       fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
