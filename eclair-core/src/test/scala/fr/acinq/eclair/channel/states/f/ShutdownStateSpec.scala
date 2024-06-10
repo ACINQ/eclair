@@ -141,7 +141,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))

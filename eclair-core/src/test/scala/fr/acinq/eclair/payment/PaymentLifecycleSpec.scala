@@ -94,7 +94,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   def addCompleted(result: HtlcResult) = {
     RES_ADD_SETTLED(
       origin = defaultOrigin,
-      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0),
+      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None),
       result)
   }
 
