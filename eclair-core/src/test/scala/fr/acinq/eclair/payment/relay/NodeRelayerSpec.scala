@@ -26,16 +26,15 @@ import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, Crypto}
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
-import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{RelayToBlindedPathsPacket, RelayToTrampolinePacket}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer.{AsyncPaymentCanceled, AsyncPaymentTimeout, AsyncPaymentTriggered, Watch}
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -49,8 +48,8 @@ import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRou
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Bolt11Feature, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampMilli, UInt64, randomBytes, randomBytes32, randomKey}
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
@@ -65,11 +64,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   import NodeRelayerSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent], triggerer: TestProbe[AsyncPaymentTriggerer.Command]) {
+  case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent]) {
     def createNodeRelay(packetIn: IncomingPaymentPacket.NodeRelayPacket, useRealPaymentFactory: Boolean = false): (ActorRef[NodeRelay.Command], TestProbe[NodeRelayer.Command]) = {
       val parent = TestProbe[NodeRelayer.Command]("parent-relayer")
       val outgoingPaymentFactory = if (useRealPaymentFactory) RealOutgoingPaymentFactory(this) else FakeOutgoingPaymentFactory(this)
-      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, register.ref.toClassic, relayId, packetIn, outgoingPaymentFactory, triggerer.ref, router.ref.toClassic))
+      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, register.ref.toClassic, relayId, packetIn, outgoingPaymentFactory, router.ref.toClassic))
       (nodeRelay, parent)
     }
   }
@@ -92,21 +91,19 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Bob.nodeParams
       .modify(_.multiPartPaymentExpiry).setTo(5 seconds)
-      .modify(_.features).setToIf(test.tags.contains("async_payments"))(Features(AsyncPaymentPrototype -> Optional))
       .modify(_.relayParams.asyncPaymentsParams.holdTimeoutBlocks).setToIf(test.tags.contains("long_hold_timeout"))(200000) // timeout after payment expires
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val eventListener = TestProbe[PaymentEvent]("event-listener")
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val mockPayFSM = TestProbe[Any]("pay-fsm")
-    val triggerer = TestProbe[AsyncPaymentTriggerer.Command]("payment-triggerer")
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, register, mockPayFSM, eventListener, triggerer)))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, register, mockPayFSM, eventListener)))
   }
 
   test("create child handlers for new payments") { f =>
     import f._
     val probe = TestProbe[Any]()
-    val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, FakeOutgoingPaymentFactory(f), triggerer.ref, router.ref.toClassic))
+    val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, FakeOutgoingPaymentFactory(f), router.ref.toClassic))
     parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
     probe.expectMessage(Map.empty)
 
@@ -145,7 +142,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingPaymentFactory = FakeOutgoingPaymentFactory(f)
 
     {
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, triggerer.ref, router.ref.toClassic))
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, router.ref.toClassic))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(Map.empty)
     }
@@ -153,7 +150,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       val (paymentHash1, paymentSecret1, child1) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command]())
       val (paymentHash2, paymentSecret2, child2) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command]())
       val children = Map(PaymentKey(paymentHash1, paymentSecret1) -> child1.ref, PaymentKey(paymentHash2, paymentSecret2) -> child2.ref)
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, triggerer.ref, router.ref.toClassic, children))
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, router.ref.toClassic, children))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(children)
 
@@ -169,7 +166,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       val (paymentSecret1, child1) = (randomBytes32(), TestProbe[NodeRelay.Command]())
       val (paymentSecret2, child2) = (randomBytes32(), TestProbe[NodeRelay.Command]())
       val children = Map(PaymentKey(paymentHash, paymentSecret1) -> child1.ref, PaymentKey(paymentHash, paymentSecret2) -> child2.ref)
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, triggerer.ref, router.ref.toClassic, children))
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, router.ref.toClassic, children))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(children)
 
@@ -179,7 +176,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       probe.expectMessage(Map(PaymentKey(paymentHash, paymentSecret2) -> child2.ref))
     }
     {
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, triggerer.ref, router.ref.toClassic))
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, router.ref.toClassic))
       parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head, randomKey().publicKey)
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       val pending1 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
@@ -332,115 +329,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon()), commit = true))
     }
 
-    register.expectNoMessage(100 millis)
-  }
-
-  test("fail to relay when not triggered before the hold timeout", Tag("async_payments")) { f =>
-    import f._
-
-    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
-    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
-
-    // wait until the NodeRelay is waiting for the trigger
-    eventListener.expectMessageType[WaitingToRelayPayment]
-    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
-
-    // publish notification that peer is unavailable at the timeout height
-    val peerWatch = triggerer.expectMessageType[Watch]
-    assert(asyncTimeoutHeight(nodeParams) < asyncSafetyHeight(incomingAsyncPayment, nodeParams))
-    assert(peerWatch.timeout == asyncTimeoutHeight(nodeParams))
-    peerWatch.replyTo ! AsyncPaymentTimeout
-
-    incomingAsyncPayment.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
-      assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
-    }
-    register.expectNoMessage(100 millis)
-  }
-
-  test("relay the payment when triggered while waiting", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
-    import f._
-
-    val (nodeRelayer, parent) = createNodeRelay(incomingAsyncPayment.head)
-    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
-
-    // wait until the NodeRelay is waiting for the trigger
-    eventListener.expectMessageType[WaitingToRelayPayment]
-    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
-
-    // publish notification that peer is ready before the safety interval before the current incoming payment expires (and before the timeout height)
-    val peerWatch = triggerer.expectMessageType[Watch]
-    assert(asyncTimeoutHeight(nodeParams) > asyncSafetyHeight(incomingAsyncPayment, nodeParams))
-    assert(peerWatch.timeout == asyncSafetyHeight(incomingAsyncPayment, nodeParams))
-    peerWatch.replyTo ! AsyncPaymentTriggered
-
-    // upstream payment relayed
-    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 5)
-    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
-    validateOutgoingPayment(outgoingPayment)
-    // those are adapters for pay-fsm messages
-    val nodeRelayerAdapters = outgoingPayment.replyTo
-
-    // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
-    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
-    incomingAsyncPayment.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
-      assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
-    }
-
-    // Once all the downstream payments have settled, we should emit the relayed event.
-    nodeRelayerAdapters ! createSuccessEvent()
-    val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
-    validateRelayEvent(relayEvent)
-    assert(relayEvent.incoming.map(p => (p.amount, p.channelId)).toSet == incomingAsyncPayment.map(i => (i.add.amountMsat, i.add.channelId)).toSet)
-    assert(relayEvent.outgoing.nonEmpty)
-    parent.expectMessageType[NodeRelayer.RelayComplete]
-    register.expectNoMessage(100 millis)
-  }
-
-  test("fail to relay when not triggered before the incoming expiry safety timeout", Tag("async_payments"), Tag("long_hold_timeout")) { f =>
-    import f._
-
-    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
-    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
-    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
-
-    // publish notification that peer is unavailable at the cancel-safety-before-timeout-block threshold before the current incoming payment expires (and before the timeout height)
-    val peerWatch = triggerer.expectMessageType[Watch]
-    assert(asyncTimeoutHeight(nodeParams) > asyncSafetyHeight(incomingAsyncPayment, nodeParams))
-    assert(peerWatch.timeout == asyncSafetyHeight(incomingAsyncPayment, nodeParams))
-    peerWatch.replyTo ! AsyncPaymentTimeout
-
-    incomingAsyncPayment.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
-      assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
-    }
-
-    register.expectNoMessage(100 millis)
-  }
-
-  test("fail to relay payment when canceled by sender before timeout", Tag("async_payments")) { f =>
-    import f._
-
-    val (nodeRelayer, _) = createNodeRelay(incomingAsyncPayment.head)
-    incomingAsyncPayment.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
-
-    // wait until the NodeRelay is waiting for the trigger
-    eventListener.expectMessageType[WaitingToRelayPayment]
-    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a trigger
-
-    // fail the payment if waiting when payment sender sends cancel message
-    nodeRelayer ! NodeRelay.WrappedPeerReadyResult(AsyncPaymentCanceled)
-
-    incomingAsyncPayment.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
-      assert(fwd.channelId == p.add.channelId)
-      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
-    }
     register.expectNoMessage(100 millis)
   }
 
