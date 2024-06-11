@@ -88,7 +88,11 @@ object PeerReadyNotifier {
             context.log.error("no switchboard found")
             replyTo ! PeerUnavailable(remoteNodeId)
             Behaviors.stopped
-      }
+        }
+      case Timeout =>
+        context.log.info("timed out finding switchboard actor")
+        replyTo ! PeerUnavailable(remoteNodeId)
+        Behaviors.stopped
     }
   }
 
