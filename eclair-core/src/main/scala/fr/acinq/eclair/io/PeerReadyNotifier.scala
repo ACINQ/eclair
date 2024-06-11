@@ -83,7 +83,7 @@ object PeerReadyNotifier {
       case WrappedListing(Switchboard.SwitchboardServiceKey.Listing(listings)) =>
         listings.headOption match {
           case Some(switchboard) =>
-              waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
+            waitForPeerConnected(replyTo, remoteNodeId, switchboard, context, timers)
           case None =>
             context.log.error("no switchboard found")
             replyTo ! PeerUnavailable(remoteNodeId)

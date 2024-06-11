@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed
 import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
@@ -29,6 +30,7 @@ import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.io.{Peer, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
@@ -39,19 +41,23 @@ import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload.ChannelRel
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, RealShortChannelId, TestConstants, randomBytes32, _}
 import org.scalatest.Inside.inside
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
+
+import scala.concurrent.duration.DurationInt
 
 class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
   import ChannelRelayerSpec._
 
+  val wakeUpTimeout = "wake_up_timeout"
+
   case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any])
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
-    val nodeParams = TestConstants.Bob.nodeParams
+    val nodeParams = if (test.tags.contains(wakeUpTimeout)) TestConstants.Bob.nodeParams.copy(wakeUpTimeout = 100 millis) else TestConstants.Bob.nodeParams
     val register = TestProbe[Any]("register")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
     try {
@@ -157,13 +163,37 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
-    val payload = createBlindedPayload(u.channelUpdate, isIntroduction = false)
+    val payload = createBlindedPayload(Right(u.channelUpdate.shortChannelId), u.channelUpdate, isIntroduction = false)
     val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
     expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+  }
+
+  test("relay blinded payment (wake up wallet node)") { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
+    Seq(true, false).foreach(isIntroduction => {
+      val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction)
+      val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+      channelRelayer ! WrappedLocalChannelUpdate(u)
+      channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+      // We try to wake-up the next node.
+      val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+      assert(wakeUp.remoteNodeId == outgoingNodeId)
+      wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+      expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+    })
+
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
   }
 
   test("relay with retries") { f =>
@@ -270,7 +300,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     Seq(true, false).foreach { isIntroduction =>
       // The outgoing channel is disabled, so we won't be able to relay the payment.
       val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0, enabled = false)
-      val r = createValidIncomingPacket(createBlindedPayload(u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+      val r = createValidIncomingPacket(createBlindedPayload(Right(u.channelUpdate.shortChannelId), u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
 
       channelRelayer ! WrappedLocalChannelUpdate(u)
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
@@ -291,6 +321,27 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
         assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
       }
     }
+  }
+
+  test("fail to relay blinded payment (cannot wake up remote node)", Tag(wakeUpTimeout)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = true)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node, but we timeout before they connect.
+    assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == outgoingNodeId)
+    val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fail.message.reason.contains(InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))))
+
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
   }
 
   test("relay when expiry larger than our requirements") { f =>
@@ -519,7 +570,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     Seq(true, false).foreach { isIntroduction =>
       testCases.foreach { htlcResult =>
-        val r = createValidIncomingPacket(createBlindedPayload(u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta, endorsementIn = 0)
+        val r = createValidIncomingPacket(createBlindedPayload(Right(u.channelUpdate.shortChannelId), u.channelUpdate, isIntroduction), outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta, endorsementIn = 0)
         channelRelayer ! WrappedLocalChannelUpdate(u)
         channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
         val fwd = expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, 0)
@@ -653,13 +704,16 @@ object ChannelRelayerSpec {
     localAlias2 -> channelId2,
   )
 
-  def createBlindedPayload(update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
+  def createBlindedPayload(outgoing: Either[PublicKey, ShortChannelId], update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
     val tlvs = TlvStream[OnionPaymentPayloadTlv](Set(
       Some(OnionPaymentPayloadTlv.EncryptedRecipientData(hex"2a")),
       if (isIntroduction) Some(OnionPaymentPayloadTlv.BlindingPoint(randomKey().publicKey)) else None,
     ).flatten[OnionPaymentPayloadTlv])
     val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
-      RouteBlindingEncryptedDataTlv.OutgoingChannelId(update.shortChannelId),
+      outgoing match {
+        case Left(nodeId) => RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeId))
+        case Right(scid) => RouteBlindingEncryptedDataTlv.OutgoingChannelId(scid)
+      },
       RouteBlindingEncryptedDataTlv.PaymentRelay(update.cltvExpiryDelta, update.feeProportionalMillionths, update.feeBaseMsat),
       RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(500_000), 0 msat),
     )

@@ -41,12 +41,11 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, EncodedNodeId, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import scala.collection.immutable.Queue
-import scala.concurrent.duration.DurationInt
 
 /**
  * It [[NodeRelay]] aggregates incoming HTLCs (in case multi-part was used upstream) and then forwards the requested amount (using the
@@ -134,18 +133,22 @@ object NodeRelay {
     }
   }
 
-  private def shouldWakeUpNextNode(nodeParams: NodeParams, recipient: Recipient): Boolean = {
-    false
-  }
-
-  /** When we have identified that the next node is one of our peers, return their (real) nodeId. */
-  private def nodeIdToWakeUp(recipient: Recipient): PublicKey = {
+  /** This function identifies whether the next node is a wallet node directly connected to us, and returns its node_id. */
+  private def nextWalletNodeId(nodeParams: NodeParams, recipient: Recipient): Option[PublicKey] = {
     recipient match {
-      case r: ClearRecipient => r.nodeId
-      case r: SpontaneousRecipient => r.nodeId
-      case r: TrampolineRecipient => r.nodeId
-      // When using blinded paths, the recipient nodeId is blinded. The actual node is the introduction of the path.
-      case r: BlindedRecipient => r.blindedHops.head.nodeId
+      // These two recipients are only used when we're the payment initiator.
+      case _: SpontaneousRecipient => None
+      case _: TrampolineRecipient => None
+      // When relaying to a trampoline node, the next node may be a wallet node directly connected to us, but we don't
+      // want to have false positives. Feature branches should check an internal DB/cache to confirm.
+      case r: ClearRecipient if r.nextTrampolineOnion_opt.nonEmpty => None
+      // If we're relaying to a non-trampoline recipient, it's never a wallet node.
+      case _: ClearRecipient => None
+      // When using blinded paths, we may be the introduction node for a wallet node directly connected to us.
+      case r: BlindedRecipient => r.blindedHops.head.resolved.route match {
+        case BlindedPathsResolver.PartialBlindedRoute(walletNodeId: EncodedNodeId.WithPublicKey.Wallet, _, _) => Some(walletNodeId.publicKey)
+        case _ => None
+      }
     }
   }
 
@@ -283,10 +286,9 @@ class NodeRelay private(nodeParams: NodeParams,
    * relaying the payment.
    */
   private def ensureRecipientReady(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
-    if (shouldWakeUpNextNode(nodeParams, recipient)) {
-      waitForPeerReady(upstream, recipient, nextPayload, nextPacket_opt)
-    } else {
-      relay(upstream, recipient, nextPayload, nextPacket_opt)
+    nextWalletNodeId(nodeParams, recipient) match {
+      case Some(walletNodeId) => waitForPeerReady(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
+      case None => relay(upstream, recipient, nextPayload, nextPacket_opt)
     }
   }
 
@@ -294,10 +296,9 @@ class NodeRelay private(nodeParams: NodeParams,
    * The next node is the payment recipient. They are directly connected to us and may be offline. We try to wake them
    * up and will relay the payment once they're connected and channels are reestablished.
    */
-  private def waitForPeerReady(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
-    val nextNodeId = nodeIdToWakeUp(recipient)
-    context.log.info("trying to wake up next peer (nodeId={})", nextNodeId)
-    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(nextNodeId, timeout_opt = Some(Left(30 seconds)))).onFailure(SupervisorStrategy.stop))
+  private def waitForPeerReady(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+    context.log.info("trying to wake up next peer (nodeId={})", walletNodeId)
+    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.wakeUpTimeout)))).onFailure(SupervisorStrategy.stop))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {

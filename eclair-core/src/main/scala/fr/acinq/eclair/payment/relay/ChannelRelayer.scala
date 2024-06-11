@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket
-import fr.acinq.eclair.{SubscriptionsComplete, Logs, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, SubscriptionsComplete}
 
 import java.util.UUID
 import scala.collection.mutable
@@ -70,9 +70,12 @@ object ChannelRelayer {
         Behaviors.receiveMessage {
           case Relay(channelRelayPacket, originNode) =>
             val relayId = UUID.randomUUID()
-            val nextNodeId_opt: Option[PublicKey] = scid2channels.get(channelRelayPacket.payload.outgoingChannelId) match {
-              case Some(channelId) => channels.get(channelId).map(_.nextNodeId)
-              case None => None
+            val nextNodeId_opt: Option[PublicKey] = channelRelayPacket.payload.outgoing match {
+              case Left(walletNodeId) => Some(walletNodeId)
+              case Right(outgoingChannelId) => scid2channels.get(outgoingChannelId) match {
+                case Some(channelId) => channels.get(channelId).map(_.nextNodeId)
+                case None => None
+              }
             }
             val nextChannels: Map[ByteVector32, Relayer.OutgoingChannel] = nextNodeId_opt match {
               case Some(nextNodeId) => node2channels.get(nextNodeId).flatMap(channels.get).map(c => c.channelId -> c).toMap

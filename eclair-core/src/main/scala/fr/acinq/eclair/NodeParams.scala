@@ -87,7 +87,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      wakeUpTimeout: FiniteDuration) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -611,7 +612,8 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      wakeUpTimeout = 30 seconds,
     )
   }
 }
