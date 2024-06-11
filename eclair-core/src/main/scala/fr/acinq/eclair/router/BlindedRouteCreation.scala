@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.{RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, randomKey}
 import scodec.bits.ByteVector
 
 object BlindedRouteCreation {
@@ -77,7 +77,7 @@ object BlindedRouteCreation {
     Total: 24 to 36 bytes
      */
     val targetLength = 36
-    val paddedPayloads = payloads.map(tlvs =>{
+    val paddedPayloads = payloads.map(tlvs => {
       val payloadLength = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes.length
       tlvs.copy(records = tlvs.records + RouteBlindingEncryptedDataTlv.Padding(ByteVector.fill(targetLength - payloadLength)(0)))
     })
@@ -93,6 +93,21 @@ object BlindedRouteCreation {
       RouteBlindingEncryptedDataTlv.PathId(pathId),
     )).require.bytes
     Sphinx.RouteBlinding.create(randomKey(), Seq(nodeId), Seq(finalPayload))
+  }
+
+  /** Create a blinded route where the recipient is a wallet node. */
+  def createBlindedRouteToWallet(hop: Router.ChannelHop, pathId: ByteVector, minAmount: MilliSatoshi, routeFinalExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
+    val routeExpiry = routeFinalExpiry + hop.cltvExpiryDelta
+    val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
+      RouteBlindingEncryptedDataTlv.PathId(pathId),
+    )).require.bytes
+    val intermediatePayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(hop.nextNodeId)),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(hop.cltvExpiryDelta, hop.params.relayFees.feeProportionalMillionths, hop.params.relayFees.feeBase),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
+    )).require.bytes
+    Sphinx.RouteBlinding.create(randomKey(), Seq(hop.nodeId, hop.nextNodeId), Seq(intermediatePayload, finalPayload))
   }
 
 }
