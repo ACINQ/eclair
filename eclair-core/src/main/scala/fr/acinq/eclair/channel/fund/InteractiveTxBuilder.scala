@@ -453,7 +453,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val message = addInput match {
           case i: Input.Local =>
             // for debugging wallet locking issues, it is useful to log local utxos
-            log.info(s"adding local input ${i.previousTx.txid}:${i.previousTxOutput}")
+            log.info(s"adding local input ${i.previousTx.txid}:${i.previousTxOutput} to interactive-tx")
             TxAddInput(fundingParams.channelId, i.serialId, Some(i.previousTx), i.previousTxOutput, i.sequence)
           case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
         }
