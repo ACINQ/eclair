@@ -55,11 +55,10 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val paymentHandler = TestProbe[Any]("payment-handler")
-    val triggerer = TestProbe[AsyncPaymentTriggerer.Command]("payment-triggerer")
     val probe = TestProbe[Any]()
     // we can't spawn top-level actors with akka typed
     testKit.spawn(Behaviors.setup[Any] { context =>
-      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic, triggerer.ref))
+      val relayer = context.toClassic.actorOf(Relayer.props(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHandler.ref.toClassic))
       probe.ref ! relayer
       Behaviors.empty[Any]
     })
