@@ -102,7 +102,7 @@ object OpenChannelInterceptor {
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isChannelOpener = isChannelOpener,
-      payCommitTxFees = isChannelOpener,
+      paysCommitTxFees = isChannelOpener,
       upfrontShutdownScript_opt = upfrontShutdownScript_opt,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint_opt,
       initFeatures = initFeatures

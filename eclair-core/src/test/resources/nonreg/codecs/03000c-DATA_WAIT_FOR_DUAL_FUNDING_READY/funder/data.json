@@ -14,7 +14,7 @@
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 100,
         "isChannelOpener" : true,
-        "payCommitTxFees" : true,
+        "paysCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "0014fe2baa428e1f6b4b4134d444b3de42a86cffbabc",
         "initFeatures" : {
           "activated" : {

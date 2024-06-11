@@ -601,7 +601,7 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.params.localParams.payClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+  require(!commitments.params.localParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
@@ -633,13 +633,13 @@ case class LocalParams(nodeId: PublicKey,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        isChannelOpener: Boolean,
-                       payCommitTxFees: Boolean,
+                       paysCommitTxFees: Boolean,
                        upfrontShutdownScript_opt: Option[ByteVector],
                        walletStaticPaymentBasepoint: Option[PublicKey],
                        initFeatures: Features[InitFeature]) {
   // The node responsible for the commit tx fees is also the node paying the mutual close fees.
   // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
-  val payClosingFees: Boolean = payCommitTxFees
+  val paysClosingFees: Boolean = paysCommitTxFees
 }
 
 /**

@@ -59,7 +59,7 @@ private[channel] object ChannelCodecs4 {
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
         // We pad to keep codecs byte-aligned.
-        ("isChannelOpener" | bool) :: ("payCommitTxFees" | bool) :: ignore(6) ::
+        ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[LocalParams]

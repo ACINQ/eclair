@@ -264,7 +264,7 @@ object ChannelCodecsSpec {
     upfrontShutdownScript_opt = None,
     walletStaticPaymentBasepoint = None,
     isChannelOpener = true,
-    payCommitTxFees = true,
+    paysCommitTxFees = true,
     initFeatures = Features.empty)
 
   val remoteParams: RemoteParams = RemoteParams(
