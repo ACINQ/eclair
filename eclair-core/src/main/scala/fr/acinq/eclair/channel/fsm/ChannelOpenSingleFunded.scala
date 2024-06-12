@@ -109,7 +109,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       Helpers.validateParamsSingleFundedFundee(nodeParams, d.initFundee.channelType, d.initFundee.localParams.initFeatures, open, remoteNodeId, d.initFundee.remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
-          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.feeratePerKw, None))
+          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isOpener = false, open.temporaryChannelId, open.feeratePerKw, None))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
@@ -380,7 +380,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       //    notification that the funding tx has been successfully published: in that case we don't put a duplicate watch
       //  - we're not using zero-conf, but our peer decided to trust us anyway, in which case we can skip waiting for
       //    confirmations if we're the initiator (no risk of double-spend) and they provided a channel alias
-      val switchToZeroConf = d.commitments.params.localParams.isInitiator &&
+      val switchToZeroConf = d.commitments.params.localParams.isChannelOpener &&
         remoteChannelReady.alias_opt.isDefined &&
         !d.commitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf)
       if (switchToZeroConf) {

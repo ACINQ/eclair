@@ -48,7 +48,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = false)
     val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags, channelFlags)
     val channelType = if (test.tags.contains(StandardChannelType)) ChannelTypes.Standard() else defaultChannelType
     val commitTxFeerate = if (channelType.isInstanceOf[ChannelTypes.AnchorOutputs] || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
@@ -128,10 +128,10 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val lowFunding = 100.sat
-    val announceChannel = true
-    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
+    val flags = ChannelFlags(announceChannel = true)
+    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = flags)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel)).getMessage))
+    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(flags)).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -140,10 +140,10 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val lowFunding = 100.sat
-    val announceChannel = false
-    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = ChannelFlags(announceChannel))
+    val flags = ChannelFlags(announceChannel = false)
+    bob ! open.copy(fundingSatoshis = lowFunding, channelFlags = flags)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(announceChannel)).getMessage))
+    assert(error == Error(open.temporaryChannelId, FundingAmountTooLow(open.temporaryChannelId, lowFunding, Bob.nodeParams.channelConf.minFundingSatoshis(flags)).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

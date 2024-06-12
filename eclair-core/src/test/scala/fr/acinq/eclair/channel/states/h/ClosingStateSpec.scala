@@ -69,7 +69,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (unconfirmedFundingTx) {
       within(30 seconds) {
         val channelConfig = ChannelConfig.standard
-        val channelFlags = ChannelFlags.Private
+        val channelFlags = ChannelFlags(announceChannel = false)
         val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
         val aliceInit = Init(aliceParams.initFeatures)
         val bobInit = Init(bobParams.initFeatures)

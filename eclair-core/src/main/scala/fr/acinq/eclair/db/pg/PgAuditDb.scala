@@ -188,7 +188,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setLong(3, e.capacity.toLong)
-        statement.setBoolean(4, e.isInitiator)
+        statement.setBoolean(4, e.isChannelOpener)
         statement.setBoolean(5, e.isPrivate)
         statement.setString(6, e.event.label)
         statement.setTimestamp(7, Timestamp.from(Instant.now()))

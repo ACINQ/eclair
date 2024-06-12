@@ -61,7 +61,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelClosed])
 
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = false)
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val commitFeerate = channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw

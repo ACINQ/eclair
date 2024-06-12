@@ -119,7 +119,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, None, None, Features.empty)
+    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
@@ -166,7 +166,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "htlcMinimum": 1,
         |         "toSelfDelay": 144,
         |         "maxAcceptedHtlcs": 50,
-        |         "isInitiator": true,
+        |         "isChannelOpener": true,
+        |         "paysCommitTxFees" : true,
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "remoteParams": {

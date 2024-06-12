@@ -47,7 +47,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val setup = init(tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags.Private
+    val channelFlags = ChannelFlags(announceChannel = false)
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val pushMsat = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) 0.msat else TestConstants.initiatorPushAmount
     val aliceInit = Init(aliceParams.initFeatures)

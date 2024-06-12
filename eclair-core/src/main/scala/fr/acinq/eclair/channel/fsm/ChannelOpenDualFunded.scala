@@ -143,7 +143,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, remoteNodeId, localParams.initFeatures, remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
-          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isInitiator = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
+          context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isOpener = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimit,
@@ -201,7 +201,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // We start the interactive-tx funding protocol.
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
-            isInitiator = localParams.isInitiator,
+            isInitiator = localParams.isChannelOpener,
             localContribution = accept.fundingAmount,
             remoteContribution = open.fundingAmount,
             sharedInput_opt = None,
@@ -264,7 +264,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val remoteAmount = accept.fundingAmount
           val fundingParams = InteractiveTxParams(
             channelId = channelId,
-            isInitiator = localParams.isInitiator,
+            isInitiator = localParams.isChannelOpener,
             localContribution = localAmount,
             remoteContribution = remoteAmount,
             sharedInput_opt = None,
