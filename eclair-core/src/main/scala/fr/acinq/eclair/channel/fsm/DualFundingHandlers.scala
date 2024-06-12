@@ -140,7 +140,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
   def reportRbfFailure(rbfStatus: RbfStatus, f: Throwable): Unit = {
     rbfStatus match {
       case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
-      case RbfStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
+      case RbfStatus.RbfInProgress(cmd_opt, _, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
       case _ => ()

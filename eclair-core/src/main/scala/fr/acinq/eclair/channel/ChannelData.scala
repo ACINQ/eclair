@@ -454,8 +454,8 @@ sealed trait RbfStatus
 object RbfStatus {
   case object NoRbf extends RbfStatus
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
-  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends RbfStatus
-  case class RbfWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends RbfStatus
+  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], sessionContext: SessionContext, rbf: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends RbfStatus
+  case class RbfWaitingForSigs(sessionContext: SessionContext, signingSession: InteractiveTxSigningSession.WaitingForSigs) extends RbfStatus
   case object RbfAborted extends RbfStatus
 }
 
@@ -481,9 +481,9 @@ object SpliceStatus {
   /** We told our peer we want to splice funds in the channel. */
   case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
   /** We both agreed to splice and are building the splice transaction. */
-  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
+  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], sessionContext: SessionContext, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
   /** The splice transaction has been negotiated, we're exchanging signatures. */
-  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
+  case class SpliceWaitingForSigs(sessionContext: SessionContext, signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
   /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
   case object SpliceAborted extends QuiescentSpliceStatus
 }
