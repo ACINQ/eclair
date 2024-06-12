@@ -503,7 +503,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // mine the funding tx
     generateBlocks(2)
     // get the channelId
-    sender.send(fundee.register, Symbol("channels"))
+    sender.send(fundee.register, Register.GetChannels)
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
 
     sender.send(fundeeChannel, CMD_GET_CHANNEL_DATA(ActorRef.noSender))
@@ -682,7 +682,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // initially all the balance is on C side and F doesn't have an output
     val sender = TestProbe()
-    sender.send(nodes("F").register, Symbol("channelsTo"))
+    sender.send(nodes("F").register, Register.GetChannelsTo)
     // retrieve the channelId of C <--> F
     val Some(channelId) = sender.expectMsgType[Map[ByteVector32, PublicKey]].find(_._2 == nodes("C").nodeParams.nodeId).map(_._1)
 
