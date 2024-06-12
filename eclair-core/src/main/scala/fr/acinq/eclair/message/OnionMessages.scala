@@ -53,7 +53,7 @@ object OnionMessages {
   }
 
   object IntermediateNode {
-    def apply(publicKey: PublicKey): IntermediateNode = IntermediateNode(publicKey, EncodedNodeId(publicKey))
+    def apply(publicKey: PublicKey): IntermediateNode = IntermediateNode(publicKey, EncodedNodeId.WithPublicKey.Plain(publicKey))
   }
 
   // @formatter:off
@@ -64,7 +64,7 @@ object OnionMessages {
     override def introductionNodeId: EncodedNodeId = route.introductionNodeId
   }
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination {
-    override def introductionNodeId: EncodedNodeId = EncodedNodeId(nodeId)
+    override def introductionNodeId: EncodedNodeId = EncodedNodeId.WithPublicKey.Plain(nodeId)
   }
   // @formatter:on
 
@@ -93,7 +93,7 @@ object OnionMessages {
   def buildRoute(blindingSecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
                  recipient: Recipient): Sphinx.RouteBlinding.BlindedRouteDetails = {
-    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId(recipient.nodeId))
+    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId.WithPublicKey.Plain(recipient.nodeId))
     val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
     val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs, recipient.customTlvs)).require.bytes
     Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.publicKey) :+ recipient.nodeId, intermediatePayloads :+ lastPayload)

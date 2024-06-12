@@ -17,12 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
-import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
+import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
@@ -46,11 +47,31 @@ object OfferCodecs {
     b => if (b) 0 else 1
   )
 
-  private val shortChannelIdDirCodec: Codec[ShortChannelIdDir] =
+  private val shortChannelIdDirCodec: Codec[EncodedNodeId.ShortChannelIdDir] =
     (("isNode1" | isNode1) ::
-      ("scid" | realshortchannelid)).as[ShortChannelIdDir]
+      ("scid" | realshortchannelid)).as[EncodedNodeId.ShortChannelIdDir]
 
-  val encodedNodeIdCodec: Codec[EncodedNodeId] = choice(shortChannelIdDirCodec.upcast[EncodedNodeId], publicKey.as[EncodedNodeId.Plain].upcast[EncodedNodeId])
+  private val plainNodeIdCodec: Codec[EncodedNodeId.WithPublicKey.Plain] = Codec[EncodedNodeId.WithPublicKey.Plain](
+    (nodeId: EncodedNodeId.WithPublicKey.Plain) => bytes(33).encode(nodeId.publicKey.value),
+    (wire: BitVector) => bytes(33).decode(wire).flatMap(res => res.value.head match {
+      case 0x02 | 0x03 => Attempt.successful(res.map(bin => EncodedNodeId.WithPublicKey.Plain(PublicKey(bin))))
+      case d => Attempt.Failure(new Err.MatchingDiscriminatorNotFound(d))
+    })
+  )
+
+  private val walletNodeIdCodec: Codec[EncodedNodeId.WithPublicKey.Wallet] = Codec[EncodedNodeId.WithPublicKey.Wallet](
+    (nodeId: EncodedNodeId.WithPublicKey.Wallet) => bytes(33).encode((nodeId.publicKey.value.head + 2).toByte +: nodeId.publicKey.value.tail),
+    (wire: BitVector) => bytes(33).decode(wire).flatMap(res => res.value.head match {
+      case 0x04 | 0x05 => Attempt.successful(res.map(bin => EncodedNodeId.WithPublicKey.Wallet(PublicKey((bin.head - 2).toByte +: bin.tail))))
+      case d => Attempt.Failure(new Err.MatchingDiscriminatorNotFound(d))
+    })
+  )
+
+  val encodedNodeIdCodec: Codec[EncodedNodeId] = choice(
+    shortChannelIdDirCodec.upcast[EncodedNodeId],
+    plainNodeIdCodec.upcast[EncodedNodeId],
+    walletNodeIdCodec.upcast[EncodedNodeId],
+  )
 
   private val blindedNodeCodec: Codec[BlindedNode] =
     (("nodeId" | publicKey) ::
@@ -186,7 +207,7 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete
 
-  val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
+  private val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
     .typecase(UInt64(1), tlvField(tu64overflow.as[ErroneousField]))
     .typecase(UInt64(3), tlvField(bytes.as[SuggestedValue]))
     .typecase(UInt64(5), tlvField(utf8.as[Error]))

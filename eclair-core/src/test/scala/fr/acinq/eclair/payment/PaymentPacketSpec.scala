@@ -223,7 +223,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 1 msat, amount_bc, Features.empty)
     val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, recipientKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
+      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
       ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
     })
     val recipient = BlindedRecipient(invoice, resolvedPaths, amount_bc, expiry_bc, Set.empty)
@@ -497,7 +497,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
       val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, Features.empty)
       val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_c.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
       val resolvedPaths = invoice.blindedPaths.map(path => {
-        val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
+        val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
         ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
       })
       val recipient = BlindedRecipient(invoice, resolvedPaths, amount_bc, expiry_bc, Set.empty)

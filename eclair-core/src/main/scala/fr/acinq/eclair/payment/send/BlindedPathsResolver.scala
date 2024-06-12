@@ -81,10 +81,10 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
   private def resolveBlindedPaths(toResolve: Seq[PaymentBlindedRoute], resolved: Seq[ResolvedPath]): Behavior[Command] = {
     toResolve.headOption match {
       case Some(paymentRoute) => paymentRoute.route.introductionNodeId match {
-        case EncodedNodeId.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId && paymentRoute.route.length == 0 =>
+        case EncodedNodeId.WithPublicKey.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId && paymentRoute.route.length == 0 =>
           context.log.warn("ignoring blinded path (empty route with ourselves as the introduction node)")
           resolveBlindedPaths(toResolve.tail, resolved)
-        case EncodedNodeId.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId =>
+        case EncodedNodeId.WithPublicKey.Plain(ourNodeId) if ourNodeId == nodeParams.nodeId =>
           // We are the introduction node of the blinded route: we need to decrypt the first payload.
           val firstBlinding = paymentRoute.route.introductionNode.blindingEphemeralKey
           val firstEncryptedPayload = paymentRoute.route.introductionNode.encryptedPayload
@@ -115,8 +115,8 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
                   waitForNextNodeId(nextPaymentInfo, paymentRelayData, nextBlinding, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
               }
           }
-        case EncodedNodeId.Plain(remoteNodeId) =>
-          val path = ResolvedPath(FullBlindedRoute(remoteNodeId, paymentRoute.route.blindingKey, paymentRoute.route.blindedNodes), paymentRoute.paymentInfo)
+        case encodedNodeId: EncodedNodeId.WithPublicKey =>
+          val path = ResolvedPath(FullBlindedRoute(encodedNodeId.publicKey, paymentRoute.route.blindingKey, paymentRoute.route.blindedNodes), paymentRoute.paymentInfo)
           resolveBlindedPaths(toResolve.tail, resolved :+ path)
         case EncodedNodeId.ShortChannelIdDir(isNode1, scid) =>
           router ! Router.GetNodeId(context.messageAdapter(WrappedNodeId), scid, isNode1)
@@ -160,10 +160,8 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
         }
     }
 
-  /** Resolve the introduction node's [[EncodedNodeId.ShortChannelIdDir]] to the corresponding [[EncodedNodeId.Plain]]. */
-  private def waitForNodeId(paymentRoute: PaymentBlindedRoute,
-                            toResolve: Seq[PaymentBlindedRoute],
-                            resolved: Seq[ResolvedPath]): Behavior[Command] =
+  /** Resolve the introduction node's [[EncodedNodeId.ShortChannelIdDir]] to the corresponding [[EncodedNodeId.WithPublicKey]]. */
+  private def waitForNodeId(paymentRoute: PaymentBlindedRoute, toResolve: Seq[PaymentBlindedRoute], resolved: Seq[ResolvedPath]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedNodeId(None) =>
         context.log.warn("ignoring blinded path with unknown scid_dir={}", paymentRoute.route.introductionNodeId)
@@ -171,7 +169,7 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
       case WrappedNodeId(Some(nodeId)) =>
         context.log.debug("successfully resolved scid_dir={} to node_id={}", paymentRoute.route.introductionNodeId, nodeId)
         // We've identified the node matching this scid_dir, we retry resolving with that node_id.
-        val paymentRouteWithNodeId = paymentRoute.copy(route = paymentRoute.route.copy(introductionNodeId = EncodedNodeId.Plain(nodeId)))
+        val paymentRouteWithNodeId = paymentRoute.copy(route = paymentRoute.route.copy(introductionNodeId = EncodedNodeId.WithPublicKey.Plain(nodeId)))
         resolveBlindedPaths(paymentRouteWithNodeId +: toResolve, resolved)
     }
 }

@@ -296,7 +296,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features.empty, payerKey)
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
+      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
       ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
     })
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
@@ -330,7 +330,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features(BasicMultiPartPayment -> Optional), payerKey)
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
+      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
       ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
     })
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))

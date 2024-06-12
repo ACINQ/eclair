@@ -255,7 +255,7 @@ class OfferTypesSpec extends AnyFunSuite {
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
         assert(tlvs.records.size == tlvCount)
         val root = OfferTypes.rootHash(tlvs, genericTlvStream)
-      assert(root == expectedRoot)
+        assert(root == expectedRoot)
     }
   }
 
@@ -268,9 +268,9 @@ class OfferTypesSpec extends AnyFunSuite {
       TestCase(hex"01 000000000000ddd5 0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86 01 03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f 0003 c0ffee",
         BlindedRoute(EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(56789)), PublicKey(hex"0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86"), Seq(BlindedNode(PublicKey(hex"03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f"), hex"c0ffee")))),
       TestCase(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73 0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966 01 02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328 0002 cafe",
-        BlindedRoute(EncodedNodeId.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")), PublicKey(hex"0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"), Seq(BlindedNode(PublicKey(hex"02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), hex"cafe")))),
+        BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")), PublicKey(hex"0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"), Seq(BlindedNode(PublicKey(hex"02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), hex"cafe")))),
       TestCase(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922 028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd 01 02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2 0003 ec1a13",
-        BlindedRoute(EncodedNodeId.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")), PublicKey(hex"028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"), Seq(BlindedNode(PublicKey(hex"02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), hex"ec1a13")))),
+        BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")), PublicKey(hex"028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"), Seq(BlindedNode(PublicKey(hex"02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), hex"ec1a13")))),
     )
 
     testCases.foreach {
@@ -282,14 +282,12 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("encoded node id") {
     val testCases = Map(
-      hex"00 0d950b0001c80000" ->
-        EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(BlockHeight(890123), 456, 0)),
-      hex"01 0c0a14000d800005" ->
-        EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(BlockHeight(789012), 3456, 5)),
-      hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" ->
-        EncodedNodeId.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
-      hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" ->
-        EncodedNodeId.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+      hex"00 0d950b0001c80000" -> EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(BlockHeight(890123), 456, 0)),
+      hex"01 0c0a14000d800005" -> EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(BlockHeight(789012), 3456, 5)),
+      hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" -> EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+      hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" -> EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+      hex"042d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" -> EncodedNodeId.WithPublicKey.Wallet(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+      hex"05ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" -> EncodedNodeId.WithPublicKey.Wallet(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922"))
     )
 
     for ((encoded, decoded) <- testCases) {
