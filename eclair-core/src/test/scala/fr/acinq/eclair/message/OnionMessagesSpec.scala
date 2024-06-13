@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.perHopPayloadCodec
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
-import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessage, OnionMessagePayloadTlv, OnionRoutingCodecs, RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64, randomBytes, randomKey}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -213,7 +213,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(message.blindingKey == blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
 
     process(destination, message) match {
-      case SendMessage(Right(EncodedNodeId.Plain(nextNodeId2)), message2) =>
+      case SendMessage(Right(EncodedNodeId.WithPublicKey.Plain(nextNodeId2)), message2) =>
         assert(nextNodeId2 == destination.publicKey)
         process(destination, message2) match {
           case ReceiveMessage(finalPayload, _) => assert(finalPayload.pathId_opt.contains(hex"01234567"))

@@ -107,8 +107,8 @@ private class MessageRelay(nodeParams: NodeParams,
       case Right(EncodedNodeId.ShortChannelIdDir(isNode1, scid)) =>
         router ! Router.GetNodeId(context.messageAdapter(WrappedOptionalNodeId), scid, isNode1)
         waitForNextNodeId(msg, scid)
-      case Right(EncodedNodeId.Plain(nextNodeId)) =>
-        withNextNodeId(msg, nextNodeId)
+      case Right(encodedNodeId: EncodedNodeId.WithPublicKey) =>
+        withNextNodeId(msg, encodedNodeId.publicKey)
     }
   }
 

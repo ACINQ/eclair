@@ -277,7 +277,7 @@ object BaseRouterSpec {
     })
     val invoice = Bolt12Invoice(invoiceRequest, preimage, recipientKey, 300 seconds, features, blindedRoutes)
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.Plain].publicKey
+      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
       ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
     })
     val recipient = BlindedRecipient(invoice, resolvedPaths, amount, expiry, Set.empty, duplicatePaths = 1)

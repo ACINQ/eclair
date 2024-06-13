@@ -42,11 +42,14 @@ object RouteBlindingEncryptedDataTlv {
 
   /**
    * Id of the next node.
-   * Warning: the spec only allows a public key here. We allow reading a ShortChannelIdDir for phoenix but we should never write one.
+   *
+   * WARNING: the spec only allows a public key here. We allow reading any type of [[EncodedNodeId]] to support relaying
+   * to mobile wallets, but we should always write an [[EncodedNodeId.WithPublicKey.Plain]].
    */
   case class OutgoingNodeId(nodeId: EncodedNodeId) extends RouteBlindingEncryptedDataTlv
+
   object OutgoingNodeId {
-    def apply(publicKey: PublicKey): OutgoingNodeId = OutgoingNodeId(EncodedNodeId(publicKey))
+    def apply(publicKey: PublicKey): OutgoingNodeId = OutgoingNodeId(EncodedNodeId.WithPublicKey.Plain(publicKey))
   }
 
   /**

@@ -399,7 +399,7 @@ object Sphinx extends Logging {
         e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
         (BlindedNode(blindedPublicKey, encryptedPayload ++ mac), blindingKey)
       }.unzip
-      BlindedRouteDetails(BlindedRoute(EncodedNodeId(publicKeys.head), blindingKeys.head, blindedHops), blindingKeys.last)
+      BlindedRouteDetails(BlindedRoute(EncodedNodeId.WithPublicKey.Plain(publicKeys.head), blindingKeys.head, blindedHops), blindingKeys.last)
     }
 
     /**
