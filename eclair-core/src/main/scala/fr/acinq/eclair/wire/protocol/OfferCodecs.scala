@@ -23,9 +23,8 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.bits.BitVector
+import scodec.Codec
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
 
 object OfferCodecs {
   private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
@@ -42,36 +41,21 @@ object OfferCodecs {
 
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
-  private val isNode1: Codec[Boolean] = uint8.narrow(
-    n => if (n == 0) Attempt.Successful(true) else if (n == 1) Attempt.Successful(false) else Attempt.Failure(new Err.MatchingDiscriminatorNotFound(n)),
-    b => if (b) 0 else 1
-  )
+  /** A 32-bytes codec for public keys where the first byte is set manually. */
+  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = bytes(32).xmap(b => PublicKey(prefix +: b), _.value.drop(1))
 
-  private val shortChannelIdDirCodec: Codec[EncodedNodeId.ShortChannelIdDir] =
-    (("isNode1" | isNode1) ::
-      ("scid" | realshortchannelid)).as[EncodedNodeId.ShortChannelIdDir]
-
-  private val plainNodeIdCodec: Codec[EncodedNodeId.WithPublicKey.Plain] = Codec[EncodedNodeId.WithPublicKey.Plain](
-    (nodeId: EncodedNodeId.WithPublicKey.Plain) => bytes(33).encode(nodeId.publicKey.value),
-    (wire: BitVector) => bytes(33).decode(wire).flatMap(res => res.value.head match {
-      case 0x02 | 0x03 => Attempt.successful(res.map(bin => EncodedNodeId.WithPublicKey.Plain(PublicKey(bin))))
-      case d => Attempt.Failure(new Err.MatchingDiscriminatorNotFound(d))
-    })
-  )
-
-  private val walletNodeIdCodec: Codec[EncodedNodeId.WithPublicKey.Wallet] = Codec[EncodedNodeId.WithPublicKey.Wallet](
-    (nodeId: EncodedNodeId.WithPublicKey.Wallet) => bytes(33).encode((nodeId.publicKey.value.head + 2).toByte +: nodeId.publicKey.value.tail),
-    (wire: BitVector) => bytes(33).decode(wire).flatMap(res => res.value.head match {
-      case 0x04 | 0x05 => Attempt.successful(res.map(bin => EncodedNodeId.WithPublicKey.Wallet(PublicKey((bin.head - 2).toByte +: bin.tail))))
-      case d => Attempt.Failure(new Err.MatchingDiscriminatorNotFound(d))
-    })
-  )
-
-  val encodedNodeIdCodec: Codec[EncodedNodeId] = choice(
-    shortChannelIdDirCodec.upcast[EncodedNodeId],
-    plainNodeIdCodec.upcast[EncodedNodeId],
-    walletNodeIdCodec.upcast[EncodedNodeId],
-  )
+  // The first byte encodes what type of identifier is used.
+  val encodedNodeIdCodec: Codec[EncodedNodeId] = discriminated[EncodedNodeId].by(uint8)
+    // If the first byte is 0x00 or 0x01, we're using a shortChannelId and a direction to identify the node.
+    .subcaseP(0x00) { case e: EncodedNodeId.ShortChannelIdDir if e.isNode1 => e }(realshortchannelid.xmap(EncodedNodeId.ShortChannelIdDir(true, _), _.scid))
+    .subcaseP(0x01) { case e: EncodedNodeId.ShortChannelIdDir if !e.isNode1 => e }(realshortchannelid.xmap(EncodedNodeId.ShortChannelIdDir(false, _), _.scid))
+    // If the first byte is 0x02 or 0x03, this is a standard public key.
+    .subcaseP(0x02) { case e: EncodedNodeId.WithPublicKey.Plain if e.publicKey.value.head == 0x02 => e }(tweakFirstByteCodec(2).xmap[EncodedNodeId.WithPublicKey.Plain](EncodedNodeId.WithPublicKey.Plain, _.publicKey))
+    .subcaseP(0x03) { case e: EncodedNodeId.WithPublicKey.Plain if e.publicKey.value.head == 0x03 => e }(tweakFirstByteCodec(3).xmap[EncodedNodeId.WithPublicKey.Plain](EncodedNodeId.WithPublicKey.Plain, _.publicKey))
+    // If the first byte is 0x04 or 0x05, this is a public key for a wallet node: we need to tweak back that first byte
+    // to be 0x02 or 0x03 to obtain a valid public key.
+    .subcaseP(0x04) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x02 => e }(tweakFirstByteCodec(2).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
+    .subcaseP(0x05) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x03 => e }(tweakFirstByteCodec(3).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
 
   private val blindedNodeCodec: Codec[BlindedNode] =
     (("nodeId" | publicKey) ::
