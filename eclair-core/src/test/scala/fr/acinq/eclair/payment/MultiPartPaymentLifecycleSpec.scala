@@ -723,7 +723,7 @@ object MultiPartPaymentLifecycleSpec {
       6,
       CltvExpiryDelta(1008)),
     Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
-    MultiPartParams(1000 msat, 5),
+    MultiPartParams(1000 msat, 5, MultiPartParams.FullCapacity),
     experimentName = "my-test-experiment",
     experimentPercentage = 100
   ).getDefaultRouteParams
