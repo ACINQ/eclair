@@ -17,6 +17,7 @@
 package fr.acinq.eclair.integration
 
 import akka.actor.ActorRef
+import akka.actor.Status.Failure
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.pattern.pipe
 import akka.testkit.TestProbe
@@ -25,7 +26,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, computeBIP84Address}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
@@ -623,9 +624,17 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     bitcoinClient.publishTransaction(revokedCommitTx).pipeTo(sender.ref)
     sender.expectMsg(revokedCommitTx.txid)
     bitcoinClient.publishTransaction(htlcSuccess.head).pipeTo(sender.ref)
-    sender.expectMsg(htlcSuccess.head.txid)
+    sender.expectMsgType[Any] match {
+      case txid: TxId => assert(txid == htlcSuccess.head.txid)
+      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes htlc-success before F
+      case Failure(e: JsonRPCError) => assert(e.error.message == "txn-mempool-conflict")
+    }
     bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
-    sender.expectMsg(htlcTimeout.head.txid)
+    sender.expectMsgType[Any] match {
+      case txid: TxId => assert(txid == htlcTimeout.head.txid)
+      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes htlc-fail before F
+      case Failure(e: JsonRPCError) => assert(e.error.message == "txn-mempool-conflict")
+    }
     // at this point C should have 5 recv transactions: F's main output and all htlc outputs (taken as punishment)
     // C's main output uses static_remotekey, so C doesn't need to claim it
     awaitCond({
