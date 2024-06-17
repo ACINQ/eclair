@@ -626,13 +626,13 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     bitcoinClient.publishTransaction(htlcSuccess.head).pipeTo(sender.ref)
     sender.expectMsgType[Any] match {
       case txid: TxId => assert(txid == htlcSuccess.head.txid)
-      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes htlc-success before F
+      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes the htlc-penalty transaction before F publishes its htlc-success
       case Failure(e: JsonRPCError) => assert(e.error.message == "txn-mempool-conflict")
     }
     bitcoinClient.publishTransaction(htlcTimeout.head).pipeTo(sender.ref)
     sender.expectMsgType[Any] match {
       case txid: TxId => assert(txid == htlcTimeout.head.txid)
-      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes htlc-fail before F
+      // 3rd stage txs (txs spending htlc txs) are not tested if C publishes the htlc-penalty transaction before F publishes its htlc-timeout
       case Failure(e: JsonRPCError) => assert(e.error.message == "txn-mempool-conflict")
     }
     // at this point C should have 5 recv transactions: F's main output and all htlc outputs (taken as punishment)
