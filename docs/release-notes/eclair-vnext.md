@@ -6,8 +6,16 @@
 
 ### Update minimal version of Bitcoin Core
 
-With this release, eclair requires using Bitcoin Core 26.1.
-Newer versions of Bitcoin Core may be used, but haven't been extensively tested.
+With this release, eclair requires using Bitcoin Core 27.1.
+Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+
+This version introduces a new coin selection algorithm called  [CoinGrinder](https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-27.0.md#wallet) that will reduce on-chain transaction costs when feerates are high.
+
+To enable CoinGrinder at all fee rates and prevent the automatic consolidation of UTXOs, add the following line to your `bitcoin.conf` file:
+
+```conf
+consolidatefeerate=0
+```
 
 ### API changes
 
