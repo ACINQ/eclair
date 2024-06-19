@@ -185,6 +185,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "channelFlags": {
+        |         "nonInitiatorPaysCommitFees": false,
         |         "announceChannel": true
         |       }
         |     },
