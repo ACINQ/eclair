@@ -666,8 +666,16 @@ case class RemoteParams(nodeId: PublicKey,
                         initFeatures: Features[InitFeature],
                         upfrontShutdownScript_opt: Option[ByteVector])
 
-case class ChannelFlags(announceChannel: Boolean) {
-  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
+/**
+ * The [[nonInitiatorPaysCommitFees]] parameter is set to true when the sender wants the receiver to pay the commitment transaction fees.
+ * This is not part of the BOLTs and won't be needed anymore once commitment transactions don't pay any on-chain fees.
+ */
+case class ChannelFlags(nonInitiatorPaysCommitFees: Boolean, announceChannel: Boolean) {
+  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel, nonInitiatorPaysCommitFees=$nonInitiatorPaysCommitFees)"
+}
+
+object ChannelFlags {
+  def apply(announceChannel: Boolean): ChannelFlags = ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = announceChannel)
 }
 
 /** Information about what triggered the opening of the channel */
