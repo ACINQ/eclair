@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -27,6 +27,18 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * Created by PM on 06/07/2017.
  */
+
+sealed trait AddressType
+
+object AddressType {
+  case object Bech32 extends AddressType {
+    override def toString: String = "bech32"
+  }
+
+  case object Bech32m extends AddressType {
+    override def toString: String = "bech32m"
+  }
+}
 
 /** This trait lets users fund lightning channels. */
 trait OnChainChannelFunder {
@@ -119,7 +131,7 @@ trait OnChainAddressGenerator {
   /**
    * @param label used if implemented with bitcoin core, can be ignored by implementation
    */
-  def getReceiveAddress(label: String = "")(implicit ec: ExecutionContext): Future[String]
+  def getReceiveAddress(label: String = "", addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
@@ -132,6 +144,8 @@ trait OnchainPubkeyCache {
    * @param renew applies after requesting the current pubkey, and is asynchronous
    */
   def getP2wpkhPubkey(renew: Boolean = true): PublicKey
+
+  def getPubkeyScript(renew: Boolean = true): ByteVector
 }
 
 /** This trait lets users check the wallet's on-chain balance. */
