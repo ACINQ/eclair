@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.AddressType
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
@@ -52,7 +53,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   implicit val formats: Formats = DefaultFormats
 
   override def beforeAll(): Unit = {
-    startBitcoind(defaultAddressType_opt = Some("bech32"), mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
+    startBitcoind(defaultAddressType_opt = Some("bech32"), defaultChangeType_opt = Some("bech32"), mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
     waitForBitcoindReady()
   }
 
@@ -1732,7 +1733,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val accountXPub = DeterministicWallet.encode(
       DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, DeterministicWallet.KeyPath("m/84'/1'/0'"))),
       DeterministicWallet.vpub)
-    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0) == accountXPub)
+    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.Bech32) == accountXPub)
 
     def getBip32Path(address: String): DeterministicWallet.KeyPath = {
       wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
@@ -1755,13 +1756,50 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     }
   }
 
+  test("wallets managed by eclair implement BIP86") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val sender = TestProbe()
+    val entropy = randomBytes32()
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
+    val master = DeterministicWallet.generate(seed)
+    val (wallet, keyManager) = createWallet(seed)
+    createEclairBackedWallet(wallet.rpcClient, keyManager)
+
+    // this account xpub can be used to create a watch-only wallet
+    val accountXPub = DeterministicWallet.encode(
+      DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, DeterministicWallet.KeyPath("m/86'/1'/0'"))),
+      DeterministicWallet.tpub)
+    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.Bech32m) == accountXPub)
+
+    def getBip32Path(address: String): DeterministicWallet.KeyPath = {
+      wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
+      val JString(bip32path) = sender.expectMsgType[JValue] \ "hdkeypath"
+      DeterministicWallet.KeyPath(bip32path)
+    }
+
+    (0 to 10).foreach { _ =>
+      wallet.getReceiveAddress(addressType_opt = Some(AddressType.Bech32m)).pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+      val bip32path = getBip32Path(address)
+      assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/86'/1'/0'/0"))
+      assert(fr.acinq.bitcoin.Bitcoin.computeBIP86Address(DeterministicWallet.derivePrivateKey(master, bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
+
+      wallet.getP2wpkhPubkeyHashForChange().pipeTo(sender.ref)
+      val Right(changeAddress) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.pay2wpkh(sender.expectMsgType[ByteVector]))
+      val bip32ChangePath = getBip32Path(changeAddress)
+      assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))
+      assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
+    }
+  }
+
   test("use eclair to manage on-chain keys") {
     val sender = TestProbe()
 
-    (1 to 10).foreach { _ =>
+    (1 to 10).foreach { i =>
       val (wallet, keyManager) = createWallet(randomBytes32())
       createEclairBackedWallet(wallet.rpcClient, keyManager)
-      wallet.getReceiveAddress().pipeTo(sender.ref)
+      val addressType = if (i % 2 == 0) AddressType.Bech32 else AddressType.Bech32m
+      wallet.getReceiveAddress(addressType_opt = Some(addressType)).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 
       // we can send to an on-chain address if eclair signs the transactions

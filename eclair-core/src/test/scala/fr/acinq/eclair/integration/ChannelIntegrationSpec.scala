@@ -24,7 +24,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, computeBIP84Address}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, addressFromPublicKeyScript}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.channel._
@@ -40,6 +40,7 @@ import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
+import org.scalatest.{DoNotDiscover, Sequential}
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -153,11 +154,13 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataC.commitments.params.commitmentFormat == commitmentFormat)
-    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
+    val pubkeyScriptC = nodes("C").wallet.getPubkeyScript(false)
+    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.parse(pubkeyScriptC))
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataF.commitments.params.commitmentFormat == commitmentFormat)
-    val finalAddressF = computeBIP84Address(nodes("F").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
+    val pubkeyScriptF = nodes("F").wallet.getPubkeyScript(false)
+    val Right(finalAddressF) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.parse(pubkeyScriptF))
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
@@ -439,7 +442,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
-    val finalAddressC = computeBIP84Address(nodes("C").wallet.getP2wpkhPubkey(false), Block.RegtestGenesisBlock.hash)
+    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.parse(nodes("C").wallet.getPubkeyScript(false)))
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
@@ -465,6 +468,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
 }
 
+@DoNotDiscover
 class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
   test("start eclair nodes") {
@@ -574,8 +578,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
     val fundingOutpoint = commitmentsC.latest.commitInput.outPoint
-    val finalPubKeyScriptC = Script.write(Script.pay2wpkh(nodes("C").wallet.getP2wpkhPubkey(false)))
-    val finalPubKeyScriptF = Script.write(Script.pay2wpkh(nodes("F").wallet.getP2wpkhPubkey(false)))
+    val finalPubKeyScriptC = nodes("C").wallet.getPubkeyScript(false)
+    val finalPubKeyScriptF = nodes("F").wallet.getPubkeyScript(false)
 
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
@@ -650,8 +654,16 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 }
 
+@DoNotDiscover
 class StandardChannelIntegrationWithEclairSignerSpec extends StandardChannelIntegrationSpec {
   override def useEclairSigner: Boolean = true
+}
+
+@DoNotDiscover
+class StandardChannelIntegrationWithEclairSignerBech32mSpec extends StandardChannelIntegrationSpec {
+  override def useEclairSigner: Boolean = true
+
+  override val defaultAddressType_opt: Option[String] = Some("bech32m")
 }
 
 abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
@@ -802,6 +814,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 }
 
+@DoNotDiscover
 class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
   override val commitmentFormat = Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat
@@ -842,6 +855,7 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
 }
 
+@DoNotDiscover
 class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
   override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
@@ -881,3 +895,141 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
 }
+
+@DoNotDiscover
+class AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithEclairSignerSpec extends AnchorChannelIntegrationSpec {
+  override def useEclairSigner: Boolean = true
+
+  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29761, "eclair.api.port" -> 28097).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29763, "eclair.api.port" -> 28098).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(DefaultCommitmentFormat)
+  }
+
+  test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
+    testOpenPayClose(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillRemoteCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutRemoteCommit(commitmentFormat)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    testPunishRevokedCommit()
+  }
+
+}
+
+@DoNotDiscover
+class AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithBech32mWalletSpec extends AnchorChannelIntegrationSpec {
+
+  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+
+  override val defaultAddressType_opt: Option[String] = Some("bech32m")
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29761, "eclair.api.port" -> 28097).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29763, "eclair.api.port" -> 28098).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(DefaultCommitmentFormat)
+  }
+
+  test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
+    testOpenPayClose(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillRemoteCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutRemoteCommit(commitmentFormat)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    testPunishRevokedCommit()
+  }
+
+}
+
+@DoNotDiscover
+class AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithBech32mWalletWithEclairSignerSpec extends AnchorChannelIntegrationSpec {
+  override def useEclairSigner: Boolean = true
+
+  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+
+  override val defaultAddressType_opt: Option[String] = Some("bech32m")
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29761, "eclair.api.port" -> 28097).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29763, "eclair.api.port" -> 28098).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(DefaultCommitmentFormat)
+  }
+
+  test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
+    testOpenPayClose(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillRemoteCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutLocalCommit(commitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutRemoteCommit(commitmentFormat)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    testPunishRevokedCommit()
+  }
+
+}
+
+class ChannelIntegrationSuite extends Sequential(
+  new StandardChannelIntegrationSpec,
+  new AnchorOutputChannelIntegrationSpec,
+  new AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec,
+  new AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithEclairSignerSpec,
+  new AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithBech32mWalletSpec,
+  new AnchorOutputZeroFeeHtlcTxsChannelIntegrationWithBech32mWalletWithEclairSignerSpec
+)

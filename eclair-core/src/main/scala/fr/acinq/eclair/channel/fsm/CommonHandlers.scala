@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.{ActorRef, FSM, Status}
+import akka.actor.FSM
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
-import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.{HtlcSettlementMessage, LightningMessage, UpdateMessage}
+import fr.acinq.eclair.{Features, InitFeature}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -115,17 +115,21 @@ trait CommonHandlers {
             upfrontShutdownScript
           } else {
             log.info("ignoring pre-generated shutdown script, because option_upfront_shutdown_script is disabled")
-            generateFinalScriptPubKey()
+            generateFinalScriptPubKey(data.commitments.params.localParams.initFeatures, data.commitments.params.remoteParams.initFeatures)
           }
         case None =>
           // normal case: we don't pre-generate shutdown scripts
-          generateFinalScriptPubKey()
+          generateFinalScriptPubKey(data.commitments.params.localParams.initFeatures, data.commitments.params.remoteParams.initFeatures)
       }
   }
 
-  private def generateFinalScriptPubKey(): ByteVector = {
-    val finalPubKey = wallet.getP2wpkhPubkey()
-    val finalScriptPubKey = Script.write(Script.pay2wpkh(finalPubKey))
+  private def generateFinalScriptPubKey(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): ByteVector = {
+    val allowAnySegwit = Features.canUseFeature(localFeatures, remoteFeatures, Features.ShutdownAnySegwit)
+    val finalScriptPubKey = if (allowAnySegwit) {
+      wallet.getPubkeyScript()
+    } else {
+      Script.write(Script.pay2wpkh(wallet.getP2wpkhPubkey()))
+    }
     log.info(s"using finalScriptPubkey=$finalScriptPubKey")
     finalScriptPubKey
   }
