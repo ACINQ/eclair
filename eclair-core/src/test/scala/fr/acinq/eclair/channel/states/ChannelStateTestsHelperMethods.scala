@@ -370,7 +370,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     fundingTx
   }
 
-  def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, Upstream.Local(UUID.randomUUID()))
+  def localOrigin(replyTo: ActorRef): Origin.Hot = Origin.Hot(replyTo, Upstream.Local(UUID.randomUUID()))
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: BlockHeight): (ByteVector32, CMD_ADD_HTLC) = {
     makeCmdAdd(amount, CltvExpiryDelta(144), destination, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()))

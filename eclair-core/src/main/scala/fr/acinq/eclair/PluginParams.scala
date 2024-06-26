@@ -56,7 +56,7 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * result upstream to preserve channels. If you have non-standard HTLCs that may be in this situation, they should be
    * returned by this method.
    */
-  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]]
+  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]]
 }
 
 // @formatter:off

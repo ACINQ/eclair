@@ -300,8 +300,8 @@ object ChannelCodecsSpec {
 
   val normal: DATA_NORMAL = {
     val origins = Map(
-      42L -> Origin.LocalCold(UUID.randomUUID),
-      15000L -> Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(ByteVector32(ByteVector.fill(32)(42)), 43, 11_000_000 msat))
+      42L -> Origin.Cold.Local(UUID.randomUUID),
+      15000L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(ByteVector32(ByteVector.fill(32)(42)), 43, 11_000_000 msat))
     )
     makeChannelDataNormal(htlcs, origins)
   }

@@ -61,9 +61,7 @@ object TestDatabases {
     override def addOrUpdateChannel(data: PersistentChannelData): Unit = {
 
       def freeze1(input: Origin): Origin = input match {
-        case h: Origin.LocalHot => Origin.LocalCold(h.id)
-        case h: Origin.ChannelRelayedHot => Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(h.upstream.add))
-        case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.originHtlcs)
+        case h: Origin.Hot => Origin.Cold(h.upstream)
         case c: Origin.Cold => c
       }
 

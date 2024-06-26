@@ -53,7 +53,7 @@ object TestConstants {
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
-  val emptyOrigin = Origin.LocalHot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
+  val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"

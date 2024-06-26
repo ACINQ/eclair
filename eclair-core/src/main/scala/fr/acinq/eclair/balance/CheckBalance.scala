@@ -132,7 +132,11 @@ object CheckBalance {
     // and succeed if they were sent from this node
     val htlcOut = localCommit.spec.htlcs.collect(outgoing)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .filterNot(htlc => originChannels.get(htlc.id).exists(_.isInstanceOf[Origin.Local]))
+      .filterNot(htlc => originChannels.get(htlc.id).exists {
+        case Origin.Hot(_, _: Upstream.Local) => true
+        case _: Origin.Cold.Local => true
+        case _ => false
+      })
       .filterNot(htlc => remoteHasPreimage(changes, htlc.id))
       .sumAmount
     // all claim txs have possibly been published

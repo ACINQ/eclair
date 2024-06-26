@@ -215,8 +215,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val replyTo = TestProbe[Any]()
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket, None)
     val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), TestConstants.emptyOnionPacket, None)
-    val channelOrigin = Origin.ChannelRelayedHot(replyTo.ref.toClassic, Upstream.SingleHtlc(add_ab, TimestampMilli.now()))
-    val trampolineOrigin = Origin.TrampolineRelayedHot(replyTo.ref.toClassic, Upstream.HtlcSet(Seq(Upstream.SingleHtlc(add_ab, TimestampMilli.now()))))
+    val channelOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.SingleHtlc(add_ab, TimestampMilli.now()))
+    val trampolineOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.HtlcSet(Seq(Upstream.SingleHtlc(add_ab, TimestampMilli.now()))))
 
     val addSettled = Seq(
       RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),

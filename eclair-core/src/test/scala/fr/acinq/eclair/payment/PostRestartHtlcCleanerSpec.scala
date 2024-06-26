@@ -89,9 +89,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     //          (channel AB2)
 
     val relayedPaymentHash = randomBytes32()
-    val relayed = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 5, 10 msat))
+    val relayed = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 5, 10 msat))
     val trampolineRelayedPaymentHash = randomBytes32()
-    val trampolineRelayed = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 0, 1000 msat) :: Upstream.MinimalReceivedHtlc(channelId_ab_2, 2, 2500 msat) :: Nil)
+    val trampolineRelayed = Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 0, 1000 msat) :: Origin.Cold.ReceivedHtlc(channelId_ab_2, 2, 2500 msat) :: Nil)
 
     val htlc_ab_1 = Seq(
       buildHtlcIn(0, channelId_ab_1, trampolineRelayedPaymentHash),
@@ -416,7 +416,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel_upstream_2.expectNoMessage(100 millis)
 
     // Payment 2 should fulfill once we receive the preimage.
-    val origin_2 = Origin.TrampolineRelayedCold(upstream_2.received.map(r => Upstream.MinimalReceivedHtlc(r.add)).toList)
+    val origin_2 = Origin.Cold.TrampolineRelayed(upstream_2.received.map(r => Origin.Cold.ReceivedHtlc(r.add)).toList)
     sender.send(relayer, RES_ADD_SETTLED(origin_2, htlc_2_2, HtlcResult.OnChainFulfill(preimage2)))
     register.expectMsgAllOf(
       Register.Forward(replyTo = null, channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
@@ -465,10 +465,10 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       buildHtlcOut(5, channelId_bc_1, paymentHash2),
     )
     val origins: Map[Long, Origin] = Map(
-      2L -> Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Upstream.MinimalReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
-      3L -> Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Upstream.MinimalReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
-      4L -> Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Upstream.MinimalReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
-      5L -> Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 4, 550 msat)),
+      2L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Origin.Cold.ReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
+      3L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Origin.Cold.ReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
+      4L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 1, 500 msat) :: Origin.Cold.ReceivedHtlc(channelId_ab_1, 2, 200 msat) :: Nil),
+      5L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 4, 550 msat)),
     )
     val downstreamChannel = {
       val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
@@ -512,7 +512,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val htlc_ab = buildHtlcIn(0, channelId_ab_1, paymentHash1, blinded = true)
-    val origin = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(htlc_ab.add))
+    val origin = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(htlc_ab.add))
     val htlc_bc = buildHtlcOut(6, channelId_bc_1, paymentHash1, blinded = true)
     val data_ab = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_ab), Map.empty)
     val data_bc = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_bc), Map(6L -> origin))
@@ -556,7 +556,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.origin_1))
     val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet == testCase.origin_1.originHtlcs.map {
-      case Upstream.MinimalReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), commit = true))
+      case Origin.Cold.ReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.origin_1))
@@ -568,7 +568,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.origin_2))
     register.expectMsg(testCase.origin_2.originHtlcs.map {
-      case Upstream.MinimalReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), commit = true))
+      case Origin.Cold.ReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure()), commit = true))
     }.head)
 
     register.expectNoMessage(100 millis)
@@ -587,7 +587,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.origin_1, preimage1))
     val fulfills = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]] :: Nil
     assert(fulfills.toSet == testCase.origin_1.originHtlcs.map {
-      case Upstream.MinimalReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
+      case Origin.Cold.ReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage1, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.origin_1, preimage1))
@@ -596,7 +596,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // This payment has 3 downstream HTLCs, but we should fulfill upstream as soon as we receive the preimage.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_1, testCase.origin_2, preimage2))
     register.expectMsg(testCase.origin_2.originHtlcs.map {
-      case Upstream.MinimalReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case Origin.Cold.ReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.origin_2, preimage2))
@@ -616,7 +616,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_2_1, testCase.origin_2))
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.origin_2, preimage2))
     register.expectMsg(testCase.origin_2.originHtlcs.map {
-      case Upstream.MinimalReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
+      case Origin.Cold.ReceivedHtlc(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
     }.head)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.origin_2))
@@ -629,7 +629,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val relayedPaymentHash = randomBytes32()
     val trampolineRelayedPaymentHash = randomBytes32()
-    val trampolineRelayed = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_2, 0, 1 msat) :: Nil)
+    val trampolineRelayed = Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_2, 0, 1 msat) :: Nil)
     val relayedHtlcIn = buildHtlcIn(0L, channelId_ab_2, trampolineRelayedPaymentHash)
     val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
 
@@ -637,7 +637,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val pluginParams = new CustomCommitmentsPlugin {
       override def name = "test with outgoing HTLC to remote"
       override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
-      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
     }
     // @formatter:on
 
@@ -665,7 +665,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val pluginParams = new CustomCommitmentsPlugin {
       override def name = "test with incoming HTLC from remote"
       override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
-      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = Map.empty
     }
     // @formatter:on
 
@@ -735,11 +735,11 @@ object PostRestartHtlcCleanerSpec {
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
 
     val add1 = UpdateAddHtlc(channelId_bc_1, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    val origin1 = Origin.LocalCold(id1)
+    val origin1 = Origin.Cold.Local(id1)
     val add2 = UpdateAddHtlc(channelId_bc_1, 75, 1105 msat, paymentHash2, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    val origin2 = Origin.LocalCold(id2)
+    val origin2 = Origin.Cold.Local(id2)
     val add3 = UpdateAddHtlc(channelId_bc_1, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    val origin3 = Origin.LocalCold(id3)
+    val origin3 = Origin.Cold.Local(id3)
 
     // Prepare channels and payment state before restart.
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, id1, None, paymentHash1, PaymentType.Standard, add1.amountMsat, add1.amountMsat, c, 0 unixms, None, None, OutgoingPaymentStatus.Pending))
@@ -755,7 +755,7 @@ object PostRestartHtlcCleanerSpec {
     LocalPaymentTest(channel, parentId, Seq(id1, id2, id3), fails, fulfills)
   }
 
-  case class ChannelRelayedPaymentTest(channels: Seq[PersistentChannelData], origin: Origin.ChannelRelayedCold, downstream: UpdateAddHtlc, notRelayed: Set[(Long, ByteVector32)])
+  case class ChannelRelayedPaymentTest(channels: Seq[PersistentChannelData], origin: Origin.Cold.ChannelRelayed, downstream: UpdateAddHtlc, notRelayed: Set[(Long, ByteVector32)])
 
   def setupChannelRelayedPayments(): ChannelRelayedPaymentTest = {
     // Upstream HTLCs.
@@ -763,7 +763,7 @@ object PostRestartHtlcCleanerSpec {
       buildHtlcIn(0, channelId_ab_1, paymentHash1)
     )
 
-    val origin_1 = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(htlc_ab_1.head.add))
+    val origin_1 = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(htlc_ab_1.head.add))
 
     val htlc_bc_1 = Seq(
       buildHtlcOut(6, channelId_bc_1, paymentHash1)
@@ -780,9 +780,9 @@ object PostRestartHtlcCleanerSpec {
   }
 
   case class TrampolinePaymentTest(channels: Seq[PersistentChannelData],
-                                   origin_1: Origin.TrampolineRelayedCold,
+                                   origin_1: Origin.Cold.TrampolineRelayed,
                                    downstream_1_1: UpdateAddHtlc,
-                                   origin_2: Origin.TrampolineRelayedCold,
+                                   origin_2: Origin.Cold.TrampolineRelayed,
                                    downstream_2_1: UpdateAddHtlc,
                                    downstream_2_2: UpdateAddHtlc,
                                    downstream_2_3: UpdateAddHtlc,
@@ -814,12 +814,12 @@ object PostRestartHtlcCleanerSpec {
       buildHtlcOut(9, channelId_ab_2, randomBytes32()) // ignored
     )
 
-    val origin_1 = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 0, 500 msat) :: Upstream.MinimalReceivedHtlc(channelId_ab_2, 7, 250 msat) :: Nil)
-    val origin_2 = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 5, 500 msat) :: Nil)
+    val origin_1 = Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 0, 500 msat) :: Origin.Cold.ReceivedHtlc(channelId_ab_2, 7, 250 msat) :: Nil)
+    val origin_2 = Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 5, 500 msat) :: Nil)
     // The following two origins reference upstream HTLCs that have already been settled.
     // They should be ignored by the post-restart clean-up.
-    val origin_3 = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_1, 57, 100 msat) :: Nil)
-    val origin_4 = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(channelId_ab_2, 57, 150 msat))
+    val origin_3 = Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_1, 57, 100 msat) :: Nil)
+    val origin_4 = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(channelId_ab_2, 57, 150 msat))
 
     // Downstream HTLCs.
     val htlc_bc_1 = Seq(

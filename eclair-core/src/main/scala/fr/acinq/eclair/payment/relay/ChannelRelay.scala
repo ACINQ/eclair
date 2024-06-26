@@ -138,13 +138,13 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, CMD_ADD_HTLC(_, _, _, _, _, _, o: Origin.ChannelRelayedHot, _)))) =>
-        context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${o.originHtlcId}")
-        val cmdFail = CMD_FAIL_HTLC(o.originHtlcId, Right(UnknownNextPeer()), commit = true)
+      case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, _))) =>
+        context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
+        val cmdFail = CMD_FAIL_HTLC(upstream.add.id, Right(UnknownNextPeer()), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-        safeSendAndStop(o.originChannelId, cmdFail)
+        safeSendAndStop(upstream.add.channelId, cmdFail)
 
-      case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, _, _: Origin.ChannelRelayedHot, _), _, _)) =>
+      case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
         context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
         context.self ! DoRelay
         relay(previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
@@ -156,19 +156,19 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
+      case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.debug("relaying fulfill to upstream")
-        val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, htlc.amountMsat, htlc.paymentHash, o.originChannelId, htlc.channelId, startedAt, TimestampMilli.now()))
+        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, commit = true)
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, startedAt, TimestampMilli.now()))
         recordRelayDuration(isSuccess = true)
-        safeSendAndStop(o.originChannelId, cmd)
+        safeSendAndStop(upstream.add.channelId, cmd)
 
-      case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
+      case WrappedAddResponse(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail)) =>
         context.log.debug("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = translateRelayFailure(o.originHtlcId, fail)
+        val cmd = translateRelayFailure(upstream.add.id, fail)
         recordRelayDuration(isSuccess = false)
-        safeSendAndStop(o.originChannelId, cmd)
+        safeSendAndStop(upstream.add.channelId, cmd)
     }
 
   def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
@@ -307,7 +307,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           outgoingChannel_opt.flatMap(_.prevChannelUpdate).forall(c => r.relayFeeMsat < nodeFee(c.relayFees, r.amountToForward))) =>
         RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, Some(c.channelUpdate))), commit = true))
       case Some(c: OutgoingChannel) =>
-        val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, upstream)
+        val origin = Origin.Hot(addResponseAdapter.toClassic, upstream)
         val nextBlindingKey_opt = r.payload match {
           case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextBlinding)
           case _: IntermediatePayload.ChannelRelay.Standard => None

@@ -136,12 +136,6 @@ case class INPUT_RESTORED(data: PersistentChannelData)
 /** Detailed upstream parent(s) of a payment in the HTLC chain. */
 sealed trait Upstream { def amountIn: MilliSatoshi }
 object Upstream {
-  /** Minimal information we want to store about an incoming HTLC. */
-  case class MinimalReceivedHtlc(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi)
-  object MinimalReceivedHtlc {
-    def apply(add: UpdateAddHtlc): MinimalReceivedHtlc = MinimalReceivedHtlc(add.channelId, add.id, add.amountMsat)
-  }
-
   /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
   case class Local(id: UUID) extends Upstream { override val amountIn: MilliSatoshi = 0 msat }
 
@@ -168,52 +162,37 @@ object Upstream {
 sealed trait Origin
 object Origin {
   /** We haven't restarted since we sent the payment downstream: the origin actor is known. */
-  sealed trait Hot extends Origin {
-    def replyTo: ActorRef
-    def upstream: Upstream
-  }
+  case class Hot(replyTo: ActorRef, upstream: Upstream) extends Origin
+
   /** We have restarted after the payment was sent, we have limited info and the origin actor doesn't exist anymore. */
-  sealed trait Cold extends Origin
-
-  sealed trait Local extends Origin { def id: UUID }
-  case class LocalHot(replyTo: ActorRef, upstream: Upstream.Local) extends Local with Hot { override val id: UUID = upstream.id }
-  case class LocalCold(id: UUID) extends Local with Cold
-
-  sealed trait ChannelRelayed extends Origin {
-    def originChannelId: ByteVector32
-    def originHtlcId: Long
-    def amountIn: MilliSatoshi
+  sealed trait Cold extends Origin {
+    def originHtlcs: Seq[Cold.ReceivedHtlc]
+    def amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum
   }
-  case class ChannelRelayedHot(replyTo: ActorRef, upstream: Upstream.SingleHtlc) extends ChannelRelayed with Hot {
-    override val originChannelId: ByteVector32 = upstream.add.channelId
-    override val originHtlcId: Long = upstream.add.id
-    override val amountIn: MilliSatoshi = upstream.amountIn
-  }
-  case class ChannelRelayedCold(upstream: Upstream.MinimalReceivedHtlc) extends ChannelRelayed with Cold {
-    override val originChannelId: ByteVector32 = upstream.originChannelId
-    override val originHtlcId: Long = upstream.originHtlcId
-    override val amountIn: MilliSatoshi = upstream.amountIn
-  }
-
-  /** Our node is forwarding an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).*/
-  sealed trait TrampolineRelayed extends Origin {
-    def amountIn: MilliSatoshi
-    def originHtlcs: List[Upstream.MinimalReceivedHtlc]
-  }
-  case class TrampolineRelayedHot(replyTo: ActorRef, upstream: Upstream.HtlcSet) extends TrampolineRelayed with Hot {
-    override val amountIn: MilliSatoshi = upstream.amountIn
-    override val originHtlcs: List[Upstream.MinimalReceivedHtlc] = upstream.received.map(r => Upstream.MinimalReceivedHtlc(r.add)).toList
-  }
-  case class TrampolineRelayedCold(originHtlcs: List[Upstream.MinimalReceivedHtlc]) extends TrampolineRelayed with Cold {
-    override val amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum
-  }
-
-  object Hot {
-    def apply(replyTo: ActorRef, upstream: Upstream): Hot = upstream match {
-      case u: Upstream.Local => Origin.LocalHot(replyTo, u)
-      case u: Upstream.SingleHtlc => Origin.ChannelRelayedHot(replyTo, u)
-      case u: Upstream.HtlcSet => Origin.TrampolineRelayedHot(replyTo, u)
+  object Cold {
+    def apply(upstream: Upstream): Cold = upstream match {
+      case u: Upstream.Local => Local(u.id)
+      case u: Upstream.SingleHtlc => ChannelRelayed(ReceivedHtlc(u))
+      case u: Upstream.HtlcSet => TrampolineRelayed(u.received.map(ReceivedHtlc(_)).toList)
     }
+
+    /** Minimal information we want to store about an incoming HTLC after a restart. */
+    case class ReceivedHtlc(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi)
+    object ReceivedHtlc {
+      def apply(add: UpdateAddHtlc): ReceivedHtlc = ReceivedHtlc(add.channelId, add.id, add.amountMsat)
+      def apply(htlc: Upstream.SingleHtlc): ReceivedHtlc = ReceivedHtlc(htlc.add.channelId, htlc.add.id, htlc.add.amountMsat)
+    }
+
+    /** Our node is the origin of the payment. */
+    case class Local(id: UUID) extends Cold { override val originHtlcs: List[ReceivedHtlc] = Nil }
+    /** Our node is forwarding a single incoming HTLC to a single outgoing channel. */
+    case class ChannelRelayed(originHtlc: ReceivedHtlc) extends Cold {
+      val originHtlcId = originHtlc.originHtlcId
+      val originChannelId = originHtlc.originChannelId
+      override val originHtlcs: List[ReceivedHtlc] = List(originHtlc)
+    }
+    /** Our node is forwarding an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
+    case class TrampolineRelayed(originHtlcs: List[ReceivedHtlc]) extends Cold
   }
 }
 
