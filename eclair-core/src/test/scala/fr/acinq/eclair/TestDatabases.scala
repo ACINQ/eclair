@@ -62,8 +62,8 @@ object TestDatabases {
 
       def freeze1(input: Origin): Origin = input match {
         case h: Origin.LocalHot => Origin.LocalCold(h.id)
-        case h: Origin.ChannelRelayedHot => Origin.ChannelRelayedCold(h.originChannelId, h.originHtlcId, h.amountIn, h.amountOut)
-        case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.htlcs)
+        case h: Origin.ChannelRelayedHot => Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(h.upstream.add))
+        case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.originHtlcs)
         case c: Origin.Cold => c
       }
 

@@ -518,11 +518,13 @@ object OriginSerializer extends MinimalSerializer({
   case o: Origin.ChannelRelayed => JObject(
     JField("channelId", JString(o.originChannelId.toHex)),
     JField("htlcId", JLong(o.originHtlcId)),
+    JField("amount", JLong(o.amountIn.toLong)),
   )
-  case o: Origin.TrampolineRelayed => JArray(o.htlcs.map {
-    case (channelId, htlcId) => JObject(
-      JField("channelId", JString(channelId.toHex)),
-      JField("htlcId", JLong(htlcId)),
+  case o: Origin.TrampolineRelayed => JArray(o.originHtlcs.map { htlc =>
+    JObject(
+      JField("channelId", JString(htlc.originChannelId.toHex)),
+      JField("htlcId", JLong(htlc.originHtlcId)),
+      JField("amount", JLong(htlc.amountIn.toLong)),
     )
   })
 })

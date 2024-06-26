@@ -201,4 +201,25 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     assert(!nonInitiatorDecoded.commitments.params.localParams.paysCommitTxFees)
   }
 
+  test("encode/decode cold origins") {
+    val origins = Map(
+      13L -> Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(randomBytes32(), 2765, 1863 msat)),
+      27L -> Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(randomBytes32(), 541, 6500 msat) :: Nil),
+      28L -> Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(randomBytes32(), 0, 0 msat) :: Upstream.MinimalReceivedHtlc(randomBytes32(), 6778, 250_000_001 msat) :: Nil),
+    )
+    val encoded = originsMapCodec.encode(origins).require
+    val decoded = originsMapCodec.decode(encoded).require.value
+    assert(decoded == origins)
+  }
+
+  test("decode origin backwards compatibility") {
+    // The following values were encoded with eclair v0.10.0.
+    val channelRelayed = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(ByteVector32(hex"fe99ac49738d44ff8b73d8e5da01e868584a2071326320e8f51fe8bdbbe84c64"), 1561, 1721 msat))
+    val channelRelayedBin = hex"0002fe99ac49738d44ff8b73d8e5da01e868584a2071326320e8f51fe8bdbbe84c64000000000000061900000000000006b900000000000005dc"
+    assert(originCodec.decode(channelRelayedBin.bits).require.value == channelRelayed)
+    val trampolineRelayed = Origin.TrampolineRelayedCold(Upstream.MinimalReceivedHtlc(ByteVector32(hex"19a3e2f5b1d747e6e59cec57d927c068c976eab0b914a1bf66aaacaa0917d49d"), 17, 0 msat) :: Upstream.MinimalReceivedHtlc(ByteVector32(hex"4fbf1090bf27e4ef3af8b784f8e0e62dd2fc836775131d6e58400a68ec8fcf2c"), 21, 0 msat) :: Nil)
+    val trampolineRelayedBin = hex"0004000219a3e2f5b1d747e6e59cec57d927c068c976eab0b914a1bf66aaacaa0917d49d00000000000000114fbf1090bf27e4ef3af8b784f8e0e62dd2fc836775131d6e58400a68ec8fcf2c0000000000000015"
+    assert(originCodec.decode(trampolineRelayedBin.bits).require.value == trampolineRelayed)
+  }
+
 }

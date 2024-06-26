@@ -266,12 +266,16 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
     JsonSerializers.serialization.write(localOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedLocalOrigin
 
-    val channelOrigin = Origin.ChannelRelayedCold(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat, 400 msat)
-    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7}"""
+    val channelOrigin = Origin.ChannelRelayedCold(Upstream.MinimalReceivedHtlc(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat))
+    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7,"amount":500}"""
     JsonSerializers.serialization.write(channelOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedChannelOrigin
 
-    val trampolineOrigin = Origin.TrampolineRelayedCold((ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3L) :: (ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7L) :: Nil)
-    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7}]"""
+    val relayedHtlcs = List(
+      Upstream.MinimalReceivedHtlc(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3, 600 msat),
+      Upstream.MinimalReceivedHtlc(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat),
+    )
+    val trampolineOrigin = Origin.TrampolineRelayedCold(relayedHtlcs)
+    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3,"amount":600},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7,"amount":500}]"""
     JsonSerializers.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedTrampolineOrigin
   }
 
