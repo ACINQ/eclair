@@ -630,11 +630,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private def checkInputsConfirmed(inputs: Seq[Input.Remote]): Future[Boolean] = {
     // We check inputs sequentially and stop at the first unconfirmed one.
-    inputs.map(_.outPoint.txid).toSet.foldLeft(Future.successful(true)) {
-      case (current, txId) => current.transformWith {
-        case Success(true) => wallet.getTxConfirmations(txId).map {
-          case None => false
-          case Some(confirmations) => confirmations > 0
+    inputs.map(_.outPoint).toSet.foldLeft(Future.successful(true)) {
+      case (current, outpoint) => current.transformWith {
+        case Success(true) => wallet.getTxConfirmations(outpoint.txid).flatMap {
+          case Some(confirmations) if confirmations > 0 =>
+            // The input is confirmed, so we can reliably check whether it is unspent, We don't check this for
+            // unconfirmed inputs, because if they are valid but not in our mempool we would incorrectly consider
+            // them unspendable (unknown). We want to reject unspendable inputs to immediately fail the funding
+            // attempt, instead of waiting to detect the double-spend later.
+            wallet.isTransactionOutputSpendable(outpoint.txid, outpoint.index.toInt, includeMempool = true)
+          case _ => Future.successful(false)
         }
         case Success(false) => Future.successful(false)
         case Failure(t) => Future.failed(t)

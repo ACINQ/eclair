@@ -74,6 +74,8 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.failed(new RuntimeException("transaction not found"))
 
+  override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
+
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback + tx
     Future.successful(true)
@@ -116,6 +118,8 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
 
   override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Promise().future // will never be completed
+
+  override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback :+ tx
@@ -227,6 +231,8 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   }
 
   override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(None)
+
+  override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
   override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback :+ tx

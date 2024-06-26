@@ -75,6 +75,14 @@ trait OnChainChannelFunder {
   /** Get the number of confirmations of a given transaction. */
   def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]]
 
+  /**
+   * Return true if this output can potentially be spent.
+   *
+   * Note that if this function returns false, that doesn't mean the output cannot be spent. The output could be unknown
+   * (not in the blockchain nor in the mempool) but could reappear later and be spendable at that point.
+   */
+  def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean]
+
   /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
