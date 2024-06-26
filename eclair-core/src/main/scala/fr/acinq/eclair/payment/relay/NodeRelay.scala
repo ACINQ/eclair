@@ -112,7 +112,7 @@ object NodeRelay {
       }
     }
 
-  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.HtlcSet, payloadOut: IntermediatePayload.NodeRelay): Option[FailureMessage] = {
+  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.HtlcSet.Full, payloadOut: IntermediatePayload.NodeRelay): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient())
@@ -201,13 +201,13 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPacket_opt trampoline onion to relay to the next trampoline node.
    * @param handler        actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[Upstream.SingleHtlc], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[Upstream.SingleHtlc.Full], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(packet: IncomingPaymentPacket.NodeRelayPacket) =>
         require(packet.outerPayload.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", packet.add.id, packet.add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add)
-        receiving(htlcs :+ Upstream.SingleHtlc(packet.add.removeUnknownTlvs(), TimestampMilli.now()), nextPayload, nextPacket_opt, handler)
+        receiving(htlcs :+ Upstream.SingleHtlc.Full(packet.add.removeUnknownTlvs(), TimestampMilli.now()), nextPayload, nextPacket_opt, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -215,7 +215,7 @@ class NodeRelay private(nodeParams: NodeParams,
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
-        val upstream = Upstream.HtlcSet(htlcs)
+        val upstream = Upstream.HtlcSet.Full(htlcs)
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
             context.log.warn(s"rejecting trampoline payment reason=$failure")
@@ -232,7 +232,7 @@ class NodeRelay private(nodeParams: NodeParams,
         }
     }
 
-  private def waitForTrigger(upstream: Upstream.HtlcSet, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def waitForTrigger(upstream: Upstream.HtlcSet.Full, nextPayload: IntermediatePayload.NodeRelay.Standard, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.info(s"waiting for async payment to trigger before relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv}, asyncPaymentsParams=${nodeParams.relayParams.asyncPaymentsParams})")
     val timeoutBlock = nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
     val safetyBlock = (upstream.expiryIn - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
@@ -256,7 +256,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
   }
 
-  private def doSend(upstream: Upstream.HtlcSet, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def doSend(upstream: Upstream.HtlcSet.Full, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     relay(upstream, nextPayload, nextPacket_opt)
   }
@@ -268,7 +268,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.HtlcSet, nextPayload: IntermediatePayload.NodeRelay, startedAt: TimestampMilli, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.HtlcSet.Full, nextPayload: IntermediatePayload.NodeRelay, startedAt: TimestampMilli, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -315,7 +315,7 @@ class NodeRelay private(nodeParams: NodeParams,
     context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
   }.toClassic
 
-  private def relay(upstream: Upstream.HtlcSet, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def relay(upstream: Upstream.HtlcSet.Full, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     val displayNodeId = payloadOut match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard => payloadOut.outgoingNodeId
       case _: IntermediatePayload.NodeRelay.ToBlindedPaths => randomKey().publicKey
@@ -344,7 +344,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
   }
 
-  private def relayToRecipient(upstream: Upstream.HtlcSet,
+  private def relayToRecipient(upstream: Upstream.HtlcSet.Full,
                                payloadOut: IntermediatePayload.NodeRelay,
                                recipient: Recipient,
                                paymentCfg: SendPaymentConfig,
@@ -365,7 +365,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to resolve
    * that to a nodeId in order to reach that introduction node and use the blinded path.
    */
-  private def waitForResolvedPaths(upstream: Upstream.HtlcSet,
+  private def waitForResolvedPaths(upstream: Upstream.HtlcSet.Full,
                                    payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths,
                                    paymentCfg: SendPaymentConfig,
                                    routeParams: RouteParams): Behavior[Command] =
@@ -407,17 +407,17 @@ class NodeRelay private(nodeParams: NodeParams,
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
-  private def rejectPayment(upstream: Upstream.HtlcSet, failure: Option[FailureMessage]): Unit = {
+  private def rejectPayment(upstream: Upstream.HtlcSet.Full, failure: Option[FailureMessage]): Unit = {
     Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
     upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, failure))
   }
 
-  private def fulfillPayment(upstream: Upstream.HtlcSet, paymentPreimage: ByteVector32): Unit = upstream.received.foreach(r => {
+  private def fulfillPayment(upstream: Upstream.HtlcSet.Full, paymentPreimage: ByteVector32): Unit = upstream.received.foreach(r => {
     val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 
-  private def success(upstream: Upstream.HtlcSet, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
+  private def success(upstream: Upstream.HtlcSet.Full, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
     // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
     if (!fulfilledUpstream) {
       fulfillPayment(upstream, paymentSent.paymentPreimage)

@@ -401,7 +401,7 @@ object PaymentInitiator {
                                externalId: Option[String],
                                paymentHash: ByteVector32,
                                recipientNodeId: PublicKey,
-                               upstream: Upstream,
+                               upstream: Upstream.Full,
                                invoice: Option[Invoice],
                                payerKey_opt: Option[PrivateKey],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments

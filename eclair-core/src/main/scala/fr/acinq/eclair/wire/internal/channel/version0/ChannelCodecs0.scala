@@ -231,9 +231,9 @@ private[channel] object ChannelCodecs0 {
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
         ("reSignAsap" | ignore(1))).as[ChannelTypes0.WaitingForRevocation].decodeOnly
 
-    val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
+    val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Upstream.Local].map(Origin.LocalCold).decodeOnly
 
-    val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
+    val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.upstream))
 
     val receivedHtlcCodec: Codec[Upstream.MinimalReceivedHtlc] = (
       ("originChannelId" | bytes32) ::

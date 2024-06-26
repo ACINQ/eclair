@@ -112,7 +112,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
 
-  private val upstream = Upstream.SingleHtlc(r.add.removeUnknownTlvs(), startedAt)
+  private val upstream = Upstream.SingleHtlc.Full(r.add.removeUnknownTlvs(), startedAt)
 
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 
