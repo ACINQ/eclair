@@ -73,9 +73,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     inside(fwd.message) { case add: CMD_ADD_HTLC =>
       assert(add.amount == outAmount)
       assert(add.cltvExpiry == outExpiry)
-      inside(add.origin) { case o: Origin.ChannelRelayedHot =>
-        assert(o.amountOut == outAmount)
-      }
     }
     assert(fwd.channelId == channelId)
     fwd

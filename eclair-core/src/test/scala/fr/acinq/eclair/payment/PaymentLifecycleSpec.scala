@@ -32,7 +32,6 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -61,7 +60,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultRouteExpiry = CltvExpiry(100_000)
   val defaultPaymentPreimage = randomBytes32()
   val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
-  val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
+  val defaultOrigin = Origin.Cold(Upstream.Local(UUID.randomUUID()))
   val defaultExternalId = UUID.randomUUID().toString
   val defaultInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
   val defaultRecipient = ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Set.empty)

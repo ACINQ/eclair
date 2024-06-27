@@ -24,11 +24,10 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -134,51 +133,58 @@ case class INPUT_RESTORED(data: PersistentChannelData)
        "Y8888P"   "Y88888P"  888       888 888       888 d88P     888 888    Y888 8888888P"   "Y8888P"
  */
 
+/** Detailed upstream parent(s) of a payment in the HTLC chain. */
+sealed trait Upstream { def amountIn: MilliSatoshi }
+object Upstream {
+  /** We haven't restarted and have full information about the upstream parent(s). */
+  sealed trait Hot extends Upstream
+  object Hot {
+    /** Our node is forwarding a single incoming HTLC. */
+    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli) extends Hot {
+      override val amountIn: MilliSatoshi = add.amountMsat
+      val expiryIn: CltvExpiry = add.cltvExpiry
+    }
+    /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
+    case class Trampoline(received: Seq[Channel]) extends Hot {
+      override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
+      // We must use the lowest expiry of the incoming HTLC set.
+      val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
+      val receivedAt: TimestampMilli = received.map(_.receivedAt).max
+    }
+  }
+
+  /** We have restarted and stored limited information about the upstream parent(s). */
+  sealed trait Cold extends Upstream
+  object Cold {
+    def apply(hot: Hot): Cold = hot match {
+      case Local(id) => Local(id)
+      case Hot.Channel(add, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
+      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)).toList)
+    }
+
+    /** Our node is forwarding a single incoming HTLC. */
+    case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
+    case class Trampoline(originHtlcs: List[Channel]) extends Cold { override val amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum }
+  }
+
+  /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
+  case class Local(id: UUID) extends Hot with Cold { override val amountIn: MilliSatoshi = 0 msat }
+}
+
 /**
  * Origin of a payment, answering both questions:
- * - what actor in the app sent that htlc? (Origin.replyTo)
- * - what are the upstream parent(s) of this payment in the htlc chain?
+ *  - what actor in the app sent that htlc and is waiting for its result?
+ *  - what are the upstream parent(s) of this payment in the htlc chain?
  */
-sealed trait Origin
+sealed trait Origin { def upstream: Upstream }
 object Origin {
   /** We haven't restarted since we sent the payment downstream: the origin actor is known. */
-  sealed trait Hot extends Origin { def replyTo: ActorRef }
+  case class Hot(replyTo: ActorRef, upstream: Upstream.Hot) extends Origin
   /** We have restarted after the payment was sent, we have limited info and the origin actor doesn't exist anymore. */
-  sealed trait Cold extends Origin
-
-  /** Our node is the origin of the payment. */
-  sealed trait Local extends Origin { def id: UUID }
-  case class LocalHot(replyTo: ActorRef, id: UUID) extends Local with Hot
-  case class LocalCold(id: UUID) extends Local with Cold
-
-  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  sealed trait ChannelRelayed extends Origin {
-    def originChannelId: ByteVector32
-    def originHtlcId: Long
-    def amountIn: MilliSatoshi
-    def amountOut: MilliSatoshi
-  }
-  case class ChannelRelayedHot(replyTo: ActorRef, add: UpdateAddHtlc, override val amountOut: MilliSatoshi) extends ChannelRelayed with Hot {
-    override def originChannelId: ByteVector32 = add.channelId
-    override def originHtlcId: Long = add.id
-    override def amountIn: MilliSatoshi = add.amountMsat
-  }
-  case class ChannelRelayedCold(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends ChannelRelayed with Cold
-
-  /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).*/
-  sealed trait TrampolineRelayed extends Origin { def htlcs: List[(ByteVector32, Long)] }
-  case class TrampolineRelayedHot(replyTo: ActorRef, adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed with Hot {
-    override def htlcs: List[(ByteVector32, Long)] = adds.map(u => (u.channelId, u.id)).toList
-    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-  }
-  case class TrampolineRelayedCold(override val htlcs: List[(ByteVector32, Long)]) extends TrampolineRelayed with Cold
-
-  object Hot {
-    def apply(replyTo: ActorRef, upstream: Upstream): Hot = upstream match {
-      case u: Upstream.Local => Origin.LocalHot(replyTo, u.id)
-      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds.map(_.add))
-    }
+  case class Cold(upstream: Upstream.Cold) extends Origin
+  object Cold {
+    def apply(hot: Hot): Cold = Cold(Upstream.Cold(hot.upstream))
   }
 }
 

@@ -298,7 +298,13 @@ object ChannelCodecsSpec {
     IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None))
   )
 
-  val normal: DATA_NORMAL = makeChannelDataNormal(htlcs, Map(42L -> Origin.LocalCold(UUID.randomUUID), 15000L -> Origin.ChannelRelayedCold(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)))
+  val normal: DATA_NORMAL = {
+    val origins = Map(
+      42L -> Origin.Cold(Upstream.Local(UUID.randomUUID)),
+      15000L -> Origin.Cold(Upstream.Cold.Channel(ByteVector32(ByteVector.fill(32)(42)), 43, 11_000_000 msat))
+    )
+    makeChannelDataNormal(htlcs, origins)
+  }
 
   def makeChannelDataNormal(htlcs: Seq[DirectedHtlc], origins: Map[Long, Origin]): DATA_NORMAL = {
     val channelUpdate = Announcements.makeChannelUpdate(BlockHash(ByteVector32(ByteVector.fill(32)(1))), randomKey(), randomKey().publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING_WITHOUT_WUMBO.toMilliSatoshi)

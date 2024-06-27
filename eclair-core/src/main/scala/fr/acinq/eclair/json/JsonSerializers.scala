@@ -514,17 +514,37 @@ object ChannelEventSerializer extends MinimalSerializer({
 })
 
 object OriginSerializer extends MinimalSerializer({
-  case o: Origin.Local => JObject(JField("paymentId", JString(o.id.toString)))
-  case o: Origin.ChannelRelayed => JObject(
-    JField("channelId", JString(o.originChannelId.toHex)),
-    JField("htlcId", JLong(o.originHtlcId)),
-  )
-  case o: Origin.TrampolineRelayed => JArray(o.htlcs.map {
-    case (channelId, htlcId) => JObject(
-      JField("channelId", JString(channelId.toHex)),
-      JField("htlcId", JLong(htlcId)),
+  case o: Origin => o.upstream match {
+    case u: Upstream.Local => JObject(JField("paymentId", JString(u.id.toString)))
+    case u: Upstream.Hot.Channel => JObject(
+      JField("channelId", JString(u.add.channelId.toHex)),
+      JField("htlcId", JLong(u.add.id)),
+      JField("amount", JLong(u.add.amountMsat.toLong)),
+      JField("expiry", JLong(u.add.cltvExpiry.toLong)),
+      JField("receivedAt", JLong(u.receivedAt.toLong)),
     )
-  })
+    case u: Upstream.Hot.Trampoline => JArray(u.received.map { htlc =>
+      JObject(
+        JField("channelId", JString(htlc.add.channelId.toHex)),
+        JField("htlcId", JLong(htlc.add.id)),
+        JField("amount", JLong(htlc.add.amountMsat.toLong)),
+        JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
+        JField("receivedAt", JLong(htlc.receivedAt.toLong)),
+      )
+    }.toList)
+    case o: Upstream.Cold.Channel => JObject(
+      JField("channelId", JString(o.originChannelId.toHex)),
+      JField("htlcId", JLong(o.originHtlcId)),
+      JField("amount", JLong(o.amountIn.toLong)),
+    )
+    case o: Upstream.Cold.Trampoline => JArray(o.originHtlcs.map { htlc =>
+      JObject(
+        JField("channelId", JString(htlc.originChannelId.toHex)),
+        JField("htlcId", JLong(htlc.originHtlcId)),
+        JField("amount", JLong(htlc.amountIn.toLong)),
+      )
+    }.toList)
+  }
 })
 
 // @formatter:off

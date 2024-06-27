@@ -29,7 +29,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, combinedFeaturesCodec}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, TimestampSecond}
+import fr.acinq.eclair.{Alias, BlockHeight, MilliSatoshiLong, TimestampSecond}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -231,30 +231,37 @@ private[channel] object ChannelCodecs0 {
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
         ("reSignAsap" | ignore(1))).as[ChannelTypes0.WaitingForRevocation].decodeOnly
 
-    val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
+    val upstreamLocalCodec: Codec[Upstream.Local] = ("id" | uuid).as[Upstream.Local]
 
-    val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
-
-    val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
+    val upstreamChannelCodec: Codec[Upstream.Cold.Channel] = (
       ("originChannelId" | bytes32) ::
         ("originHtlcId" | int64) ::
         ("amountIn" | millisatoshi) ::
-        ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
+        ("amountOut" | ignore(64))).as[Upstream.Cold.Channel]
 
-    val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
+    val upstreamChannelWithoutAmountCodec: Codec[Upstream.Cold.Channel] = (
+      ("originChannelId" | bytes32) ::
+        ("originHtlcId" | int64) ::
+        ("amountIn" | provide(0 msat))).as[Upstream.Cold.Channel]
 
-    val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
-
-    val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
+    val upstreamTrampolineCodec: Codec[Upstream.Cold.Trampoline] = listOfN(uint16, upstreamChannelWithoutAmountCodec).as[Upstream.Cold.Trampoline]
 
     // this is for backward compatibility to handle legacy payments that didn't have identifiers
     val UNKNOWN_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-    val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
-      .typecase(0x03, localCodec) // backward compatible
-      .typecase(0x01, provide(Origin.LocalCold(UNKNOWN_UUID)))
-      .typecase(0x02, relayedCodec)
-      .typecase(0x04, trampolineRelayedCodec)
+    val coldUpstreamCodec: Codec[Upstream.Cold] = discriminated[Upstream.Cold].by(uint16)
+      .typecase(0x03, upstreamLocalCodec) // backward compatible
+      .typecase(0x01, provide(Upstream.Local(UNKNOWN_UUID)))
+      .typecase(0x02, upstreamChannelCodec)
+      .typecase(0x04, upstreamTrampolineCodec)
+
+    val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](
+      upstream => Origin.Cold(upstream),
+      {
+        case Origin.Hot(_, upstream) => Upstream.Cold(upstream)
+        case Origin.Cold(upstream) => upstream
+      }
+    )
 
     val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
 

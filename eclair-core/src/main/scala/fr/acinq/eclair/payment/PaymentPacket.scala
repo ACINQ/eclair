@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
@@ -26,11 +25,10 @@ import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.OutgoingBlindedPaths
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
-import java.util.UUID
 import scala.util.{Failure, Success}
 
 /**
@@ -263,17 +261,6 @@ object OutgoingPaymentPacket {
   case class MissingTrampolineHop(trampolineNodeId: PublicKey) extends OutgoingPaymentError { override def getMessage: String = s"expected route to trampoline node $trampolineNodeId" }
   case class MissingBlindedHop(introductionNodeIds: Set[PublicKey]) extends OutgoingPaymentError { override def getMessage: String = s"expected blinded route using one of the following introduction nodes: ${introductionNodeIds.mkString(", ")}" }
   case object EmptyRoute extends OutgoingPaymentError { override def getMessage: String = "route cannot be empty" }
-
-  sealed trait Upstream
-  object Upstream {
-    case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[ReceivedHtlc]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_.add.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.add.cltvExpiry).min
-    }
-
-    case class ReceivedHtlc(add: UpdateAddHtlc, receivedAt: TimestampMilli)
-  }
   // @formatter:on
 
   /**
@@ -298,12 +285,12 @@ object OutgoingPaymentPacket {
   }
 
   /** Build the command to add an HTLC for the given recipient using the provided route. */
-  def buildOutgoingPayment(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
+  def buildOutgoingPayment(origin: Origin.Hot, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
     for {
       payment <- recipient.buildPayloads(paymentHash, route)
       onion <- buildOnion(payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerBlinding_opt, Origin.Hot(replyTo, upstream), commit = true)
+      val cmd = CMD_ADD_HTLC(origin.replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerBlinding_opt, origin, commit = true)
       OutgoingPaymentPacket(cmd, route.hops.head.shortChannelId, onion.sharedSecrets)
     }
   }

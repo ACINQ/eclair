@@ -353,6 +353,9 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
   val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
+
+  /** When storing in our DB, we avoid wasting storage with unknown data. */
+  def removeUnknownTlvs(): UpdateAddHtlc = this.copy(tlvStream = tlvStream.copy(unknown = Set.empty))
 }
 
 object UpdateAddHtlc {
