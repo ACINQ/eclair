@@ -224,10 +224,10 @@ private[channel] object ChannelCodecs4 {
     val coldUpstreamCodec: Codec[Upstream.Cold] = discriminated[Upstream.Cold].by(uint16)
       // NB: order matters!
       .typecase(0x06, upstreamChannelCodec)
-      .typecase(0x02, legacyUpstreamChannelCodec)
-      .typecase(0x03, upstreamLocalCodec)
       .typecase(0x05, upstreamTrampolineCodec)
       .typecase(0x04, legacyUpstreamTrampolineCodec)
+      .typecase(0x03, upstreamLocalCodec)
+      .typecase(0x02, legacyUpstreamChannelCodec)
 
     val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](
       upstream => Origin.Cold(upstream),
