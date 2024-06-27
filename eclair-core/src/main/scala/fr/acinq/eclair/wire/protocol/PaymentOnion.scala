@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -227,7 +227,8 @@ object PaymentOnion {
   object IntermediatePayload {
     sealed trait ChannelRelay extends IntermediatePayload {
       // @formatter:off
-      def outgoingChannelId: ShortChannelId
+      /** The outgoing channel, or the nodeId of one of our peers. */
+      def outgoing: Either[PublicKey, ShortChannelId]
       def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi
       def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry
       // @formatter:on
@@ -238,7 +239,7 @@ object PaymentOnion {
         // @formatter:off
         val amountOut = records.get[AmountToForward].get.amount
         val cltvOut = records.get[OutgoingCltv].get.cltv
-        override val outgoingChannelId = records.get[OutgoingChannelId].get.shortChannelId
+        override val outgoing = Right(records.get[OutgoingChannelId].get.shortChannelId)
         override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = amountOut
         override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = cltvOut
         // @formatter:on
@@ -258,12 +259,12 @@ object PaymentOnion {
       }
 
       /**
-       * @param blindedRecords decrypted tlv stream from the encrypted_recipient_data tlv.
-       * @param nextBlinding   blinding point that must be forwarded to the next hop.
+       * @param paymentRelayData decrypted relaying data from the encrypted_recipient_data tlv.
+       * @param nextBlinding     blinding point that must be forwarded to the next hop.
        */
       case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], paymentRelayData: PaymentRelayData, nextBlinding: PublicKey) extends ChannelRelay {
         // @formatter:off
-        override val outgoingChannelId = paymentRelayData.outgoingChannelId
+        override val outgoing = paymentRelayData.outgoing
         override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = paymentRelayData.amountToForward(incomingAmount)
         override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = paymentRelayData.outgoingCltv(incomingCltv)
         // @formatter:on

@@ -229,7 +229,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      wakeUpTimeout = 30 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -396,7 +397,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      wakeUpTimeout = 30 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
