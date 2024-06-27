@@ -235,34 +235,31 @@ private[channel] object ChannelCodecs3 {
         ("sentAfterLocalCommitIndex" | uint64overflow) ::
         ("reSignAsap" | ignore(8))).as[ChannelTypes3.WaitingForRevocation]
 
-    val localOriginCodec: Codec[Origin.Cold.Local] = ("id" | uuid).as[Origin.Cold.Local]
+    val upstreamLocalCodec: Codec[Upstream.Local] = ("id" | uuid).as[Upstream.Local]
 
-    val receivedHtlcCodec: Codec[Origin.Cold.ReceivedHtlc] = (
+    val upstreamChannelCodec: Codec[Upstream.Cold.Channel] = (
       ("originChannelId" | bytes32) ::
         ("originHtlcId" | int64) ::
-        ("amountIn" | millisatoshi)).as[Origin.Cold.ReceivedHtlc]
+        ("amountIn" | millisatoshi) ::
+        ("amountOut" | ignore(64))).as[Upstream.Cold.Channel]
 
-    val channelOriginCodec: Codec[Origin.Cold.ChannelRelayed] = (
-      ("htlcIn" | receivedHtlcCodec) ::
-        ("amountOut" | ignore(64))).as[Origin.Cold.ChannelRelayed]
-
-    val receivedHtlcWithoutAmountCodec: Codec[Origin.Cold.ReceivedHtlc] = (
+    val upstreamChannelWithoutAmountCodec: Codec[Upstream.Cold.Channel] = (
       ("originChannelId" | bytes32) ::
         ("originHtlcId" | int64) ::
-        ("amountIn" | provide(0 msat))).as[Origin.Cold.ReceivedHtlc]
+        ("amountIn" | provide(0 msat))).as[Upstream.Cold.Channel]
 
-    val trampolineOriginCodec: Codec[Origin.Cold.TrampolineRelayed] = listOfN(uint16, receivedHtlcWithoutAmountCodec).as[Origin.Cold.TrampolineRelayed]
+    val upstreamTrampolineCodec: Codec[Upstream.Cold.Trampoline] = listOfN(uint16, upstreamChannelWithoutAmountCodec).as[Upstream.Cold.Trampoline]
 
-    val coldOriginCodec: Codec[Origin.Cold] = discriminated[Origin.Cold].by(uint16)
-      .typecase(0x02, channelOriginCodec)
-      .typecase(0x03, localOriginCodec)
-      .typecase(0x04, trampolineOriginCodec)
+    val coldUpstreamCodec: Codec[Upstream.Cold] = discriminated[Upstream.Cold].by(uint16)
+      .typecase(0x02, upstreamChannelCodec)
+      .typecase(0x03, upstreamLocalCodec)
+      .typecase(0x04, upstreamTrampolineCodec)
 
-    val originCodec: Codec[Origin] = coldOriginCodec.xmap[Origin](
-      o => o: Origin,
+    val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](
+      upstream => Origin.Cold(upstream),
       {
-        case Origin.Hot(_, upstream) => Origin.Cold(upstream)
-        case o: Origin.Cold => o
+        case Origin.Hot(_, upstream) => Upstream.Cold(upstream)
+        case Origin.Cold(upstream) => upstream
       }
     )
 

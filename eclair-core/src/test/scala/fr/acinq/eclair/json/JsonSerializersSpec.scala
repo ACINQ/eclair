@@ -262,19 +262,19 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("HTLC origin serialization") {
-    val localOrigin = Origin.Cold.Local(UUID.fromString("11111111-1111-1111-1111-111111111111"))
+    val localOrigin = Origin.Cold(Upstream.Local(UUID.fromString("11111111-1111-1111-1111-111111111111")))
     val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
     JsonSerializers.serialization.write(localOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedLocalOrigin
 
-    val channelOrigin = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat))
+    val channelOrigin = Origin.Cold(Upstream.Cold.Channel(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat))
     val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7,"amount":500}"""
     JsonSerializers.serialization.write(channelOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedChannelOrigin
 
     val relayedHtlcs = List(
-      Origin.Cold.ReceivedHtlc(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3, 600 msat),
-      Origin.Cold.ReceivedHtlc(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat),
+      Upstream.Cold.Channel(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3, 600 msat),
+      Upstream.Cold.Channel(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat),
     )
-    val trampolineOrigin = Origin.Cold.TrampolineRelayed(relayedHtlcs)
+    val trampolineOrigin = Origin.Cold(Upstream.Cold.Trampoline(relayedHtlcs))
     val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3,"amount":600},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7,"amount":500}]"""
     JsonSerializers.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedTrampolineOrigin
   }

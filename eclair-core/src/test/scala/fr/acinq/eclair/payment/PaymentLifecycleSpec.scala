@@ -60,7 +60,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultRouteExpiry = CltvExpiry(100_000)
   val defaultPaymentPreimage = randomBytes32()
   val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
-  val defaultOrigin = Origin.Cold.Local(UUID.randomUUID())
+  val defaultOrigin = Origin.Cold(Upstream.Local(UUID.randomUUID()))
   val defaultExternalId = UUID.randomUUID().toString
   val defaultInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
   val defaultRecipient = ClearRecipient(defaultInvoice, defaultAmountMsat, defaultExpiry, Set.empty)

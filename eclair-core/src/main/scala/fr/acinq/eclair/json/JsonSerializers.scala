@@ -514,16 +514,16 @@ object ChannelEventSerializer extends MinimalSerializer({
 })
 
 object OriginSerializer extends MinimalSerializer({
-  case o: Origin.Hot => o.upstream match {
+  case o: Origin => o.upstream match {
     case u: Upstream.Local => JObject(JField("paymentId", JString(u.id.toString)))
-    case u: Upstream.SingleHtlc => JObject(
+    case u: Upstream.Hot.Channel => JObject(
       JField("channelId", JString(u.add.channelId.toHex)),
       JField("htlcId", JLong(u.add.id)),
       JField("amount", JLong(u.add.amountMsat.toLong)),
       JField("expiry", JLong(u.add.cltvExpiry.toLong)),
       JField("receivedAt", JLong(u.receivedAt.toLong)),
     )
-    case u: Upstream.HtlcSet => JArray(u.received.map { htlc =>
+    case u: Upstream.Hot.Trampoline => JArray(u.received.map { htlc =>
       JObject(
         JField("channelId", JString(htlc.add.channelId.toHex)),
         JField("htlcId", JLong(htlc.add.id)),
@@ -532,20 +532,19 @@ object OriginSerializer extends MinimalSerializer({
         JField("receivedAt", JLong(htlc.receivedAt.toLong)),
       )
     }.toList)
-  }
-  case o: Origin.Cold.Local => JObject(JField("paymentId", JString(o.id.toString)))
-  case o: Origin.Cold.ChannelRelayed => JObject(
-    JField("channelId", JString(o.originChannelId.toHex)),
-    JField("htlcId", JLong(o.originHtlcId)),
-    JField("amount", JLong(o.amountIn.toLong)),
-  )
-  case o: Origin.Cold.TrampolineRelayed => JArray(o.originHtlcs.map { htlc =>
-    JObject(
-      JField("channelId", JString(htlc.originChannelId.toHex)),
-      JField("htlcId", JLong(htlc.originHtlcId)),
-      JField("amount", JLong(htlc.amountIn.toLong)),
+    case o: Upstream.Cold.Channel => JObject(
+      JField("channelId", JString(o.originChannelId.toHex)),
+      JField("htlcId", JLong(o.originHtlcId)),
+      JField("amount", JLong(o.amountIn.toLong)),
     )
-  }.toList)
+    case o: Upstream.Cold.Trampoline => JArray(o.originHtlcs.map { htlc =>
+      JObject(
+        JField("channelId", JString(htlc.originChannelId.toHex)),
+        JField("htlcId", JLong(htlc.originHtlcId)),
+        JField("amount", JLong(htlc.amountIn.toLong)),
+      )
+    }.toList)
+  }
 })
 
 // @formatter:off

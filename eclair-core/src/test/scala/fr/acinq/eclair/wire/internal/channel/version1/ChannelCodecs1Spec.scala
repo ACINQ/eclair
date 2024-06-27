@@ -118,13 +118,13 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     val replyTo = TestProbe("replyTo")(ActorSystem("system")).ref
 
     val localHot = Origin.Hot(replyTo, Upstream.Local(UUID.randomUUID()))
-    val localCold = Origin.Cold(localHot.upstream)
+    val localCold = Origin.Cold(localHot)
     assert(originCodec.decodeValue(originCodec.encode(localHot).require).require == localCold)
     assert(originCodec.decodeValue(originCodec.encode(localCold).require).require == localCold)
 
     val add = UpdateAddHtlc(randomBytes32(), 4324, 11000000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None)
-    val relayedHot = Origin.Hot(replyTo, Upstream.SingleHtlc(add, TimestampMilli(0)))
-    val relayedCold = Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(add.channelId, add.id, add.amountMsat))
+    val relayedHot = Origin.Hot(replyTo, Upstream.Hot.Channel(add, TimestampMilli(0)))
+    val relayedCold = Origin.Cold(Upstream.Cold.Channel(add.channelId, add.id, add.amountMsat))
     assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require == relayedCold)
     assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require == relayedCold)
 
@@ -133,24 +133,24 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       UpdateAddHtlc(randomBytes32(), 1L, 2000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None),
       UpdateAddHtlc(randomBytes32(), 2L, 3000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None),
     )
-    val trampolineRelayedHot = Origin.Hot(replyTo, Upstream.HtlcSet(adds.map(add => Upstream.SingleHtlc(add, TimestampMilli(0)))))
+    val trampolineRelayedHot = Origin.Hot(replyTo, Upstream.Hot.Trampoline(adds.map(add => Upstream.Hot.Channel(add, TimestampMilli(0)))))
     // We didn't encode the incoming HTLC amount.
-    val trampolineRelayed = Origin.Cold.TrampolineRelayed(adds.map(add => Origin.Cold.ReceivedHtlc(add).copy(amountIn = 0 msat)).toList)
+    val trampolineRelayed = Origin.Cold(Upstream.Cold.Trampoline(adds.map(add => Upstream.Cold.Channel(add.channelId, add.id, 0 msat)).toList))
     assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require == trampolineRelayed)
     assert(originCodec.decodeValue(originCodec.encode(trampolineRelayed).require).require == trampolineRelayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
-      1L -> Origin.Cold.Local(UUID.randomUUID()),
-      42L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 4324, 12_000_000 msat)),
-      43L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 17, 0 msat) :: Origin.Cold.ReceivedHtlc(randomBytes32(), 21, 0 msat) :: Origin.Cold.ReceivedHtlc(randomBytes32(), 21, 0 msat) :: Nil),
-      130L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), -45, 13_000_000 msat)),
-      140L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 0, 0 msat) :: Nil),
-      1000L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 10, 14_000_000 msat)),
-      -32L -> Origin.Cold.ChannelRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 54, 15_000_000 msat)),
-      -54L -> Origin.Cold.TrampolineRelayed(Origin.Cold.ReceivedHtlc(randomBytes32(), 1, 0 msat) :: Origin.Cold.ReceivedHtlc(randomBytes32(), 2, 0 msat) :: Nil),
-      -4L -> Origin.Cold.Local(UUID.randomUUID())
+      1L -> Origin.Cold(Upstream.Local(UUID.randomUUID())),
+      42L -> Origin.Cold(Upstream.Cold.Channel(randomBytes32(), 4324, 12_000_000 msat)),
+      43L -> Origin.Cold(Upstream.Cold.Trampoline(Upstream.Cold.Channel(randomBytes32(), 17, 0 msat) :: Upstream.Cold.Channel(randomBytes32(), 21, 0 msat) :: Upstream.Cold.Channel(randomBytes32(), 21, 0 msat) :: Nil)),
+      130L -> Origin.Cold(Upstream.Cold.Channel(randomBytes32(), -45, 13_000_000 msat)),
+      140L -> Origin.Cold(Upstream.Cold.Trampoline(Upstream.Cold.Channel(randomBytes32(), 0, 0 msat) :: Nil)),
+      1000L -> Origin.Cold(Upstream.Cold.Channel(randomBytes32(), 10, 14_000_000 msat)),
+      -32L -> Origin.Cold(Upstream.Cold.Channel(randomBytes32(), 54, 15_000_000 msat)),
+      -54L -> Origin.Cold(Upstream.Cold.Trampoline(Upstream.Cold.Channel(randomBytes32(), 1, 0 msat) :: Upstream.Cold.Channel(randomBytes32(), 2, 0 msat) :: Nil)),
+      -4L -> Origin.Cold(Upstream.Local(UUID.randomUUID()))
     )
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require == map)
   }

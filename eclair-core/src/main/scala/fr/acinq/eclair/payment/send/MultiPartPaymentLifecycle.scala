@@ -247,8 +247,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         case Right(paymentSent) =>
           val localFees = cfg.upstream match {
             case _: Upstream.Local => 0.msat // no local fees when we are the origin of the payment
-            case u: Upstream.SingleHtlc => u.amountIn - paymentSent.amountWithFees
-            case _: Upstream.HtlcSet =>
+            case u: Upstream.Hot.Channel => u.amountIn - paymentSent.amountWithFees
+            case _: Upstream.Hot.Trampoline =>
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here

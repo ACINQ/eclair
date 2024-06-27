@@ -1781,10 +1781,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
         .onChainOutgoingHtlcs(d.commitments.latest.localCommit, d.commitments.latest.remoteCommit, d.commitments.latest.nextRemoteCommit_opt.map(_.commit), tx)
-        .map(add => (add, d.commitments.originChannels.get(add.id).collect {
-          case Origin.Hot(_, Upstream.Local(id)) => id
-          case Origin.Cold.Local(id) => id
-        })) // we resolve the payment id if this was a local payment
+        .map(add => (add, d.commitments.originChannels.get(add.id).map(_.upstream).collect { case Upstream.Local(id) => id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // then let's see if any of the possible close scenarios can be considered done
       val closingType_opt = Closing.isClosed(d1, Some(tx))
