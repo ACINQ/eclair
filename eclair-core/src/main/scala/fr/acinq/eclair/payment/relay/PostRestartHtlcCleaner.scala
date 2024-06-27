@@ -163,11 +163,11 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   private def handleDownstreamFulfill(brokenHtlcs: BrokenHtlcs, origin: Origin.Cold, fulfilledHtlc: UpdateAddHtlc, paymentPreimage: ByteVector32): Unit =
     brokenHtlcs.relayedOut.get(origin) match {
       case Some(relayedOut) => origin.upstream match {
-        case o: Upstream.Local =>
+        case Upstream.Local(id) =>
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
-          nodeParams.db.payments.getOutgoingPayment(o.id) match {
+          nodeParams.db.payments.getOutgoingPayment(id) match {
             case Some(p) =>
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(o.id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
               // If all downstream HTLCs are now resolved, we can emit the payment event.
               val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
               if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
@@ -180,33 +180,33 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                 context.system.eventStream.publish(sent)
               }
             case None =>
-              log.warning(s"database inconsistency detected: payment ${o.id} is fulfilled but doesn't have a corresponding database entry")
+              log.warning(s"database inconsistency detected: payment $id is fulfilled but doesn't have a corresponding database entry")
               // Since we don't have a matching DB entry, we've lost the payment recipient and total amount, so we put
               // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
-              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(o.id, o.id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending))
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(o.id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(o.id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
           // instead spread across multiple local origins) so we can now forget this origin.
           Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
-        case o: Upstream.Cold.Channel =>
+        case Upstream.Cold.Channel(originChannelId, originHtlcId, amountIn) =>
           log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling 1 HTLC upstream")
           if (relayedOut != Set((fulfilledHtlc.channelId, fulfilledHtlc.id))) {
             log.error(s"unexpected channel relay downstream HTLCs: expected (${fulfilledHtlc.channelId},${fulfilledHtlc.id}), found $relayedOut")
           }
-          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, o.originChannelId, CMD_FULFILL_HTLC(o.originHtlcId, paymentPreimage, commit = true))
+          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, commit = true))
           // We don't know when we received this HTLC so we just pretend that we received it just now.
-          context.system.eventStream.publish(ChannelPaymentRelayed(o.amountIn, fulfilledHtlc.amountMsat, fulfilledHtlc.paymentHash, o.originChannelId, fulfilledHtlc.channelId, TimestampMilli.now(), TimestampMilli.now()))
+          context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, fulfilledHtlc.amountMsat, fulfilledHtlc.paymentHash, originChannelId, fulfilledHtlc.channelId, TimestampMilli.now(), TimestampMilli.now()))
           Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
-        case o: Upstream.Cold.Trampoline =>
+        case Upstream.Cold.Trampoline(originHtlcs) =>
           // We fulfill upstream as soon as we have the payment preimage available.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
-            log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${o.originHtlcs.length} HTLCs upstream")
-            o.originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
+            log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${originHtlcs.length} HTLCs upstream")
+            originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
               Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
@@ -232,7 +232,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       case Some(relayedOut) =>
         // If this is a local payment, we need to update the DB:
         origin.upstream match {
-          case o: Upstream.Local => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(o.id, failedHtlc.paymentHash, Nil))
+          case Upstream.Local(id) => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, failedHtlc.paymentHash, Nil))
           case _ =>
         }
         val relayedOut1 = relayedOut diff Set((failedHtlc.channelId, failedHtlc.id))
@@ -241,14 +241,14 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           // If we haven't already settled upstream, we can fail now.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
             origin.upstream match {
-              case o: Upstream.Local => nodeParams.db.payments.getOutgoingPayment(o.id).foreach(p => {
+              case Upstream.Local(id) => nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
                 val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
                 if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
                   log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}")
                   context.system.eventStream.publish(PaymentFailed(p.parentId, failedHtlc.paymentHash, Nil))
                 }
               })
-              case o: Upstream.Cold.Channel =>
+              case Upstream.Cold.Channel(originChannelId, originHtlcId, _) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing 1 HTLC upstream")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                 val cmd = failedHtlc.blinding_opt match {
@@ -257,14 +257,14 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                     // we don't have access to the incoming onion: to avoid leaking information, we act as if we were an
                     // intermediate node and send invalid_onion_blinding in an update_fail_malformed_htlc message.
                     val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
-                    CMD_FAIL_MALFORMED_HTLC(o.originHtlcId, failure.onionHash, failure.code, commit = true)
+                    CMD_FAIL_MALFORMED_HTLC(originHtlcId, failure.onionHash, failure.code, commit = true)
                   case None =>
-                    ChannelRelay.translateRelayFailure(o.originHtlcId, fail)
+                    ChannelRelay.translateRelayFailure(originHtlcId, fail)
                 }
-                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, o.originChannelId, cmd)
-              case o: Upstream.Cold.Trampoline =>
-                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${o.originHtlcs.length} HTLCs upstream")
-                o.originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
+                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
+              case Upstream.Cold.Trampoline(originHtlcs) =>
+                log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${originHtlcs.length} HTLCs upstream")
+                originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
