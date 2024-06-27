@@ -20,8 +20,9 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
+import akka.testkit.TestKit.awaitCond
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, TxId}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair._
@@ -212,10 +213,10 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     val replyTo = TestProbe[Any]()
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket, None, 1.0, None)
+    val add_ab = UpdateAddHtlc(channelId_ab, 42, 11000000 msat, ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket, None, 1.0, None)
     val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), TestConstants.emptyOnionPacket, None, 1.0, None)
     val channelOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey))
-    val trampolineOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Trampoline(Seq(Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey))))
+    val trampolineOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey))))
 
     val addSettled = Seq(
       RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
@@ -231,6 +232,31 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     for (res <- addSettled) {
       relayer ! res
       replyTo.expectMessage(res)
+    }
+  }
+
+  test("store on-the-fly funding preimage") { f =>
+    import f._
+
+    val replyTo = TestProbe[Any]()
+    val add_ab = UpdateAddHtlc(channelId_ab, 17, 50_000 msat, paymentHash, CltvExpiry(800_000), TestConstants.emptyOnionPacket, None, 1.0, None)
+    val add_bc = UpdateAddHtlc(channelId_bc, 21, 45_000 msat, paymentHash, CltvExpiry(799_000), TestConstants.emptyOnionPacket, None, 1.0, Some(LiquidityAds.FundingFee(1000 msat, TxId(randomBytes32()))))
+    val originHot = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Channel(add_ab, TimestampMilli.now(), randomKey().publicKey))
+    val originCold = Origin.Cold(originHot)
+
+    val addFulfilled = Seq(
+      RES_ADD_SETTLED(originHot, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(originHot, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(originCold, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(originCold, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+    )
+
+    for (res <- addFulfilled) {
+      val preimage = res.result.paymentPreimage
+      val paymentHash = Crypto.sha256(preimage)
+      assert(nodeParams.db.liquidity.getOnTheFlyFundingPreimage(paymentHash).isEmpty)
+      relayer ! res
+      awaitCond(nodeParams.db.liquidity.getOnTheFlyFundingPreimage(paymentHash).contains(preimage), 10 seconds)
     }
   }
 

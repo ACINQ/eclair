@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair.Features.ScidAlias
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Register.ForwardNodeId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
@@ -53,14 +54,29 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   val wakeUpEnabled = "wake_up_enabled"
   val wakeUpTimeout = "wake_up_timeout"
+  val onTheFlyFunding = "on_the_fly_funding"
 
-  case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any])
+  case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any]) {
+    def createWakeUpActors(): (TestProbe[PeerReadyManager.Register], TestProbe[Switchboard.GetPeerInfo]) = {
+      val peerReadyManager = TestProbe[PeerReadyManager.Register]()
+      system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
+      val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+      system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+      (peerReadyManager, switchboard)
+    }
+
+    def cleanUpWakeUpActors(peerReadyManager: TestProbe[PeerReadyManager.Register], switchboard: TestProbe[Switchboard.GetPeerInfo]): Unit = {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
+      system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    }
+  }
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
     val nodeParams = TestConstants.Bob.nodeParams
       .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
+      .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
     val register = TestProbe[Any]("register")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
     try {
@@ -178,11 +194,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("relay blinded payment (wake up wallet node)", Tag(wakeUpEnabled)) { f =>
     import f._
 
-    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
-    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
-    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
-    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
-
+    val (peerReadyManager, switchboard) = createWakeUpActors()
     val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
     Seq(true, false).foreach(isIntroduction => {
       val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction)
@@ -199,8 +211,91 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     })
 
-    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
-    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+  }
+
+  test("relay blinded payment (on-the-fly funding)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    val wakeUp = peerReadyManager.expectMessageType[PeerReadyManager.Register]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We try to use existing channels, but they don't have enough liquidity.
+    val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+    fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, InsufficientFunds(channelIds(realScid1), outgoingAmount, 100 sat, 0 sat, 0 sat), Some(u.channelUpdate))
+
+    val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwdNodeId.nodeId == outgoingNodeId)
+    assert(fwdNodeId.message.nextBlindingKey_opt.nonEmpty)
+    assert(fwdNodeId.message.amount == outgoingAmount)
+    assert(fwdNodeId.message.expiry == outgoingExpiry)
+  }
+
+  test("relay blinded payment (on-the-fly funding failed)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We don't have any channel, so we attempt on-the-fly funding, but the peer is not available.
+    val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwdNodeId.nodeId == outgoingNodeId)
+    fwdNodeId.replyTo ! Register.ForwardNodeIdFailure(fwdNodeId)
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
+  }
+
+  test("relay blinded payment (on-the-fly funding not attempted)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We try to use existing channels, but they reject the payment for a reason that isn't tied to the liquidity.
+    val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+    fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, TooManyAcceptedHtlcs(channelIds(realScid1), 10), Some(u.channelUpdate))
+
+    // We fail without attempting on-the-fly funding.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
   }
 
   test("relay with retries") { f =>
@@ -333,10 +428,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay blinded payment (cannot wake up remote node)", Tag(wakeUpEnabled), Tag(wakeUpTimeout)) { f =>
     import f._
 
-    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
-    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
-    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
-    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    val (peerReadyManager, switchboard) = createWakeUpActors()
 
     val u = createLocalUpdate(channelId1, feeBaseMsat = 2500 msat, feeProportionalMillionths = 0)
     val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = true)
@@ -351,8 +443,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fail.message.reason.contains(InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))))
 
-    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
-    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
   }
 
   test("relay when expiry larger than our requirements") { f =>

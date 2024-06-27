@@ -146,7 +146,7 @@ object Upstream {
       val expiryIn: CltvExpiry = add.cltvExpiry
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
-    case class Trampoline(received: Seq[Channel]) extends Hot {
+    case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
@@ -165,6 +165,10 @@ object Upstream {
 
     /** Our node is forwarding a single incoming HTLC. */
     case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    object Channel {
+      def apply(add: UpdateAddHtlc): Channel = Channel(add.channelId, add.id, add.amountMsat)
+    }
+
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(originHtlcs: List[Channel]) extends Cold { override val amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum }
   }

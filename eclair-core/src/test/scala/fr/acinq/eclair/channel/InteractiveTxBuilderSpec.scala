@@ -2247,7 +2247,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val bob = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(purchase))
     bob ! Start(probe.ref)
     assert(probe.expectMsgType[LocalFailure].cause == InvalidFundingBalances(params.channelId, 524_000 sat, 525_000_000 msat, -1_000_000 msat))
-    // Bob reject a splice proposed by Alice where she doesn't have enough funds to pay the liquidity fees.
+    // Bob rejects a splice proposed by Alice where she doesn't have enough funds to pay the liquidity fees.
     val previousCommitment = CommitmentsSpec.makeCommitments(450_000_000 msat, 50_000_000 msat).active.head
     val sharedInput = params.dummySharedInputB(500_000 sat)
     val spliceParams = params.fundingParamsB.copy(localContribution = 150_000 sat, remoteContribution = -30_000 sat, sharedInput_opt = Some(sharedInput))
@@ -2258,6 +2258,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val bobFutureHtlc = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(purchase.copy(paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))))
     bobFutureHtlc ! Start(probe.ref)
     probe.expectNoMessage(100 millis)
+    // Bob rejects a splice proposed by Alice where she has enough funds to pay the liquidity fees, but wants to pay
+    // them outside of the interactive-tx session, which requires some trust.
+    val bobFutureHtlcWithBalance = params.spawnTxBuilderSpliceBob(spliceParams, previousCommitment, wallet, Some(purchase.copy(fees = LiquidityAds.Fees(1000 sat, 4000 sat), paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))))
+    bobFutureHtlcWithBalance ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == InvalidLiquidityAdsPaymentType(params.channelId, LiquidityAds.PaymentType.FromFutureHtlc, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc)))
   }
 
   test("invalid input") {

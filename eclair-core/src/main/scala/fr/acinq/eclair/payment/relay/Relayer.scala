@@ -96,10 +96,15 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
       }
 
-    case r: RES_ADD_SETTLED[_, _] => r.origin match {
-      case _: Origin.Cold => postRestartCleaner ! r
-      case o: Origin.Hot => o.replyTo ! r
-    }
+    case r: RES_ADD_SETTLED[_, HtlcResult] =>
+      r.result match {
+        case fulfill: HtlcResult.Fulfill if r.htlc.fundingFee_opt.nonEmpty => nodeParams.db.liquidity.addOnTheFlyFundingPreimage(fulfill.paymentPreimage)
+        case _ => ()
+      }
+      r.origin match {
+        case _: Origin.Cold => postRestartCleaner ! r
+        case o: Origin.Hot => o.replyTo ! r
+      }
 
     case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender(), g)
 

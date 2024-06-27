@@ -16,12 +16,16 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, TxId}
+import fr.acinq.bitcoin.scalacompat.{Crypto, SatoshiLong, TxId}
 import fr.acinq.eclair.TestDatabases.forAllDbs
-import fr.acinq.eclair.channel.{ChannelLiquidityPurchased, LiquidityPurchase}
-import fr.acinq.eclair.wire.protocol.LiquidityAds
-import fr.acinq.eclair.{MilliSatoshiLong, randomBytes32, randomKey}
+import fr.acinq.eclair.channel.{ChannelLiquidityPurchased, LiquidityPurchase, Upstream}
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
+import fr.acinq.eclair.payment.relay.OnTheFlyFundingSpec.{createWillAdd, randomOnion}
+import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TimestampMilli, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
+
+import java.util.UUID
 
 class LiquidityDbSpec extends AnyFunSuite {
 
@@ -54,6 +58,130 @@ class LiquidityDbSpec extends AnyFunSuite {
 
       assert(db.listPurchases(nodeId1).toSet == Set(e1a, e1b, e1c).map(_.purchase))
       assert(db.listPurchases(nodeId2) == Seq(e2a.purchase))
+    }
+  }
+
+  test("add/list/remove pending on-the-fly funding proposals") {
+    forAllDbs { dbs =>
+      val db = dbs.liquidity
+
+      val alice = randomKey().publicKey
+      val bob = randomKey().publicKey
+      val paymentHash1 = randomBytes32()
+      val paymentHash2 = randomBytes32()
+      val upstream = Seq(
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 7, 25_000_000 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), None, 1.0, None), TimestampMilli(0), randomKey().publicKey),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 0, 1 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), Some(randomKey().publicKey), 1.0, None), TimestampMilli.now(), randomKey().publicKey),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 561, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, 1.0, None), TimestampMilli.now(), randomKey().publicKey),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 1105, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, 1.0, None), TimestampMilli.now(), randomKey().publicKey),
+      )
+      val pendingAlice = Seq(
+        OnTheFlyFunding.Pending(
+          proposed = Seq(
+            OnTheFlyFunding.Proposal(createWillAdd(20_000 msat, paymentHash1, CltvExpiry(500)), upstream(0)),
+            OnTheFlyFunding.Proposal(createWillAdd(1 msat, paymentHash1, CltvExpiry(750), Some(randomKey().publicKey)), upstream(1)),
+          ),
+          status = OnTheFlyFunding.Status.Funded(randomBytes32(), TxId(randomBytes32()), 7, 500 msat)
+        ),
+        OnTheFlyFunding.Pending(
+          proposed = Seq(
+            OnTheFlyFunding.Proposal(createWillAdd(195_000_000 msat, paymentHash2, CltvExpiry(1000)), Upstream.Hot.Trampoline(upstream(2) :: upstream(3) :: Nil)),
+          ),
+          status = OnTheFlyFunding.Status.Funded(randomBytes32(), TxId(randomBytes32()), 3, 0 msat)
+        )
+      )
+      val pendingBob = Seq(
+        OnTheFlyFunding.Pending(
+          proposed = Seq(
+            OnTheFlyFunding.Proposal(createWillAdd(20_000 msat, paymentHash1, CltvExpiry(42)), upstream(0)),
+          ),
+          status = OnTheFlyFunding.Status.Funded(randomBytes32(), TxId(randomBytes32()), 11, 3_500 msat)
+        ),
+        OnTheFlyFunding.Pending(
+          proposed = Seq(
+            OnTheFlyFunding.Proposal(createWillAdd(24_000_000 msat, paymentHash2, CltvExpiry(800_000), Some(randomKey().publicKey)), Upstream.Local(UUID.randomUUID())),
+          ),
+          status = OnTheFlyFunding.Status.Funded(randomBytes32(), TxId(randomBytes32()), 0, 10_000 msat)
+        )
+      )
+
+      assert(db.listPendingOnTheFlyPayments().isEmpty)
+      assert(db.listPendingOnTheFlyFunding(alice).isEmpty)
+      assert(db.listPendingOnTheFlyFunding().isEmpty)
+      db.removePendingOnTheFlyFunding(alice, paymentHash1) // no-op
+
+      // Add pending proposals for Alice.
+      db.addPendingOnTheFlyFunding(alice, pendingAlice(0))
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash1 -> pendingAlice(0)))
+      assert(db.listPendingOnTheFlyFunding() == Map(alice -> Map(paymentHash1 -> pendingAlice(0))))
+      db.addPendingOnTheFlyFunding(alice, pendingAlice(1).copy(status = OnTheFlyFunding.Status.Proposed(null)))
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash1 -> pendingAlice(0)))
+      assert(db.listPendingOnTheFlyFunding() == Map(alice -> Map(paymentHash1 -> pendingAlice(0))))
+      db.addPendingOnTheFlyFunding(alice, pendingAlice(1))
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash1 -> pendingAlice(0), paymentHash2 -> pendingAlice(1)))
+      assert(db.listPendingOnTheFlyFunding() == Map(alice -> Map(paymentHash1 -> pendingAlice(0), paymentHash2 -> pendingAlice(1))))
+      assert(db.listPendingOnTheFlyPayments() == Map(alice -> Set(paymentHash1, paymentHash2)))
+
+      // Add pending proposals for Bob.
+      assert(db.listPendingOnTheFlyFunding(bob).isEmpty)
+      db.addPendingOnTheFlyFunding(bob, pendingBob(0))
+      db.addPendingOnTheFlyFunding(bob, pendingBob(1))
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash1 -> pendingAlice(0), paymentHash2 -> pendingAlice(1)))
+      assert(db.listPendingOnTheFlyFunding(bob) == Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1)))
+      assert(db.listPendingOnTheFlyFunding() == Map(
+        alice -> Map(paymentHash1 -> pendingAlice(0), paymentHash2 -> pendingAlice(1)),
+        bob -> Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1))
+      ))
+      assert(db.listPendingOnTheFlyPayments() == Map(alice -> Set(paymentHash1, paymentHash2), bob -> Set(paymentHash1, paymentHash2)))
+
+      // Remove pending proposals that are completed.
+      db.removePendingOnTheFlyFunding(alice, paymentHash1)
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash2 -> pendingAlice(1)))
+      assert(db.listPendingOnTheFlyFunding(bob) == Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1)))
+      assert(db.listPendingOnTheFlyFunding() == Map(
+        alice -> Map(paymentHash2 -> pendingAlice(1)),
+        bob -> Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1))
+      ))
+      assert(db.listPendingOnTheFlyPayments() == Map(alice -> Set(paymentHash2), bob -> Set(paymentHash1, paymentHash2)))
+      db.removePendingOnTheFlyFunding(alice, paymentHash1) // no-op
+      db.removePendingOnTheFlyFunding(bob, randomBytes32()) // no-op
+      assert(db.listPendingOnTheFlyFunding(alice) == Map(paymentHash2 -> pendingAlice(1)))
+      assert(db.listPendingOnTheFlyFunding(bob) == Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1)))
+      assert(db.listPendingOnTheFlyFunding() == Map(
+        alice -> Map(paymentHash2 -> pendingAlice(1)),
+        bob -> Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1))
+      ))
+      assert(db.listPendingOnTheFlyPayments() == Map(alice -> Set(paymentHash2), bob -> Set(paymentHash1, paymentHash2)))
+      db.removePendingOnTheFlyFunding(alice, paymentHash2)
+      assert(db.listPendingOnTheFlyFunding(alice).isEmpty)
+      assert(db.listPendingOnTheFlyFunding(bob) == Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1)))
+      assert(db.listPendingOnTheFlyFunding() == Map(bob -> Map(paymentHash1 -> pendingBob(0), paymentHash2 -> pendingBob(1))))
+      assert(db.listPendingOnTheFlyPayments() == Map(bob -> Set(paymentHash1, paymentHash2)))
+      db.removePendingOnTheFlyFunding(bob, paymentHash2)
+      assert(db.listPendingOnTheFlyFunding(bob) == Map(paymentHash1 -> pendingBob(0)))
+      assert(db.listPendingOnTheFlyFunding() == Map(bob -> Map(paymentHash1 -> pendingBob(0))))
+      assert(db.listPendingOnTheFlyPayments() == Map(bob -> Set(paymentHash1)))
+      db.removePendingOnTheFlyFunding(bob, paymentHash1)
+      assert(db.listPendingOnTheFlyFunding(bob).isEmpty)
+      assert(db.listPendingOnTheFlyFunding().isEmpty)
+      assert(db.listPendingOnTheFlyPayments().isEmpty)
+    }
+  }
+
+  test("add/get on-the-fly-funding preimages") {
+    forAllDbs { dbs =>
+      val db = dbs.liquidity
+
+      val preimage1 = randomBytes32()
+      val preimage2 = randomBytes32()
+
+      db.addOnTheFlyFundingPreimage(preimage1)
+      db.addOnTheFlyFundingPreimage(preimage1) // no-op
+      db.addOnTheFlyFundingPreimage(preimage2)
+
+      assert(db.getOnTheFlyFundingPreimage(Crypto.sha256(preimage1)).contains(preimage1))
+      assert(db.getOnTheFlyFundingPreimage(Crypto.sha256(preimage2)).contains(preimage2))
+      assert(db.getOnTheFlyFundingPreimage(randomBytes32()).isEmpty)
     }
   }
 

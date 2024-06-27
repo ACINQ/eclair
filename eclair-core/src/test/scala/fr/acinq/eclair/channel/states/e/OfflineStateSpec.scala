@@ -72,6 +72,37 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
   val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
 
+  test("reconnect after creating channel", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+
+    // This is a new channel: peers exchange channel_ready again.
+    val channelId = alice2bob.expectMsgType[ChannelReady].channelId
+    bob2alice.expectMsgType[ChannelReady]
+
+    // The channel is ready to process payments.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == channelId)
+        true
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == channelId)
+        true
+      case _ => false
+    }
+  }
+
   test("re-send lost htlc and signature after first commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
     // alice         bob

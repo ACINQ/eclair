@@ -20,12 +20,14 @@ import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
 import fr.acinq.eclair.io.Peer.{PeerInfoResponse, PeerNotFound}
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouterConf
@@ -57,11 +59,17 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
         log.info(s"closing channel ${c.channelId}")
         nodeParams.db.channels.removeChannel(c.channelId)
       })
-      val peerChannels = channels.groupBy(_.remoteNodeId)
-      peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
-      log.info("restoring {} peer(s) with {} channel(s)", peerChannels.size, channels.size)
+      val peersWithChannels = channels.groupBy(_.remoteNodeId)
+      val peersWithOnTheFlyFunding = nodeParams.db.liquidity.listPendingOnTheFlyFunding()
+      peersWithChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet, peersWithOnTheFlyFunding.getOrElse(remoteNodeId, Map.empty)) }
+      // We must re-create peers that have a funded on-the-fly payment, even if they don't have a channel yet.
+      // We will retry relaying that payment and complete the on-the-fly funding.
+      (peersWithOnTheFlyFunding -- peersWithChannels.keySet).foreach {
+        case (remoteNodeId, pending) => createOrGetPeer(remoteNodeId, Set.empty, pending)
+      }
+      log.info("restoring {} peer(s) with {} channel(s) and {} peers with pending on-the-fly funding", peersWithChannels.size, channels.size, (peersWithOnTheFlyFunding.keySet -- peersWithChannels.keySet).size)
       unstashAll()
-      context.become(normal(peerChannels.keySet))
+      context.become(normal(peersWithChannels.keySet))
     case _ =>
       stash()
   }
@@ -72,9 +80,11 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case Peer.Connect(nodeId, address_opt, replyTo, isPersistent) =>
-      // we create a peer if it doesn't exist: when the peer doesn't exist, we can be sure that we don't have channels,
+      // We create a peer if it doesn't exist: when the peer doesn't exist, we can be sure that we don't have channels,
       // otherwise the peer would have been created during the initialization step.
-      val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
+      // We're also sure that we don't have pending on-the-fly funding attempts, otherwise the peer would have also
+      // been created during the initialization step.
+      val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty, pendingOnTheFlyFunding = Map.empty)
       val c = if (replyTo == ActorRef.noSender) {
         Peer.Connect(nodeId, address_opt, sender(), isPersistent)
       } else {
@@ -96,8 +106,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       }
 
     case authenticated: PeerConnection.Authenticated =>
-      // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
+      // If this is an incoming connection, we might not yet have created the peer.
+      val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty, pendingOnTheFlyFunding = Map.empty)
       val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
@@ -134,14 +144,14 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
 
-  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelData]): ActorRef = {
+  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelData], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
         // do not count the incoming-connections-tracker child actor that is not a peer
         log.debug(s"creating new peer (current={})", context.children.size - 1)
         val peer = createPeer(remoteNodeId)
-        peer ! Peer.Init(offlineChannels)
+        peer ! Peer.Init(offlineChannels, pendingOnTheFlyFunding)
         peer
     }
   }

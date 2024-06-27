@@ -68,6 +68,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       // result upstream to preserve channels.
       val brokenHtlcs: BrokenHtlcs = {
         val channels = listLocalChannels(init.channels)
+        val onTheFlyPayments = nodeParams.db.liquidity.listPendingOnTheFlyPayments().values.flatten.toSet
         val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
         val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) ++ nonStandardIncomingHtlcs
         val nonStandardRelayedOutHtlcs: Map[Origin.Cold, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
@@ -85,7 +86,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
         log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
         log.info("relayedOut={}", relayedOut)
-        BrokenHtlcs(notRelayed, relayedOut, Set.empty)
+        BrokenHtlcs(notRelayed, relayedOut, Set.empty, onTheFlyPayments)
       }
 
       Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
@@ -120,6 +121,10 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                 } else {
                   log.info(s"got preimage but upstream channel is closed for htlc=$htlc")
                 }
+              case None if brokenHtlcs.pendingPayments.contains(htlc.paymentHash) =>
+                // We don't fail on-the-fly HTLCs that have been funded: we haven't been paid our fee yet, so we will
+                // retry relaying them unless we reach the HTLC timeout.
+                log.info("htlc #{} from channelId={} wasn't relayed, but has a pending on-the-fly relay (paymentHash={})", htlc.id, htlc.channelId, htlc.paymentHash)
               case None =>
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSING && e.currentState != CLOSED) {
@@ -150,12 +155,17 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
     case _: ChannelStateChanged => // ignore other channel state changes
 
     case RES_ADD_SETTLED(o: Origin.Cold, htlc, fulfill: HtlcResult.Fulfill) =>
-      log.info("htlc fulfilled downstream: ({},{})", htlc.channelId, htlc.id)
+      log.info("htlc #{} from channelId={} fulfilled downstream", htlc.id, htlc.channelId)
       handleDownstreamFulfill(brokenHtlcs, o, htlc, fulfill.paymentPreimage)
 
     case RES_ADD_SETTLED(o: Origin.Cold, htlc, fail: HtlcResult.Fail) =>
-      log.info("htlc failed downstream: ({},{},{})", htlc.channelId, htlc.id, fail.getClass.getSimpleName)
-      handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
+      if (htlc.fundingFee_opt.nonEmpty) {
+        log.info("htlc #{} from channelId={} failed downstream but has a pending on-the-fly funding", htlc.id, htlc.channelId)
+        // We don't fail upstream: we haven't been paid our funding fee yet, so we will try relaying again.
+      } else {
+        log.info("htlc #{} from channelId={} failed downstream: {}", htlc.id, htlc.channelId, fail.getClass.getSimpleName)
+        handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
+      }
 
     case GetBrokenHtlcs => sender() ! brokenHtlcs
   }
@@ -329,8 +339,9 @@ object PostRestartHtlcCleaner {
    * @param notRelayed      incoming HTLCs that were committed upstream but not relayed downstream.
    * @param relayedOut      outgoing HTLC sets that may have been incompletely sent and need to be watched.
    * @param settledUpstream upstream payments that have already been settled (failed or fulfilled) by this actor.
+   * @param pendingPayments payments that are pending and will be relayed: we mustn't fail them upstream.
    */
-  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]], settledUpstream: Set[Origin.Cold])
+  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]], settledUpstream: Set[Origin.Cold], pendingPayments: Set[ByteVector32])
 
   /** Returns true if the given HTLC matches the given origin. */
   private def matchesOrigin(htlcIn: UpdateAddHtlc, origin: Origin.Cold): Boolean = origin.upstream match {

@@ -30,6 +30,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -90,7 +91,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       purgeInvoicesInterval: Option[FiniteDuration],
                       revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
                       willFundRates_opt: Option[LiquidityAds.WillFundRates],
-                      peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig) {
+                      peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
+                      onTheFlyFundingConfig: OnTheFlyFunding.Config) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -671,7 +673,10 @@ object NodeParams extends Logging {
       willFundRates_opt = willFundRates_opt,
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
         enabled = config.getBoolean("peer-wake-up.enabled"),
-        timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS)
+        timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS),
+      ),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
       ),
     )
   }
