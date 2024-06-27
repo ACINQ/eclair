@@ -102,6 +102,14 @@ case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: Payment
   override val timestamp: TimestampMilli = settledAt
 }
 
+case class OnTheFlyFundingPaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing) extends PaymentRelayed {
+  override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
+  override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
+  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
+  override val timestamp: TimestampMilli = settledAt
+}
+
 object PaymentRelayed {
 
   case class IncomingPart(amount: MilliSatoshi, channelId: ByteVector32, receivedAt: TimestampMilli)

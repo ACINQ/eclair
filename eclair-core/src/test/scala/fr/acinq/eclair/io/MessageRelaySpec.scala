@@ -22,6 +22,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -56,7 +57,8 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val peerConnection = TypedProbe[Nothing]("peerConnection")
     val peer = TypedProbe[Peer.RelayOnionMessage]("peer")
     val probe = TypedProbe[Status]("probe")
-    val nodeParams = if (test.tags.contains(wakeUpTimeout)) Alice.nodeParams.copy(wakeUpTimeout = 100 millis) else Alice.nodeParams
+    val nodeParams = Alice.nodeParams
+      .modify(_.onTheFlyFundingConfig.wakeUpTimeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
     val relay = testKit.spawn(MessageRelay(nodeParams, switchboard.ref, register.ref, router.ref))
     try {
       withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, probe)))

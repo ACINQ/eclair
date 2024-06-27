@@ -22,22 +22,25 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
-import fr.acinq.eclair.channel.{ChannelAborted, ChannelTypes}
 import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelInitiator, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChannelNonInitiator}
-import fr.acinq.eclair.io.PeerSpec.createOpenChannelMessage
+import fr.acinq.eclair.io.PeerSpec.{createOpenChannelMessage, createOpenDualFundedChannelMessage}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
-import fr.acinq.eclair.wire.protocol.{ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, TlvStream}
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, Shutdown, TlvStream}
+import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, CltvExpiryDelta, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import java.net.InetAddress
 import scala.concurrent.duration.DurationInt
@@ -47,9 +50,11 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   val defaultParams: DefaultParams = DefaultParams(100 sat, 100000 msat, 100 msat, CltvExpiryDelta(288), 10)
   val openChannel: OpenChannel = createOpenChannelMessage()
   val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
-  val acceptStaticRemoteKeyChannelsTag = "accept static_remote_key channels"
   val defaultFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
   val staticRemoteKeyFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional))
+
+  val acceptStaticRemoteKeyChannelsTag = "accept static_remote_key channels"
+  val noPlugin = "no plugin"
 
   override def withFixture(test: OneArgTest): Outcome = {
     val peer = TestProbe[Any]()
@@ -58,12 +63,13 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val wallet = new DummyOnChainWallet()
     val pendingChannelsRateLimiter = TestProbe[PendingChannelsRateLimiter.Command]()
     val plugin = new InterceptOpenChannelPlugin {
+      // @formatter:off
       override def name: String = "OpenChannelInterceptorPlugin"
-
       override def openChannelInterceptor: ActorRef[InterceptOpenChannelCommand] = pluginInterceptor.ref
+      // @formatter:on
     }
-    val pluginParams = TestConstants.Alice.nodeParams.pluginParams :+ plugin
-    val nodeParams = TestConstants.Alice.nodeParams.copy(pluginParams = pluginParams)
+    val nodeParams = TestConstants.Alice.nodeParams
+      .modify(_.pluginParams).usingIf(!test.tags.contains(noPlugin))(_ :+ plugin)
       .modify(_.channelConf).usingIf(test.tags.contains(acceptStaticRemoteKeyChannelsTag))(_.copy(acceptIncomingStaticRemoteKeyChannels = true))
 
     val eventListener = TestProbe[ChannelAborted]()
@@ -74,6 +80,11 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   }
 
   case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any], eventListener: TestProbe[ChannelAborted], wallet: DummyOnChainWallet)
+
+  private def commitments(isOpener: Boolean = false): Commitments = {
+    val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announceChannel = false)
+    commitments.copy(params = commitments.params.copy(localParams = commitments.params.localParams.copy(isChannelOpener = isOpener, paysCommitTxFees = isOpener)))
+  }
 
   test("reject channel open if timeout waiting for plugin to respond") { f =>
     import f._
@@ -110,6 +121,33 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val addFunding = LiquidityAds.AddFunding(100_000 sat, None)
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(addFunding))
     assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.contains(addFunding))
+  }
+
+  test("add liquidity if on-the-fly funding is used", Tag(noPlugin)) { f =>
+    import f._
+
+    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
+    val open = createOpenDualFundedChannelMessage().copy(
+      channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
+      tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunding))
+    )
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Right(open), features, features, peerConnection.ref, remoteAddress)
+    openChannelInterceptor ! openChannelNonInitiator
+    pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+    // We check that all existing channels (if any) are closing before accepting the request.
+    val currentChannels = Seq(
+      Peer.ChannelInfo(TestProbe().ref, SHUTDOWN, DATA_SHUTDOWN(commitments(isOpener = true), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), None)),
+      Peer.ChannelInfo(TestProbe().ref, NEGOTIATING, DATA_NEGOTIATING(commitments(), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), List(Nil), None)),
+      Peer.ChannelInfo(TestProbe().ref, CLOSING, DATA_CLOSING(commitments(), BlockHeight(0), ByteVector.empty, Nil, ClosingTx(InputInfo(OutPoint(TxId(randomBytes32()), 5), TxOut(100_000 sat, Nil), Nil), Transaction(2, Nil, Nil, 0), None) :: Nil)),
+      Peer.ChannelInfo(TestProbe().ref, WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments(), ChannelReestablish(randomBytes32(), 0, 0, randomKey(), randomKey().publicKey))),
+    )
+    peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, currentChannels)
+    val result = peer.expectMessageType[SpawnChannelNonInitiator]
+    assert(!result.localParams.isChannelOpener)
+    assert(result.localParams.paysCommitTxFees)
+    assert(result.addFunding_opt.map(_.fundingAmount).contains(250_000 sat))
+    assert(result.addFunding_opt.flatMap(_.rates_opt).contains(TestConstants.defaultLiquidityRates))
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>
@@ -193,6 +231,29 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(LiquidityAds.AddFunding(50_000 sat, None)))
     peer.expectMessageType[SpawnChannelNonInitiator]
+  }
+
+  test("reject on-the-fly channel if another channel exists", Tag(noPlugin)) { f =>
+    import f._
+
+    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
+    val open = createOpenDualFundedChannelMessage().copy(
+      channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
+      tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunding))
+    )
+    val currentChannel = Seq(
+      Peer.ChannelInfo(TestProbe().ref, NORMAL, ChannelCodecsSpec.normal),
+      Peer.ChannelInfo(TestProbe().ref, OFFLINE, ChannelCodecsSpec.normal),
+      Peer.ChannelInfo(TestProbe().ref, SYNCING, ChannelCodecsSpec.normal),
+    )
+    currentChannel.foreach(channel => {
+      val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Right(open), features, features, peerConnection.ref, remoteAddress)
+      openChannelInterceptor ! openChannelNonInitiator
+      pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+      peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(channel))
+      assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == open.temporaryChannelId)
+    })
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled", Tag(ChannelStateTestsTags.DisableWumbo)) { f =>

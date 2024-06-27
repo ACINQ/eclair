@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import kamon.Kamon
 
 object Monitoring {
@@ -36,6 +37,9 @@ object Monitoring {
 
     val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")
     val IncomingConnectionsDisconnected = Kamon.counter("incomingconnections.disconnected")
+
+    val OnTheFlyFunding = Kamon.counter("on-the-fly-funding.attempts")
+    val OnTheFlyFundingFees = Kamon.histogram("on-the-fly-funding.fees-msat")
   }
 
   object Tags {
@@ -63,6 +67,18 @@ object Monitoring {
       val NoChannelWithPreviousPeer = "NoChannelWithPreviousPeer"
       val NoChannelWithNextPeer = "NoChannelWithNextPeer"
       val ConnectionFailure = "ConnectionFailure"
+    }
+
+    val OnTheFlyFundingState = "state"
+    object OnTheFlyFundingStates {
+      val Proposed = "proposed"
+      val Rejected = "rejected"
+      val Expired = "expired"
+      val Timeout = "timeout"
+      val Funded = "funded"
+      val RelaySucceeded = "relay-succeeded"
+
+      def relayFailed(failure: OnTheFlyFunding.PaymentRelayer.RelayFailure) = s"relay-failed-${failure.getClass.getSimpleName}"
     }
   }
 

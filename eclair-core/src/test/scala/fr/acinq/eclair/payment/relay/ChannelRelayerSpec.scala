@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, 
 import fr.acinq.eclair.Features.ScidAlias
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Register.ForwardNodeId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.{Peer, Switchboard}
@@ -52,12 +53,15 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   import ChannelRelayerSpec._
 
   val wakeUpTimeout = "wake_up_timeout"
+  val onTheFlyFunding = "on_the_fly_funding"
 
   case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any])
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
-    val nodeParams = if (test.tags.contains(wakeUpTimeout)) TestConstants.Bob.nodeParams.copy(wakeUpTimeout = 100 millis) else TestConstants.Bob.nodeParams
+    val nodeParams = TestConstants.Bob.nodeParams
+      .modify(_.onTheFlyFundingConfig.wakeUpTimeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
+      .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
     val register = TestProbe[Any]("register")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
     try {
@@ -194,6 +198,88 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     })
 
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+  }
+
+  test("relay blinded payment (on-the-fly funding)", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    // We try to use existing channels, but they don't have enough liquidity.
+    val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+    fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, InsufficientFunds(channelIds(realScid1), outgoingAmount, 100 sat, 0 sat, 0 sat), Some(u.channelUpdate))
+
+    val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwdNodeId.nodeId == outgoingNodeId)
+    assert(fwdNodeId.message.nextBlindingKey_opt.nonEmpty)
+    assert(fwdNodeId.message.amount == outgoingAmount)
+    assert(fwdNodeId.message.expiry == outgoingExpiry)
+  }
+
+  test("relay blinded payment (on-the-fly funding failed)", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    // We don't have any channel, so we attempt on-the-fly funding, but the peer is not available.
+    val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwdNodeId.nodeId == outgoingNodeId)
+    fwdNodeId.replyTo ! Register.ForwardNodeIdFailure(fwdNodeId)
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
+  }
+
+  test("relay blinded payment (on-the-fly funding not attempted)", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    // We try to use existing channels, but they reject the payment for a reason that isn't tied to the liquidity.
+    val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
+    fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, TooManyAcceptedHtlcs(channelIds(realScid1), 10), Some(u.channelUpdate))
+
+    // We fail without attempting on-the-fly funding.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
   }
 
   test("relay with retries") { f =>

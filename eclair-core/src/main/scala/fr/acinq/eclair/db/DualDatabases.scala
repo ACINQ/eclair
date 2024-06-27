@@ -9,6 +9,7 @@ import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDataba
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
@@ -30,16 +31,12 @@ import scala.util.{Failure, Success, Try}
 case class DualDatabases(primary: Databases, secondary: Databases) extends Databases with FileBackup {
 
   override val network: NetworkDb = DualNetworkDb(primary.network, secondary.network)
-
   override val audit: AuditDb = DualAuditDb(primary.audit, secondary.audit)
-
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
-
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
-
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
-
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
+  override val onTheFlyFunding: OnTheFlyFundingDb = DualOnTheFlyFundingDb(primary.onTheFlyFunding, secondary.onTheFlyFunding)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -409,5 +406,40 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
+  }
+}
+
+case class DualOnTheFlyFundingDb(primary: OnTheFlyFundingDb, secondary: OnTheFlyFundingDb) extends OnTheFlyFundingDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-on-the-fly-funding").build()))
+
+  override def addPreimage(preimage: ByteVector32): Unit = {
+    runAsync(secondary.addPreimage(preimage))
+    primary.addPreimage(preimage)
+  }
+
+  override def getPreimage(paymentHash: ByteVector32): Option[ByteVector32] = {
+    runAsync(secondary.getPreimage(paymentHash))
+    primary.getPreimage(paymentHash)
+  }
+
+  override def addPending(remoteNodeId: PublicKey, pending: OnTheFlyFunding.Pending): Unit = {
+    runAsync(secondary.addPending(remoteNodeId, pending))
+    primary.addPending(remoteNodeId, pending)
+  }
+
+  override def removePending(remoteNodeId: PublicKey, paymentHash: ByteVector32): Unit = {
+    runAsync(secondary.removePending(remoteNodeId, paymentHash))
+    primary.removePending(remoteNodeId, paymentHash)
+  }
+
+  override def listPending(remoteNodeId: PublicKey): Map[ByteVector32, OnTheFlyFunding.Pending] = {
+    runAsync(secondary.listPending(remoteNodeId))
+    primary.listPending(remoteNodeId)
+  }
+
+  override def listPendingPayments(): Map[PublicKey, Set[ByteVector32]] = {
+    runAsync(secondary.listPendingPayments())
+    primary.listPendingPayments()
   }
 }

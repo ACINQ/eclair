@@ -44,6 +44,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.router.Announcements
@@ -1095,10 +1096,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getSimpleName)
                 stay()
               }
-            case InteractiveTxBuilder.Succeeded(signingSession, commitSig) =>
+            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt) =>
               log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
+              liquidityPurchase_opt.collect {
+                case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex, d.commitments.params.remoteParams.htlcMinimum, purchase)
+              }
               val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession))
               stay() using d1 storing() sending commitSig
             case f: InteractiveTxBuilder.Failed =>
@@ -2139,6 +2143,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             }
           }
 
+          // We tell the peer that the channel is ready to process payments that may be queued.
+          if (!shutdownInProgress) {
+            val fundingTxIndex = commitments1.active.map(_.fundingTxIndex).min
+            peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
+          }
+
           goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
       }
 
@@ -2709,6 +2719,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     // NB: we consider the send and receive balance, because router tracks both
     if (oldCommitments.availableBalanceForSend != newCommitments.availableBalanceForSend || oldCommitments.availableBalanceForReceive != newCommitments.availableBalanceForReceive) {
       context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, shortIds, newCommitments))
+    }
+    if (oldCommitments.active.size != newCommitments.active.size) {
+      // Some commitments have been deactivated, which means our available balance changed, which may allow forwarding
+      // payments that couldn't be forwarded before.
+      val fundingTxIndex = newCommitments.active.map(_.fundingTxIndex).min
+      peer ! ChannelReadyForPayments(self, remoteNodeId, newCommitments.channelId, fundingTxIndex)
     }
   }
 
