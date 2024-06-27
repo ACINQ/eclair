@@ -36,6 +36,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
+import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -341,9 +342,19 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_400_000.sat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal < 1_300_000_000.msat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote > 1_100_000_000.msat)
+
+    // Bob signed a liquidity purchase.
+    bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseSigned =>
+        assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
+        assert(l.fundingTxIndex == 1)
+        assert(l.txId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId)
+        true
+      case _ => false
+    }
   }
 
-  test("recv CMD_SPLICE (splice-in, liquidity ads, invalid lease witness)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+  test("recv CMD_SPLICE (splice-in, liquidity ads, invalid will_fund signature)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
     import f._
 
     val sender = TestProbe()
@@ -938,6 +949,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
 
+    // The channel is now ready to use liquidity from the first splice.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
@@ -953,6 +974,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bobEvents.expectAvailableBalanceChanged(balance = 650_000_000.msat, capacity = 2_500_000.sat)
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
+
+    // The channel is now ready to use liquidity from the second splice.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
   }
 
   test("recv CMD_ADD_HTLC with multiple commitments") { f =>
@@ -1514,6 +1545,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    // splice transactions are not locked yet: we're still at the initial funding index
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+
     // splice 1 confirms on alice's side
     watchConfirmed1a.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
@@ -1540,11 +1581,27 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    // splice transactions are not locked by bob yet: we're still at the initial funding index
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+
     // splice 1 confirms on bob's side
     watchConfirmed1b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchFundingSpent]
+
+    // splice 1 is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
 
     disconnect(f)
     reconnect(f)
@@ -1556,10 +1613,25 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+
     // splice 2 confirms on bob's side
     watchConfirmed2b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     bob2blockchain.expectMsgType[WatchFundingSpent]
+
+    // splice 2 is locked on both sides
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
 
     // NB: we disconnect *before* transmitting the splice_confirmed to alice
     disconnect(f)
@@ -1582,6 +1654,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
+
+    // splice 2 is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
   }
 
   /** Check type of published transactions */

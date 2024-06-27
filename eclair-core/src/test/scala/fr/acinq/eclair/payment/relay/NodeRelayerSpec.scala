@@ -68,6 +68,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   import NodeRelayerSpec._
 
   val wakeUpTimeout = "wake_up_timeout"
+  val onTheFlyFunding = "on_the_fly_funding"
 
   case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent]) {
     def createNodeRelay(packetIn: IncomingPaymentPacket.NodeRelayPacket, useRealPaymentFactory: Boolean = false): (ActorRef[NodeRelay.Command], TestProbe[NodeRelayer.Command]) = {
@@ -97,7 +98,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeParams = TestConstants.Bob.nodeParams
       .modify(_.multiPartPaymentExpiry).setTo(5 seconds)
       .modify(_.relayParams.asyncPaymentsParams.holdTimeoutBlocks).setToIf(test.tags.contains("long_hold_timeout"))(200000) // timeout after payment expires
-      .modify(_.wakeUpTimeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
+      .modify(_.onTheFlyFundingConfig.wakeUpTimeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
+      .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val eventListener = TestProbe[PaymentEvent]("event-listener")
@@ -251,7 +253,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
@@ -348,7 +350,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // upstream payment relayed
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -556,7 +558,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     nodeRelayer ! NodeRelay.Relay(incomingMultiPart.last, randomKey().publicKey)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -613,6 +615,81 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
+  // The two tests below are disabled by default, since there is no default mechanism to flag the next trampoline node
+  // as being a wallet node. Feature branches that support wallet software should restore those tests and flag the
+  // outgoing node_id as being a wallet node.
+  ignore("relay incoming multi-part payment with on-the-fly funding", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
+
+    // The remote node is a wallet node: we wake them up before relaying the payment.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+
+    // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding.
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwd.nodeId == outgoingNodeId)
+    assert(fwd.message.nextBlindingKey_opt.isEmpty)
+    assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
+    // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
+    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, None, None)
+    val Right(incoming) = IncomingPaymentPacket.decrypt(dummyAdd, outgoingNodeKey, nodeParams.features)
+    assert(incoming.isInstanceOf[IncomingPaymentPacket.FinalPacket])
+    val finalPayload = incoming.asInstanceOf[IncomingPaymentPacket.FinalPacket].payload.asInstanceOf[FinalPayload.Standard]
+    assert(finalPayload.amount == fwd.message.amount)
+    assert(finalPayload.expiry == fwd.message.expiry)
+    assert(finalPayload.paymentSecret == paymentSecret)
+
+    // Once on-the-fly funding has been proposed, the payment isn't our responsibility anymore.
+    fwd.message.replyTo ! Peer.ProposeOnTheFlyFundingResponse.Proposed
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+  }
+
+  ignore("relay incoming multi-part payment with on-the-fly funding (non-liquidity failure)", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
+
+    // The remote node is a wallet node: we wake them up before relaying the payment.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(wakeUp.remoteNodeId == outgoingNodeId)
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+
+    // The outgoing payment fails, but it's not a liquidity issue.
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, TemporaryNodeFailure())) :: Nil)
+    incomingMultiPart.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
+    }
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+  }
+
   test("relay to non-trampoline recipient supporting multi-part") { f =>
     import f._
 
@@ -627,7 +704,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
@@ -671,7 +748,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList))
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.amount == outgoingAmount)
@@ -729,7 +806,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.amount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -762,7 +839,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -804,7 +881,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -851,6 +928,76 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
   }
 
+  test("relay to blinded path with on-the-fly funding", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val incomingPayments = createIncomingPaymentsToWalletBlindedPath(nodeParams)
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
+    incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
+
+    // The remote node is a wallet node: we wake them up before relaying the payment.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+
+    // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding.
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    assert(fwd.nodeId == outgoingNodeId)
+    assert(fwd.message.nextBlindingKey_opt.nonEmpty)
+    assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
+    // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
+    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, fwd.message.nextBlindingKey_opt, None)
+    val Right(incoming) = IncomingPaymentPacket.decrypt(dummyAdd, outgoingNodeKey, nodeParams.features)
+    assert(incoming.isInstanceOf[IncomingPaymentPacket.FinalPacket])
+    val finalPayload = incoming.asInstanceOf[IncomingPaymentPacket.FinalPacket].payload.asInstanceOf[FinalPayload.Blinded]
+    assert(finalPayload.amount == fwd.message.amount)
+    assert(finalPayload.expiry == fwd.message.expiry)
+    assert(finalPayload.pathId == hex"deadbeef")
+
+    // Once on-the-fly funding has been proposed, the payment isn't our responsibility anymore.
+    fwd.message.replyTo ! Peer.ProposeOnTheFlyFundingResponse.Proposed
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+  }
+
+  test("relay to blinded path with on-the-fly funding failure", Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val switchboard = TestProbe[Switchboard.GetPeerInfo]()
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val incomingPayments = createIncomingPaymentsToWalletBlindedPath(nodeParams)
+    val (nodeRelayer, _) = f.createNodeRelay(incomingPayments.head)
+    incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
+
+    // The remote node is a wallet node: we wake them up before relaying the payment.
+    val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
+
+    val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+
+    // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding, but can't reach our peer.
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
+    fwd.message.replyTo ! Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer disconnected")
+    // We fail the payments immediately since the recipient isn't available.
+    incomingPayments.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(UnknownNextPeer()), commit = true))
+    }
+  }
+
   test("relay to compact blinded paths") { f =>
     import f._
 
@@ -865,7 +1012,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     getNodeId.replyTo ! Some(outgoingNodeId)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingPayments.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey)).toList), ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.amount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)

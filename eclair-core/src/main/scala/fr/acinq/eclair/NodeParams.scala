@@ -30,6 +30,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -90,7 +91,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       purgeInvoicesInterval: Option[FiniteDuration],
                       revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
                       willFundRates_opt: Option[LiquidityAds.WillFundRates],
-                      wakeUpTimeout: FiniteDuration) {
+                      onTheFlyFundingConfig: OnTheFlyFunding.Config) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -663,7 +664,10 @@ object NodeParams extends Logging {
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
       ),
       willFundRates_opt = willFundRates_opt,
-      wakeUpTimeout = 30 seconds,
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        wakeUpTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.wake-up-timeout").getSeconds, TimeUnit.SECONDS),
+        proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
+      ),
     )
   }
 }

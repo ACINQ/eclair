@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.Peer.OpenChannelResponse
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ToMilliSatoshiConversion, UInt64, randomBytes32}
 
@@ -339,9 +339,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) => msg match {
       case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
-      case InteractiveTxBuilder.Succeeded(status, commitSig) =>
+      case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt) =>
         d.deferred.foreach(self ! _)
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
+        liquidityPurchase_opt.collect {
+          case purchase if !status.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, status.fundingTx.txId, status.fundingTxIndex, d.channelParams.remoteParams.htlcMinimum, purchase)
+        }
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status, None)
         goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 storing() sending commitSig
       case f: InteractiveTxBuilder.Failed =>
@@ -687,9 +690,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case RbfStatus.RbfInProgress(cmd_opt, _, remoteCommitSig_opt) =>
           msg match {
             case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
-            case InteractiveTxBuilder.Succeeded(signingSession, commitSig) =>
+            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt) =>
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, signingSession.fundingTx.txId, signingSession.fundingTx.tx.localFees.truncateToSatoshi))
               remoteCommitSig_opt.foreach(self ! _)
+              liquidityPurchase_opt.collect {
+                case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex, d.commitments.params.remoteParams.htlcMinimum, purchase)
+              }
               val d1 = d.copy(rbfStatus = RbfStatus.RbfWaitingForSigs(signingSession))
               stay() using d1 storing() sending commitSig
             case f: InteractiveTxBuilder.Failed =>
