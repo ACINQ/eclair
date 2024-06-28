@@ -409,7 +409,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
-      val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+      val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0)
       c.receiveAdd(add, feerates, feeConfNoMismatch)
     }
   }
@@ -460,14 +460,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0)
         c.receiveAdd(add, feerates, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
-        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0)
         c.receiveAdd(add, feerates, feeConfNoMismatch) match {
           case Right(_) => ()
           case Left(e) => fail(s"$t -> $e")

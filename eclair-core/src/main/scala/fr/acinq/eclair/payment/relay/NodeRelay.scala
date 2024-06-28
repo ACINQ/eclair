@@ -24,6 +24,8 @@ import akka.actor.{ActorRef, typed}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -35,6 +37,9 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send._
+import fr.acinq.eclair.payment.send.{ClearRecipient, MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
+import fr.acinq.eclair.reputation.ReputationRecorder
+import fr.acinq.eclair.reputation.ReputationRecorder.{GetTrampolineConfidence, RecordTrampolineFailure, RecordTrampolineSuccess}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -53,7 +58,7 @@ object NodeRelay {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey) extends Command
   case object Stop extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
@@ -63,6 +68,7 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
+  private case class WrappedConfidence(confidence: Double) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -84,6 +90,7 @@ object NodeRelay {
   def apply(nodeParams: NodeParams,
             parent: typed.ActorRef[NodeRelayer.Command],
             register: ActorRef,
+            reputationRecorder: typed.ActorRef[ReputationRecorder.TrampolineCommand],
             relayId: UUID,
             nodeRelayPacket: NodeRelayPacket,
             outgoingPaymentFactory: OutgoingPaymentFactory,
@@ -107,7 +114,7 @@ object NodeRelay {
           case IncomingPaymentPacket.RelayToTrampolinePacket(_, _, _, nextPacket) => Some(nextPacket)
           case _: IncomingPaymentPacket.RelayToBlindedPathsPacket => None
         }
-        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
+        new NodeRelay(nodeParams, parent, register, reputationRecorder, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
           .receiving(Queue.empty, nodeRelayPacket.innerPayload, nextPacket_opt, incomingPaymentHandler)
       }
     }
@@ -182,6 +189,7 @@ object NodeRelay {
 class NodeRelay private(nodeParams: NodeParams,
                         parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
                         register: ActorRef,
+                        reputationRecorder: typed.ActorRef[ReputationRecorder.TrampolineCommand],
                         relayId: UUID,
                         paymentHash: ByteVector32,
                         paymentSecret: ByteVector32,
@@ -203,11 +211,11 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def receiving(htlcs: Queue[Upstream.Hot.Channel], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case Relay(packet: IncomingPaymentPacket.NodeRelayPacket) =>
+      case Relay(packet: IncomingPaymentPacket.NodeRelayPacket, originNode) =>
         require(packet.outerPayload.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", packet.add.id, packet.add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add)
-        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), TimestampMilli.now()), nextPayload, nextPacket_opt, handler)
+        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), TimestampMilli.now(), originNode), nextPayload, nextPacket_opt, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -258,8 +266,21 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def doSend(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
-    relay(upstream, nextPayload, nextPacket_opt)
+    val totalFee = upstream.amountIn - nextPayload.amountToForward
+    val fees = upstream.received.foldLeft(Map.empty[(PublicKey, Int), MilliSatoshi])((fees, r) =>
+      fees.updatedWith((r.receivedFrom, r.add.endorsement))(fee =>
+        Some(fee.getOrElse(MilliSatoshi(0)) + r.add.amountMsat * totalFee.toLong / upstream.amountIn.toLong)))
+    reputationRecorder ! GetTrampolineConfidence(context.messageAdapter[ReputationRecorder.Confidence](confidence => WrappedConfidence(confidence.value)), fees, relayId)
+    waitForConfidence(upstream, nextPayload, nextPacket_opt)
   }
+
+  private def waitForConfidence(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] =
+    Behaviors.receiveMessagePartial {
+      rejectExtraHtlcPartialFunction orElse {
+        case WrappedConfidence(confidence) =>
+          relay(upstream, nextPayload, nextPacket_opt, confidence)
+      }
+    }
 
   /**
    * Once the payment is forwarded, we're waiting for fail/fulfill responses from downstream nodes.
@@ -285,6 +306,11 @@ class NodeRelay private(nodeParams: NodeParams,
         case WrappedPaymentSent(paymentSent) =>
           context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
+          val totalFee = upstream.amountIn - paymentSent.amountWithFees
+          val fees = upstream.received.foldLeft(Map.empty[(PublicKey, Int), MilliSatoshi])((fees, r) =>
+            fees.updatedWith((r.receivedFrom, r.add.endorsement))(fee =>
+              Some(fee.getOrElse(MilliSatoshi(0)) + r.add.amountMsat * totalFee.toLong / upstream.amountIn.toLong)))
+          reputationRecorder ! RecordTrampolineSuccess(fees, relayId)
           recordRelayDuration(startedAt, isSuccess = true)
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
@@ -292,6 +318,7 @@ class NodeRelay private(nodeParams: NodeParams,
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
+          reputationRecorder ! RecordTrampolineFailure(upstream.received.map(r => (r.receivedFrom, r.add.endorsement)).toSet, relayId)
           recordRelayDuration(startedAt, isSuccess = fulfilledUpstream)
           stopping()
       }
@@ -315,12 +342,12 @@ class NodeRelay private(nodeParams: NodeParams,
     context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
   }.toClassic
 
-  private def relay(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def relay(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket], confidence: Double): Behavior[Command] = {
     val displayNodeId = payloadOut match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard => payloadOut.outgoingNodeId
       case _: IntermediatePayload.NodeRelay.ToBlindedPaths => randomKey().publicKey
     }
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, displayNodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, displayNodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, confidence)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     payloadOut match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard =>
@@ -384,7 +411,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
-    case Relay(nodeRelayPacket) =>
+    case Relay(nodeRelayPacket, _) =>
       rejectExtraHtlc(nodeRelayPacket.add)
       Behaviors.same
     // NB: this message would be sent from the payment FSM which we stopped before going to this state, but all this is asynchronous.

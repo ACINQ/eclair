@@ -75,7 +75,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(request, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${request.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient) match {
+      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, cfg.confidence) match {
         case Right(payment) =>
           register ! Register.ForwardShortId(self.toTyped[Register.ForwardShortIdFailure[CMD_ADD_HTLC]], payment.outgoingChannel, payment.cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(request, payment.cmd, failures, payment.sharedSecrets, ignore, route)

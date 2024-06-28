@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
-import scodec.Codec
+import scodec.{Attempt, Codec, Err}
 import scodec.bits.HexStringSyntax
 import scodec.codecs._
 
@@ -34,9 +34,15 @@ object UpdateAddHtlcTlv {
   /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
   case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
 
+  case class Endorsement(level: Int) extends UpdateAddHtlcTlv
+
   private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
 
-  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint).typecase(UInt64(0), blindingPoint))
+  private val endorsement: Codec[Endorsement] = tlvField(uint8.narrow[Endorsement](n => if (n >= 8) Attempt.failure(Err(s"invalid endorsement level: $n")) else Attempt.successful(Endorsement(n)), _.level))
+
+  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
+    .typecase(UInt64(0), blindingPoint)
+    .typecase(UInt64(106823), endorsement))
 }
 
 sealed trait UpdateFulfillHtlcTlv extends Tlv

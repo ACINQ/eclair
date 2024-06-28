@@ -57,7 +57,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(nodeParams1: NodeParams): (ActorRef, ActorRef) = {
-      val relayer = system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref.toTyped))
+      val relayer = system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref.toTyped, TestProbe().ref.toTyped))
       // we need ensure the post-htlc-restart child actor is initialized
       sender.send(relayer, Relayer.GetChildActors(sender.ref))
       (relayer, sender.expectMsgType[Relayer.ChildActors].postRestartCleaner)
@@ -337,9 +337,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val htlc_upstream_1 = Seq(buildHtlcIn(0, channelId_ab_1, paymentHash1), buildHtlcIn(5, channelId_ab_1, paymentHash2))
     val htlc_upstream_2 = Seq(buildHtlcIn(7, channelId_ab_2, paymentHash1), buildHtlcIn(9, channelId_ab_2, paymentHash2))
     val htlc_upstream_3 = Seq(buildHtlcIn(11, randomBytes32(), paymentHash3))
-    val upstream_1 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_1.head.add, TimestampMilli(1687345927000L)) :: Upstream.Hot.Channel(htlc_upstream_2.head.add, TimestampMilli(1687345967000L)) :: Nil)
-    val upstream_2 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_1(1).add, TimestampMilli(1687345902000L)) :: Upstream.Hot.Channel(htlc_upstream_2(1).add, TimestampMilli(1687345999000L)) :: Nil)
-    val upstream_3 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_3.head.add, TimestampMilli(1687345980000L)) :: Nil)
+    val upstream_1 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_1.head.add, TimestampMilli(1687345927000L), a) :: Upstream.Hot.Channel(htlc_upstream_2.head.add, TimestampMilli(1687345967000L), a) :: Nil)
+    val upstream_2 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_1(1).add, TimestampMilli(1687345902000L), a) :: Upstream.Hot.Channel(htlc_upstream_2(1).add, TimestampMilli(1687345999000L), a) :: Nil)
+    val upstream_3 = Upstream.Hot.Trampoline(Upstream.Hot.Channel(htlc_upstream_3.head.add, TimestampMilli(1687345980000L), a) :: Nil)
     val data_upstream_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_1, Map.empty)
     val data_upstream_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_2, Map.empty)
     val data_upstream_3 = ChannelCodecsSpec.makeChannelDataNormal(htlc_upstream_3, Map.empty)
@@ -700,9 +700,9 @@ object PostRestartHtlcCleanerSpec {
       buildOutgoingBlindedPaymentAB(paymentHash)
     } else {
       val (route, recipient) = (Route(finalAmount, hops, None), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
-      buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient)
+      buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, 1.0)
     }
-    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt, 1.0)
   }
 
   def buildHtlcIn(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): DirectedHtlc = IncomingHtlc(buildHtlc(htlcId, channelId, paymentHash, blinded))
@@ -710,8 +710,8 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash, blinded))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), None), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()))
-    IncomingHtlc(UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None))
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), None), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()), 1.0)
+    IncomingHtlc(UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0))
   }
 
   def buildForwardFail(add: UpdateAddHtlc, upstream: Upstream.Cold): RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail] =
@@ -734,11 +734,11 @@ object PostRestartHtlcCleanerSpec {
     val parentId = UUID.randomUUID()
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
 
-    val add1 = UpdateAddHtlc(channelId_bc_1, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
+    val add1 = UpdateAddHtlc(channelId_bc_1, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
     val origin1 = Origin.Cold(Upstream.Local(id1))
-    val add2 = UpdateAddHtlc(channelId_bc_1, 75, 1105 msat, paymentHash2, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
+    val add2 = UpdateAddHtlc(channelId_bc_1, 75, 1105 msat, paymentHash2, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
     val origin2 = Origin.Cold(Upstream.Local(id2))
-    val add3 = UpdateAddHtlc(channelId_bc_1, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
+    val add3 = UpdateAddHtlc(channelId_bc_1, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
     val origin3 = Origin.Cold(Upstream.Local(id3))
 
     // Prepare channels and payment state before restart.
@@ -847,10 +847,10 @@ object PostRestartHtlcCleanerSpec {
 
     val notRelayed = Set((1L, channelId_bc_1), (0L, channelId_bc_2), (3L, channelId_bc_3), (5L, channelId_bc_3), (7L, channelId_bc_4))
 
-    val downstream_1_1 = UpdateAddHtlc(channelId_bc_1, 6L, finalAmount, paymentHash1, finalExpiry, TestConstants.emptyOnionPacket, None)
-    val downstream_2_1 = UpdateAddHtlc(channelId_bc_1, 8L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None)
-    val downstream_2_2 = UpdateAddHtlc(channelId_bc_2, 1L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None)
-    val downstream_2_3 = UpdateAddHtlc(channelId_bc_3, 4L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None)
+    val downstream_1_1 = UpdateAddHtlc(channelId_bc_1, 6L, finalAmount, paymentHash1, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
+    val downstream_2_1 = UpdateAddHtlc(channelId_bc_1, 8L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
+    val downstream_2_2 = UpdateAddHtlc(channelId_bc_2, 1L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
+    val downstream_2_3 = UpdateAddHtlc(channelId_bc_3, 4L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
 
     val data_ab_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty)
     val data_ab_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)

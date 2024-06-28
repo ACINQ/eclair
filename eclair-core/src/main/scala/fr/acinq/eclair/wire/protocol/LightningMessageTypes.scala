@@ -354,6 +354,8 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
   val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
 
+  val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)
+
   /** When storing in our DB, we avoid wasting storage with unknown data. */
   def removeUnknownTlvs(): UpdateAddHtlc = this.copy(tlvStream = tlvStream.copy(unknown = Set.empty))
 }
@@ -365,8 +367,9 @@ object UpdateAddHtlc {
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding_opt: Option[PublicKey]): UpdateAddHtlc = {
-    val tlvs = blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint).toSet[UpdateAddHtlcTlv]
+            blinding_opt: Option[PublicKey],
+            confidence: Double): UpdateAddHtlc = {
+    val tlvs: Set[UpdateAddHtlcTlv] = Set(blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint), Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt))).flatten
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
 }

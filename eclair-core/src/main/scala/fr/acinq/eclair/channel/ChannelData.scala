@@ -140,7 +140,7 @@ object Upstream {
   sealed trait Hot extends Upstream
   object Hot {
     /** Our node is forwarding a single incoming HTLC. */
-    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli) extends Hot {
+    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
     }
@@ -158,7 +158,7 @@ object Upstream {
   object Cold {
     def apply(hot: Hot): Cold = hot match {
       case Local(id) => Local(id)
-      case Hot.Channel(add, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
+      case Hot.Channel(add, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
       case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)).toList)
     }
 
@@ -196,7 +196,7 @@ sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option
 sealed trait ForbiddenCommandDuringSplice extends Command
 sealed trait ForbiddenCommandDuringQuiescence extends Command
 
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], confidence: Double, origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
