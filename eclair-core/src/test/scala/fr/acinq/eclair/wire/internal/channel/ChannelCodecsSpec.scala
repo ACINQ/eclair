@@ -93,7 +93,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // and re-encode it with the new codec
     val bin_new = ByteVector(channelDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format
-    assert(bin_new.startsWith(hex"04000a"))
+    assert(bin_new.startsWith(hex"05000a"))
     // now let's decode it again
     val data_new2 = channelDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -177,7 +177,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // and we encode with the new codec
       val newBin = channelDataCodec.encode(decoded1).require.bytes
       // make sure that encoding used the new codec
-      assert(newBin.startsWith(hex"0400"))
+      assert(newBin.startsWith(hex"0500"))
       // make sure that round-trip yields the same data
       val decoded2 = channelDataCodec.decode(newBin.bits).require.value
       assert(decoded1 == decoded2)
@@ -242,7 +242,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
       assert(newnormal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
-      Transactions.checkSig(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx, newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
+      val Left(remoteSig) = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig // TODO: handle partial sigs
+      newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.checkSig(remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
     }
   }
 
@@ -324,7 +325,7 @@ object ChannelCodecsSpec {
       txOut = Nil,
       lockTime = 0
     )
-    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), remoteSig), Nil)
+    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), Left(remoteSig)), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), TxId.fromValidHex("0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes)
     val channelFlags = ChannelFlags(announceChannel = true)

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, PossiblyHarmful, typed}
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
@@ -521,7 +522,7 @@ sealed trait ChannelDataWithCommitments extends PersistentChannelData {
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel, nextLocalNonce: Option[kotlin.Pair[SecretNonce, IndividualNonce]] = None) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
@@ -538,7 +539,8 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
                                                pushAmount: MilliSatoshi,
                                                commitTxFeerate: FeeratePerKw,
                                                remoteFundingPubKey: PublicKey,
-                                               remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
+                                               remoteFirstPerCommitmentPoint: PublicKey,
+                                               remoteNextLocalNonce: Option[IndividualNonce]) extends TransientChannelData {
   val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
@@ -573,13 +575,15 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     remotePushAmount: MilliSatoshi,
                                                     txBuilder: typed.ActorRef[InteractiveTxBuilder.Command],
                                                     deferred: Option[CommitSig],
+                                                    secondRemoteNonce_opt: Option[IndividualNonce],
                                                     replyTo_opt: Option[akka.actor.typed.ActorRef[Peer.OpenChannelResponse]]) extends TransientChannelData
 final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams: ChannelParams,
                                                    secondRemotePerCommitmentPoint: PublicKey,
                                                    localPushAmount: MilliSatoshi,
                                                    remotePushAmount: MilliSatoshi,
                                                    signingSession: InteractiveTxSigningSession.WaitingForSigs,
-                                                   remoteChannelData_opt: Option[ByteVector]) extends ChannelDataWithoutCommitments
+                                                   remoteChannelData_opt: Option[ByteVector],
+                                                   secondRemoteNonce_opt: Option[IndividualNonce]) extends ChannelDataWithoutCommitments
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,

@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, HtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
@@ -58,7 +58,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val setup = init(nodeParamsA = aliceParams)
     import setup._
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       if (test.tags.contains(IgnoreChannelUpdates)) {
         setup.alice2bob.ignoreMsg({ case _: ChannelUpdate => true })
         setup.bob2alice.ignoreMsg({ case _: ChannelUpdate => true })
@@ -242,7 +242,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == NORMAL)
   }
 
-  test("resume htlc settlement", Tag(IgnoreChannelUpdates)) { f =>
+  def resumeHTlcSettlement(f: FixtureParam): Unit = {
     import f._
 
     // Successfully send a first payment.
@@ -287,6 +287,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
+  }
+
+  test("resume htlc settlement", Tag(IgnoreChannelUpdates)) { f =>
+    resumeHTlcSettlement(f)
+  }
+
+  test("resume htlc settlement (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(IgnoreChannelUpdates)) { f =>
+    resumeHTlcSettlement(f)
   }
 
   test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates)) { f =>

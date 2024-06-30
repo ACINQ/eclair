@@ -17,15 +17,17 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{ScriptTree, SigHash}
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, LexicographicalOrdering, Musig2, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import fr.acinq.eclair.{KamonExt, randomLong}
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalDelayedOutputTx, CommitmentFormat, NUMS_POINT, SimpleTaprootChannelsStagingCommitmentFormat, TransactionWithInputInfo, TxOwner}
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.{KamonExt, randomBytes32, randomLong}
 import grizzled.slf4j.Logging
 import kamon.tag.TagSet
 import scodec.bits.ByteVector
@@ -96,9 +98,30 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
+  private def nonceSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(shaSeed(channelKeyPath))
+
   override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
+
+  override def verificationNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long, channelKeyPath: KeyPath, index: Long): (SecretNonce, IndividualNonce) = {
+    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
+    val sessionId = Generators.perCommitSecret(nonceSeed(channelKeyPath), index).value
+    val nonce = Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+    nonce
+  }
+
+  override def signingNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce) = {
+    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
+    val sessionId = randomBytes32()
+    Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+  }
+
+  override def closingNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce) = {
+    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
+    val sessionId = randomBytes32()
+    Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+  }
 
   /**
    * @param tx               input transaction
@@ -113,10 +136,20 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
-      Transactions.sign(tx, privateKey.privateKey, txOwner, commitmentFormat)
+      tx.sign(privateKey.privateKey, txOwner, commitmentFormat)
     }
   }
 
+  override def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
+    val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
+    Metrics.SignTxCount.withTags(tags).increment()
+    KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
+      val privateKey = privateKeys.get(localPublicKey.path).privateKey
+      val psig = Transactions.partialSign(privateKey, tx, inputIndex, spentOutputs, localPublicKey.publicKey, remotePublicKey, localNonce, remoteNextLocalNonce)
+      psig
+    }
+  }
+  
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
    *
@@ -134,7 +167,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-      Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat)
     }
   }
 
@@ -154,7 +187,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-      Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat)
     }
   }
 

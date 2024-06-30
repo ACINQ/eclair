@@ -18,11 +18,13 @@ package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelType, PartialSignatureWithNonce}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
@@ -113,18 +115,34 @@ case class TxRemoveOutput(channelId: ByteVector32,
                           tlvStream: TlvStream[TxRemoveOutputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId
 
 case class TxComplete(channelId: ByteVector32,
-                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId
+                      tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId {
+  // there should be a musig2 nonce for each input that requires one, ordered by serial id
+  val publicNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.Nonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
+}
+
+object TxComplete {
+  def apply(channelId: ByteVector32) = new TxComplete(channelId, TlvStream.empty)
+
+  def apply(channelId: ByteVector32, tlvStream: TlvStream[TxCompleteTlv]) = new TxComplete(channelId, tlvStream)
+
+  def apply(channelId: ByteVector32, publicNonces: List[IndividualNonce]) = new TxComplete(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+}
 
 case class TxSignatures(channelId: ByteVector32,
                         txId: TxId,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig)
+  val previousFundingTxPartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxPartialSig].map(_.partialSigWithNonce)
 }
 
 object TxSignatures {
-  def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ByteVector64]): TxSignatures = {
-    TxSignatures(channelId, tx.txid, witnesses, TlvStream(previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig).toSet[TxSignaturesTlv]))
+  def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ByteVector64], previousFundingTxPartialSig_opt: Option[PartialSignatureWithNonce]): TxSignatures = {
+    val tlvs: Set[TxSignaturesTlv] = Set(
+      previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig),
+      previousFundingTxPartialSig_opt.map(p => TxSignaturesTlv.PreviousFundingTxPartialSig(p))
+    ).flatten
+    TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
 
@@ -179,6 +197,7 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val nextLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
 }
 
 case class OpenChannel(chainHash: BlockHash,
@@ -202,6 +221,7 @@ case class OpenChannel(chainHash: BlockHash,
                        tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val nexLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -221,6 +241,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val nexLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
 // NB: this message is named open_channel2 in the specification.
@@ -248,6 +269,9 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
+  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 // NB: this message is named accept_channel2 in the specification.
@@ -271,22 +295,30 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
+  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxId: TxId,
                           fundingOutputIndex: Int,
                           signature: ByteVector64,
-                          tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
+                          tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
+  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).toRight(signature)
+}
 
 case class FundingSigned(channelId: ByteVector32,
                          signature: ByteVector64,
-                         tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                         tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).toRight(signature)
+}
 
 case class ChannelReady(channelId: ByteVector32,
                         nextPerCommitmentPoint: PublicKey,
                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
+  val nexLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
 case class Stfu(channelId: ByteVector32, initiator: Boolean) extends SetupMessage with HasChannelId
@@ -299,13 +331,17 @@ case class SpliceInit(channelId: ByteVector32,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
+  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, nextLocalNonces: List[IndividualNonce]): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
       Some(ChannelTlv.PushAmountTlv(pushAmount)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
     ).flatten
     SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
@@ -317,13 +353,17 @@ case class SpliceAck(channelId: ByteVector32,
                      tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
+  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, nextLocalNonces: List[IndividualNonce]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
       Some(ChannelTlv.PushAmountTlv(pushAmount)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
@@ -336,13 +376,16 @@ case class SpliceLocked(channelId: ByteVector32,
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
-                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice {
+  val shutdownNonce_opt: Option[IndividualNonce] = tlvStream.get[ShutdownTlv.ShutdownNonce].map(_.nonce)
+}
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
                          signature: ByteVector64,
                          tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
+  val partialSignature_opt = tlvStream.get[ClosingSignedTlv.PartialSignature]
 }
 
 case class UpdateAddHtlc(channelId: ByteVector32,
@@ -392,12 +435,16 @@ case class CommitSig(channelId: ByteVector32,
                      htlcSignatures: List[ByteVector64],
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
   val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
+  val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[CommitSigTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
+  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = partialSignature_opt.toRight(signature)
 }
 
 case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,
                         nextPerCommitmentPoint: PublicKey,
-                        tlvStream: TlvStream[RevokeAndAckTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId
+                        tlvStream: TlvStream[RevokeAndAckTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
+  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[protocol.RevokeAndAckTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+}
 
 case class UpdateFee(channelId: ByteVector32,
                      feeratePerKw: FeeratePerKw,

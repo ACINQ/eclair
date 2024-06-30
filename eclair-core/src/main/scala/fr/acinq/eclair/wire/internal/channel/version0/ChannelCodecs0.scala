@@ -128,7 +128,8 @@ private[channel] object ChannelCodecs0 {
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | varsizebinarydata)).as[InputInfo].decodeOnly
+        ("redeemScript" | varsizebinarydata) ::
+        ("scriptTee_opt" | provide(Option.empty[ScriptTreeAndInternalKey]))).as[InputInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 

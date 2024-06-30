@@ -359,7 +359,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
 
     // We create a PSBT with the non-wallet input already signed:
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
-      .updateWitnessInput(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.input.txOut, null, fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.redeemScript), fr.acinq.bitcoin.SigHash.SIGHASH_ALL, java.util.Map.of())
+      .updateWitnessInput(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.input.txOut, null, fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.redeemScript), fr.acinq.bitcoin.SigHash.SIGHASH_ALL, java.util.Map.of(), null, null, java.util.Map.of())
       .flatMap(_.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
     psbt match {
       case Left(failure) =>
