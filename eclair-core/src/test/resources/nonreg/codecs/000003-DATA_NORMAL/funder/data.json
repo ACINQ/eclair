@@ -47,6 +47,7 @@
         }
       },
       "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
         "announceChannel" : true
       }
     },

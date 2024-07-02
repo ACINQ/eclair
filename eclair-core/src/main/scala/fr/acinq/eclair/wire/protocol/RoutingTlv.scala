@@ -35,7 +35,13 @@ object AnnouncementSignaturesTlv {
 sealed trait NodeAnnouncementTlv extends Tlv
 
 object NodeAnnouncementTlv {
-  val nodeAnnouncementTlvCodec: Codec[TlvStream[NodeAnnouncementTlv]] = tlvStream(discriminated[NodeAnnouncementTlv].by(varint))
+  /** Rates at which the announced node sells inbound liquidity to remote peers. */
+  case class OptionWillFund(rates: LiquidityAds.WillFundRates) extends NodeAnnouncementTlv
+
+  val nodeAnnouncementTlvCodec: Codec[TlvStream[NodeAnnouncementTlv]] = tlvStream(discriminated[NodeAnnouncementTlv].by(varint)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), tlvField(LiquidityAds.Codecs.willFundRates.as[OptionWillFund]))
+  )
 }
 
 sealed trait ChannelAnnouncementTlv extends Tlv

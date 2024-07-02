@@ -323,6 +323,14 @@ object Features {
     val mandatory = 154
   }
 
+  // TODO:
+  //  - add NodeFeature once stable
+  //  - add link to bLIP
+  case object OnTheFlyFunding extends Feature with InitFeature {
+    val rfcName = "on_the_fly_funding"
+    val mandatory = 560
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -349,6 +357,7 @@ object Features {
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
+    OnTheFlyFunding
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -361,7 +370,8 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
-    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil)
+    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
+    OnTheFlyFunding -> (SplicePrototype :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)

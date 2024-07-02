@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -98,6 +98,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         fundingTxFeeBudget_opt: Option[Satoshi],
                                         pushAmount_opt: Option[MilliSatoshi],
                                         requireConfirmedInputs: Boolean,
+                                        requestFunding_opt: Option[LiquidityAds.RequestFunding],
                                         localParams: LocalParams,
                                         remote: ActorRef,
                                         remoteInit: Init,
@@ -109,7 +110,7 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
 case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
-                                            fundingContribution_opt: Option[Satoshi],
+                                            fundingContribution_opt: Option[LiquidityAds.AddFunding],
                                             dualFunded: Boolean,
                                             pushAmount_opt: Option[MilliSatoshi],
                                             localParams: LocalParams,
@@ -145,7 +146,7 @@ object Upstream {
       val expiryIn: CltvExpiry = add.cltvExpiry
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
-    case class Trampoline(received: Seq[Channel]) extends Hot {
+    case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
@@ -164,6 +165,10 @@ object Upstream {
 
     /** Our node is forwarding a single incoming HTLC. */
     case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    object Channel {
+      def apply(add: UpdateAddHtlc): Channel = Channel(add.channelId, add.id, add.amountMsat)
+    }
+
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(originHtlcs: List[Channel]) extends Cold { override val amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum }
   }
@@ -196,7 +201,16 @@ sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option
 sealed trait ForbiddenCommandDuringSplice extends Command
 sealed trait ForbiddenCommandDuringQuiescence extends Command
 
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+final case class CMD_ADD_HTLC(replyTo: ActorRef,
+                              amount: MilliSatoshi,
+                              paymentHash: ByteVector32,
+                              cltvExpiry: CltvExpiry,
+                              onion: OnionRoutingPacket,
+                              nextBlindingKey_opt: Option[PublicKey],
+                              fundingFee_opt: Option[LiquidityAds.FundingFee],
+                              origin: Origin.Hot,
+                              commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
@@ -214,10 +228,10 @@ final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], 
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
-final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long) extends Command
+final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long, requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends Command
 case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount: MilliSatoshi = 0 msat)
 case class SpliceOut(amount: Satoshi, scriptPubKey: ByteVector)
-final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_SPLICE]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]) extends Command {
+final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_SPLICE]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends Command {
   require(spliceIn_opt.isDefined || spliceOut_opt.isDefined, "there must be a splice-in or a splice-out")
   val additionalLocalFunding: Satoshi = spliceIn_opt.map(_.additionalLocalFunding).getOrElse(0 sat)
   val pushAmount: MilliSatoshi = spliceIn_opt.map(_.pushAmount).getOrElse(0 msat)
@@ -665,8 +679,16 @@ case class RemoteParams(nodeId: PublicKey,
                         initFeatures: Features[InitFeature],
                         upfrontShutdownScript_opt: Option[ByteVector])
 
-case class ChannelFlags(announceChannel: Boolean) {
-  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
+/**
+ * The [[nonInitiatorPaysCommitFees]] parameter is set to true when the sender wants the receiver to pay the commitment transaction fees.
+ * This is not part of the BOLTs and won't be needed anymore once commitment transactions don't pay any on-chain fees.
+ */
+case class ChannelFlags(nonInitiatorPaysCommitFees: Boolean, announceChannel: Boolean) {
+  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel, nonInitiatorPaysCommitFees=$nonInitiatorPaysCommitFees)"
+}
+
+object ChannelFlags {
+  def apply(announceChannel: Boolean): ChannelFlags = ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = announceChannel)
 }
 
 /** Information about what triggered the opening of the channel */

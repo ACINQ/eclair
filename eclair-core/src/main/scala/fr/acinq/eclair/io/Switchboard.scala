@@ -57,11 +57,16 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
         log.info(s"closing channel ${c.channelId}")
         nodeParams.db.channels.removeChannel(c.channelId)
       })
-      val peerChannels = channels.groupBy(_.remoteNodeId)
-      peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
-      log.info("restoring {} peer(s) with {} channel(s)", peerChannels.size, channels.size)
+      val peersWithChannels = channels.groupBy(_.remoteNodeId)
+      peersWithChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
+      // We must re-create peers that have a funded on-the-fly payment, even if they don't have a channel yet.
+      // It will retry relaying that payment and complete the on-the-fly funding.
+      // Note that since we use createOrGetPeer, we will automatically skip peers that have channels.
+      val peersWithOnTheFlyFunding = nodeParams.db.onTheFlyFunding.listPendingPayments().keySet
+      peersWithOnTheFlyFunding.foreach(remoteNodeId => createOrGetPeer(remoteNodeId, Set.empty))
+      log.info("restoring {} peer(s) with {} channel(s)", peersWithChannels.size, channels.size)
       unstashAll()
-      context.become(normal(peerChannels.keySet))
+      context.become(normal(peersWithChannels.keySet))
     case _ =>
       stash()
   }
@@ -102,7 +107,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
       // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
       val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync, nodeParams.willFundRates_opt)
       if (!hasChannels && !authenticated.outgoing) {
         incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
       }

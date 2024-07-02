@@ -6,15 +6,17 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector64
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.channel.{ChannelIdAssigned, PersistentChannelData}
+import fr.acinq.eclair.channel.{ChannelIdAssigned, PersistentChannelData, Upstream}
 import fr.acinq.eclair.io.Peer.PeerNotFound
 import fr.acinq.eclair.io.Switchboard._
+import fr.acinq.eclair.payment.relay.{OnTheFlyFunding, OnTheFlyFundingSpec}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, InitFeature, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
+import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
@@ -31,6 +33,23 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     switchboard ! Switchboard.Init(List(ChannelCodecsSpec.normal))
     probe.expectMsg(remoteNodeId)
     peer.expectMsg(Peer.Init(Set(ChannelCodecsSpec.normal)))
+  }
+
+  test("on initialization create peers with pending on-the-fly funding proposals") {
+    val nodeParams = Alice.nodeParams
+    // We don't have channels yet with that remote peer, but we have a pending on-the-fly funding proposal.
+    val remoteNodeId = randomKey().publicKey
+    val pendingOnTheFly = OnTheFlyFunding.Pending(
+      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(100_000 msat, randomBytes32(), CltvExpiry(600)), Upstream.Local(UUID.randomUUID()))),
+      status = OnTheFlyFundingSpec.createStatus()
+    )
+    nodeParams.db.onTheFlyFunding.addPending(remoteNodeId, pendingOnTheFly)
+
+    val (probe, peer) = (TestProbe(), TestProbe())
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(Nil)
+    probe.expectMsg(remoteNodeId)
+    peer.expectMsg(Peer.Init(Set.empty))
   }
 
   test("when connecting to a new peer forward Peer.Connect to it") {

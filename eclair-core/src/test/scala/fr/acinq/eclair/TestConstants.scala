@@ -18,8 +18,6 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
 import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
@@ -28,11 +26,12 @@ import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -52,6 +51,10 @@ object TestConstants {
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
+  val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
+    fundingRates = LiquidityAds.FundingLease.Basic(100_000 sat, 10_000_000 sat, 500, 100, 100 sat) :: Nil,
+    paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
+  )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
   val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
@@ -93,15 +96,15 @@ object TestConstants {
       torAddress_opt = None,
       features = Features(
         Map(
-          DataLossProtect -> Optional,
-          ChannelRangeQueries -> Optional,
-          ChannelRangeQueriesExtended -> Optional,
-          VariableLengthOnion -> Mandatory,
-          PaymentSecret -> Mandatory,
-          BasicMultiPartPayment -> Optional,
-          Wumbo -> Optional,
-          PaymentMetadata -> Optional,
-          RouteBlinding -> Optional,
+          Features.DataLossProtect -> FeatureSupport.Optional,
+          Features.ChannelRangeQueries -> FeatureSupport.Optional,
+          Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+          Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+          Features.PaymentSecret -> FeatureSupport.Mandatory,
+          Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+          Features.Wumbo -> FeatureSupport.Optional,
+          Features.PaymentMetadata -> FeatureSupport.Optional,
+          Features.RouteBlinding -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -229,7 +232,12 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      willFundRates_opt = Some(defaultLiquidityRates),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        wakeUpTimeout = 30 seconds,
+        proposalTimeout = 90 seconds,
+      )
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -262,15 +270,15 @@ object TestConstants {
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       torAddress_opt = None,
       features = Features(
-        DataLossProtect -> Optional,
-        ChannelRangeQueries -> Optional,
-        ChannelRangeQueriesExtended -> Optional,
-        VariableLengthOnion -> Mandatory,
-        PaymentSecret -> Mandatory,
-        BasicMultiPartPayment -> Optional,
-        Wumbo -> Optional,
-        PaymentMetadata -> Optional,
-        RouteBlinding -> Optional,
+        Features.DataLossProtect -> FeatureSupport.Optional,
+        Features.ChannelRangeQueries -> FeatureSupport.Optional,
+        Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+        Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+        Features.PaymentSecret -> FeatureSupport.Mandatory,
+        Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+        Features.Wumbo -> FeatureSupport.Optional,
+        Features.PaymentMetadata -> FeatureSupport.Optional,
+        Features.RouteBlinding -> FeatureSupport.Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
@@ -396,7 +404,12 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      willFundRates_opt = Some(defaultLiquidityRates),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        wakeUpTimeout = 30 seconds,
+        proposalTimeout = 90 seconds,
+      )
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
