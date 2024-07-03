@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat.BlockHash
-import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{BlockHeight, UInt64}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
@@ -41,6 +42,9 @@ object InitTlv {
    */
   case class RemoteAddress(address: NodeAddress) extends InitTlv
 
+  /** We let our peer know the latest block header we've seen, to allow them to detect eclipse attacks. */
+  case class LatestBlockHeader(blockHeight: BlockHeight, blockHeader: BlockHeader) extends InitTlv
+
 }
 
 object InitTlvCodecs {
@@ -49,10 +53,12 @@ object InitTlvCodecs {
 
   private val networks: Codec[Networks] = tlvField(list(blockHash))
   private val remoteAddress: Codec[RemoteAddress] = tlvField(nodeaddress)
+  private val latestBlockHeader: Codec[LatestBlockHeader] = tlvField(blockHeight :: blockHeader)
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
     .typecase(UInt64(3), remoteAddress)
+    .typecase(UInt64(32411), latestBlockHeader)
   )
 
 }

@@ -69,7 +69,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
   def createBlocks(blockCount: Int, probe: TestProbe): Unit = {
     generateBlocks(blockCount)
-    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe), None))
   }
 
   test("publish transaction with time locks") {

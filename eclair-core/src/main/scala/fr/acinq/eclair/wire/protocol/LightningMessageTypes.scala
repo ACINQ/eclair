@@ -58,6 +58,8 @@ sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the s
 case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
   val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
+  val currentBlockHeight_opt = tlvStream.get[InitTlv.LatestBlockHeader].map(_.blockHeight)
+  val currentBlockHeader_opt = tlvStream.get[InitTlv.LatestBlockHeader].map(_.blockHeader)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {

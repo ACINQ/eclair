@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat.{BlockId, Transaction}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -30,6 +31,6 @@ case class NewBlock(blockId: BlockId) extends BlockchainEvent
 
 case class NewTransaction(tx: Transaction) extends BlockchainEvent
 
-case class CurrentBlockHeight(blockHeight: BlockHeight) extends BlockchainEvent
+case class CurrentBlockHeight(blockHeight: BlockHeight, blockHeader_opt: Option[BlockHeader]) extends BlockchainEvent
 
 case class CurrentFeerates(feeratesPerKw: FeeratesPerKw) extends BlockchainEvent

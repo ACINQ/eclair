@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
@@ -46,6 +47,7 @@ import scala.concurrent.duration._
 object TestConstants {
 
   val defaultBlockHeight = 400_000
+  val defaultBlockHeader = BlockHeader.read("00601d3455bb9fbd966b3ea2dc42d0c22722e4c0c1729fad17210100000000000000000055087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af09135edbd64943805175e955e06")
   val fundingSatoshis: Satoshi = 1_000_000 sat
   val nonInitiatorFundingSatoshis: Satoshi = 500_000 sat
   val initiatorPushAmount: MilliSatoshi = 200_000_000L msat
@@ -86,6 +88,7 @@ object TestConstants {
       channelKeyManager,
       onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      blockHeader = new AtomicReference(defaultBlockHeader),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
       color = Color(1, 2, 3),
@@ -256,6 +259,7 @@ object TestConstants {
       channelKeyManager,
       onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
+      blockHeader = new AtomicReference(defaultBlockHeader),
       feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
       color = Color(4, 5, 6),
