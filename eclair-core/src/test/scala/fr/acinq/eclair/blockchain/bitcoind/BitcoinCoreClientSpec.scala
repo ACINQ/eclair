@@ -23,7 +23,7 @@ import fr.acinq.bitcoin
 import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
-import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
+import fr.acinq.bitcoin.{Bech32, BlockHeader, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -1706,6 +1706,25 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     wallet.fundTransaction(txNotFunded, FeeratePerKw(5000 sat), replaceable = true).pipeTo(sender.ref)
     sender.expectMsgType[FundTransactionResponse]
+  }
+
+  test("get block header") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val height = sender.expectMsgType[BlockHeight]
+    bitcoinClient.getBlockHeader(height).pipeTo(sender.ref)
+    val Some(header) = sender.expectMsgType[Option[BlockHeader]]
+
+    generateBlocks(1)
+
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    assert(sender.expectMsgType[BlockHeight] == height + 1)
+    bitcoinClient.getBlockHeader(height + 1).pipeTo(sender.ref)
+    val Some(nextHeader) = sender.expectMsgType[Option[BlockHeader]]
+    assert(nextHeader.hash != header.hash)
+    assert(nextHeader.hashPreviousBlock == header.hash)
   }
 
 }

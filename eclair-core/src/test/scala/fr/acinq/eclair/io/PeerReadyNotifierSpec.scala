@@ -65,11 +65,11 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == remoteNodeId)
 
     // We haven't reached the timeout yet.
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(99)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(99), None))
     probe.expectNoMessage(100 millis)
 
     // We exceed the timeout (we've missed blocks).
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(110)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(110), None))
     probe.expectMessage(PeerUnavailable(remoteNodeId))
   }
 
@@ -199,7 +199,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels]
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100), None))
     probe.expectMessage(PeerUnavailable(remoteNodeId))
   }
 

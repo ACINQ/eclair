@@ -89,8 +89,8 @@ object EclairInternalsSerializer {
   val messageRouteParamsCodec: Codec[MessageRouteParams] = (
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
-      ("ageFactor" | double) ::
-      ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+        ("ageFactor" | double) ::
+        ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
@@ -150,6 +150,8 @@ object EclairInternalsSerializer {
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
       ("chainHash" | blockHash) ::
+      ("currentBlockHeight" | blockHeight) ::
+      ("currentBlockHeader" | blockHeader) ::
       ("features" | variableSizeBytes(uint16, initFeaturesCodec)) ::
       ("doSync" | bool(8))).as[PeerConnection.InitializeConnection]
 

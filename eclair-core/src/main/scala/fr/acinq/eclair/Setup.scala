@@ -22,6 +22,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, addressToPublicKeyScript}
 import fr.acinq.eclair.Setup.Seeds
@@ -111,6 +112,11 @@ class Setup(val datadir: File,
   val blockHeight = new AtomicLong(0)
 
   /**
+   * This holds the latest block header we've received.
+   */
+  val blockHeader = new AtomicReference[BlockHeader](null)
+
+  /**
    * This holds the current feerates, in satoshi-per-kilobytes.
    * The value is read by all actors, hence it needs to be thread-safe.
    */
@@ -134,7 +140,7 @@ class Setup(val datadir: File,
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
 
-    case class BitcoinStatus(version: Int, chainHash: BlockHash, initialBlockDownload: Boolean, verificationProgress: Double, blockCount: Long, headerCount: Long, unspentAddresses: List[String])
+    case class BitcoinStatus(version: Int, chainHash: BlockHash, initialBlockDownload: Boolean, verificationProgress: Double, blockCount: Long, headerCount: Long, latestHeader: BlockHeader, unspentAddresses: List[String])
 
     def getBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
@@ -150,6 +156,8 @@ class Setup(val datadir: File,
       // NB: bitcoind confusingly returns the blockId instead of the blockHash.
       chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => BlockId(ByteVector32.fromValidHex(s))).map(BlockHash(_))
       bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
+      blockHash <- bitcoinClient.invoke("getblockhash", blocks).map(_.extract[String])
+      latestHeader <- bitcoinClient.invoke("getblockheader", blockHash, /* verbose */ false).map(_.extract[String]).map(BlockHeader.read)
       unspentAddresses <- bitcoinClient.invoke("listunspent").recover { _ => if (wallet.isEmpty && wallets.length > 1) throw BitcoinDefaultWalletException(wallets) else throw BitcoinWalletNotLoadedException(wallet.getOrElse(""), wallets) }
         .collect { case JArray(values) =>
           values
@@ -162,7 +170,7 @@ class Setup(val datadir: File,
         case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
         case "regtest" => Future.successful(())
       }
-    } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, unspentAddresses)
+    } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, latestHeader, unspentAddresses)
 
     def pollBitcoinStatus(bitcoinClient: BasicBitcoinJsonRPCClient): Future[BitcoinStatus] = {
       getBitcoinStatus(bitcoinClient).transformWith {
@@ -197,8 +205,9 @@ class Setup(val datadir: File,
       assert(bitcoinStatus.verificationProgress > 0.999, s"bitcoind should be synchronized (progress=${bitcoinStatus.verificationProgress})")
       assert(bitcoinStatus.headerCount - bitcoinStatus.blockCount <= 1, s"bitcoind should be synchronized (headers=${bitcoinStatus.headerCount} blocks=${bitcoinStatus.blockCount})")
     }
-    logger.info(s"current blockchain height=${bitcoinStatus.blockCount}")
+    logger.info(s"current blockchain height=${bitcoinStatus.blockCount} header=${ByteVector(BlockHeader.write(bitcoinStatus.latestHeader)).toHex}")
     blockHeight.set(bitcoinStatus.blockCount)
+    blockHeader.set(bitcoinStatus.latestHeader)
     (bitcoinClient, bitcoinStatus.chainHash)
   }
 
@@ -206,7 +215,7 @@ class Setup(val datadir: File,
   logger.info(s"connecting to database with instanceId=$instanceId")
   val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onChainKeyManager_opt, initTor(), databases, blockHeight, feeratesPerKw, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, onChainKeyManager_opt, initTor(), databases, blockHeight, blockHeader, feeratesPerKw, pluginParams)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   assert(bitcoinChainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$bitcoinChainHash)")

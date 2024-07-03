@@ -226,7 +226,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // We don't retry until a new block is found.
     factory.expectNoMessage(100 millis)
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned]
     assert(attempt2.actor.expectMsgType[FinalTxPublisher.Publish].cmd == cmd)
   }
@@ -247,7 +247,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // We automatically retry the failed attempt once a new block is found (we may have more funds now):
     factory.expectNoMessage(100 millis)
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
   }
@@ -273,7 +273,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt2.actor.expectMsg(FinalTxPublisher.Stop)
     factory.expectNoMessage(100 millis)
 
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     val attempt3 = factory.expectMsgType[FinalTxPublisherSpawned]
     assert(attempt3.actor.expectMsgType[publish.FinalTxPublisher.Publish].cmd == cmd2)
     factory.expectNoMessage(100 millis)
@@ -292,7 +292,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     factory.expectNoMessage(100 millis)
   }
 
@@ -311,7 +311,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
 
     // We retry when a new block is found:
-    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1))
+    system.eventStream.publish(CurrentBlockHeight(nodeParams.currentBlockHeight + 1, None))
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd == cmd)
   }
@@ -329,7 +329,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     factory.expectNoMessage(100 millis)
   }
 
@@ -346,7 +346,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     attempt.actor.expectMsg(FinalTxPublisher.Stop)
 
     // We don't retry, even after a new block has been found:
-    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200)))
+    system.eventStream.publish(CurrentBlockHeight(BlockHeight(8200), None))
     factory.expectNoMessage(100 millis)
   }
 

@@ -44,15 +44,15 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
     // We haven't reached the timeout yet.
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(99)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(99), None))
     probe.expectNoMessage(100 millis)
 
     // We exceed the timeout (we've missed blocks).
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(110)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(110), None))
     probe.expectMessage(AsyncPaymentTimeout)
 
     // Only get the timeout message once.
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(111)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(111), None))
     probe.expectNoMessage(100 millis)
   }
 
@@ -79,7 +79,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
 
     // We trigger one timeout messages when we reach the timeout
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100), None))
     probe.expectMessage(AsyncPaymentTimeout)
     probe.expectNoMessage(100 millis)
 
@@ -90,7 +90,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     triggerer ! Watch(probe2.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
 
     // We get two timeout messages when we reach the timeout
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100), None))
     probe.expectMessage(AsyncPaymentTimeout)
     probe2.expectMessage(AsyncPaymentTimeout)
   }
@@ -145,7 +145,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     triggerer ! Watch(probe2.ref, remoteNodeId, paymentHash = ByteVector32.One, timeout = BlockHeight(101))
 
     // First watch times out
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100), None))
     probe.expectMessage(AsyncPaymentTimeout)
 
     // Second watch succeeds
@@ -173,7 +173,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
     // First remote node times out
-    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
+    system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100), None))
     probe.expectMessage(AsyncPaymentTimeout)
 
     // Second remote node connects and triggers watch

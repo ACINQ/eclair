@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
@@ -60,7 +61,7 @@ object ZmqWatcher {
   private case object TickBlockTimeout extends Command
   private case class GetBlockCountFailed(t: Throwable) extends Command
   private case class CheckBlockHeight(current: BlockHeight) extends Command
-  private case class PublishBlockHeight(current: BlockHeight) extends Command
+  private case class PublishBlockHeight(current: BlockHeight, header_opt: Option[BlockHeader]) extends Command
   private case class ProcessNewBlock(blockId: BlockId) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
@@ -275,9 +276,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         Behaviors.same
 
       case TickNewBlock =>
-        context.pipeToSelf(client.getBlockHeight()) {
+        context.pipeToSelf(for {
+          height <- client.getBlockHeight()
+          header_opt <- client.getBlockHeader(height)
+        } yield (height, header_opt)) {
           case Failure(t) => GetBlockCountFailed(t)
-          case Success(currentHeight) => PublishBlockHeight(currentHeight)
+          case Success((currentHeight, header_opt)) => PublishBlockHeight(currentHeight, header_opt)
         }
         // TODO: beware of the herd effect
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
@@ -288,10 +292,10 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         }
         Behaviors.same
 
-      case PublishBlockHeight(currentHeight) =>
+      case PublishBlockHeight(currentHeight, header_opt) =>
         log.debug("setting blockHeight={}", currentHeight)
         blockHeight.set(currentHeight.toLong)
-        context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight))
+        context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight, header_opt))
         Behaviors.same
 
       case TriggerEvent(replyTo, watch, event) =>

@@ -145,11 +145,14 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // When the watcher starts, it broadcasts the current height.
       val block1 = listener.expectMsgType[CurrentBlockHeight]
       assert(blockHeight.get() == block1.blockHeight.toLong)
+      assert(block1.blockHeader_opt.nonEmpty)
       listener.expectNoMessage(100 millis)
 
       generateBlocks(1)
-      assert(listener.expectMsgType[CurrentBlockHeight].blockHeight == block1.blockHeight + 1)
-      assert(blockHeight.get() == block1.blockHeight.toLong + 1)
+      val block2 = listener.expectMsgType[CurrentBlockHeight]
+      assert(block2.blockHeight == block1.blockHeight + 1)
+      assert(blockHeight.get() == block2.blockHeight.toLong)
+      assert(block2.blockHeader_opt.get.hashPreviousBlock == block1.blockHeader_opt.get.hash)
       listener.expectNoMessage(100 millis)
 
       generateBlocks(5)

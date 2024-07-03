@@ -93,6 +93,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode block header in init") {
+    val init = Init(Features.empty, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Nil), InitTlv.LatestBlockHeader(BlockHeight(800_000), TestConstants.defaultBlockHeader)))
+    val expected = hex"0000 0000 01206fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 fd7e9b54000c350000601d3455bb9fbd966b3ea2dc42d0c22722e4c0c1729fad17210100000000000000000055087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af09135edbd64943805175e955e06"
+    assert(initCodec.encode(init).require.bytes == expected)
+    assert(initCodec.decode(expected.bits).require.value == init)
+  }
+
   test("encode/decode warning") {
     val testCases = Seq(
       Warning("") -> hex"000100000000000000000000000000000000000000000000000000000000000000000000",

@@ -19,14 +19,13 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{Bech32, Block, SigHash}
+import fr.acinq.bitcoin.{Bech32, Block, BlockHeader, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
-import fr.acinq.eclair.json.SatoshiSerializer
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -654,6 +653,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     rpcClient.invoke("getblockcount").collect {
       case JInt(count) => BlockHeight(count.toLong)
     }
+
+  def getBlockHeader(height: BlockHeight)(implicit ec: ExecutionContext): Future[Option[BlockHeader]] =
+    rpcClient.invoke("getblockhash", height.toLong)
+      .collect { case JString(blockHash) => blockHash }
+      .flatMap(blockHash => rpcClient.invoke("getblockheader", blockHash, /* verbose */ false))
+      .collect { case JString(blockHeader) => Some(BlockHeader.read(blockHeader)) }
+      .recover { case _ => None }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)

@@ -475,7 +475,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
     val currentBlock = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + 10
-    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
+    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock, None))
     // Alice republishes the highest feerate funding tx.
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == fundingTx.txid)
     alice2bob.expectNoMessage(100 millis)
@@ -489,7 +489,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val currentBlock = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + 10
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
-    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
+    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock, None))
     // Alice republishes the highest feerate funding tx.
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == fundingTx.txid)
     alice2bob.expectNoMessage(100 millis)
@@ -502,7 +502,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
     val currentBlock = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + 10
     wallet.doubleSpent = Set(fundingTx.txid)
-    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
+    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock, None))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
@@ -517,7 +517,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
     wallet.doubleSpent = Set(fundingTx.txid)
-    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock))
+    alice ! ProcessCurrentBlockHeight(CurrentBlockHeight(currentBlock, None))
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(wallet.rolledback.map(_.txid) == Seq(fundingTx.txid))
@@ -528,7 +528,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   test("recv CurrentBlockCount (funding timeout reached)", Tag(ChannelStateTestsTags.DualFunding), Tag("no-funding-contribution")) { f =>
     import f._
     val timeoutBlock = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1
-    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
+    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock, None))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
     bobListener.expectMsgType[ChannelAborted]
@@ -540,7 +540,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val timeoutBlock = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1
     bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == OFFLINE)
-    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock))
+    bob ! ProcessCurrentBlockHeight(CurrentBlockHeight(timeoutBlock, None))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(100 millis)
     bobListener.expectMsgType[ChannelAborted]

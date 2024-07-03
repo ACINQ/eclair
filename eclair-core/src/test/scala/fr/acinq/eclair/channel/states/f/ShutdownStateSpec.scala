@@ -642,7 +642,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentBlockCount (no htlc timed out)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    alice ! CurrentBlockHeight(BlockHeight(400143))
+    alice ! CurrentBlockHeight(BlockHeight(400143), None)
     awaitCond(alice.stateData == initialState)
   }
 
@@ -650,7 +650,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val aliceCommitTx = initialState.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    alice ! CurrentBlockHeight(BlockHeight(400145))
+    alice ! CurrentBlockHeight(BlockHeight(400145), None)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid) // commit tx
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1

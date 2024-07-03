@@ -18,7 +18,8 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
+import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -28,7 +29,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{BlockHeight, FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -103,14 +104,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
+    case Event(InitializeConnection(peer, chainHash, currentBlockHeight, currentBlockHeader, localFeatures, doSync), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
-      val localInit = d.pendingAuth.address match {
-        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
-        case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
-      }
+      val tlvs = TlvStream(Set(
+        Some(InitTlv.Networks(chainHash :: Nil)),
+        if (!d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(d.pendingAuth.address)) Some(InitTlv.RemoteAddress(d.pendingAuth.address)) else None,
+        Some(InitTlv.LatestBlockHeader(currentBlockHeight, currentBlockHeader))
+      ).flatten[InitTlv])
+      val localInit = protocol.Init(localFeatures, tlvs)
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
@@ -130,6 +133,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
         remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
+        remoteInit.currentBlockHeight_opt.foreach(height => log.info("peer reports that the current block height is {}", height.toLong))
+        remoteInit.currentBlockHeader_opt.foreach(header => log.info("peer reports that the current block header is {}", ByteVector(BlockHeader.write(header)).toHex))
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
         val featuresCompatibilityResult = Features.testCompatible(d.localInit.features, remoteInit.features)
@@ -574,7 +579,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, currentBlockHeight: BlockHeight, currentBlockHeader: BlockHeader, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes
