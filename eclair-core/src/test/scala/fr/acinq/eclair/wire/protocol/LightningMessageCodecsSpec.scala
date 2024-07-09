@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
+import fr.acinq.eclair.wire.protocol.ChannelTlv._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import org.json4s.jackson.Serialization
@@ -372,7 +372,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultAccept -> defaultEncoded,
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))) -> (defaultEncoded ++ hex"01021000"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fe470000070206c1"),
-      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200")
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), FeeCreditUsedTlv(0 msat))) -> (defaultEncoded ++ hex"0103401000 fda05200"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), FeeCreditUsedTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fda0520206c1"),
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -395,10 +397,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       SpliceInit(channelId, (-50_000).sat, FeeratePerKw(500 sat), 0, fundingPubkey) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff3cb0 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
       SpliceInit(channelId, 100_000 sat, 100, FeeratePerKw(2500 sat), fundingPubkey, 0 msat, requireConfirmedInputs = false, Some(LiquidityAds.RequestFunding(100_000 sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance))) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b1e00000000000186a0000186a0000186a00190009600000000000000000000",
       SpliceAck(channelId, 25_000 sat, fundingPubkey) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-      SpliceAck(channelId, 40_000 sat, fundingPubkey, 10_000_000 msat, requireConfirmedInputs = false, None) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000703989680",
+      SpliceAck(channelId, 40_000 sat, fundingPubkey, 10_000_000 msat, requireConfirmedInputs = false, None, None) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000703989680",
       SpliceAck(channelId, 0 sat, fundingPubkey) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
       SpliceAck(channelId, (-25_000).sat, fundingPubkey) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff9e58 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-      SpliceAck(channelId, 25_000 sat, fundingPubkey, 0 msat, requireConfirmedInputs = false, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes))) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      SpliceAck(channelId, 25_000 sat, fundingPubkey, 0 msat, requireConfirmedInputs = false, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes)), None) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      SpliceAck(channelId, 25_000 sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(0 msat))) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda05200",
+      SpliceAck(channelId, 25_000 sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(1729 msat))) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda0520206c1",
       SpliceLocked(channelId, fundingTxId) -> hex"908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566",
       // @formatter:on
     )
@@ -464,7 +468,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 1e 00000000000b71b0 0007a120004c4b40044c004b00000000000005dc 0000"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true).map(_.willFund)
+      val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 78 0007a120004c4b40044c004b00000000000005dc 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c c57cf393f6bd534472ec08cbfbbc7268501b32f563a21cdf02a99127c4f25168249acd6509f96b2e93843c3b838ee4808c75d0a15ff71ba886fda980b8ca954f"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -480,7 +484,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5e 000000000007a120 000186a00007a1200226006400001388000003e8 804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true).map(_.willFund)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 78 000186a00007a1200226006400001388000003e8 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c 035875ad2279190f6bfcc75a8bdccafeddfc2700a03587e3621114bf43b60d2c0de977ba0337b163d320471720a683ae211bea07742a2c4204dd5eb0bda75135"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -496,7 +500,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5e 000000000007a120 000186a00007a1200226006400001388000003e8 824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true).map(_.willFund)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 78 000186a00007a1200226006400001388000003e8 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c 035875ad2279190f6bfcc75a8bdccafeddfc2700a03587e3621114bf43b60d2c0de977ba0337b163d320471720a683ae211bea07742a2c4204dd5eb0bda75135"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -599,6 +603,24 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       CancelOnTheFlyFunding(channelId, Nil, hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000 0004 deadbeef",
       CancelOnTheFlyFunding(channelId, List(paymentHash1), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0001 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef",
       CancelOnTheFlyFunding(channelId, List(paymentHash1, paymentHash2), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0002 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb21067343213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785 0004 deadbeef",
+    )
+    for ((expected, encoded) <- testCases) {
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value
+      assert(decoded == expected)
+      val reEncoded = lightningMessageCodec.encode(decoded).require.bytes
+      assert(reEncoded == encoded)
+    }
+  }
+
+  test("encode/decode fee credit messages") {
+    val preimages = Seq(
+      ByteVector32(hex"6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f"),
+      ByteVector32(hex"4ad834d418faf74ebf7c8a026f2767a41c3a0995c334d7d3dab47737794b0c16"),
+    )
+    val testCases = Seq(
+      AddFeeCredit(Block.RegtestGenesisBlock.hash, preimages.head) -> hex"a055 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f",
+      CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 0 msat) -> hex"a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000000000000",
+      CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 20_000_000 msat) -> hex"a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000001312d00",
     )
     for ((expected, encoded) <- testCases) {
       val decoded = lightningMessageCodec.decode(encoded.bits).require.value

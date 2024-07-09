@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, TxId}
 import fr.acinq.eclair.channel.{ChannelLiquidityPurchased, LiquidityPurchase}
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
 /**
  * Created by t-bast on 13/09/2024. 
@@ -56,5 +57,14 @@ trait LiquidityDb {
 
   /** Check if we received the preimage for the given payment hash of an on-the-fly payment. */
   def getOnTheFlyFundingPreimage(paymentHash: ByteVector32): Option[ByteVector32]
+
+  /** Add fee credit for the given remote node and return the updated fee credit. */
+  def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): MilliSatoshi
+
+  /** Return the amount owed to the given remote node as fee credit. */
+  def getFeeCredit(nodeId: PublicKey): MilliSatoshi
+
+  /** Remove fee credit for the given remote node and return the remaining fee credit. */
+  def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi
 
 }

@@ -185,4 +185,27 @@ class LiquidityDbSpec extends AnyFunSuite {
     }
   }
 
+  test("add/get/remove fee credit") {
+    forAllDbs { dbs =>
+      val db = dbs.liquidity
+      val nodeId = randomKey().publicKey
+
+      // Initially, the DB is empty.
+      assert(db.getFeeCredit(nodeId) == 0.msat)
+      assert(db.removeFeeCredit(nodeId, 0 msat) == 0.msat)
+
+      // We owe some fee credit to our peer.
+      assert(db.addFeeCredit(nodeId, 211_754 msat, receivedAt = TimestampMilli(50_000)) == 211_754.msat)
+      assert(db.getFeeCredit(nodeId) == 211_754.msat)
+      assert(db.addFeeCredit(nodeId, 245 msat, receivedAt = TimestampMilli(55_000)) == 211_999.msat)
+      assert(db.getFeeCredit(nodeId) == 211_999.msat)
+
+      // We consume some of the fee credit.
+      assert(db.removeFeeCredit(nodeId, 11_999 msat) == 200_000.msat)
+      assert(db.getFeeCredit(nodeId) == 200_000.msat)
+      assert(db.removeFeeCredit(nodeId, 250_000 msat) == 0.msat)
+      assert(db.getFeeCredit(nodeId) == 0.msat)
+    }
+  }
+
 }

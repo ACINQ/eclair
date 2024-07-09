@@ -108,6 +108,19 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(accept.willFund_opt.nonEmpty)
   }
 
+  test("recv OpenDualFundedChannel (with liquidity ads and fee credit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    val requestFunds = LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
+    val openWithFundsRequest = open.copy(tlvStream = open.tlvStream.copy(records = open.tlvStream.records + ChannelTlv.RequestFundingTlv(requestFunds) + ChannelTlv.UseFeeCredit(2_500_000 msat)))
+    alice2bob.forward(bob, openWithFundsRequest)
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
+    assert(accept.willFund_opt.nonEmpty)
+    assert(accept.tlvStream.get[ChannelTlv.FeeCreditUsedTlv].map(_.amount).contains(2_500_000 msat))
+  }
+
   test("recv OpenDualFundedChannel (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 

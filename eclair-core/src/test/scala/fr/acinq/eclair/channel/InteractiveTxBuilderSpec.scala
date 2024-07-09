@@ -214,8 +214,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false).copy(paysCommitTxFees = !nonInitiatorPaysCommitTxFees)
-    val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false).copy(paysCommitTxFees = nonInitiatorPaysCommitTxFees)
+    val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
+    val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
 
     val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA), (nodeParamsB, localParamsB)).map {
       case (nodeParams, localParams) =>
@@ -614,6 +614,91 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == txA.tx.fees)
       assert(targetFeerate * 0.5 <= txA.feerate && txA.feerate < targetFeerate, s"unexpected feerate (target=$targetFeerate actual=${txA.feerate})")
+    }
+  }
+
+  test("initiator does not contribute -- on-the-fly funding with fee credit") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingA = 2_500.sat
+    val utxosA = Seq(5_000 sat)
+    val fundingB = 150_000.sat
+    val utxosB = Seq(200_000 sat)
+    // The initiator contributes a small amount, and pays the remaining liquidity fees from its fee credit.
+    val purchase = LiquidityAds.Purchase.WithFeeCredit(fundingB, LiquidityAds.Fees(2500 sat, 7500 sat), 7_500_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false), Some(purchase)) { f =>
+      import f._
+
+      // Alice has enough fee credit.
+      fixtureParams.nodeParamsB.db.liquidity.addFeeCredit(fixtureParams.nodeParamsA.nodeId, 7_500_000 msat)
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+
+      // Alice sends signatures first as she contributed less.
+      val successA = alice2bob.expectMsgType[Succeeded]
+      val successB = bob2alice.expectMsgType[Succeeded]
+      val (txA, _, txB, commitmentB) = fixtureParams.exchangeSigsAliceFirst(aliceParams, successA, successB)
+      // Alice partially paid fees to Bob during the interactive-tx using her channel balance, the rest was paid from fee credit.
+      assert(commitmentB.localCommit.spec.toLocal == (fundingA + fundingB).toMilliSatoshi)
+      assert(commitmentB.localCommit.spec.toRemote == 0.msat)
+
+      // The resulting transaction is valid.
+      assert(txA.txId == txB.txId)
+      assert(txA.tx.localFees == 2_500_000.msat)
+      assert(txB.tx.remoteFees == 2_500_000.msat)
+      assert(txB.tx.localFees > 0.msat)
+      val probe = TestProbe()
+      walletA.publishTransaction(txA.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA.txId)
+      walletA.getMempoolTx(txA.txId).pipeTo(probe.ref)
+      val mempoolTx = probe.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees == txA.tx.fees)
+      assert(targetFeerate * 0.9 <= txA.feerate && txA.feerate < targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=${txA.feerate})")
+    }
+  }
+
+  test("initiator does not contribute -- on-the-fly funding without enough fee credit") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingB = 150_000.sat
+    val utxosB = Seq(200_000 sat)
+    // The initiator wants to pay the liquidity fees from their fee credit, but they don't have enough of it.
+    val purchase = LiquidityAds.Purchase.WithFeeCredit(fundingB, LiquidityAds.Fees(2500 sat, 7500 sat), 10_000_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))
+    withFixture(0 sat, Nil, fundingB, utxosB, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false), Some(purchase)) { f =>
+      import f._
+
+      // Alice doesn't have enough fee credit.
+      fixtureParams.nodeParamsB.db.liquidity.addFeeCredit(fixtureParams.nodeParamsA.nodeId, 9_000_000 msat)
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Bob rejects the funding attempt because Alice doesn't have enough fee credit.
+      assert(bob2alice.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidCompleteInteractiveTx])
     }
   }
 
@@ -2254,6 +2339,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val bobSplice = params.spawnTxBuilderSpliceBob(spliceParams, previousCommitment, wallet, Some(purchase))
     bobSplice ! Start(probe.ref)
     assert(probe.expectMsgType[LocalFailure].cause == InvalidFundingBalances(params.channelId, 620_000 sat, 625_000_000 msat, -5_000_000 msat))
+    // If Alice is using fee credit to pay the liquidity fees, the funding attempt is valid.
+    val bobFeeCredit = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(LiquidityAds.Purchase.WithFeeCredit(500_000 sat, LiquidityAds.Fees(5000 sat, 20_000 sat), 25_000_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))))
+    bobFeeCredit ! Start(probe.ref)
+    probe.expectNoMessage(100 millis)
     // If we use a payment type where fees are paid outside of the interactive-tx session, the funding attempt is valid.
     val bobFutureHtlc = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(purchase.copy(paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))))
     bobFutureHtlc ! Start(probe.ref)

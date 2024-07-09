@@ -171,7 +171,7 @@ object Helpers {
 
     for {
       script_opt <- extractShutdownScript(open.temporaryChannelId, localFeatures, remoteFeatures, open.upfrontShutdownScript_opt)
-      willFund_opt <- LiquidityAds.validateRequest(nodeParams.privateKey, open.temporaryChannelId, fundingScript, open.fundingFeerate, isChannelCreation = true, open.requestFunding_opt, addFunding_opt.flatMap(_.rates_opt))
+      willFund_opt <- LiquidityAds.validateRequest(nodeParams.privateKey, open.temporaryChannelId, fundingScript, open.fundingFeerate, isChannelCreation = true, open.requestFunding_opt, addFunding_opt.flatMap(_.rates_opt), open.useFeeCredit_opt)
     } yield (channelFeatures, script_opt, willFund_opt)
   }
 

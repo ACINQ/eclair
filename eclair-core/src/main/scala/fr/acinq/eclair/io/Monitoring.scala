@@ -75,6 +75,7 @@ object Monitoring {
       val Rejected = "rejected"
       val Expired = "expired"
       val Timeout = "timeout"
+      val AddedToFeeCredit = "added-to-fee-credit"
       val Funded = "funded"
       val RelaySucceeded = "relay-succeeded"
 

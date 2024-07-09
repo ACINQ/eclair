@@ -84,7 +84,7 @@ object OpenChannelInterceptor {
       }
     }
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
     val maxHtlcValueInFlightMsat = if (unlimitedMaxHtlcValueInFlight) {
       // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
       21e6.btc.toMilliSatoshi
@@ -104,7 +104,7 @@ object OpenChannelInterceptor {
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isChannelOpener = isChannelOpener,
-      paysCommitTxFees = isChannelOpener,
+      paysCommitTxFees = paysCommitTxFees,
       upfrontShutdownScript_opt = upfrontShutdownScript_opt,
       walletStaticPaymentBasepoint = walletStaticPaymentBasepoint_opt,
       initFeatures = initFeatures
@@ -142,7 +142,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       val channelType = request.open.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(request.localFeatures, request.remoteFeatures, channelFlags.announceChannel))
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
-      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
+      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = true, paysCommitTxFees = true, dualFunded = dualFunded, request.open.fundingAmount, request.open.disableMaxHtlcValueInFlight)
       peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType, localParams)
       waitForRequest()
     }
@@ -161,18 +161,24 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
-        val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = false, dualFunded = dualFunded, request.fundingAmount, disableMaxHtlcValueInFlight = false)
         // We only accept paying the commit fees if:
         //  - our peer supports on-the-fly funding, indicating that they're a mobile wallet
         //  - they are purchasing liquidity for this channel
         val nonInitiatorPaysCommitTxFees = request.channelFlags.nonInitiatorPaysCommitFees &&
           Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.OnTheFlyFunding) &&
           request.open.fold(_ => false, _.requestFunding_opt.isDefined)
-        if (nonInitiatorPaysCommitTxFees) {
-          checkRateLimits(request, channelType, localParams.copy(paysCommitTxFees = true))
-        } else {
-          checkRateLimits(request, channelType, localParams)
-        }
+        val localParams = createLocalParams(
+          nodeParams,
+          request.localFeatures,
+          upfrontShutdownScript,
+          channelType,
+          isChannelOpener = false,
+          paysCommitTxFees = nonInitiatorPaysCommitTxFees,
+          dualFunded = dualFunded,
+          fundingAmount = request.fundingAmount,
+          disableMaxHtlcValueInFlight = false
+        )
+        checkRateLimits(request, channelType, localParams)
       case Left(ex) =>
         context.log.warn(s"ignoring remote channel open: ${ex.getMessage}")
         sendFailure(ex.getMessage, request)
@@ -308,13 +314,14 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
+  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
     val pubkey_opt = if (upfrontShutdownScript || channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None
     makeChannelParams(
       nodeParams, initFeatures,
       if (upfrontShutdownScript) Some(Script.write(Script.pay2wpkh(pubkey_opt.get))) else None,
       if (channelType.paysDirectlyToWallet) Some(pubkey_opt.get) else None,
       isChannelOpener = isChannelOpener,
+      paysCommitTxFees = paysCommitTxFees,
       dualFunded = dualFunded,
       fundingAmount,
       disableMaxHtlcValueInFlight

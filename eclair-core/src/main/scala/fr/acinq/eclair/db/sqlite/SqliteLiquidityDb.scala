@@ -53,6 +53,7 @@ class SqliteLiquidityDb(val sqlite: Connection) extends LiquidityDb with Logging
         // On-the-fly funding.
         statement.executeUpdate("CREATE TABLE on_the_fly_funding_preimages (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, received_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE on_the_fly_funding_pending (node_id BLOB NOT NULL, payment_hash BLOB NOT NULL, channel_id BLOB NOT NULL, tx_id BLOB NOT NULL, funding_tx_index INTEGER NOT NULL, remaining_fees_msat INTEGER NOT NULL, proposed BLOB NOT NULL, funded_at INTEGER NOT NULL, PRIMARY KEY (node_id, payment_hash))")
+        statement.executeUpdate("CREATE TABLE fee_credits (node_id BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
         // Indexes.
         statement.executeUpdate("CREATE INDEX liquidity_purchases_node_id_idx ON liquidity_purchases(node_id)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
@@ -117,6 +118,7 @@ class SqliteLiquidityDb(val sqlite: Connection) extends LiquidityDb with Logging
   override def addPendingOnTheFlyFunding(remoteNodeId: Crypto.PublicKey, pending: OnTheFlyFunding.Pending): Unit = withMetrics("liquidity/add-pending-on-the-fly-funding", DbBackends.Sqlite) {
     pending.status match {
       case _: OnTheFlyFunding.Status.Proposed => ()
+      case _: OnTheFlyFunding.Status.AddedToFeeCredit => ()
       case status: OnTheFlyFunding.Status.Funded =>
         using(sqlite.prepareStatement("INSERT OR IGNORE INTO on_the_fly_funding_pending (node_id, payment_hash, channel_id, tx_id, funding_tx_index, remaining_fees_msat, proposed, funded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, remoteNodeId.value.toArray)
@@ -209,6 +211,52 @@ class SqliteLiquidityDb(val sqlite: Connection) extends LiquidityDb with Logging
     using(sqlite.prepareStatement("SELECT preimage FROM on_the_fly_funding_preimages WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       statement.executeQuery().map { rs => rs.getByteVector32("preimage") }.lastOption
+    }
+  }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = withMetrics("liquidity/add-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credits WHERE node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+        case Some(current) => using(sqlite.prepareStatement("UPDATE fee_credits SET (amount_msat, updated_at) = (?, ?) WHERE node_id = ?")) { statement =>
+          statement.setLong(1, (current + amount).toLong)
+          statement.setLong(2, receivedAt.toLong)
+          statement.setBytes(3, nodeId.value.toArray)
+          statement.executeUpdate()
+          amount + current
+        }
+        case None => using(sqlite.prepareStatement("INSERT OR IGNORE INTO fee_credits(node_id, amount_msat, updated_at) VALUES (?, ?, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setLong(2, amount.toLong)
+          statement.setLong(3, receivedAt.toLong)
+          statement.executeUpdate()
+          amount
+        }
+      }
+    }
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = withMetrics("liquidity/get-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credits WHERE node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+    }
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = withMetrics("liquidity/remove-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credits WHERE node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+        case Some(current) => using(sqlite.prepareStatement("UPDATE fee_credits SET (amount_msat, updated_at) = (?, ?) WHERE node_id = ?")) { statement =>
+          val updated = (current - amountUsed).max(0 msat)
+          statement.setLong(1, updated.toLong)
+          statement.setLong(2, TimestampMilli.now().toLong)
+          statement.setBytes(3, nodeId.value.toArray)
+          statement.executeUpdate()
+          updated
+        }
+        case None => 0 msat
+      }
     }
   }
 

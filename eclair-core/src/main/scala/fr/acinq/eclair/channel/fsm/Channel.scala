@@ -952,7 +952,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey)
-            LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.willFundRates_opt) match {
+            LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.willFundRates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
                 stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
@@ -963,7 +963,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   fundingPubKey = localFundingPubKey,
                   pushAmount = 0.msat,
                   requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
-                  willFund_opt = willFund_opt.map(_.willFund)
+                  willFund_opt = willFund_opt.map(_.willFund),
+                  feeCreditUsed_opt = msg.useFeeCredit_opt
                 )
                 val fundingParams = InteractiveTxParams(
                   channelId = d.channelId,

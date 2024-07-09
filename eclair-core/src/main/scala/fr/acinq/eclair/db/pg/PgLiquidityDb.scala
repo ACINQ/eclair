@@ -25,7 +25,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.NoLock.withLock
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.wire.protocol.LiquidityAds
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -58,6 +58,7 @@ class PgLiquidityDb(implicit ds: DataSource) extends LiquidityDb with Logging {
           // On-the-fly funding.
           statement.executeUpdate("CREATE TABLE liquidity.on_the_fly_funding_preimages (payment_hash TEXT NOT NULL PRIMARY KEY, preimage TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE liquidity.pending_on_the_fly_funding (node_id TEXT NOT NULL, payment_hash TEXT NOT NULL, channel_id TEXT NOT NULL, tx_id TEXT NOT NULL, funding_tx_index BIGINT NOT NULL, remaining_fees_msat BIGINT NOT NULL, proposed BYTEA NOT NULL, funded_at TIMESTAMP WITH TIME ZONE NOT NULL, PRIMARY KEY (node_id, payment_hash))")
+          statement.executeUpdate("CREATE TABLE liquidity.fee_credits (node_id TEXT NOT NULL PRIMARY KEY, amount_msat BIGINT NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           // Indexes.
           statement.executeUpdate("CREATE INDEX liquidity_purchases_node_id_idx ON liquidity.purchases(node_id)")
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
@@ -129,6 +130,7 @@ class PgLiquidityDb(implicit ds: DataSource) extends LiquidityDb with Logging {
   override def addPendingOnTheFlyFunding(remoteNodeId: Crypto.PublicKey, pending: OnTheFlyFunding.Pending): Unit = withMetrics("liquidity/add-pending-on-the-fly-funding", DbBackends.Postgres) {
     pending.status match {
       case _: OnTheFlyFunding.Status.Proposed => ()
+      case _: OnTheFlyFunding.Status.AddedToFeeCredit => ()
       case status: OnTheFlyFunding.Status.Funded => withLock { pg =>
         using(pg.prepareStatement("INSERT INTO liquidity.pending_on_the_fly_funding (node_id, payment_hash, channel_id, tx_id, funding_tx_index, remaining_fees_msat, proposed, funded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
           statement.setString(1, remoteNodeId.toHex)
@@ -233,6 +235,45 @@ class PgLiquidityDb(implicit ds: DataSource) extends LiquidityDb with Logging {
       using(pg.prepareStatement("SELECT preimage FROM liquidity.on_the_fly_funding_preimages WHERE payment_hash = ?")) { statement =>
         statement.setString(1, paymentHash.toHex)
         statement.executeQuery().map { rs => rs.getByteVector32FromHex("preimage") }.lastOption
+      }
+    }
+  }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = withMetrics("liquidity/add-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO liquidity.fee_credits(node_id, amount_msat, updated_at) VALUES (?, ?, ?) ON CONFLICT (node_id) DO UPDATE SET (amount_msat, updated_at) = (liquidity.fee_credits.amount_msat + EXCLUDED.amount_msat, EXCLUDED.updated_at) RETURNING amount_msat")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.setLong(2, amount.toLong)
+        statement.setTimestamp(3, receivedAt.toSqlTimestamp)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+      }
+    }
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = withMetrics("liquidity/get-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT amount_msat FROM liquidity.fee_credits WHERE node_id = ?")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+      }
+    }
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = withMetrics("liquidity/remove-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT amount_msat FROM liquidity.fee_credits WHERE node_id = ?")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+          case Some(current) => using(pg.prepareStatement("UPDATE liquidity.fee_credits SET (amount_msat, updated_at) = (?, ?) WHERE node_id = ?")) { statement =>
+            val updated = (current - amountUsed).max(0 msat)
+            statement.setLong(1, updated.toLong)
+            statement.setTimestamp(2, Timestamp.from(Instant.now()))
+            statement.setString(3, nodeId.toHex)
+            statement.executeUpdate()
+            updated
+          }
+          case None => 0 msat
+        }
       }
     }
   }
