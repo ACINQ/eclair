@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
+import fr.acinq.eclair.wire.protocol.ChannelTlv._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import org.json4s.jackson.Serialization
@@ -372,7 +372,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultAccept -> defaultEncoded,
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()))) -> (defaultEncoded ++ hex"01021000"),
       defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), PushAmountTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fe470000070206c1"),
-      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200")
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.StaticRemoteKey()), RequireConfirmedInputsTlv())) -> (defaultEncoded ++ hex"01021000 0200"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), FeeCreditUsedTlv(0 msat))) -> (defaultEncoded ++ hex"0103401000 fda05200"),
+      defaultAccept.copy(tlvStream = TlvStream(ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), FeeCreditUsedTlv(1729 msat))) -> (defaultEncoded ++ hex"0103401000 fda0520206c1"),
     )
     testCases.foreach { case (accept, bin) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -436,7 +438,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 1a 00000000000b71b0 0007a120004c4b40044c004b00000000 0000"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 74 0007a120004c4b40044c004b00000000 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c 35962783e077e3c5214ba829752be2a3994a7c5e0e9d735ef5a9dab3ce1d6dda6282c3252b20af52e58c33c0e164167fd59e19114a8a8f9eb76b33008205dcb6"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -452,7 +454,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5a 000000000007a120 000186a00007a1200226006400001388 804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 74 000186a00007a1200226006400001388 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c d928070bc5c68c3c6362a0041b523fe03aa853e50214864a3339296e37ebda74343a227b24bc37d27af550bc2ee3d56b00d8c342cc3104b29cc8f09cac9fad9f"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -468,7 +470,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
       val openBin = hex"fd053b 5a 000000000007a120 000186a00007a1200226006400001388 824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
       assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, None).map(_.willFund)
       val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
       val acceptBin = hex"fd053b 74 000186a00007a1200226006400001388 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c d928070bc5c68c3c6362a0041b523fe03aa853e50214864a3339296e37ebda74343a227b24bc37d27af550bc2ee3d56b00d8c342cc3104b29cc8f09cac9fad9f"
       assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
@@ -571,6 +573,24 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       CancelOnTheFlyFunding(channelId, Nil, hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000 0004 deadbeef",
       CancelOnTheFlyFunding(channelId, List(paymentHash1), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0001 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef",
       CancelOnTheFlyFunding(channelId, List(paymentHash1, paymentHash2), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0002 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb21067343213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785 0004 deadbeef",
+    )
+    for ((expected, encoded) <- testCases) {
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value
+      assert(decoded == expected)
+      val reEncoded = lightningMessageCodec.encode(decoded).require.bytes
+      assert(reEncoded == encoded)
+    }
+  }
+
+  test("encode/decode fee credit messages") {
+    val preimages = Seq(
+      ByteVector32(hex"6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f"),
+      ByteVector32(hex"4ad834d418faf74ebf7c8a026f2767a41c3a0995c334d7d3dab47737794b0c16"),
+    )
+    val testCases = Seq(
+      AddFeeCredit(Block.RegtestGenesisBlock.hash, preimages.head) -> hex"a055 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 6962570ba49642729d77020821f55a492f5df092f3777e75f9740e5b6efec08f",
+      CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 0 msat) -> hex"a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000000000000",
+      CurrentFeeCredit(Block.RegtestGenesisBlock.hash, 20_000_000 msat) -> hex"a056 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 0000000001312d00",
     )
     for ((expected, encoded) <- testCases) {
       val decoded = lightningMessageCodec.decode(encoded.bits).require.value

@@ -39,7 +39,7 @@ class LiquidityAdsSpec extends AnyFunSuite {
     val fundingRates = LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance))
     val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)
     val fundingScript = hex"00202395c9c52c02ca069f1d56a3c6124bf8b152a617328c76e6b31f83ace370c2ff"
-    val Right(willFund) = fundingRates.validateRequest(nodeKey, randomBytes32(), fundingScript, FeeratePerKw(1000 sat), request).map(_.willFund)
+    val Right(willFund) = fundingRates.validateRequest(nodeKey, randomBytes32(), fundingScript, FeeratePerKw(1000 sat), request, None).map(_.willFund)
     assert(willFund.fundingRate == fundingRate)
     assert(willFund.fundingScript == fundingScript)
     assert(willFund.signature == ByteVector64.fromValidHex("0d99b73ecc32a81581cb761d8737e8bccf2358a01f7dea8e2f2579f32db42e94668786a2245287848c550b502fee9aca232c0c343afb16ac44d9be9c59d16f70"))

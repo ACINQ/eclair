@@ -18,12 +18,12 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, TxId}
-import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.OnTheFlyFundingDb
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import scodec.bits.BitVector
 
 import java.sql.Timestamp
@@ -53,6 +53,7 @@ class PgOnTheFlyFundingDb(implicit ds: DataSource, lock: PgLock) extends OnTheFl
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS on_the_fly_funding")
           statement.executeUpdate("CREATE TABLE on_the_fly_funding.preimages (payment_hash TEXT NOT NULL PRIMARY KEY, preimage TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE on_the_fly_funding.pending (remote_node_id TEXT NOT NULL, payment_hash TEXT NOT NULL, channel_id TEXT NOT NULL, tx_id TEXT NOT NULL, funding_tx_index BIGINT NOT NULL, remaining_fees_msat BIGINT NOT NULL, proposed BYTEA NOT NULL, funded_at TIMESTAMP WITH TIME ZONE NOT NULL, PRIMARY KEY (remote_node_id, payment_hash))")
+          statement.executeUpdate("CREATE TABLE on_the_fly_funding.fee_credit (remote_node_id TEXT NOT NULL PRIMARY KEY, amount_msat BIGINT NOT NULL, updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -83,6 +84,7 @@ class PgOnTheFlyFundingDb(implicit ds: DataSource, lock: PgLock) extends OnTheFl
   override def addPending(remoteNodeId: Crypto.PublicKey, pending: OnTheFlyFunding.Pending): Unit = withMetrics("on-the-fly-funding/add-pending", DbBackends.Postgres) {
     pending.status match {
       case _: OnTheFlyFunding.Status.Proposed => ()
+      case _: OnTheFlyFunding.Status.AddedToFeeCredit => ()
       case status: OnTheFlyFunding.Status.Funded => withLock { pg =>
         using(pg.prepareStatement("INSERT INTO on_the_fly_funding.pending (remote_node_id, payment_hash, channel_id, tx_id, funding_tx_index, remaining_fees_msat, proposed, funded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
           statement.setString(1, remoteNodeId.toHex)
@@ -139,6 +141,45 @@ class PgOnTheFlyFundingDb(implicit ds: DataSource, lock: PgLock) extends OnTheFl
           remoteNodeId -> paymentHash
         }.groupMap(_._1)(_._2).map {
           case (remoteNodeId, payments) => remoteNodeId -> payments.toSet
+        }
+      }
+    }
+  }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = withMetrics("on-the-fly-funding/add-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO on_the_fly_funding.fee_credit(remote_node_id, amount_msat, updated_at) VALUES (?, ?, ?) ON CONFLICT (remote_node_id) DO UPDATE SET (amount_msat, updated_at) = (on_the_fly_funding.fee_credit.amount_msat + EXCLUDED.amount_msat, EXCLUDED.updated_at) RETURNING amount_msat")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.setLong(2, amount.toLong)
+        statement.setTimestamp(3, receivedAt.toSqlTimestamp)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+      }
+    }
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = withMetrics("on-the-fly-funding/get-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT amount_msat FROM on_the_fly_funding.fee_credit WHERE remote_node_id = ?")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+      }
+    }
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = withMetrics("on-the-fly-funding/remove-fee-credit", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT amount_msat FROM on_the_fly_funding.fee_credit WHERE remote_node_id = ?")) { statement =>
+        statement.setString(1, nodeId.toHex)
+        statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+          case Some(current) => using(pg.prepareStatement("UPDATE on_the_fly_funding.fee_credit SET (amount_msat, updated_at) = (?, ?) WHERE remote_node_id = ?")) { statement =>
+            val updated = (current - amountUsed).max(0 msat)
+            statement.setLong(1, updated.toLong)
+            statement.setTimestamp(2, Timestamp.from(Instant.now()))
+            statement.setString(3, nodeId.toHex)
+            statement.executeUpdate()
+            updated
+          }
+          case None => 0 msat
         }
       }
     }
