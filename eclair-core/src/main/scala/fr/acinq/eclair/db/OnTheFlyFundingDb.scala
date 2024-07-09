@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 
 /**
@@ -43,5 +44,14 @@ trait OnTheFlyFundingDb {
 
   /** List the payment_hashes of pending proposals we funded for all remote nodes. */
   def listPendingPayments(): Map[PublicKey, Set[ByteVector32]]
+
+  /** Add fee credit for the given remote node and return the updated fee credit. */
+  def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): MilliSatoshi
+
+  /** Return the amount owed to the given remote node as fee credit. */
+  def getFeeCredit(nodeId: PublicKey): MilliSatoshi
+
+  /** Remove fee credit for the given remote node and return the remaining fee credit. */
+  def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi
 
 }

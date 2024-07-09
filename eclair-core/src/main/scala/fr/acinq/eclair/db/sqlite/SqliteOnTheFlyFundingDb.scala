@@ -22,7 +22,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.OnTheFlyFundingDb
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
-import fr.acinq.eclair.{MilliSatoshiLong, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import scodec.bits.BitVector
 
 import java.sql.Connection
@@ -47,6 +47,7 @@ class SqliteOnTheFlyFundingDb(val sqlite: Connection) extends OnTheFlyFundingDb 
       case None =>
         statement.executeUpdate("CREATE TABLE on_the_fly_funding_preimages (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, received_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE on_the_fly_funding_pending (remote_node_id BLOB NOT NULL, payment_hash BLOB NOT NULL, channel_id BLOB NOT NULL, tx_id BLOB NOT NULL, funding_tx_index INTEGER NOT NULL, remaining_fees_msat INTEGER NOT NULL, proposed BLOB NOT NULL, funded_at INTEGER NOT NULL, PRIMARY KEY (remote_node_id, payment_hash))")
+        statement.executeUpdate("CREATE TABLE fee_credit (remote_node_id BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -72,6 +73,7 @@ class SqliteOnTheFlyFundingDb(val sqlite: Connection) extends OnTheFlyFundingDb 
   override def addPending(remoteNodeId: Crypto.PublicKey, pending: OnTheFlyFunding.Pending): Unit = withMetrics("on-the-fly-funding/add-pending", DbBackends.Sqlite) {
     pending.status match {
       case _: OnTheFlyFunding.Status.Proposed => ()
+      case _: OnTheFlyFunding.Status.AddedToFeeCredit => ()
       case status: OnTheFlyFunding.Status.Funded =>
         using(sqlite.prepareStatement("INSERT OR IGNORE INTO on_the_fly_funding_pending (remote_node_id, payment_hash, channel_id, tx_id, funding_tx_index, remaining_fees_msat, proposed, funded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, remoteNodeId.value.toArray)
@@ -122,6 +124,52 @@ class SqliteOnTheFlyFundingDb(val sqlite: Connection) extends OnTheFlyFundingDb 
         remoteNodeId -> paymentHash
       }.groupMap(_._1)(_._2).map {
         case (remoteNodeId, payments) => remoteNodeId -> payments.toSet
+      }
+    }
+  }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = withMetrics("on-the-fly-funding/add-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credit WHERE remote_node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+        case Some(current) => using(sqlite.prepareStatement("UPDATE fee_credit SET (amount_msat, updated_at) = (?, ?) WHERE remote_node_id = ?")) { statement =>
+          statement.setLong(1, (current + amount).toLong)
+          statement.setLong(2, receivedAt.toLong)
+          statement.setBytes(3, nodeId.value.toArray)
+          statement.executeUpdate()
+          amount + current
+        }
+        case None => using(sqlite.prepareStatement("INSERT OR IGNORE INTO fee_credit(remote_node_id, amount_msat, updated_at) VALUES (?, ?, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setLong(2, amount.toLong)
+          statement.setLong(3, receivedAt.toLong)
+          statement.executeUpdate()
+          amount
+        }
+      }
+    }
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = withMetrics("on-the-fly-funding/get-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credit WHERE remote_node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption.getOrElse(0 msat)
+    }
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = withMetrics("on-the-fly-funding/remove-fee-credit", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT amount_msat FROM fee_credit WHERE remote_node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map(_.getLong("amount_msat").msat).headOption match {
+        case Some(current) => using(sqlite.prepareStatement("UPDATE fee_credit SET (amount_msat, updated_at) = (?, ?) WHERE remote_node_id = ?")) { statement =>
+          val updated = (current - amountUsed).max(0 msat)
+          statement.setLong(1, updated.toLong)
+          statement.setLong(2, TimestampMilli.now().toLong)
+          statement.setBytes(3, nodeId.value.toArray)
+          statement.executeUpdate()
+          updated
+        }
+        case None => 0 msat
       }
     }
   }

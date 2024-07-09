@@ -442,4 +442,19 @@ case class DualOnTheFlyFundingDb(primary: OnTheFlyFundingDb, secondary: OnTheFly
     runAsync(secondary.listPendingPayments())
     primary.listPendingPayments()
   }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = {
+    runAsync(secondary.addFeeCredit(nodeId, amount, receivedAt))
+    primary.addFeeCredit(nodeId, amount, receivedAt)
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = {
+    runAsync(secondary.getFeeCredit(nodeId))
+    primary.getFeeCredit(nodeId)
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = {
+    runAsync(secondary.removeFeeCredit(nodeId, amountUsed))
+    primary.removeFeeCredit(nodeId, amountUsed)
+  }
 }
