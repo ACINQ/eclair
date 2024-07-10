@@ -28,9 +28,9 @@ object Monitoring {
 
     val ReconnectionsAttempts = Kamon.counter("reconnections.attempts")
 
-    val OnionMessagesReceived = Kamon.counter("onionmessages.received")
     val OnionMessagesSent = Kamon.counter("onionmessages.sent")
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
+    val OnionMessagesNotRelayed = Kamon.counter("onionmessages.not-relayed")
 
     val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
 
@@ -51,6 +51,19 @@ object Monitoring {
 
     val PublicPeers = "public"
 
+    val Direction = "direction"
+    object Directions {
+      val Incoming = "IN"
+      val Outgoing = "OUT"
+    }
+
+    val Reason = "reason"
+    object Reasons {
+      val UnknownNextNodeId = "UnknownNextNodeId"
+      val NoChannelWithPreviousPeer = "NoChannelWithPreviousPeer"
+      val NoChannelWithNextPeer = "NoChannelWithNextPeer"
+      val ConnectionFailure = "ConnectionFailure"
+    }
   }
 
 }
