@@ -28,7 +28,7 @@ object Monitoring {
 
     val ReconnectionsAttempts = Kamon.counter("reconnections.attempts")
 
-    val OnionMessagesSent = Kamon.counter("onionmessages.sent")
+    val OnionMessagesProcessed = Kamon.counter("onionmessages.processed")
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
     val OnionMessagesNotRelayed = Kamon.counter("onionmessages.not-relayed")
 
