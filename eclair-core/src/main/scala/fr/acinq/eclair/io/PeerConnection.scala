@@ -182,19 +182,19 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.transport ! TransportHandler.ReadAck(msg)
           if (incomingRateLimiter.tryAcquire()) {
             d.peer ! msg
-            Metrics.OnionMessagesReceived.withoutTags().increment()
+            Metrics.OnionMessagesProcessed.withTag(Tags.Direction, Tags.Directions.Incoming).increment()
           } else {
-            Metrics.OnionMessagesThrottled.withoutTags().increment()
+            Metrics.OnionMessagesThrottled.withTag(Tags.Direction, Tags.Directions.Incoming).increment()
           }
         } else {
           if (outgoingRateLimiter.tryAcquire()) {
             d.transport forward msg
-            Metrics.OnionMessagesSent.withoutTags().increment()
+            Metrics.OnionMessagesProcessed.withTag(Tags.Direction, Tags.Directions.Outgoing).increment()
             if (!d.isPersistent) {
               startSingleTimer(KILL_IDLE_TIMER, KillIdle, conf.killIdleDelay)
             }
           } else {
-            Metrics.OnionMessagesThrottled.withoutTags().increment()
+            Metrics.OnionMessagesThrottled.withTag(Tags.Direction, Tags.Directions.Outgoing).increment()
           }
         }
         stay()

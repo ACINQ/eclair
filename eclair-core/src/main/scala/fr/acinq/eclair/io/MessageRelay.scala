@@ -24,6 +24,7 @@ import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
@@ -115,6 +116,7 @@ private class MessageRelay(nodeParams: NodeParams,
   private def waitForNextNodeId(msg: OnionMessage, channelId: ShortChannelId): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedOptionalNodeId(None) =>
+        Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.UnknownNextNodeId).increment()
         replyTo_opt.foreach(_ ! UnknownChannel(messageId, channelId))
         Behaviors.stopped
       case WrappedOptionalNodeId(Some(nextNodeId)) =>
@@ -126,6 +128,7 @@ private class MessageRelay(nodeParams: NodeParams,
     if (nextNodeId == nodeParams.nodeId) {
       OnionMessages.process(nodeParams.privateKey, msg) match {
         case OnionMessages.DropMessage(reason) =>
+          Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
           replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
           Behaviors.stopped
         case OnionMessages.SendMessage(nextNode, nextMessage) =>
@@ -154,6 +157,7 @@ private class MessageRelay(nodeParams: NodeParams,
         switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), nextNodeId)
         waitForNextPeerForPolicyCheck(msg)
       case _ =>
+        Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.NoChannelWithPreviousPeer).increment()
         replyTo_opt.foreach(_ ! AgainstPolicy(messageId, RelayChannelsOnly))
         Behaviors.stopped
     }
@@ -165,6 +169,7 @@ private class MessageRelay(nodeParams: NodeParams,
         peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case _ =>
+        Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.NoChannelWithNextPeer).increment()
         replyTo_opt.foreach(_ ! AgainstPolicy(messageId, RelayChannelsOnly))
         Behaviors.stopped
     }
@@ -176,6 +181,7 @@ private class MessageRelay(nodeParams: NodeParams,
         r.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
+        Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
         replyTo_opt.foreach(_ ! ConnectionFailure(messageId, f))
         Behaviors.stopped
     }
