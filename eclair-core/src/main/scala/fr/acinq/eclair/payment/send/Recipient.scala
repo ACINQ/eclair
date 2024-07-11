@@ -241,7 +241,9 @@ case class TrampolineRecipient(invoice: Invoice,
   private def createTrampolinePacket(paymentHash: ByteVector32, trampolineHop: NodeHop): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
     invoice match {
       case invoice: Bolt11Invoice =>
-        if (invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
+        if (invoice.features.hasFeature(Features.TrampolinePayment)) {
+          ???
+        } else if (invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
           // This is the payload the final recipient will receive, so we use the invoice's payment secret.
           val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createPayload(totalAmount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, customTlvs))
           val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, nodeId))

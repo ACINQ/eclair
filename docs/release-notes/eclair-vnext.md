@@ -17,6 +17,10 @@ To enable CoinGrinder at all fee rates and prevent the automatic consolidation o
 consolidatefeerate=0
 ```
 
+### Trampoline payments
+
+TODO: link to final spec
+
 ### API changes
 
 <insert changes>

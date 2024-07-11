@@ -293,6 +293,7 @@ object PaymentOnion {
     }
 
     object NodeRelay {
+      // TODO: rename Legacy?
       case class Standard(records: TlvStream[OnionPaymentPayloadTlv]) extends NodeRelay {
         val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
         // The following fields are only included in the trampoline-to-legacy case.
@@ -553,9 +554,12 @@ object PaymentOnionCodecs {
     .typecase(UInt64(8), paymentData)
     .typecase(UInt64(10), encryptedRecipientData)
     .typecase(UInt64(12), blindingPoint)
+    .typecase(UInt64(14), outgoingNodeId)
     .typecase(UInt64(16), paymentMetadata)
     .typecase(UInt64(18), totalAmount)
+    .typecase(UInt64(20), trampolineOnion)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
+    // TODO: need a "Legacy" version of all of those types!
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)
     .typecase(UInt64(66099), invoiceRoutingInfo)

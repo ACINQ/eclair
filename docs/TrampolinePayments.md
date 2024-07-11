@@ -2,13 +2,7 @@
 
 Eclair started supporting [trampoline payments](https://github.com/lightning/bolts/pull/829) in v0.3.3.
 
-It is disabled by default, as it is still being reviewed for spec acceptance. However, if you want to experiment with it, here is what you can do.
-
-First of all, you need to activate the feature for any node that will act as a trampoline node. Update your `eclair.conf` with the following values:
-
-```conf
-eclair.trampoline-payments-enable=true
-```
+It is now active by default, since it has been added to the [BOLTs](https://github.com/lightning/bolts/pull/836).
 
 ## Sending trampoline payments
 
