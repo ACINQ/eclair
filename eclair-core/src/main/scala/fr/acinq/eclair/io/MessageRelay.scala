@@ -117,6 +117,7 @@ private class MessageRelay(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedOptionalNodeId(None) =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.UnknownNextNodeId).increment()
+        context.log.info("could not find node associated with scid={} for messageId={}", channelId, messageId)
         replyTo_opt.foreach(_ ! UnknownChannel(messageId, channelId))
         Behaviors.stopped
       case WrappedOptionalNodeId(Some(nextNodeId)) =>
@@ -145,8 +146,9 @@ private class MessageRelay(nodeParams: NodeParams,
           switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
           waitForPreviousPeerForPolicyCheck(msg, nextNodeId)
         case RelayAll =>
+          context.log.info("connecting to {} to relay messageId={}", nextNodeId, messageId)
           switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
-          waitForConnection(msg)
+          waitForConnection(msg, nextNodeId)
       }
     }
   }
@@ -155,33 +157,37 @@ private class MessageRelay(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedPeerInfo(PeerInfo(_, _, _, _, channels)) if channels.nonEmpty =>
         switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), nextNodeId)
-        waitForNextPeerForPolicyCheck(msg)
+        waitForNextPeerForPolicyCheck(msg, nextNodeId)
       case _ =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.NoChannelWithPreviousPeer).increment()
+        context.log.info("dropping onion message from {} with messageId={}: relaying without channels is disabled by policy", prevNodeId, messageId)
         replyTo_opt.foreach(_ ! AgainstPolicy(messageId, RelayChannelsOnly))
         Behaviors.stopped
     }
   }
 
-  private def waitForNextPeerForPolicyCheck(msg: OnionMessage): Behavior[Command] = {
+  private def waitForNextPeerForPolicyCheck(msg: OnionMessage, nextNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedPeerInfo(PeerInfo(peer, _, _, _, channels)) if channels.nonEmpty =>
         peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case _ =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.NoChannelWithNextPeer).increment()
+        context.log.info("dropping onion message from {} to {} with messageId={}: relaying without channels is disabled by policy", prevNodeId, nextNodeId, messageId)
         replyTo_opt.foreach(_ ! AgainstPolicy(messageId, RelayChannelsOnly))
         Behaviors.stopped
     }
   }
 
-  private def waitForConnection(msg: OnionMessage): Behavior[Command] = {
+  private def waitForConnection(msg: OnionMessage, nextNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedConnectionResult(r: PeerConnection.ConnectionResult.HasConnection) =>
+        context.log.info("connected to {}: relaying messageId={}", nextNodeId, messageId)
         r.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
+        context.log.info("could not connect to {} to relay messageId={}: {}", nextNodeId, messageId, f.toString)
         replyTo_opt.foreach(_ ! ConnectionFailure(messageId, f))
         Behaviors.stopped
     }
