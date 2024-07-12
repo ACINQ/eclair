@@ -108,6 +108,13 @@
             <groupId>io.kamon</groupId>
             <artifactId>kamon-prometheus_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
+            <!-- depends on a old version of okhttp that depends on kotlin 1.6, which conflicts with kotlin 1.9 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- agents -->
         <dependency>
