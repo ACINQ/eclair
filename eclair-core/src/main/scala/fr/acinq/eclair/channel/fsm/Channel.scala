@@ -103,7 +103,8 @@ object Channel {
                          remoteRbfLimits: RemoteRbfLimits,
                          quiescenceTimeout: FiniteDuration,
                          balanceThresholds: Seq[BalanceThreshold],
-                         minTimeBetweenUpdates: FiniteDuration) {
+                         minTimeBetweenUpdates: FiniteDuration,
+                         acceptIncomingStaticRemoteKeyChannels: Boolean) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
     require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 

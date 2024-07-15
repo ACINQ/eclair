@@ -47,6 +47,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   val defaultParams: DefaultParams = DefaultParams(100 sat, 100000 msat, 100 msat, CltvExpiryDelta(288), 10)
   val openChannel: OpenChannel = createOpenChannelMessage()
   val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
+  val acceptStaticRemoteKeyChannels = "accept static_remote_key channels"
 
   override def withFixture(test: OneArgTest): Outcome = {
     val peer = TestProbe[Any]()
@@ -60,7 +61,8 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
       override def openChannelInterceptor: ActorRef[InterceptOpenChannelCommand] = pluginInterceptor.ref
     }
     val pluginParams = TestConstants.Alice.nodeParams.pluginParams :+ plugin
-    val nodeParams = TestConstants.Alice.nodeParams.copy(pluginParams = pluginParams)
+    val nodeParams1 = TestConstants.Alice.nodeParams.copy(pluginParams = pluginParams)
+    val nodeParams = if (test.tags.contains(acceptStaticRemoteKeyChannels)) nodeParams1.copy(channelConf = nodeParams1.channelConf.copy(acceptIncomingStaticRemoteKeyChannels = true)) else nodeParams1
     val eventListener = TestProbe[ChannelAborted]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
 
@@ -150,6 +152,25 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, None)
     assert(peer.expectMessageType[SpawnChannelNonInitiator].open == Left(openChannel))
     eventListener.expectMessageType[ChannelAborted]
+  }
+
+  test("reject static_remote_key open channel request") { f =>
+    import f._
+
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), initFeatures().add(StaticRemoteKey, Optional), initFeatures().add(StaticRemoteKey, Optional), peerConnection.ref, remoteAddress)
+    openChannelInterceptor ! openChannelNonInitiator
+    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejecting new static_remote_key incoming channels"))
+    eventListener.expectMessageType[ChannelAborted]
+  }
+
+  test("accept static_remote_key open channel request if node is configured to accept them", Tag(acceptStaticRemoteKeyChannels)) { f =>
+    import f._
+
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), initFeatures().add(StaticRemoteKey, Optional), initFeatures().add(StaticRemoteKey, Optional), peerConnection.ref, remoteAddress)
+    openChannelInterceptor ! openChannelNonInitiator
+    pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(50_000 sat))
+    peer.expectMessageType[SpawnChannelNonInitiator]
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled", Tag(ChannelStateTestsTags.DisableWumbo)) { f =>

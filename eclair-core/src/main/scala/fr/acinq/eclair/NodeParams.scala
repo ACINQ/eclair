@@ -524,6 +524,7 @@ object NodeParams extends Logging {
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
+        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
