@@ -126,6 +126,7 @@ private class MessageRelay(nodeParams: NodeParams,
         replyTo_opt.foreach(_ ! UnknownChannel(messageId, channelId))
         Behaviors.stopped
       case WrappedOptionalNodeId(Some(nextNodeId)) =>
+        log.info("found outgoing node {} for channel {}", nextNodeId, channelId)
         withNextNodeId(msg, nextNodeId)
     }
   }
@@ -151,7 +152,6 @@ private class MessageRelay(nodeParams: NodeParams,
           switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
           waitForPreviousPeerForPolicyCheck(msg, nextNodeId)
         case RelayAll =>
-          log.info("connecting to {} to relay onion message", nextNodeId)
           switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
           waitForConnection(msg, nextNodeId)
       }
