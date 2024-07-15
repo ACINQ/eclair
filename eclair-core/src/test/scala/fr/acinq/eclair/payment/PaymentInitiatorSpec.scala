@@ -74,7 +74,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
-    TrampolinePaymentPrototype -> Optional,
+    TrampolinePayment -> Optional,
   )
 
   case class FakePaymentFactory(payFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
@@ -377,7 +377,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.recipient.nodeId == c)
     assert(msg.recipient.totalAmount == finalAmount)
     assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
-    assert(msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(msg.recipient.features.hasFeature(Features.TrampolinePayment))
     assert(msg.recipient.isInstanceOf[TrampolineRecipient])
     assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
     assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
@@ -399,7 +399,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.recipient.nodeId == c)
     assert(msg.recipient.totalAmount == finalAmount)
     assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
-    assert(!msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(!msg.recipient.features.hasFeature(Features.TrampolinePayment))
     assert(msg.recipient.isInstanceOf[TrampolineRecipient])
     assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
     assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)

@@ -69,6 +69,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     KeySend -> Optional
   )
 
+  val featuresWithTrampoline = Features[Feature](
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
+    BasicMultiPartPayment -> Optional,
+    TrampolinePayment -> Optional,
+  )
+
   val featuresWithRouteBlinding = Features[Feature](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
@@ -233,32 +240,25 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val sender = TestProbe()
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(!invoice.features.hasFeature(TrampolinePayment))
     }
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(!invoice.features.hasFeature(TrampolinePayment))
     }
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
-      sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Bolt11Invoice]
-      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
-    }
-    {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithTrampoline), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(invoice.features.hasFeature(TrampolinePayment))
     }
   }
 
