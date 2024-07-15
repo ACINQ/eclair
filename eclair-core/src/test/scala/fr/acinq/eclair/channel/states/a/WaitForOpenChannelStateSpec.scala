@@ -70,7 +70,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
     assert(open.upfrontShutdownScript_opt.contains(ByteVector.empty))
     // We always send a channel type, even for standard channels.
-    assert(open.channelType_opt.contains(ChannelTypes.Standard()))
+    assert(open.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].params.commitmentFormat == DefaultCommitmentFormat)

@@ -11,7 +11,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -20,7 +20,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReestablish, ChannelUpdate, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
@@ -30,9 +30,9 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
   type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = init(tags = test.tags)
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       withFixture(test.toNoArgTest(setup))
     }
   }
@@ -41,7 +41,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
 
   private def bobInit = Init(Bob.nodeParams.features.initFeatures())
 
-  test("use funding pubkeys from publish commitment to spend our output") { f =>
+  test("use funding pubkeys from publish commitment to spend our output", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val sender = TestProbe()
 
@@ -96,37 +96,11 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     val OP_2 :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil = Script.parse(bobCommitTx.txIn(0).witness.stack.last)
     // from Bob's commit tx we can also extract our p2wpkh output
     val ourOutput = bobCommitTx.txOut.find(_.publicKeyScript.length == 22).get
-
     val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
 
-    val keyManager = Alice.nodeParams.channelKeyManager
-
-    // find our funding pub key
-    val fundingPubKey = Seq(PublicKey(pub1), PublicKey(pub2)).find {
-      pub =>
-        val channelKeyPath = ChannelKeyManager.keyPath(pub)
-        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
-        localPubkey.hash160 == pubKeyHash
-    } get
-
-    // compute our to-remote pubkey
-    val channelKeyPath = ChannelKeyManager.keyPath(fundingPubKey)
-    val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
-
-    // spend our output
-    val tx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), sequence = bitcoin.TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil,
-      txOut = TxOut(Satoshi(1000), Script.pay2pkh(fr.acinq.eclair.randomKey().publicKey)) :: Nil,
-      lockTime = 0)
-
-    val sig = keyManager.sign(
-      ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
-      keyManager.paymentPoint(channelKeyPath),
-      ce.myCurrentPerCommitmentPoint,
-      TxOwner.Local,
-      DefaultCommitmentFormat)
-    val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
-    Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    // check that our output in Bob's commit tx sends to our static payment point
+    val Some(ourStaticPaymentPoint) = oldStateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.walletStaticPaymentBasepoint
+    assert(pubKeyHash == ourStaticPaymentPoint.hash160)
   }
 
   /** We are only interested in channel updates from Alice, we use the channel flag to discriminate */

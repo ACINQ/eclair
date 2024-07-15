@@ -325,7 +325,7 @@ class PeerSpec extends FixtureSpec {
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
   }
 
-  test("don't spawn a channel with duplicate temporary channel id") { f =>
+  test("don't spawn a channel with duplicate temporary channel id", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val probe = TestProbe()
@@ -403,19 +403,19 @@ class PeerSpec extends FixtureSpec {
     channel.expectMsg(open)
   }
 
-  test("use their channel type when spawning a channel", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("use their channel type when spawning a channel", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
 
-    // We both support option_static_remotekey but they want to open a standard channel.
-    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    // We both support option_anchors_zero_fee_htlc_tx they want to open an  anchor_outputs channel.
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(AnchorOutputsZeroFeeHtlcTx -> Optional)))
     assert(peer.stateData.channels.isEmpty)
-    val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard())))
+    val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
     peerConnection.send(peer, open)
     eventually {
       assert(peer.stateData.channels.nonEmpty)
     }
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-    assert(init.channelType == ChannelTypes.Standard())
+    assert(init.channelType == ChannelTypes.AnchorOutputs())
     assert(!init.dualFunded)
     channel.expectMsg(open)
   }
@@ -439,7 +439,7 @@ class PeerSpec extends FixtureSpec {
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].channelType == ChannelTypes.AnchorOutputs())
   }
 
-  test("handle OpenChannelInterceptor accepting an open channel message") { f =>
+  test("handle OpenChannelInterceptor accepting an open channel message", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     connect(remoteNodeId, peer, peerConnection, switchboard)
@@ -450,7 +450,7 @@ class PeerSpec extends FixtureSpec {
     channel.expectMsg(open)
   }
 
-  test("handle OpenChannelInterceptor rejecting an open channel message", Tag("rate_limited")) { f =>
+  test("handle OpenChannelInterceptor rejecting an open channel message", Tag("rate_limited"), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     connect(remoteNodeId, peer, peerConnection, switchboard)
@@ -510,7 +510,7 @@ class PeerSpec extends FixtureSpec {
     assert(init.localParams.upfrontShutdownScript_opt.isEmpty)
   }
 
-  test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent")) { f =>
+  test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent"), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val probe = TestProbe()

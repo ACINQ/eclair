@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, HtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
@@ -55,10 +55,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   override def withFixture(test: OneArgTest): Outcome = {
     val aliceParams = Alice.nodeParams
       .modify(_.onChainFeeConf.closeOnOfflineMismatch).setToIf(test.tags.contains(DisableOfflineMismatch))(false)
-    val setup = init(nodeParamsA = aliceParams)
+    val setup = init(nodeParamsA = aliceParams, tags = test.tags)
     import setup._
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, tags = test.tags)
       if (test.tags.contains(IgnoreChannelUpdates)) {
         setup.alice2bob.ignoreMsg({ case _: ChannelUpdate => true })
         setup.bob2alice.ignoreMsg({ case _: ChannelUpdate => true })
@@ -289,7 +289,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
   }
 
-  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates)) { f =>
+  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -339,7 +339,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates)) { f =>
+  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // we start by storing the current state
@@ -394,7 +394,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // the current state contains a pending htlc
@@ -421,6 +421,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim her main output and the htlc (once it times out)
+    alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val claimHtlc = alice2blockchain.expectMsgType[PublishReplaceableTx]
@@ -428,7 +429,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimHtlc.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // we sign a new commitment to make sure the first one is revoked
@@ -455,7 +456,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
 
     // alice is able to claim all outputs
-    assert(bobRevokedCommitTx.txOut.length == 2)
+    assert(bobRevokedCommitTx.txOut.length == 4)
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobRevokedCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val claimRevokedOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx

@@ -9,14 +9,14 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL, Upstream}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck, TlvStream, UpdateAddHtlc, UpdateAddHtlcTlv}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.sqlite.SQLiteConfig
 
@@ -32,7 +32,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   type FixtureParam = SetupFixture
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = init(tags = test.tags)
     within(30 seconds) {
       reachNormal(setup, test.tags)
       withFixture(test.toNoArgTest(setup))
@@ -73,7 +73,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     )
   }
 
-  test("take published remote commit tx into account") { f =>
+  test("take published remote commit tx into account", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
@@ -89,9 +89,10 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+    assert(bobCommitTx.txOut.size == 8) // two anchor outputs, two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishReplaceableTx] // claim-anchor
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
@@ -114,7 +115,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       ))
   }
 
-  test("take published next remote commit tx into account") { f =>
+  test("take published next remote commit tx into account", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
@@ -136,10 +137,11 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // as far as alice knows, bob currently has two valid unrevoked commitment transactions
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.last.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
+    assert(bobCommitTx.txOut.size == 7) // two anchor outputs, two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishReplaceableTx] // claim-anchor
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 

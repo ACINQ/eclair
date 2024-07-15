@@ -31,6 +31,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
+import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -51,7 +52,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   val r2 = randomBytes32()
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    val setup = init(tags = test.tags)
     import setup._
     within(30 seconds) {
       reachNormal(setup, test.tags)
@@ -715,14 +716,16 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (their commit)") { f =>
+  test("recv WatchFundingSpentTriggered (their commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
     // bob publishes his current commit tx, which contains two pending htlcs alice->bob
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
+    assert(bobCommitTx.txOut.size == 6) // two main outputs and 2 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
+    val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
@@ -734,7 +737,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
     val amountClaimed = htlcAmountClaimed + claimMain.txOut.head.amount
-    assert(amountClaimed == 774040.sat)
+    assert(amountClaimed == 780290.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid)
@@ -750,7 +753,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(getClaimHtlcTimeoutTxs(rcp).length == 2)
   }
 
-  test("recv WatchFundingSpentTriggered (their next commit)") { f =>
+  test("recv WatchFundingSpentTriggered (their next commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
     // bob fulfills the first htlc
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
@@ -768,10 +771,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // bob publishes his current commit tx, which contains one pending htlc alice->bob
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 3) // two main outputs and 1 pending htlc
+    assert(bobCommitTx.txOut.size == 5) // two anchor outputs, two main outputs and 1 pending htlc
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx // claim local anchor output
     val claimTxs = Seq(
       alice2blockchain.expectMsgType[PublishFinalTx].tx,
       // there is only one htlc to claim in the commitment bob published
@@ -784,7 +788,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       claimTx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-    assert(amountClaimed == 481210.sat)
+    assert(amountClaimed == 486200.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimTxs(0).txid)
@@ -799,11 +803,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(getClaimHtlcTimeoutTxs(rcp).length == 1)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked tx)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     // two main outputs + 2 htlc
-    assert(revokedTx.txOut.size == 4)
+    assert(revokedTx.txOut.size == 6)
 
     // bob fulfills one of the pending htlc (just so that he can have a new sig)
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
@@ -832,25 +836,25 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut.head.amount == 284940.sat)
+    assert(mainTx.txOut.head.amount == 291250.sat)
     assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlc1PenaltyTx.txOut.head.amount == 194540.sat)
-    assert(htlc2PenaltyTx.txOut.head.amount == 294540.sat)
+    assert(htlc1PenaltyTx.txOut.head.amount == 194510.sat)
+    assert(htlc2PenaltyTx.txOut.head.amount == 294510.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val initialCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(initialCommitTx.txOut.size == 4) // two main outputs + 2 htlc
+    assert(initialCommitTx.txOut.size == 6) // two main outputs + 2 htlc
 
     // bob fulfills one of the pending htlc (commitment update while in shutdown state)
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(revokedTx.txOut.size == 3) // two main outputs + 1 htlc
+    assert(revokedTx.txOut.size == 5) // two anchor outputs, two main outputs + 1 htlc
 
     // bob fulfills the second pending htlc (and revokes the previous commitment)
     fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
@@ -875,9 +879,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut(0).amount == 286660.sat)
+    assert(mainTx.txOut(0).amount == 291680.sat)
     assert(mainPenaltyTx.txOut(0).amount == 495160.sat)
-    assert(htlcPenaltyTx.txOut(0).amount == 194540.sat)
+    assert(htlcPenaltyTx.txOut(0).amount == 194510.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
