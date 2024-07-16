@@ -150,7 +150,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     validateRemoteChannelType(request.temporaryChannelId, request.channelFlags, request.channelType_opt, request.localFeatures, request.remoteFeatures) match {
       case Right(_: ChannelTypes.Standard) =>
         context.log.warn("rejecting new obsolete incoming channels")
-        sendFailure("rejecting new obsolete incoming channels", request)
+        sendFailure("rejecting incoming channel: anchor outputs must be used for new channels", request)
         waitForRequest()
       case Right(_: ChannelTypes.StaticRemoteKey) if !nodeParams.channelConf.acceptIncomingStaticRemoteKeyChannels =>
         context.log.warn("rejecting new static_remote_key incoming channels")
