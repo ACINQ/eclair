@@ -171,7 +171,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), staticRemoteKeyFeatures, staticRemoteKeyFeatures, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
-    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejecting new static_remote_key incoming channels"))
+    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejecting incoming static_remote_key channel: anchor outputs must be used for new channels"))
     eventListener.expectMessageType[ChannelAborted]
   }
 
