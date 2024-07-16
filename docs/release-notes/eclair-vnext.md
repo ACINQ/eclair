@@ -17,6 +17,13 @@ To enable CoinGrinder at all fee rates and prevent the automatic consolidation o
 consolidatefeerate=0
 ```
 
+### Incoming obsolete channels will be rejected
+
+Eclair will not allow remote peers to open new `static_remote_key` channels. These channels are obsolete, node operators should use `option_anchors` channels now.
+Existing `static_remote_key` channels will continue to work. You can override this behaviour by setting `eclair.channel.accept-incoming-static-remote-key-channels` to true.
+
+Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
+
 ### API changes
 
 <insert changes>

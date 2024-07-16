@@ -60,7 +60,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelClosed])
       bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
       bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelClosed])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      val commitTxFeerate = if (test.tags.contains(ChannelStateTestsTags.AnchorOutputs) || test.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, commitTxFeerate, commitTxFeerate, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -230,13 +231,14 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(tx)
     assert(listener.expectMsgType[TransactionPublished].tx == tx)
-    alice2blockchain.expectMsgType[TxPublisher.PublishTx]
+    alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)

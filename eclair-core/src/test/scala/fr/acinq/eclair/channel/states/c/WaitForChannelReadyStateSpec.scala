@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.channel.publish.{TxPublisher, TxPublisherSpec}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
@@ -254,11 +254,12 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(tx)
+    alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
     aliceListener.expectMsgType[ChannelAborted]

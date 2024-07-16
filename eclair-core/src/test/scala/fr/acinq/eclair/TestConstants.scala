@@ -102,6 +102,7 @@ object TestConstants {
           Wumbo -> Optional,
           PaymentMetadata -> Optional,
           RouteBlinding -> Optional,
+          StaticRemoteKey -> Mandatory
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -141,6 +142,7 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
+        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -271,6 +273,8 @@ object TestConstants {
         Wumbo -> Optional,
         PaymentMetadata -> Optional,
         RouteBlinding -> Optional,
+        StaticRemoteKey -> Mandatory,
+        AnchorOutputsZeroFeeHtlcTx -> Optional
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
@@ -308,6 +312,7 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
+        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),

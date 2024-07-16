@@ -3075,7 +3075,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (their commit w/ htlc)") { f =>
+  test("recv WatchFundingSpentTriggered (their commit w/ htlc)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(50), alice, bob, alice2bob, bob2alice)
@@ -3100,10 +3100,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+    assert(bobCommitTx.txOut.size == 8) // two anchor outputs, two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishReplaceableTx]
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
@@ -3115,7 +3116,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(amountClaimed == 814880.sat)
+    assert(amountClaimed == 823680.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlcb1.id -> htlcb1.cltvExpiry.blockHeight))
@@ -3138,9 +3139,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // assert the feerate of the claim main is what we expect
     val expectedFeeRate = alice.underlyingActor.nodeParams.onChainFeeConf.getClosingFeerate(alice.underlyingActor.nodeParams.currentFeerates)
-    val expectedFee = Transactions.weight2fee(expectedFeeRate, Transactions.claimP2WPKHOutputWeight)
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount).sum - claimMain.txOut.map(_.amount).sum
-    assert(claimFee == expectedFee)
+    val claimFeeRate = Transactions.fee2rate(claimFee, claimMain.weight())
+    assert(claimFeeRate >= expectedFeeRate * 0.9 && claimFeeRate <= expectedFeeRate * 1.2)
   }
 
   test("recv WatchFundingSpentTriggered (their commit w/ pending unsigned htlcs)") { f =>
@@ -3159,7 +3160,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled.htlc == htlc1)
   }
 
-  test("recv WatchFundingSpentTriggered (their *next* commit w/ htlc)") { f =>
+  test("recv WatchFundingSpentTriggered (their *next* commit w/ htlc)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, CltvExpiryDelta(24), alice, bob, alice2bob, bob2alice)
@@ -3191,10 +3192,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
+    assert(bobCommitTx.txOut.size == 7) // two anchor outputs, two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
+    val claimAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
@@ -3206,7 +3208,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(amountClaimed == 822310.sat)
+    assert(amountClaimed == 829850.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlca1.id -> htlca1.cltvExpiry.blockHeight, htlca2.id -> htlca2.cltvExpiry.blockHeight))
@@ -3248,7 +3250,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled.htlc == htlc2)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked commit)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked commit)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // initially we have :
     // alice = 800 000
@@ -3273,8 +3275,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //  a->b =  10 000
     //  a->b =  10 000
     //  a->b =  10 000
-    // two main outputs + 4 htlc
-    assert(revokedTx.txOut.size == 6)
+    // two anchor outputs + two main outputs + 4 htlc
+    assert(revokedTx.txOut.size == 8)
     alice ! WatchFundingSpentTriggered(revokedTx)
     alice2bob.expectMsgType[Error]
 
@@ -3294,18 +3296,18 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     // two main outputs are 760 000 and 200 000
-    assert(mainTx.txOut.head.amount == 741500.sat)
+    assert(mainTx.txOut.head.amount == 750390.sat)
     assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlcPenaltyTxs(0).txOut.head.amount == 4540.sat)
-    assert(htlcPenaltyTxs(1).txOut.head.amount == 4540.sat)
-    assert(htlcPenaltyTxs(2).txOut.head.amount == 4540.sat)
-    assert(htlcPenaltyTxs(3).txOut.head.amount == 4540.sat)
+    assert(htlcPenaltyTxs(0).txOut.head.amount == 4510.sat)
+    assert(htlcPenaltyTxs(1).txOut.head.amount == 4510.sat)
+    assert(htlcPenaltyTxs(2).txOut.head.amount == 4510.sat)
+    assert(htlcPenaltyTxs(3).txOut.head.amount == 4510.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked commit with identical htlcs)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked commit with identical htlcs)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val sender = TestProbe()
 
@@ -3338,7 +3340,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //   bob = 200 000
     //  a->b =  10 000
     //  a->b =  10 000
-    assert(revokedTx.txOut.size == 4)
+    // local anchor -> 330
+    // remote anchor -> 330
+    assert(revokedTx.txOut.size == 6)
     alice ! WatchFundingSpentTriggered(revokedTx)
     alice2bob.expectMsgType[Error]
 

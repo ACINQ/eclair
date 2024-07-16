@@ -148,6 +148,14 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
     validateRemoteChannelType(request.temporaryChannelId, request.channelFlags, request.channelType_opt, request.localFeatures, request.remoteFeatures) match {
+      case Right(_: ChannelTypes.Standard) =>
+        context.log.warn("rejecting incoming channel: anchor outputs must be used for new channels")
+        sendFailure("rejecting incoming channel: anchor outputs must be used for new channels", request)
+        waitForRequest()
+      case Right(_: ChannelTypes.StaticRemoteKey) if !nodeParams.channelConf.acceptIncomingStaticRemoteKeyChannels =>
+        context.log.warn("rejecting static_remote_key incoming static_remote_key channels")
+        sendFailure("rejecting incoming static_remote_key channel: anchor outputs must be used for new channels", request)
+        waitForRequest()
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)

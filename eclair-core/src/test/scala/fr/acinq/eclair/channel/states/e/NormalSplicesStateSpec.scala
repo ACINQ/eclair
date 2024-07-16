@@ -1573,6 +1573,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_FORCECLOSE(ActorRef.noSender)
     alice2bob.expectMsgType[Error]
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
+    assertPublished(alice2blockchain, "local-anchor")
     assertPublished(alice2blockchain, "local-main-delayed")
     // alice publishes her htlc timeout transactions
     val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
@@ -1580,6 +1581,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     alice2blockchain.expectMsgType[WatchTxConfirmed]
     alice2blockchain.expectMsgType[WatchTxConfirmed]
+
+    alice2blockchain.expectMsgType[WatchOutputSpent]
     // watch for all htlc outputs from local commit-tx to be spent
     htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
@@ -1599,7 +1602,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     watchAlternativeConfirmed.replyTo ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
 
     // we're back to the normal handling of remote commit
-    val claimMain = assertPublished(alice2blockchain, "remote-main")
+    assertPublished(alice2blockchain, "local-anchor")
+    val claimMain = assertPublished(alice2blockchain, "remote-main-delayed")
     val htlcsTxsOut1 = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "claim-htlc-timeout"))
     htlcsTxsOut1.foreach(tx => Transaction.correctlySpends(tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     val watchConfirmedRemoteCommit = alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
@@ -1629,11 +1633,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
 
-  test("force-close with multiple splices (previous active remote)") { f =>
+  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
   }
 
-  test("force-close with multiple splices (previous active remote, quiescence)", Tag(Quiescence)) { f =>
+  test("force-close with multiple splices (previous active remote, quiescence)", Tag(Quiescence), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
   }
 
@@ -1671,17 +1675,19 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // alice watches bob's revoked commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobRevokedCommitTx.txid)
     val aliceCommitTx2 = assertPublished(alice2blockchain, "commit-tx")
+    assertPublished(alice2blockchain, "local-anchor")
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
     htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx2.txid)
     alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    alice2blockchain.expectMsgType[WatchOutputSpent]
     htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
     // bob's revoked tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
     // alice reacts by punishing bob
-    val aliceClaimMain = assertPublished(alice2blockchain, "remote-main")
+    val aliceClaimMain = assertPublished(alice2blockchain, "remote-main-delayed")
     val aliceMainPenalty = assertPublished(alice2blockchain, "main-penalty")
     val aliceHtlcsPenalty = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-penalty")) ++ htlcs.bobToAlice.map(_ => assertPublished(alice2blockchain, "htlc-penalty"))
     aliceHtlcsPenalty.foreach(tx => Transaction.correctlySpends(tx, Seq(bobRevokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
@@ -1707,11 +1713,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
   }
 
-  test("force-close with multiple splices (previous active revoked)") { f =>
+  test("force-close with multiple splices (previous active revoked)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
   }
 
-  test("force-close with multiple splices (previous active revoked, quiescent)", Tag(Quiescence)) { f =>
+  test("force-close with multiple splices (previous active revoked, quiescent)", Tag(Quiescence), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
   }
 

@@ -80,7 +80,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
     assert(accept.upfrontShutdownScript_opt.contains(ByteVector.empty))
-    assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
+    assert(accept.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     aliceOpenReplyTo.expectNoMessage()
@@ -188,10 +188,10 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (invalid channel type)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
+    assert(accept.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
     val invalidAccept = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
     bob2alice.forward(alice, invalidAccept)
-    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
+    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=static_remotekey"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

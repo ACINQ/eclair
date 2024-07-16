@@ -21,7 +21,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, StaticRemoteKey, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ConnectionDown
@@ -153,7 +153,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -170,7 +170,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,payment_secret,var_onion_optin,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -211,7 +211,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("sync when requested") { f =>
     import f._
-    val remoteInit = protocol.Init(Features(ChannelRangeQueries -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    val remoteInit = protocol.Init(Features(ChannelRangeQueries -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, StaticRemoteKey -> Mandatory))
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 
