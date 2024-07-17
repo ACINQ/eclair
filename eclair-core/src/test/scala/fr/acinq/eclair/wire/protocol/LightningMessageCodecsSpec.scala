@@ -391,7 +391,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
-      UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None),
+      UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None, 1.0),
       UpdateFulfillHtlc(randomBytes32(), 2, bin32(0)),
       UpdateFailHtlc(randomBytes32(), 2, bin(154, 0)),
       UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111),

@@ -67,6 +67,10 @@ object Monitoring {
       PaymentNodeOutAmount.withoutTags().record(bucket, amount.truncateToSatoshi.toLong)
       PaymentNodeOut.withoutTags().record(bucket)
     }
+
+    private val RelayConfidence = Kamon.histogram("payment.relay.confidence", "Confidence (in percent) that the relayed HTLC will be fulfilled")
+    def relaySettleFulfill(confidence: Double) = RelayConfidence.withTag("status", "fulfill").record((confidence * 100).toLong)
+    def relaySettleFail(confidence: Double) = RelayConfidence.withTag("status", "fail").record((confidence * 100).toLong)
   }
 
   object Tags {

@@ -64,6 +64,7 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
+  private case class WrappedConfidence(confidence: Double) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -259,7 +260,7 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def doSend(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
-    relay(upstream, nextPayload, nextPacket_opt)
+    relay(upstream, nextPayload, nextPacket_opt, confidence = 0.5)
   }
 
   /**
@@ -316,12 +317,12 @@ class NodeRelay private(nodeParams: NodeParams,
     context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
   }.toClassic
 
-  private def relay(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def relay(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket], confidence: Double): Behavior[Command] = {
     val displayNodeId = payloadOut match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard => payloadOut.outgoingNodeId
       case _: IntermediatePayload.NodeRelay.ToBlindedPaths => randomKey().publicKey
     }
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, displayNodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, displayNodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, confidence)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     payloadOut match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard =>
