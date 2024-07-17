@@ -20,6 +20,7 @@ import akka.actor.typed
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{Logs, NodeParams}
 
@@ -38,7 +39,7 @@ object NodeRelayer {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey) extends Command
   case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: ByteVector32) extends Command
   private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on
@@ -61,20 +62,20 @@ object NodeRelayer {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
-          case Relay(nodeRelayPacket) =>
+          case Relay(nodeRelayPacket, originNode) =>
             val htlcIn = nodeRelayPacket.add
             val childKey = PaymentKey(htlcIn.paymentHash, nodeRelayPacket.outerPayload.paymentSecret)
             children.get(childKey) match {
               case Some(handler) =>
                 context.log.debug("forwarding incoming htlc #{} from channel {} to existing handler", htlcIn.id, htlcIn.channelId)
-                handler ! NodeRelay.Relay(nodeRelayPacket)
+                handler ! NodeRelay.Relay(nodeRelayPacket, originNode)
                 Behaviors.same
               case None =>
                 val relayId = UUID.randomUUID()
                 context.log.debug(s"spawning a new handler with relayId=$relayId")
                 val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, outgoingPaymentFactory, triggerer, router), relayId.toString)
                 context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
-                handler ! NodeRelay.Relay(nodeRelayPacket)
+                handler ! NodeRelay.Relay(nodeRelayPacket, originNode)
                 apply(nodeParams, register, outgoingPaymentFactory, triggerer, router, children + (childKey -> handler))
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>

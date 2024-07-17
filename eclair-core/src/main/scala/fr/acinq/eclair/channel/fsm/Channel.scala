@@ -637,7 +637,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
               log.debug("forwarding incoming htlc {} to relayer", add)
-              relayer ! Relayer.RelayForward(add)
+              relayer ! Relayer.RelayForward(add, remoteNodeId)
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.

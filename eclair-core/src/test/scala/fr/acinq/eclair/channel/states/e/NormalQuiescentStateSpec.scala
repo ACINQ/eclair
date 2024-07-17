@@ -311,7 +311,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    alice2relayer.expectMsg(RelayForward(add))
+    alice2relayer.expectMsg(RelayForward(add, TestConstants.Bob.nodeParams.nodeId))
     initiateQuiescence(f, sendInitialStfu = true)
     val forbiddenMsg = UpdateFulfillHtlc(channelId(bob), add.id, preimage)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)

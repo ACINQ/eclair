@@ -22,6 +22,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -53,7 +54,7 @@ object ChannelRelay {
   case class RelaySuccess(selectedChannelId: ByteVector32, cmdAdd: CMD_ADD_HTLC) extends RelayResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, register: ActorRef, channels: Map[ByteVector32, Relayer.OutgoingChannel], relayId: UUID, r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
+  def apply(nodeParams: NodeParams, register: ActorRef, channels: Map[ByteVector32, Relayer.OutgoingChannel], originNode: PublicKey, relayId: UUID, r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
@@ -61,7 +62,7 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         context.self ! DoRelay
-        new ChannelRelay(nodeParams, register, channels, r, context).relay(Seq.empty)
+        new ChannelRelay(nodeParams, register, channels, r, context, originNode).relay(Seq.empty)
       }
     }
 
@@ -105,6 +106,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            context: ActorContext[ChannelRelay.Command],
+                           originNode: PublicKey,
                            startedAt: TimestampMilli = TimestampMilli.now()) {
 
   import ChannelRelay._
@@ -112,7 +114,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
 
-  private val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), startedAt)
+  private val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), startedAt, originNode)
 
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 

@@ -116,7 +116,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val h = randomBytes32()
     val originHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = h, onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
-    val origin = Origin.Hot(sender.ref, Upstream.Hot.Channel(originHtlc, TimestampMilli.now()))
+    val origin = Origin.Hot(sender.ref, Upstream.Hot.Channel(originHtlc, TimestampMilli.now(), randomKey().publicKey))
     val cmd = CMD_ADD_HTLC(sender.ref, originHtlc.amountMsat - 10_000.msat, h, originHtlc.cltvExpiry - CltvExpiryDelta(7), TestConstants.emptyOnionPacket, None, origin)
     alice ! cmd
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -135,7 +135,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val h = randomBytes32()
     val originHtlc1 = UpdateAddHtlc(randomBytes32(), 47, 30000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None)
     val originHtlc2 = UpdateAddHtlc(randomBytes32(), 32, 20000000 msat, h, CltvExpiryDelta(160).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None)
-    val origin = Origin.Hot(sender.ref, Upstream.Hot.Trampoline(Seq(originHtlc1, originHtlc2).map(htlc => Upstream.Hot.Channel(htlc, TimestampMilli.now()))))
+    val origin = Origin.Hot(sender.ref, Upstream.Hot.Trampoline(Seq(originHtlc1, originHtlc2).map(htlc => Upstream.Hot.Channel(htlc, TimestampMilli.now(), randomKey().publicKey))))
     val cmd = CMD_ADD_HTLC(sender.ref, originHtlc1.amountMsat + originHtlc2.amountMsat - 10000.msat, h, originHtlc2.cltvExpiry - CltvExpiryDelta(7), TestConstants.emptyOnionPacket, None, origin)
     alice ! cmd
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -1407,9 +1407,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // Alice forwards HTLCs that fit in the dust exposure.
     alice2relayer.expectMsgAllOf(
-      RelayForward(nonDust),
-      RelayForward(almostTrimmed),
-      RelayForward(trimmed2),
+      RelayForward(nonDust, TestConstants.Bob.nodeParams.nodeId),
+      RelayForward(almostTrimmed, TestConstants.Bob.nodeParams.nodeId),
+      RelayForward(trimmed2, TestConstants.Bob.nodeParams.nodeId),
     )
     alice2relayer.expectNoMessage(100 millis)
     // And instantly fails the others.
@@ -1454,7 +1454,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
 
     // Alice forwards HTLCs that fit in the dust exposure and instantly fails the others.
-    alice2relayer.expectMsg(RelayForward(acceptedHtlc))
+    alice2relayer.expectMsg(RelayForward(acceptedHtlc, TestConstants.Bob.nodeParams.nodeId))
     alice2relayer.expectNoMessage(100 millis)
     assert(alice2bob.expectMsgType[UpdateFailHtlc].id == rejectedHtlc.id)
     alice2bob.expectMsgType[CommitSig]
