@@ -62,20 +62,20 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init
-    case RelayForward(add) =>
+    case RelayForward(add, originNode) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPaymentPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPaymentPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
-          channelRelayer ! ChannelRelayer.Relay(r)
+          channelRelayer ! ChannelRelayer.Relay(r, originNode)
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=trampoline disabled")
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing()), commit = true))
           } else {
-            nodeRelayer ! NodeRelayer.Relay(r)
+            nodeRelayer ! NodeRelayer.Relay(r, originNode)
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
@@ -108,7 +108,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
-      case RelayForward(add) => Some(add.paymentHash)
+      case RelayForward(add, _) => Some(add.paymentHash)
       case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
       case addCompleted: RES_ADD_SETTLED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
@@ -145,7 +145,7 @@ object Relayer extends Logging {
     }
   }
 
-  case class RelayForward(add: UpdateAddHtlc)
+  case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey)
   case class ChannelBalance(remoteNodeId: PublicKey, shortIds: ShortIds, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
   sealed trait OutgoingChannelParams {
