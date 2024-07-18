@@ -351,7 +351,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket,
-                         tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
+                         tlvStream: TlvStream[UpdateAddHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId {
   val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
 
   val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)

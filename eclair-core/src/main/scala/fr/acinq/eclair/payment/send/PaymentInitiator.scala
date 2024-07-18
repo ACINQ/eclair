@@ -395,6 +395,7 @@ object PaymentInitiator {
    * @param publishEvent             whether to publish a [[fr.acinq.eclair.payment.PaymentEvent]] on success/failure (e.g. for
    *                                 multi-part child payments, we don't want to emit events for each child, only for the whole payment).
    * @param recordPathFindingMetrics We don't record metrics for payments that don't use path finding or that are a part of a bigger payment.
+   * @param confidence               How confident we are that this payment will succeed. Used to set the outgoing endorsement value.
    */
   case class SendPaymentConfig(id: UUID,
                                parentId: UUID,

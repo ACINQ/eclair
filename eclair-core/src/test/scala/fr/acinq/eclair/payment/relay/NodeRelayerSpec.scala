@@ -248,7 +248,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
@@ -377,7 +377,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // upstream payment relayed
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -454,7 +454,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // upstream payment relayed
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingAsyncPayment.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -662,7 +662,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     nodeRelayer ! NodeRelay.Relay(incomingMultiPart.last, randomKey().publicKey)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -698,7 +698,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     nodeRelayer ! NodeRelay.Relay(incomingSinglePart, randomKey().publicKey)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(Upstream.Hot.Channel(incomingSinglePart.add, TimestampMilli.now(), randomKey().publicKey) :: Nil))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(Upstream.Hot.Channel(incomingSinglePart.add, TimestampMilli.now(), randomKey().publicKey) :: Nil), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
     // those are adapters for pay-fsm messages
@@ -733,7 +733,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
@@ -777,7 +777,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))))
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5)
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.recipient.nodeId == outgoingNodeId)
     assert(outgoingPayment.amount == outgoingAmount)
@@ -846,7 +846,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5, ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.amount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -885,7 +885,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5, ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     assert(outgoingPayment.recipient.totalAmount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -932,7 +932,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     getNodeId.replyTo ! Some(outgoingNodeId)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), ignoreNodeId = true)
+    validateOutgoingCfg(outgoingCfg, Upstream.Hot.Trampoline(incomingMultiPart.map(p => Upstream.Hot.Channel(p.add, TimestampMilli.now(), randomKey().publicKey))), 0.5, ignoreNodeId = true)
     val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.amount == outgoingAmount)
     assert(outgoingPayment.recipient.expiry == outgoingExpiry)
@@ -987,7 +987,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
   }
 
-  def validateOutgoingCfg(outgoingCfg: SendPaymentConfig, upstream: Upstream, ignoreNodeId: Boolean = false): Unit = {
+  def validateOutgoingCfg(outgoingCfg: SendPaymentConfig, upstream: Upstream, confidence: Double, ignoreNodeId: Boolean = false): Unit = {
     assert(!outgoingCfg.publishEvent)
     assert(!outgoingCfg.storeInDb)
     assert(outgoingCfg.paymentHash == paymentHash)
@@ -997,6 +997,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       case (Upstream.Hot.Trampoline(adds1), Upstream.Hot.Trampoline(adds2)) => assert(adds1.map(_.add) == adds2.map(_.add))
       case _ => assert(outgoingCfg.upstream == upstream)
     }
+    assert(outgoingCfg.confidence == confidence)
   }
 
   def validateOutgoingPayment(outgoingPayment: SendMultiPartPayment): Unit = {

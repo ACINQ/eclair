@@ -43,7 +43,7 @@ object ChannelRelay {
 
   // @formatter:off
   sealed trait Command
-  private case class WrappedConfidence(confidence: Double) extends Command
+  private case object DoRelay extends Command
   private case class WrappedForwardFailure(failure: Register.ForwardFailure[CMD_ADD_HTLC]) extends Command
   private case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
   // @formatter:on
@@ -67,8 +67,8 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), TimestampMilli.now(), originNode)
-        context.self ! WrappedConfidence(0.5)
-        new ChannelRelay(nodeParams, register, channels, r, upstream, context).relay(Seq.empty)
+        context.self ! DoRelay
+        new ChannelRelay(nodeParams, register, channels, r, upstream, confidence = 0.5, context).relay(Seq.empty)
       }
     }
 
@@ -112,6 +112,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
+                           confidence: Double,
                            context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
@@ -123,35 +124,35 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def relay(previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedConfidence(confidence) =>
+      case DoRelay =>
         if (previousFailures.isEmpty) {
           context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, r.payload.outgoingChannelId, nextNodeId_opt.getOrElse(""))
         }
         context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
-        handleRelay(previousFailures, confidence) match {
+        handleRelay(previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
-            safeSendAndStop(r.add.channelId, cmdFail, confidence, None)
+            safeSendAndStop(r.add.channelId, cmdFail, None)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
             context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
             register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
-            waitForAddResponse(selectedChannelId, previousFailures, confidence)
+            waitForAddResponse(selectedChannelId, previousFailures)
         }
     }
   }
 
-  def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried], confidence: Double): Behavior[Command] =
+  def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, _))) =>
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
         val cmdFail = CMD_FAIL_HTLC(upstream.add.id, Right(UnknownNextPeer()), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-        safeSendAndStop(upstream.add.channelId, cmdFail, confidence, Some(channelId))
+        safeSendAndStop(upstream.add.channelId, cmdFail, Some(channelId))
 
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
         context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
-        context.self ! WrappedConfidence(confidence)
+        context.self ! DoRelay
         relay(previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
 
       case WrappedAddResponse(r: RES_SUCCESS[_]) =>
@@ -163,22 +164,22 @@ class ChannelRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.debug("relaying fulfill to upstream")
-        Metrics.relaySettleFulfill(confidence)
+        Metrics.relayFulfill(confidence)
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, TimestampMilli.now()))
         recordRelayDuration(isSuccess = true)
-        safeSendAndStop(upstream.add.channelId, cmd, confidence, Some(channelId))
+        safeSendAndStop(upstream.add.channelId, cmd, Some(channelId))
 
       case WrappedAddResponse(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail)) =>
         context.log.debug("relaying fail to upstream")
-        Metrics.relaySettleFail(confidence)
+        Metrics.relayFail(confidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail)
         recordRelayDuration(isSuccess = false)
-        safeSendAndStop(upstream.add.channelId, cmd, confidence, Some(channelId))
+        safeSendAndStop(upstream.add.channelId, cmd, Some(channelId))
     }
 
-  def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand, confidence: Double, outgoingChannel_opt: Option[ByteVector32]): Behavior[Command] = {
+  def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand, outgoingChannel_opt: Option[ByteVector32]): Behavior[Command] = {
     context.log.info("cmd={}, startedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", cmd.getClass.getSimpleName, upstream.receivedAt, TimestampMilli.now(), confidence, upstream.receivedFrom, outgoingChannel_opt)
     val toSend = cmd match {
       case _: CMD_FULFILL_HTLC => cmd
@@ -210,7 +211,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  def handleRelay(previousFailures: Seq[PreviouslyTried], confidence: Double): RelayResult = {
+  def handleRelay(previousFailures: Seq[PreviouslyTried]): RelayResult = {
     val alreadyTried = previousFailures.map(_.channelId)
     selectPreferredChannel(alreadyTried, confidence) match {
       case None if previousFailures.nonEmpty =>

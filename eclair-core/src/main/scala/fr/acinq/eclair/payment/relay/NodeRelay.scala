@@ -64,7 +64,6 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
-  private case class WrappedConfidence(confidence: Double) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
