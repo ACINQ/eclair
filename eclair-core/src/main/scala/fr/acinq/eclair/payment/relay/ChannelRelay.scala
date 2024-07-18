@@ -61,8 +61,9 @@ object ChannelRelay {
         parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
+        val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), TimestampMilli.now(), originNode)
         context.self ! DoRelay
-        new ChannelRelay(nodeParams, register, channels, r, context, originNode).relay(Seq.empty)
+        new ChannelRelay(nodeParams, register, channels, r, upstream, context).relay(Seq.empty)
       }
     }
 
@@ -105,16 +106,13 @@ class ChannelRelay private(nodeParams: NodeParams,
                            register: ActorRef,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
-                           context: ActorContext[ChannelRelay.Command],
-                           originNode: PublicKey,
-                           startedAt: TimestampMilli = TimestampMilli.now()) {
+                           upstream: Upstream.Hot.Channel,
+                           context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
 
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
-
-  private val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), startedAt, originNode)
 
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 
@@ -161,7 +159,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.debug("relaying fulfill to upstream")
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, startedAt, TimestampMilli.now()))
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, TimestampMilli.now()))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
 
@@ -322,5 +320,5 @@ class ChannelRelay private(nodeParams: NodeParams,
     Metrics.RelayedPaymentDuration
       .withTag(Tags.Relay, Tags.RelayType.Channel)
       .withTag(Tags.Success, isSuccess)
-      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
+      .record((TimestampMilli.now() - upstream.receivedAt).toMillis, TimeUnit.MILLISECONDS)
 }
