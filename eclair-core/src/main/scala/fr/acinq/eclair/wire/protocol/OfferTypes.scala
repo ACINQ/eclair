@@ -215,13 +215,19 @@ object OfferTypes {
    */
   case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv
 
+  private def isOfferTlv(tlv: GenericTlv): Boolean =
+    // Offer TLVs are in the range [1, 79] or [1000000000, 1999999999].
+    tlv.tag <= UInt64(79) || (tlv.tag >= UInt64(1000000000) && tlv.tag <= UInt64(1999999999))
+
+  private def isInvoiceRequestTlv(tlv: GenericTlv): Boolean =
+    // Offer TLVs are in the range [0, 159] or [1000000000, 2999999999].
+    tlv.tag <= UInt64(159) || (tlv.tag >= UInt64(1000000000) && tlv.tag <= UInt64(2999999999L))
+
   def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
-  // Offer TLVs are in the range (0, 80).
-    TlvStream[OfferTlv](tlvs.records.collect { case tlv: OfferTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(80)))
+    TlvStream[OfferTlv](tlvs.records.collect { case tlv: OfferTlv => tlv }, tlvs.unknown.filter(isOfferTlv))
 
   def filterInvoiceRequestFields(tlvs: TlvStream[InvoiceTlv]): TlvStream[InvoiceRequestTlv] =
-  // Invoice request TLVs are in the range [0, 160): invoice request metadata (tag 0), offer TLVs, and additional invoice request TLVs in the range [80, 160).
-    TlvStream[InvoiceRequestTlv](tlvs.records.collect { case tlv: InvoiceRequestTlv => tlv }, tlvs.unknown.filter(_.tag < UInt64(160)))
+    TlvStream[InvoiceRequestTlv](tlvs.records.collect { case tlv: InvoiceRequestTlv => tlv }, tlvs.unknown.filter(isInvoiceRequestTlv))
 
   case class ErroneousField(tag: Long) extends InvoiceErrorTlv
 
@@ -306,7 +312,7 @@ object OfferTypes {
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
       if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
       if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(22)))
-      if (records.unknown.exists(_.tag >= UInt64(80))) return Left(ForbiddenTlv(records.unknown.find(_.tag >= UInt64(80)).get.tag))
+      if (records.unknown.exists(!isOfferTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isOfferTlv(_)).get.tag))
       Right(Offer(records))
     }
 
@@ -411,7 +417,7 @@ object OfferTypes {
       if (records.get[InvoiceRequestMetadata].isEmpty) return Left(MissingRequiredTlv(UInt64(0)))
       if (records.get[InvoiceRequestPayerId].isEmpty) return Left(MissingRequiredTlv(UInt64(88)))
       if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
-      if (records.unknown.exists(_.tag >= UInt64(160))) return Left(ForbiddenTlv(records.unknown.find(_.tag >= UInt64(160)).get.tag))
+      if (records.unknown.exists(!isInvoiceRequestTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isInvoiceRequestTlv(_)).get.tag))
       Right(InvoiceRequest(records))
     }
 

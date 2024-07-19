@@ -25,8 +25,13 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import java.io.File
+import scala.io.Source
 
 class OfferTypesSpec extends AnyFunSuite {
   val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
@@ -293,6 +298,20 @@ class OfferTypesSpec extends AnyFunSuite {
     for ((encoded, decoded) <- testCases) {
       assert(OfferCodecs.encodedNodeIdCodec.encode(decoded).require.bytes == encoded)
       assert(OfferCodecs.encodedNodeIdCodec.decode(encoded.bits).require.value == decoded)
+    }
+  }
+
+  case class TestVector(description: String, valid: Boolean, bolt12: String)
+
+  implicit val formats: DefaultFormats.type = DefaultFormats
+
+  test("spec test vectors") {
+    val src = Source.fromFile(new File(getClass.getResource(s"/offers-test.json").getFile))
+    val testVectors = JsonMethods.parse(src.mkString).extract[Seq[TestVector]]
+    src.close()
+    for (vector <- testVectors) {
+      val offer = Offer.decode(vector.bolt12)
+      assert(offer.isSuccess == vector.valid, vector.description)
     }
   }
 }
