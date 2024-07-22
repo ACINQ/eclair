@@ -264,8 +264,7 @@ object Features {
     val mandatory = 28
   }
 
-  // TODO: this should also extend NodeFeature once the spec is finalized
-  case object Quiescence extends Feature with InitFeature {
+  case object Quiescence extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
   }
@@ -310,6 +309,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object Splicing extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_splice"
+    val mandatory = 62
+  }
+
   /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
   case object WakeUpNotificationClient extends Feature with InitFeature {
     val rfcName = "wake_up_notification_client"
@@ -331,12 +335,6 @@ object Features {
   case object AsyncPaymentPrototype extends Feature with InitFeature with Bolt11Feature {
     val rfcName = "async_payment_prototype"
     val mandatory = 152
-  }
-
-  // TODO: @pm47 custom splices implementation for phoenix, to be replaced once splices is spec-ed (currently reserved here: https://github.com/lightning/bolts/issues/605)
-  case object SplicePrototype extends Feature with InitFeature {
-    val rfcName = "splice_prototype"
-    val mandatory = 154
   }
 
   /**
@@ -381,10 +379,10 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    Splicing,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
-    SplicePrototype,
     OnTheFlyFunding,
     FundingFeeCredit
   )
@@ -401,7 +399,6 @@ object Features {
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
-    OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
 
