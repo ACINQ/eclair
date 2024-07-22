@@ -71,6 +71,7 @@ object CommonCodecs {
   // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
   // this codec will fail if the amount does not fit on 32 bits
   val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
+  val satoshi32: Codec[Satoshi] = uint32.xmapc(l => Satoshi(l))(_.toLong)
 
   val timestampSecond: Codec[TimestampSecond] = uint32.xmapc(TimestampSecond(_))(_.toLong)
 
@@ -118,7 +119,7 @@ object CommonCodecs {
 
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
-  val channelflags: Codec[ChannelFlags] = (ignore(7) :: bool).as[ChannelFlags]
+  val channelflags: Codec[ChannelFlags] = (ignore(6) :: bool :: bool).as[ChannelFlags]
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 

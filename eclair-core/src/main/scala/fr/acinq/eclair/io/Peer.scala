@@ -23,24 +23,28 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{OnChainChannelFunder, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnchainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.MessageRelay.Status
-import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.OpenChannelInterceptor.{OpenChannelInitiator, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
+import fr.acinq.eclair.payment.{OnTheFlyFundingPaymentRelayed, PaymentRelayed}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
+import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, RoutingMessage, SpliceInit, TlvStream, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -62,6 +66,12 @@ class Peer(val nodeParams: NodeParams,
            pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  private var pendingOnTheFlyFunding = if (nodeParams.features.hasFeature(Features.OnTheFlyFunding)) nodeParams.db.onTheFlyFunding.listPending(remoteNodeId) else Map.empty[ByteVector32, OnTheFlyFunding.Pending]
+  private var feeCredit = if (nodeParams.features.hasFeature(Features.FundingFeeCredit)) nodeParams.db.onTheFlyFunding.getFeeCredit(remoteNodeId) else 0 msat
+
+  context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
+  context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
 
   startWith(INSTANTIATING, Nothing)
 
@@ -89,10 +99,10 @@ class Peer(val nodeParams: NodeParams,
       val channelIds = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
       val channels1 = d.channels -- channelIds
-      if (channels1.isEmpty) {
+      if (channels1.isEmpty && canForgetPendingOnTheFlyFunding()) {
         log.info("that was the last open channel")
         context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
-        // we have no existing channels, we can forget about this peer
+        // We have no existing channels or pending signed transaction, we can forget about this peer.
         stopPeer()
       } else {
         stay() using d.copy(channels = channels1)
@@ -102,8 +112,8 @@ class Peer(val nodeParams: NodeParams,
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
         log.debug("connection lost while negotiating connection")
       }
-      if (d.channels.isEmpty) {
-        // we have no existing channels, we can forget about this peer
+      if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
+        // We have no existing channels or pending signed transaction, we can forget about this peer.
         stopPeer()
       } else {
         stay()
@@ -173,7 +183,7 @@ class Peer(val nodeParams: NodeParams,
         val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, c.requestFunding_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -200,25 +210,207 @@ class Peer(val nodeParams: NodeParams,
             stay()
         }
 
-      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, localParams, localFundingAmount_opt, peerConnection), d: ConnectedData) =>
+      case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, addFunding_opt, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
-          val channel = spawnChannel()
-          log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
-          open match {
-            case Left(open) =>
-              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-              channel ! open
-            case Right(open) =>
-              channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, localFundingAmount_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
-              channel ! open
+          OnTheFlyFunding.validateOpen(open, pendingOnTheFlyFunding, feeCredit) match {
+            case reject: OnTheFlyFunding.ValidationResult.Reject =>
+              log.warning("rejecting on-the-fly channel: {}", reject.cancel.toAscii)
+              self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
+              cancelUnsignedOnTheFlyFunding(reject.paymentHashes)
+              context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
+              stay()
+            case accept: OnTheFlyFunding.ValidationResult.Accept =>
+              val channel = spawnChannel()
+              log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
+              open match {
+                case Left(open) =>
+                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  channel ! open
+                case Right(open) =>
+                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, addFunding_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  accept.useFeeCredit_opt match {
+                    case Some(useFeeCredit) => channel ! open.copy(tlvStream = TlvStream(open.tlvStream.records + ChannelTlv.UseFeeCredit(useFeeCredit)))
+                    case None => channel ! open
+                  }
+              }
+              fulfillOnTheFlyFundingHtlcs(accept.preimages)
+              stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
           }
-          stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         } else {
           log.warning("ignoring open_channel request that reconnected during channel intercept, temporaryChannelId={}", temporaryChannelId)
           context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
           stay()
         }
+
+      case Event(cmd: ProposeOnTheFlyFunding, d: ConnectedData) if !d.remoteFeatures.hasFeature(Features.OnTheFlyFunding) =>
+        cmd.replyTo ! ProposeOnTheFlyFundingResponse.NotAvailable("peer does not support on-the-fly funding")
+        stay()
+
+      case Event(cmd: ProposeOnTheFlyFunding, d: ConnectedData) =>
+        // We send the funding proposal to our peer, and report it to the sender.
+        val htlc = WillAddHtlc(nodeParams.chainHash, randomBytes32(), cmd.amount, cmd.paymentHash, cmd.expiry, cmd.onion, cmd.nextBlindingKey_opt)
+        cmd.replyTo ! ProposeOnTheFlyFundingResponse.Proposed
+        // We update our list of pending proposals for that payment.
+        val pending = pendingOnTheFlyFunding.get(htlc.paymentHash) match {
+          case Some(pending) =>
+            pending.status match {
+              case status: OnTheFlyFunding.Status.Proposed =>
+                self ! Peer.OutgoingMessage(htlc, d.peerConnection)
+                // We extend the previous timer.
+                status.timer.cancel()
+                val timer = context.system.scheduler.scheduleOnce(nodeParams.onTheFlyFundingConfig.proposalTimeout, self, OnTheFlyFundingTimeout(cmd.paymentHash))(context.dispatcher)
+                pending.copy(
+                  proposed = pending.proposed :+ OnTheFlyFunding.Proposal(htlc, cmd.upstream),
+                  status = OnTheFlyFunding.Status.Proposed(timer)
+                )
+              case status: OnTheFlyFunding.Status.AddedToFeeCredit =>
+                log.info("received extra payment for on-the-fly funding that was added to fee credit (payment_hash={}, amount={})", cmd.paymentHash, cmd.amount)
+                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream)
+                proposal.createFulfillCommands(status.preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                pending.copy(proposed = pending.proposed :+ proposal)
+              case status: OnTheFlyFunding.Status.Funded =>
+                log.info("received extra payment for on-the-fly funding that has already been funded with txId={} (payment_hash={}, amount={})", status.txId, cmd.paymentHash, cmd.amount)
+                pending.copy(proposed = pending.proposed :+ OnTheFlyFunding.Proposal(htlc, cmd.upstream))
+            }
+          case None =>
+            self ! Peer.OutgoingMessage(htlc, d.peerConnection)
+            Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Proposed).increment()
+            val timer = context.system.scheduler.scheduleOnce(nodeParams.onTheFlyFundingConfig.proposalTimeout, self, OnTheFlyFundingTimeout(cmd.paymentHash))(context.dispatcher)
+            OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(htlc, cmd.upstream)), OnTheFlyFunding.Status.Proposed(timer))
+        }
+        pendingOnTheFlyFunding += (htlc.paymentHash -> pending)
+        stay()
+
+      case Event(msg: OnTheFlyFundingFailureMessage, d: ConnectedData) =>
+        pendingOnTheFlyFunding.get(msg.paymentHash) match {
+          case Some(pending) =>
+            pending.status match {
+              case status: OnTheFlyFunding.Status.Proposed =>
+                pending.proposed.find(_.htlc.id == msg.id) match {
+                  case Some(htlc) =>
+                    val failure = msg match {
+                      case msg: WillFailHtlc => Left(msg.reason)
+                      case msg: WillFailMalformedHtlc => Right(createBadOnionFailure(msg.onionHash, msg.failureCode))
+                    }
+                    htlc.createFailureCommands(Some(failure)).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                    val proposed1 = pending.proposed.filterNot(_.htlc.id == msg.id)
+                    if (proposed1.isEmpty) {
+                      Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Rejected).increment()
+                      status.timer.cancel()
+                      pendingOnTheFlyFunding -= msg.paymentHash
+                    } else {
+                      pendingOnTheFlyFunding += (msg.paymentHash -> pending.copy(proposed = proposed1))
+                    }
+                  case None =>
+                    log.warning("ignoring will_fail_htlc: no matching proposal for id={}", msg.id)
+                    self ! Peer.OutgoingMessage(Warning(s"ignoring will_fail_htlc: no matching proposal for id=${msg.id}"), d.peerConnection)
+                }
+              case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
+                log.warning("ignoring will_fail_htlc: on-the-fly funding already added to fee credit")
+                self ! Peer.OutgoingMessage(Warning("ignoring will_fail_htlc: on-the-fly funding already added to fee credit"), d.peerConnection)
+              case status: OnTheFlyFunding.Status.Funded =>
+                log.warning("ignoring will_fail_htlc: on-the-fly funding already signed with txId={}", status.txId)
+                self ! Peer.OutgoingMessage(Warning(s"ignoring will_fail_htlc: on-the-fly funding already signed with txId=${status.txId}"), d.peerConnection)
+            }
+          case None =>
+            log.warning("ignoring will_fail_htlc: no matching proposal for payment_hash={}", msg.paymentHash)
+            self ! Peer.OutgoingMessage(Warning(s"ignoring will_fail_htlc: no matching proposal for payment_hash=${msg.paymentHash}"), d.peerConnection)
+        }
+        stay()
+
+      case Event(timeout: OnTheFlyFundingTimeout, d: ConnectedData) =>
+        pendingOnTheFlyFunding.get(timeout.paymentHash) match {
+          case Some(pending) =>
+            pending.status match {
+              case _: OnTheFlyFunding.Status.Proposed =>
+                log.warning("on-the-fly funding proposal timed out for payment_hash={}", timeout.paymentHash)
+                pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Expired).increment()
+                pendingOnTheFlyFunding -= timeout.paymentHash
+                self ! Peer.OutgoingMessage(Warning(s"on-the-fly funding proposal timed out for payment_hash=${timeout.paymentHash}"), d.peerConnection)
+              case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
+                log.warning("ignoring on-the-fly funding proposal timeout, already added to fee credit")
+              case status: OnTheFlyFunding.Status.Funded =>
+                log.warning("ignoring on-the-fly funding proposal timeout, already funded with txId={}", status.txId)
+            }
+          case None =>
+            log.debug("ignoring on-the-fly funding timeout for payment_hash={} (already completed)", timeout.paymentHash)
+        }
+        stay()
+
+      case Event(msg: AddFeeCredit, d: ConnectedData) if !nodeParams.features.hasFeature(Features.FundingFeeCredit) =>
+        self ! Peer.OutgoingMessage(Warning(s"ignoring add_fee_credit for payment_hash=${Crypto.sha256(msg.preimage)}, ${Features.FundingFeeCredit.rfcName} is not supported"), d.peerConnection)
+        stay()
+
+      case Event(msg: AddFeeCredit, d: ConnectedData) =>
+        val paymentHash = Crypto.sha256(msg.preimage)
+        pendingOnTheFlyFunding.get(paymentHash) match {
+          case Some(pending) =>
+            pending.status match {
+              case status: OnTheFlyFunding.Status.Proposed =>
+                feeCredit = nodeParams.db.onTheFlyFunding.addFeeCredit(remoteNodeId, pending.amountOut)
+                log.info("received add_fee_credit for payment_hash={}, adding {} to fee credit (total = {})", paymentHash, pending.amountOut, feeCredit)
+                status.timer.cancel()
+                Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.AddedToFeeCredit).increment()
+                pending.createFulfillCommands(msg.preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                self ! Peer.OutgoingMessage(CurrentFeeCredit(nodeParams.chainHash, feeCredit), d.peerConnection)
+                pendingOnTheFlyFunding += (paymentHash -> pending.copy(status = OnTheFlyFunding.Status.AddedToFeeCredit(msg.preimage)))
+              case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
+                log.warning("ignoring duplicate add_fee_credit for payment_hash={}", paymentHash)
+                // We already fulfilled upstream HTLCs, there is nothing else to do.
+                self ! Peer.OutgoingMessage(Warning(s"ignoring add_fee_credit: on-the-fly proposal already funded for payment_hash=$paymentHash"), d.peerConnection)
+              case _: OnTheFlyFunding.Status.Funded =>
+                log.warning("ignoring add_fee_credit for funded on-the-fly proposal (payment_hash={})", paymentHash)
+                // They seem to be malicious, so let's fulfill upstream HTLCs for safety.
+                pending.createFulfillCommands(msg.preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                self ! Peer.OutgoingMessage(Warning(s"ignoring add_fee_credit: on-the-fly proposal already funded for payment_hash=$paymentHash"), d.peerConnection)
+            }
+          case None =>
+            log.warning("ignoring add_fee_credit for unknown payment_hash={}", paymentHash)
+            self ! Peer.OutgoingMessage(Warning(s"ignoring add_fee_credit: unknown payment_hash=$paymentHash"), d.peerConnection)
+            // This may happen if the remote node is very slow and the timeout was reached before receiving their message.
+            // We sent the current fee credit to let them detect it and reconcile their state.
+            self ! Peer.OutgoingMessage(CurrentFeeCredit(nodeParams.chainHash, feeCredit), d.peerConnection)
+        }
+        stay()
+
+      case Event(msg: SpliceInit, d: ConnectedData) =>
+        d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(channel) =>
+            OnTheFlyFunding.validateSplice(msg, nodeParams.channelConf.htlcMinimum, pendingOnTheFlyFunding, feeCredit) match {
+              case reject: OnTheFlyFunding.ValidationResult.Reject =>
+                log.warning("rejecting on-the-fly splice: {}", reject.cancel.toAscii)
+                self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
+                cancelUnsignedOnTheFlyFunding(reject.paymentHashes)
+              case accept: OnTheFlyFunding.ValidationResult.Accept =>
+                fulfillOnTheFlyFundingHtlcs(accept.preimages)
+                accept.useFeeCredit_opt match {
+                  case Some(useFeeCredit) => channel forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records + ChannelTlv.UseFeeCredit(useFeeCredit)))
+                  case None => channel forward msg
+                }
+            }
+          case None => replyUnknownChannel(d.peerConnection, msg.channelId)
+        }
+        stay()
+
+      case Event(e: ChannelReadyForPayments, _: ConnectedData) =>
+        pendingOnTheFlyFunding.foreach {
+          case (paymentHash, pending) =>
+            pending.status match {
+              case _: OnTheFlyFunding.Status.Proposed => ()
+              case _: OnTheFlyFunding.Status.AddedToFeeCredit => ()
+              case status: OnTheFlyFunding.Status.Funded =>
+                context.child(paymentHash.toHex) match {
+                  case Some(_) => log.debug("already relaying payment_hash={}", paymentHash)
+                  case None if e.fundingTxIndex < status.fundingTxIndex => log.debug("too early to relay payment_hash={}, funding not locked ({} < {})", paymentHash, e.fundingTxIndex, status.fundingTxIndex)
+                  case None =>
+                    val relayer = context.spawn(Behaviors.supervise(OnTheFlyFunding.PaymentRelayer(nodeParams, remoteNodeId, e.channelId, paymentHash)).onFailure(typed.SupervisorStrategy.stop), paymentHash.toHex)
+                    relayer ! OnTheFlyFunding.PaymentRelayer.TryRelay(self.toTyped, e.channel.toTyped, pending.proposed, status)
+                }
+            }
+        }
+        stay()
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
@@ -255,8 +447,8 @@ class Peer(val nodeParams: NodeParams,
         Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
           log.debug("connection lost")
         }
-        if (d.channels.isEmpty) {
-          // we have no existing channels, we can forget about this peer
+        if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
+          // We have no existing channels or pending signed transaction, we can forget about this peer.
           stopPeer()
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -323,6 +515,10 @@ class Peer(val nodeParams: NodeParams,
       sender() ! Status.Failure(new RuntimeException("not connected"))
       stay()
 
+    case Event(r: Peer.ProposeOnTheFlyFunding, _) =>
+      r.replyTo ! ProposeOnTheFlyFundingResponse.NotAvailable("peer not connected")
+      stay()
+
     case Event(Disconnect(nodeId, replyTo_opt), _) =>
       val replyTo = replyTo_opt.getOrElse(sender().toTyped)
       replyTo ! NotConnected(nodeId)
@@ -345,6 +541,146 @@ class Peer(val nodeParams: NodeParams,
       }
       stay()
 
+    case Event(current: CurrentFeerates, d) =>
+      d match {
+        case d: ConnectedData => d.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, current.feeratesPerKw, d.localFeatures, d.remoteFeatures)
+        case _ => ()
+      }
+      stay()
+
+    case Event(current: CurrentBlockHeight, d) =>
+      // If we have pending will_add_htlc that are timing out, it doesn't make any sense to keep them, even if we have
+      // already funded the corresponding channel: our peer will force-close if we relay them.
+      // Our only option is to fail the upstream HTLCs to ensure that the upstream channels don't force-close.
+      // Note that we won't be paid for the liquidity we've provided, but we don't have a choice.
+      val expired = pendingOnTheFlyFunding.filter {
+        case (_, pending) => pending.proposed.exists(_.htlc.expiry.blockHeight <= current.blockHeight)
+      }
+      expired.foreach {
+        case (paymentHash, pending) => pending.status match {
+          case _: OnTheFlyFunding.Status.Proposed =>
+            log.warning("proposed will_add_htlc expired for payment_hash={}", paymentHash)
+            Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Timeout).increment()
+            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+          case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
+            log.debug("forgetting will_add_htlc added to fee credit for payment_hash={}", paymentHash)
+          // Nothing to do, we already fulfilled the upstream HTLCs.
+          case _: OnTheFlyFunding.Status.Funded =>
+            log.warning("funded will_add_htlc expired for payment_hash={}, our peer may be malicious", paymentHash)
+            Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Timeout).increment()
+            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            nodeParams.db.onTheFlyFunding.removePending(remoteNodeId, paymentHash)
+        }
+      }
+      pendingOnTheFlyFunding = pendingOnTheFlyFunding.removedAll(expired.keys)
+      d match {
+        case Peer.Nothing => stay()
+        case d if d.channels.isEmpty && pendingOnTheFlyFunding.isEmpty => stopPeer()
+        case _ => stay()
+      }
+
+    case Event(e: LiquidityPurchaseSigned, d: ConnectedData) =>
+      // If that liquidity purchase was partially paid with fee credit, we will deduce it from what our peer owes us
+      // and remove the corresponding amount from our peer's credit.
+      // Note that since we only allow a single channel per user when on-the-fly funding is used, and it's not possible
+      // to request a splice while one is already in progress, it's safe to only remove fee credit once the funding
+      // transaction has been signed.
+      val feeCreditUsed = e.purchase match {
+        case _: LiquidityAds.Purchase.Standard => 0 msat
+        case p: LiquidityAds.Purchase.WithFeeCredit =>
+          feeCredit = nodeParams.db.onTheFlyFunding.removeFeeCredit(remoteNodeId, p.feeCreditUsed)
+          self ! OutgoingMessage(CurrentFeeCredit(nodeParams.chainHash, feeCredit), d.peerConnection)
+          p.feeCreditUsed
+      }
+      // We signed a liquidity purchase from our peer. At that point we're not 100% sure yet it will succeed: if
+      // we disconnect before our peer sends their signature, the funding attempt may be cancelled when reconnecting.
+      // If that happens, the on-the-fly proposal will stay in our state until we reach the CLTV expiry, at which
+      // point we will forget it and fail the upstream HTLCs. This is also what would happen if we successfully
+      // funded the channel, but it closed before we could relay the HTLCs.
+      val (paymentHashes, feesOwed) = e.purchase.paymentDetails match {
+        case LiquidityAds.PaymentDetails.FromChannelBalance => (Nil, 0 msat)
+        case p: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => (p.paymentHashes, 0 msat)
+        case p: LiquidityAds.PaymentDetails.FromFutureHtlc => (p.paymentHashes, e.purchase.fees.total - feeCreditUsed)
+        case p: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => (p.preimages.map(preimage => Crypto.sha256(preimage)), e.purchase.fees.total - feeCreditUsed)
+      }
+      // We split the fees across payments. We could dynamically re-split depending on whether some payments are failed
+      // instead of fulfilled, but that's overkill: if our peer fails one of those payment, they're likely malicious
+      // and will fail anyway, even if we try to be clever with fees splitting.
+      var remainingFees = feesOwed.max(0 msat)
+      pendingOnTheFlyFunding
+        .filter { case (paymentHash, _) => paymentHashes.contains(paymentHash) }
+        .values.toSeq
+        // In case our peer goes offline, we start with payments that are as far as possible from timing out.
+        .sortBy(_.expiry).reverse
+        .foreach(payment => {
+          payment.status match {
+            case status: OnTheFlyFunding.Status.Proposed =>
+              status.timer.cancel()
+              val paymentFees = remainingFees.min(payment.maxFees(e.htlcMinimum))
+              remainingFees -= paymentFees
+              log.info("liquidity purchase signed for payment_hash={}, waiting to relay HTLCs (txId={}, fundingTxIndex={}, fees={})", payment.paymentHash, e.txId, e.fundingTxIndex, paymentFees)
+              val payment1 = payment.copy(status = OnTheFlyFunding.Status.Funded(e.channelId, e.txId, e.fundingTxIndex, paymentFees))
+              Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Funded).increment()
+              nodeParams.db.onTheFlyFunding.addPending(remoteNodeId, payment1)
+              pendingOnTheFlyFunding += payment.paymentHash -> payment1
+            case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
+              log.warning("liquidity purchase was signed for payment_hash={} that was also added to fee credit: our peer may be malicious", payment.paymentHash)
+              // Our peer tried to concurrently get a channel funded *and* add the same payment to its fee credit.
+              // We've already signed the funding transaction so we can't abort, but we have also received the preimage
+              // and fulfilled the upstream HTLCs: we simply won't forward the matching HTLCs on the funded channel.
+              // Instead of being paid the funding fees, we've claimed the entire incoming HTLC set, which is bigger
+              // than the fees (otherwise we wouldn't have accepted the on-the-fly funding attempt), so it's fine.
+              // They cannot have used that additional fee credit yet because we only allow a single channel per user
+              // when on-the-fly funding is used, and it's not possible to request a splice while one is already in
+              // progress.
+              feeCredit = nodeParams.db.onTheFlyFunding.removeFeeCredit(remoteNodeId, payment.amountOut)
+            case status: OnTheFlyFunding.Status.Funded =>
+              log.warning("liquidity purchase was already signed for payment_hash={} (previousTxId={}, currentTxId={})", payment.paymentHash, status.txId, e.txId)
+          }
+        })
+      stay()
+
+    case Event(e: OnTheFlyFunding.PaymentRelayer.RelayResult, _) =>
+      e match {
+        case success: OnTheFlyFunding.PaymentRelayer.RelaySuccess =>
+          pendingOnTheFlyFunding.get(success.paymentHash) match {
+            case Some(pending) =>
+              log.info("successfully relayed on-the-fly HTLC for payment_hash={}", success.paymentHash)
+              // We've been paid for our liquidity fees: we can now fulfill upstream.
+              pending.createFulfillCommands(success.preimage).foreach {
+                case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
+              }
+              // We emit a relay event: since we waited for on-chain funding before relaying the payment, the timestamps
+              // won't be accurate, but everything else is.
+              pending.proposed.foreach {
+                case OnTheFlyFunding.Proposal(htlc, upstream) => upstream match {
+                  case _: Upstream.Local => ()
+                  case u: Upstream.Hot.Channel =>
+                    val incoming = PaymentRelayed.IncomingPart(u.add.amountMsat, u.add.channelId, u.receivedAt)
+                    val outgoing = PaymentRelayed.OutgoingPart(htlc.amount, success.channelId, TimestampMilli.now())
+                    context.system.eventStream.publish(OnTheFlyFundingPaymentRelayed(htlc.paymentHash, Seq(incoming), Seq(outgoing)))
+                  case u: Upstream.Hot.Trampoline =>
+                    val incoming = u.received.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
+                    val outgoing = PaymentRelayed.OutgoingPart(htlc.amount, success.channelId, TimestampMilli.now())
+                    context.system.eventStream.publish(OnTheFlyFundingPaymentRelayed(htlc.paymentHash, incoming, Seq(outgoing)))
+                }
+              }
+              Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.RelaySucceeded).increment()
+              Metrics.OnTheFlyFundingFees.withoutTags().record(success.fees.toLong)
+              nodeParams.db.onTheFlyFunding.removePending(remoteNodeId, success.paymentHash)
+              pendingOnTheFlyFunding -= success.paymentHash
+            case None => ()
+          }
+          stay()
+        case OnTheFlyFunding.PaymentRelayer.RelayFailed(paymentHash, failure) =>
+          log.warning("on-the-fly HTLC failure for payment_hash={}: {}", paymentHash, failure.toString)
+          Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.relayFailed(failure)).increment()
+          // We don't give up yet by relaying the failure upstream: we may have simply been disconnected, or the added
+          // liquidity may have been consumed by concurrent HTLCs. We'll retry at the next reconnection with that peer
+          // or after the next splice, and will only give up when the outgoing will_add_htlc timeout.
+          stay()
+      }
+
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
 
     case Event(RelayOnionMessage(messageId, _, replyTo_opt), _) =>
@@ -364,9 +700,11 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.asInstanceOf[Peer.ConnectedData].connectionInfo))
     case CONNECTED -> CONNECTED => // connection switch
       context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.asInstanceOf[Peer.ConnectedData].connectionInfo))
+      cancelUnsignedOnTheFlyFunding()
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
+      cancelUnsignedOnTheFlyFunding()
   }
 
   onTermination {
@@ -388,6 +726,14 @@ class Peer(val nodeParams: NodeParams,
 
     // let's bring existing/requested channels online
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+
+    // We tell our peer what our current feerates are.
+    connectionReady.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, nodeParams.currentFeerates, connectionReady.localInit.features, connectionReady.remoteInit.features)
+
+    if (nodeParams.features.hasFeature(Features.FundingFeeCredit) && connectionReady.remoteInit.features.hasFeature(Features.FundingFeeCredit)) {
+      log.debug("reconnecting with fee credit = {}", feeCredit)
+      connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit)
+    }
 
     goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
   }
@@ -415,11 +761,56 @@ class Peer(val nodeParams: NodeParams,
     self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
+  private def cancelUnsignedOnTheFlyFunding(): Unit = cancelUnsignedOnTheFlyFunding(pendingOnTheFlyFunding.keySet)
+
+  private def cancelUnsignedOnTheFlyFunding(paymentHashes: Set[ByteVector32]): Unit = {
+    val unsigned = pendingOnTheFlyFunding.filter {
+      case (paymentHash, pending) if paymentHashes.contains(paymentHash) =>
+        pending.status match {
+          case status: OnTheFlyFunding.Status.Proposed =>
+            log.info("cancelling on-the-fly funding for payment_hash={}", paymentHash)
+            status.timer.cancel()
+            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            true
+          // We keep proposals that have been added to fee credit until we reach the HTLC expiry or we restart. This
+          // guarantees that our peer cannot concurrently add to their fee credit a payment for which we've signed a
+          // funding transaction.
+          case _: OnTheFlyFunding.Status.AddedToFeeCredit => false
+          case _: OnTheFlyFunding.Status.Funded => false
+        }
+      case _ => false
+    }
+    pendingOnTheFlyFunding = pendingOnTheFlyFunding.removedAll(unsigned.keys)
+  }
+
+  private def fulfillOnTheFlyFundingHtlcs(preimages: Set[ByteVector32]): Unit = {
+    preimages.foreach(preimage => pendingOnTheFlyFunding.get(Crypto.sha256(preimage)) match {
+      case Some(pending) => pending.createFulfillCommands(preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+      case None => ()
+    })
+  }
+
+  /** Return true if we can forget pending on-the-fly funding transactions and stop ourselves. */
+  private def canForgetPendingOnTheFlyFunding(): Boolean = {
+    pendingOnTheFlyFunding.forall {
+      case (_, pending) => pending.status match {
+        case _: OnTheFlyFunding.Status.Proposed => true
+        // We don't stop ourselves if our peer has some fee credit.
+        // They will likely come back online to use that fee credit.
+        case _: OnTheFlyFunding.Status.AddedToFeeCredit => false
+        // We don't stop ourselves if we've signed an on-the-fly funding proposal but haven't settled HTLCs yet.
+        // We must watch the expiry of those HTLCs and obtain the preimage before they expire to get paid.
+        case _: OnTheFlyFunding.Status.Funded => false
+      }
+    }
+  }
+
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
   private def stopPeer(): State = {
     log.info("removing peer from db")
+    cancelUnsignedOnTheFlyFunding()
     nodeParams.db.peers.removePeer(remoteNodeId)
     stop(FSM.Normal)
   }
@@ -516,6 +907,7 @@ object Peer {
                          pushAmount_opt: Option[MilliSatoshi],
                          fundingTxFeerate_opt: Option[FeeratePerKw],
                          fundingTxFeeBudget_opt: Option[Satoshi],
+                         requestFunding_opt: Option[LiquidityAds.RequestFunding],
                          channelFlags_opt: Option[ChannelFlags],
                          timeout_opt: Option[Timeout],
                          requireConfirmedInputsOverride_opt: Option[Boolean] = None,
@@ -546,7 +938,21 @@ object Peer {
   }
 
   case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
-  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams, localFundingAmount_opt: Option[Satoshi], peerConnection: ActorRef)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalParams, peerConnection: ActorRef)
+
+  /** If [[Features.OnTheFlyFunding]] is supported and we're connected, relay a funding proposal to our peer. */
+  case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], upstream: Upstream.Hot)
+
+  sealed trait ProposeOnTheFlyFundingResponse
+  object ProposeOnTheFlyFundingResponse {
+    case object Proposed extends ProposeOnTheFlyFundingResponse
+    case class NotAvailable(reason: String) extends ProposeOnTheFlyFundingResponse
+  }
+
+  /** We signed a funding transaction where our peer purchased some liquidity. */
+  case class LiquidityPurchaseSigned(channelId: ByteVector32, txId: TxId, fundingTxIndex: Long, htlcMinimum: MilliSatoshi, purchase: LiquidityAds.Purchase)
+
+  case class OnTheFlyFundingTimeout(paymentHash: ByteVector32)
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse { def nodeId: PublicKey }
@@ -557,7 +963,6 @@ object Peer {
   case class GetPeerChannels(replyTo: typed.ActorRef[PeerChannels])
   case class ChannelInfo(channel: typed.ActorRef[Command], state: ChannelState, data: ChannelData)
   case class PeerChannels(nodeId: PublicKey, channels: Seq[ChannelInfo])
-
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 

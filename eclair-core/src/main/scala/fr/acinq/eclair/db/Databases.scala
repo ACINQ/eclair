@@ -44,6 +44,7 @@ trait Databases {
   def peers: PeersDb
   def payments: PaymentsDb
   def pendingCommands: PendingCommandsDb
+  def onTheFlyFunding: OnTheFlyFundingDb
   //@formatter:on
 }
 
@@ -65,6 +66,7 @@ object Databases extends Logging {
                                      peers: SqlitePeersDb,
                                      payments: SqlitePaymentsDb,
                                      pendingCommands: SqlitePendingCommandsDb,
+                                     onTheFlyFunding: SqliteOnTheFlyFundingDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
     override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
       statement => {
@@ -83,6 +85,7 @@ object Databases extends Logging {
         peers = new SqlitePeersDb(eclairJdbc),
         payments = new SqlitePaymentsDb(eclairJdbc),
         pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
+        onTheFlyFunding = new SqliteOnTheFlyFundingDb(eclairJdbc),
         backupConnection = eclairJdbc
       )
     }
@@ -94,6 +97,7 @@ object Databases extends Logging {
                                        peers: PgPeersDb,
                                        payments: PgPaymentsDb,
                                        pendingCommands: PgPendingCommandsDb,
+                                       onTheFlyFunding: PgOnTheFlyFundingDb,
                                        dataSource: HikariDataSource,
                                        lock: PgLock) extends Databases with ExclusiveLock {
     override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
@@ -154,6 +158,7 @@ object Databases extends Logging {
         peers = new PgPeersDb,
         payments = new PgPaymentsDb,
         pendingCommands = new PgPendingCommandsDb,
+        onTheFlyFunding = new PgOnTheFlyFundingDb,
         dataSource = ds,
         lock = lock)
 

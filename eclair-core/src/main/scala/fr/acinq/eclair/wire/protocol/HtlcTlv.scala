@@ -36,7 +36,15 @@ object UpdateAddHtlcTlv {
 
   private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
 
-  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint).typecase(UInt64(0), blindingPoint))
+  /** When on-the-fly funding is used, the liquidity fees may be taken from HTLCs relayed after funding. */
+  case class FundingFeeTlv(fee: LiquidityAds.FundingFee) extends UpdateAddHtlcTlv
+
+  private val fundingFee: Codec[FundingFeeTlv] = tlvField((("amount" | millisatoshi) :: ("txId" | txIdAsHash)).as[LiquidityAds.FundingFee])
+
+  val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
+    .typecase(UInt64(0), blindingPoint)
+    .typecase(UInt64(41041), fundingFee)
+  )
 }
 
 sealed trait UpdateFulfillHtlcTlv extends Tlv
