@@ -53,8 +53,6 @@ object ChannelStateTestsTags {
   val DualFunding = "dual_funding"
   /** If set, a liquidity ads will be used when opening a channel. */
   val LiquidityAds = "liquidity_ads"
-  /** If set, peers will support splicing. */
-  val Splicing = "splicing"
   /** If set, channels will use option_static_remotekey. */
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
@@ -93,8 +91,6 @@ object ChannelStateTestsTags {
   val RejectRbfAttempts = "reject_rbf_attempts"
   /** If set, the non-initiator will require a 1-block delay between RBF attempts. */
   val DelayRbfAttempts = "delay_rbf_attempts"
-  /** If set, peers will support the quiesce protocol. */
-  val Quiescence = "quiescence"
   /** If set, channels will adapt their max HTLC amount to the available balance */
   val AdaptMaxHtlcAmount = "adapt-max-htlc-amount"
 }
@@ -165,7 +161,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val wallet = wallet_opt match {
       case Some(wallet) => wallet
-      case None => if (tags.contains(ChannelStateTestsTags.DualFunding) || tags.contains(ChannelStateTestsTags.Splicing)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
+      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
     }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
@@ -192,8 +188,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Quiescence))(_.updated(Features.Quiescence, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -206,8 +200,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Splicing))(_.updated(Features.SplicePrototype, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Quiescence))(_.updated(Features.Quiescence, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)

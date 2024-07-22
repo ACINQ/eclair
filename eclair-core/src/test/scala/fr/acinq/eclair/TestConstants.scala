@@ -106,6 +106,8 @@ object TestConstants {
           Features.PaymentMetadata -> FeatureSupport.Optional,
           Features.RouteBlinding -> FeatureSupport.Optional,
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
+          Features.Quiescence -> FeatureSupport.Optional,
+          Features.SplicePrototype -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -282,6 +284,8 @@ object TestConstants {
         Features.RouteBlinding -> FeatureSupport.Optional,
         Features.StaticRemoteKey -> FeatureSupport.Mandatory,
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
+        Features.Quiescence -> FeatureSupport.Optional,
+        Features.SplicePrototype -> FeatureSupport.Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
