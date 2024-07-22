@@ -18,24 +18,26 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -87,7 +89,9 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      willFundRates_opt: Option[LiquidityAds.WillFundRates],
+                      onTheFlyFundingConfig: OnTheFlyFunding.Config) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -107,6 +111,27 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
+
+  /** Returns the feerates we'd like our peer to use when funding channels. */
+  def recommendedFeerates(remoteNodeId: PublicKey, currentFeerates: FeeratesPerKw, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+    val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeerates)
+    val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
+      min = fundingFeerate * feerateTolerance.ratioLow,
+      max = fundingFeerate * feerateTolerance.ratioHigh,
+    )
+    // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
+    val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
+      min = commitmentFeerate * feerateTolerance.ratioLow,
+      max = commitmentFormat match {
+        case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
+        case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
+      },
+    )
+    RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
+  }
 }
 
 case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
@@ -476,6 +501,32 @@ object NodeParams extends Logging {
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
 
+    val willFundRates_opt = {
+      val supportedPaymentTypes = Map(
+        LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance
+      )
+      val paymentTypes: Set[LiquidityAds.PaymentType] = config.getStringList("liquidity-ads.payment-types").asScala.map(s => {
+        supportedPaymentTypes.get(s) match {
+          case Some(paymentType) => paymentType
+          case None => throw new IllegalArgumentException(s"unknown liquidity ads payment type: $s")
+        }
+      }).toSet
+      val fundingRates: List[LiquidityAds.FundingRate] = config.getConfigList("liquidity-ads.funding-rates").asScala.map { r =>
+        LiquidityAds.FundingRate(
+          minAmount = r.getLong("min-funding-amount-satoshis").sat,
+          maxAmount = r.getLong("max-funding-amount-satoshis").sat,
+          fundingWeight = r.getInt("funding-weight"),
+          feeBase = r.getLong("fee-base-satoshis").sat,
+          feeProportional = r.getInt("fee-basis-points")
+        )
+      }.toList
+      if (fundingRates.nonEmpty && paymentTypes.nonEmpty) {
+        Some(LiquidityAds.WillFundRates(fundingRates, paymentTypes))
+      } else {
+        None
+      }
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -611,7 +662,12 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      willFundRates_opt = willFundRates_opt,
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        wakeUpTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.wake-up-timeout").getSeconds, TimeUnit.SECONDS),
+        proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
+      ),
     )
   }
 }

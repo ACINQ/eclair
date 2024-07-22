@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, NodeAddress}
+import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
 import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
@@ -62,6 +62,8 @@ object OpenChannelInterceptor {
 
   private sealed trait CheckRateLimitsCommands extends Command
   private case class PendingChannelsRateLimiterResponse(response: PendingChannelsRateLimiter.Response) extends CheckRateLimitsCommands
+
+  private case class WrappedPeerChannels(channels: Seq[Peer.ChannelInfo]) extends Command
 
   private sealed trait QueryPluginCommands extends Command
   private case class PluginOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends QueryPluginCommands
@@ -176,14 +178,41 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
         nodeParams.pluginOpenChannelInterceptor match {
           case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
           case None =>
-            // NB: we don't add a contribution to the funding amount.
-            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, localParams, None, request.peerConnection.toClassic)
-            waitForRequest()
+            request.open.fold(_ => None, _.requestFunding_opt) match {
+              case Some(requestFunding) if request.localFeatures.hasFeature(Features.OnTheFlyFunding) && request.remoteFeatures.hasFeature(Features.OnTheFlyFunding) && request.channelFlags.nonInitiatorPaysCommitFees =>
+                val addFunding = LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)
+                val localParams1 = localParams.copy(paysCommitTxFees = true)
+                val accept = SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, Some(addFunding), localParams1, request.peerConnection.toClassic)
+                checkNoExistingChannel(request, accept)
+              case _ =>
+                // We don't honor liquidity ads for new channels: node operators should use plugin for that.
+                peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, addFunding_opt = None, localParams, request.peerConnection.toClassic)
+                waitForRequest()
+            }
         }
       case PendingChannelsRateLimiterResponse(PendingChannelsRateLimiter.ChannelRateLimited) =>
         context.log.warn(s"ignoring remote channel open: rate limited")
         sendFailure("rate limit reached", request)
         waitForRequest()
+    }
+  }
+
+  /**
+   * In some cases we want to reject additional channels when we already have one: it is usually better to splice the
+   * existing channel instead of opening another one.
+   */
+  private def checkNoExistingChannel(request: OpenChannelNonInitiator, accept: SpawnChannelNonInitiator): Behavior[Command] = {
+    peer ! Peer.GetPeerChannels(context.messageAdapter[Peer.PeerChannels](r => WrappedPeerChannels(r.channels)))
+    receiveCommandMessage[WrappedPeerChannels](context, "checkNoExistingChannel") {
+      case WrappedPeerChannels(channels) =>
+        if (channels.forall(isClosing)) {
+          peer ! accept
+          waitForRequest()
+        } else {
+          context.log.warn("we already have an active channel, so we won't accept another one: our peer should request a splice instead")
+          sendFailure("we already have an active channel: you should splice instead of requesting another channel", request)
+          waitForRequest()
+        }
     }
   }
 
@@ -196,7 +225,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
           val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, localParams1, pluginResponse.localFundingAmount_opt, request.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, pluginResponse.addFunding_opt, localParams1, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
@@ -209,6 +238,23 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
           waitForRequest()
       }
     }
+
+  private def isClosing(channel: Peer.ChannelInfo): Boolean = channel.state match {
+    case CLOSED => true
+    case _ => channel.data match {
+      case _: TransientChannelData => false
+      case _: ChannelDataWithoutCommitments => false
+      case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => false
+      case _: DATA_WAIT_FOR_CHANNEL_READY => false
+      case _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => false
+      case _: DATA_WAIT_FOR_DUAL_FUNDING_READY => false
+      case _: DATA_NORMAL => false
+      case _: DATA_SHUTDOWN => true
+      case _: DATA_NEGOTIATING => true
+      case _: DATA_CLOSING => true
+      case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
+    }
+  }
 
   private def sendFailure(error: String, request: OpenChannelNonInitiator): Unit = {
     peer ! Peer.OutgoingMessage(Error(request.temporaryChannelId, error), request.peerConnection.toClassic)

@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, SatoshiLong, ScriptWitness, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.DataLossProtect
 import fr.acinq.eclair.TestUtils.randomTxId
@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.ChannelTlv.{ChannelTypeTlv, PushAmountTlv, RequireConfirmedInputsTlv, UpfrontShutdownScriptTlv}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
@@ -54,41 +55,59 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
-    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[BlockHash], address: Option[IPAddress], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    case class TestCase(encoded: ByteVector, expected: Option[Init], reEncoded: Option[ByteVector] = None)
     val chainHash1 = BlockHash(ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"))
     val chainHash2 = BlockHash(ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202"))
     val remoteAddress1 = IPv4(InetAddress.getByAddress(Array[Byte](140.toByte, 82.toByte, 121.toByte, 3.toByte)).asInstanceOf[Inet4Address], 9735)
     val remoteAddress2 = IPv6(InetAddress.getByAddress(hex"b643 8bb1 c1f9 0556 487c 0acb 2ba3 3cc2".toArray).asInstanceOf[Inet6Address], 9736)
+    val fundingRates1 = LiquidityAds.WillFundRates(
+      fundingRates = List(LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat)),
+      paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
+    )
+    val fundingRates2 = LiquidityAds.WillFundRates(
+      fundingRates = List(
+        LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat),
+        LiquidityAds.FundingRate(500_000 sat, 5_000_000 sat, 1100, 75, 0 sat)
+      ),
+      paymentTypes = Set(
+        LiquidityAds.PaymentType.FromChannelBalance,
+        LiquidityAds.PaymentType.FromFutureHtlc,
+        LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
+        LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+        LiquidityAds.PaymentType.Unknown(211)
+      )
+    )
     val testCases = Seq(
-      TestCase(hex"0000 0000", hex"", Nil, None, valid = true), // no features
-      TestCase(hex"0000 0002088a", hex"088a", Nil, None, valid = true), // no global features
-      TestCase(hex"00020200 0000", hex"0200", Nil, None, valid = true, Some(hex"0000 00020200")), // no local features
-      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, None, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
-      TestCase(hex"00020200 0003020002", hex"020202", Nil, None, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
-      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, None, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
-      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, None, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
-      TestCase(hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, None, valid = true), // unknown odd records
-      TestCase(hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, None, valid = false), // unknown even records
-      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, None, valid = false), // invalid tlv stream
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), None, valid = true), // single network
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 0307018c5279032607", hex"088a", List(chainHash1), Some(remoteAddress1), valid = true), // single network and IPv4 address
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 031302b6438bb1c1f90556487c0acb2ba33cc22608", hex"088a", List(chainHash1), Some(remoteAddress2), valid = true), // single network and IPv6 address
-      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), None, valid = true), // multiple networks
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 c9012a", hex"088a", List(chainHash1), None, valid = true), // network and unknown odd records
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a", hex"088a", Nil, None, valid = false) // network and unknown even records
+      TestCase(hex"0000 0000", Some(Init(Features.empty))), // no features
+      TestCase(hex"0000 0002088a", Some(Init(Features(hex"088a").initFeatures()))), // no global features
+      TestCase(hex"00020200 0000", Some(Init(Features(hex"0200").initFeatures())), Some(hex"0000 00020200")), // no local features
+      TestCase(hex"00020200 0002088a", Some(Init(Features(hex"0a8a").initFeatures())), Some(hex"0000 00020a8a")), // local and global - no conflict - same size
+      TestCase(hex"00020200 0003020002", Some(Init(Features(hex"020202").initFeatures())), Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
+      TestCase(hex"00020a02 0002088a", Some(Init(Features(hex"0a8a").initFeatures())), Some(hex"0000 00020a8a")), // local and global - conflict - same size
+      TestCase(hex"00022200 000302aaa2", Some(Init(Features(hex"02aaa2").initFeatures())), Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
+      TestCase(hex"0000 0002088a 03012a05022aa2", Some(Init(Features(hex"088a").initFeatures(), TlvStream(Set.empty[InitTlv], Set(GenericTlv(UInt64(3), hex"2a"), GenericTlv(UInt64(5), hex"2aa2")))))), // unknown odd records
+      TestCase(hex"0000 0002088a 03012a04022aa2", None), // unknown even records
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", None), // invalid tlv stream
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.Networks(List(chainHash1)))))), // single network
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 0307018c5279032607", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.Networks(List(chainHash1)), InitTlv.RemoteAddress(remoteAddress1))))), // single network and IPv4 address
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 031302b6438bb1c1f90556487c0acb2ba33cc22608", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.Networks(List(chainHash1)), InitTlv.RemoteAddress(remoteAddress2))))), // single network and IPv6 address
+      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.Networks(List(chainHash1, chainHash2)))))), // multiple networks
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 c9012a", Some(Init(Features(hex"088a").initFeatures(), TlvStream(Set[InitTlv](InitTlv.Networks(List(chainHash1))), Set(GenericTlv(UInt64(201), hex"2a")))))), // network and unknown odd records
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a", None), // network and unknown even records
+      TestCase(hex"0000 0002088a fd053b150001000186a00007a1200226006400001388000101", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.OptionWillFund(fundingRates1))))), // one liquidity ads with the default payment type
+      TestCase(hex"0000 0002088a fd053b3f0002000186a00007a12002260064000013880007a120004c4b40044c004b00000000001b080000000000000000000700000000000000000000000000000001", Some(Init(Features(hex"088a").initFeatures(), TlvStream(InitTlv.OptionWillFund(fundingRates2))))) // two liquidity ads with multiple payment types
     )
 
     for (testCase <- testCases) {
-      if (testCase.valid) {
-        val init = initCodec.decode(testCase.encoded.bits).require.value
-        assert(init.features.toByteVector == testCase.rawFeatures)
-        assert(init.networks == testCase.networks)
-        assert(init.remoteAddress_opt == testCase.address)
-        val encoded = initCodec.encode(init).require
-        assert(encoded.bytes == testCase.reEncoded.getOrElse(testCase.encoded))
-        assert(initCodec.decode(encoded).require.value == init)
-      } else {
-        assert(initCodec.decode(testCase.encoded.bits).isFailure)
+      testCase.expected match {
+        case Some(expected) =>
+          val init = initCodec.decode(testCase.encoded.bits).require.value
+          assert(init == expected)
+          val encoded = initCodec.encode(init).require
+          assert(encoded.bytes == testCase.reEncoded.getOrElse(testCase.encoded))
+          assert(initCodec.decode(encoded).require.value == init)
+        case None =>
+          assert(initCodec.decode(testCase.encoded.bits).isFailure)
       }
     }
   }
@@ -179,6 +198,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // This is random, longer mainnet transaction.
     val txBin2 = hex"0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000"
     val tx2 = Transaction.read(txBin2.toArray)
+    val fundingRate = LiquidityAds.FundingRate(25_000 sat, 250_000 sat, 750, 150, 50 sat)
     val testCases = Seq(
       TxAddInput(channelId1, UInt64(561), Some(tx1), 1, 5) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000001 00000005",
       TxAddInput(channelId2, UInt64(0), Some(tx2), 2, 0) -> hex"0042 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000000 0100 0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000 00000002 00000000",
@@ -194,13 +214,15 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TxSignatures(channelId2, tx1, Nil, None) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000",
       TxSignatures(channelId2, tx1, Nil, Some(signature)) -> hex"0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000 fd0259 40 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       TxInitRbf(channelId1, 8388607, FeeratePerKw(4000 sat)) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 007fffff 00000fa0",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 1_500_000 sat, requireConfirmedInputs = true) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), -25_000 sat, requireConfirmedInputs = false) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 1_500_000 sat, requireConfirmedInputs = true, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), -25_000 sat, requireConfirmedInputs = false, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false, Some(LiquidityAds.RequestFunding(50_000 sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000 fd053b1a000000000000c350000061a80003d09002ee0096000000320000",
       TxAckRbf(channelId2) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      TxAckRbf(channelId2, 450_000 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
-      TxAckRbf(channelId2, 0 sat, requireConfirmedInputs = false) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
-      TxAckRbf(channelId2, -250_000 sat, requireConfirmedInputs = true) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
+      TxAckRbf(channelId2, 450_000 sat, requireConfirmedInputs = false, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
+      TxAckRbf(channelId2, 0 sat, requireConfirmedInputs = false, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
+      TxAckRbf(channelId2, -250_000 sat, requireConfirmedInputs = true, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
+      TxAckRbf(channelId2, 50_000 sat, requireConfirmedInputs = true, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000000c350 0200 fd053b56000061a80003d09002ee0096000000320004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
       TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000",
       TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 000e 696e7465726e616c206572726f72",
     )
@@ -307,9 +329,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val defaultOpen = OpenDualFundedChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(true))
     val defaultEncodedWithoutFlags = hex"0040 0000000000000000000000000000000000000000000000000000000000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f"
     val testCases = Seq(
-      defaultEncodedWithoutFlags ++ hex"00" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"a2" -> ChannelFlags(false),
-      defaultEncodedWithoutFlags ++ hex"ff" -> ChannelFlags(true),
+      defaultEncodedWithoutFlags ++ hex"00" -> ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = false),
+      defaultEncodedWithoutFlags ++ hex"a2" -> ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
+      defaultEncodedWithoutFlags ++ hex"ff" -> ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = true),
     )
     testCases.foreach { case (bin, flags) =>
       val decoded = lightningMessageCodec.decode(bin.bits).require.value
@@ -379,6 +401,92 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode liquidity ads") {
+    val willFundRates = LiquidityAds.WillFundRates(
+      fundingRates = List(
+        LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat),
+        LiquidityAds.FundingRate(500_000 sat, 5_000_000 sat, 1100, 75, 0 sat),
+      ),
+      Set(LiquidityAds.PaymentType.FromChannelBalance)
+    )
+    val nodeKey = PrivateKey(hex"57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeKey, "LN-Liquidity", Color(42, 117, 87), Nil, Features.empty, TimestampSecond(1713171401), Some(willFundRates))
+    val nodeAnnCommonBin = hex"0101 a822c88c3807659ce1c74866f3346444d0fe6ceb25f86804b245af064f77d0a83b8457732d77386a3b10cf4c80a1811d02f34770eefbef9548ab3a3ce3d629df 0000 661cebc9 03ca9b880627d2d4e3b33164f66946349f820d26aa9572fe0e525e534850cbd413 2a7557 4c4e2d4c69717569646974790000000000000000000000000000000000000000 0000"
+    val fundingRateBin1 = hex"000186a0 0007a120 0226 0064 00001388"
+    val fundingRateBin2 = hex"0007a120 004c4b40 044c 004b 00000000"
+    // <length> <payment_types_bitfield>
+    val paymentTypesBin = hex"0001 01"
+    // <tag> <length> <rates_count> <rate1> <rate2> <payment_types>
+    val nodeAnnTlvsBin = hex"fd053b" ++ hex"25" ++ hex"0002" ++ fundingRateBin1 ++ fundingRateBin2 ++ paymentTypesBin
+    assert(lightningMessageCodec.encode(nodeAnn).require.bytes == nodeAnnCommonBin ++ nodeAnnTlvsBin)
+    assert(lightningMessageCodec.decode((nodeAnnCommonBin ++ nodeAnnTlvsBin).bits).require.value == nodeAnn)
+    assert(Announcements.checkSig(nodeAnn))
+
+    val defaultOpen = OpenDualFundedChannel(Block.LivenetGenesisBlock.hash, ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(true))
+    val defaultOpenBin = hex"0040 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000 0100000000000000000000000000000000000000000000000000000000000000 00001388 00000fa0 000000000003d090 00000000000001f4 000000000000c350 000000000000000f 0090 01e3 0009eb10 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f 01"
+    assert(lightningMessageCodec.encode(defaultOpen).require.bytes == defaultOpenBin)
+    val defaultAccept = AcceptDualFundedChannel(ByteVector32.One, 700_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), point(7))
+    val defaultAcceptBin = hex"0041 0100000000000000000000000000000000000000000000000000000000000000 00000000000aae60 00000000000001d9 0000000005f5e100 0000000000000001 00000006 0090 0032 031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766 02531fe6068134503d2723133227c867ac8fa6c83c537e9a44c3c5bdbdcb1fe337 03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b 0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7 03f006a18d5653c4edf5391ff23a61f03ff83d237e880ee61187fa9f379a028e0a 02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f"
+    assert(lightningMessageCodec.encode(defaultAccept).require.bytes == defaultAcceptBin)
+    val fundingScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(defaultOpen.fundingPubkey, defaultAccept.fundingPubkey)))
+
+    {
+      // Request funds from channel balance.
+      val Some(request) = LiquidityAds.requestFunding(750_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, willFundRates)
+      val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
+      val openBin = hex"fd053b 1a 00000000000b71b0 0007a120004c4b40044c004b00000000 0000"
+      assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
+      val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
+      val acceptBin = hex"fd053b 74 0007a120004c4b40044c004b00000000 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c 35962783e077e3c5214ba829752be2a3994a7c5e0e9d735ef5a9dab3ce1d6dda6282c3252b20af52e58c33c0e164167fd59e19114a8a8f9eb76b33008205dcb6"
+      assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
+    }
+    {
+      // Request funds from future HTLCs.
+      val paymentHashes = List(
+        ByteVector32.fromValidHex("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734"),
+        ByteVector32.fromValidHex("d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"),
+      )
+      val willFundRates1 = willFundRates.copy(paymentTypes = Set(LiquidityAds.PaymentType.FromFutureHtlc))
+      val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHashes), willFundRates1)
+      val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
+      val openBin = hex"fd053b 5a 000000000007a120 000186a00007a1200226006400001388 804080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
+      assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
+      val acceptBin = hex"fd053b 74 000186a00007a1200226006400001388 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c d928070bc5c68c3c6362a0041b523fe03aa853e50214864a3339296e37ebda74343a227b24bc37d27af550bc2ee3d56b00d8c342cc3104b29cc8f09cac9fad9f"
+      assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
+    }
+    {
+      // Request funds from channel balance for future HTLCs.
+      val paymentHashes = List(
+        ByteVector32.fromValidHex("80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734"),
+        ByteVector32.fromValidHex("d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"),
+      )
+      val willFundRates1 = willFundRates.copy(paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc))
+      val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHashes), willFundRates1)
+      val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
+      val openBin = hex"fd053b 5a 000000000007a120 000186a00007a1200226006400001388 824080417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734d662b36d54c6d1c2a0227cdc114d12c578c25ab6ec664eebaa440d7e493eba47"
+      assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
+      val Right(willFund) = willFundRates1.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+      val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
+      val acceptBin = hex"fd053b 74 000186a00007a1200226006400001388 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c d928070bc5c68c3c6362a0041b523fe03aa853e50214864a3339296e37ebda74343a227b24bc37d27af550bc2ee3d56b00d8c342cc3104b29cc8f09cac9fad9f"
+      assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
+    }
+  }
+
+  test("decode unknown liquidity ads payment types") {
+    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat)
+    val testCases = Map(
+      hex"0001 000186a00007a1200226006400001388 001b 080000000000000000000000000000000008000000000000000001" -> LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
+    )
+    for ((encoded, expected) <- testCases) {
+      val decoded = LiquidityAds.Codecs.willFundRates.decode(encoded.bits)
+      assert(decoded.isSuccessful)
+      assert(decoded.require.value == expected)
+    }
+  }
+
   test("encode/decode all channel messages") {
     val unknownTlv = GenericTlv(UInt64(5), ByteVector.fromValidHex("deadbeef"))
     val msgs = List(
@@ -391,7 +499,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
-      UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None),
+      UpdateAddHtlc(randomBytes32(), 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket, None, None),
       UpdateFulfillHtlc(randomBytes32(), 2, bin32(0)),
       UpdateFailHtlc(randomBytes32(), 2, bin(154, 0)),
       UpdateFailMalformedHtlc(randomBytes32(), 2, randomBytes32(), 1111),
@@ -426,6 +534,49 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         val decoded = lightningMessageCodecWithFallback.decode(encoded).require
         assert(msg == decoded.value)
       }
+    }
+  }
+
+  test("encode/decode recommended_feerates") {
+    val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(5000 sat), FeeratePerKw(15_000 sat))
+    val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(253 sat), FeeratePerKw(2_000 sat))
+    val testCases = Seq(
+      // @formatter:off
+      RecommendedFeerates(Block.TestnetGenesisBlock.hash, FeeratePerKw(2500 sat), FeeratePerKw(2500 sat)) -> hex"99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 000009c4 000009c4",
+      RecommendedFeerates(Block.TestnetGenesisBlock.hash, FeeratePerKw(5000 sat), FeeratePerKw(253 sat)) -> hex"99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00001388 000000fd",
+      RecommendedFeerates(Block.TestnetGenesisBlock.hash, FeeratePerKw(10_000 sat), FeeratePerKw(1000 sat), TlvStream(fundingRange, commitmentRange)) -> hex"99f1 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000 00002710 000003e8 01080000138800003a98 0308000000fd000007d0"
+      // @formatter:on
+    )
+    for ((expected, encoded) <- testCases) {
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value
+      assert(decoded == expected)
+      val reEncoded = lightningMessageCodec.encode(decoded).require.bytes
+      assert(reEncoded == encoded)
+    }
+  }
+
+  test("encode/decode on-the-fly funding messages") {
+    val channelId = ByteVector32(hex"c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c")
+    val paymentId = ByteVector32(hex"3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503")
+    val blinding = PublicKey(hex"0296d5c32655a5eaa8be086479d7bcff967b6e9ca8319b69565747ae16ff20fad6")
+    val paymentHash1 = ByteVector32(hex"80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734")
+    val paymentHash2 = ByteVector32(hex"3213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785")
+    val fundingFee = LiquidityAds.FundingFee(5_000_100 msat, TxId(TxHash(ByteVector32(hex"24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"))))
+    val testCases = Seq(
+      UpdateAddHtlc(channelId, 7, 75_000_000 msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding_opt = None, fundingFee_opt = Some(fundingFee)) -> hex"0080 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000000000000007 00000000047868c0 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 fda0512800000000004c4ba424e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566",
+      WillAddHtlc(Block.RegtestGenesisBlock.hash, paymentId, 50_000_000 msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding_opt = None) -> hex"a051 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 0000000002faf080 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      WillAddHtlc(Block.RegtestGenesisBlock.hash, paymentId, 50_000_000 msat, paymentHash1, CltvExpiry(840_000), TestConstants.emptyOnionPacket, blinding_opt = Some(blinding)) -> hex"a051 06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 0000000002faf080 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 000cd140 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 00210296d5c32655a5eaa8be086479d7bcff967b6e9ca8319b69565747ae16ff20fad6",
+      WillFailHtlc(paymentId, paymentHash1, hex"deadbeef") -> hex"a052 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef",
+      WillFailMalformedHtlc(paymentId, paymentHash1, ByteVector32(hex"9d60e5791eee0799ce7b00009f56f56c6b988f6129b6a88494cce2cf2fa8b319"), 49157) -> hex"a053 3118a7954088c27b19923894ed27923c297f88ec3734f90b2b4aafcb11238503 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 9d60e5791eee0799ce7b00009f56f56c6b988f6129b6a88494cce2cf2fa8b319 c005",
+      CancelOnTheFlyFunding(channelId, Nil, hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0000 0004 deadbeef",
+      CancelOnTheFlyFunding(channelId, List(paymentHash1), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0001 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb2106734 0004 deadbeef",
+      CancelOnTheFlyFunding(channelId, List(paymentHash1, paymentHash2), hex"deadbeef") -> hex"a054 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 0002 80417c0c91deb72606958425ea1552a045a55a250e91870231b486dcb21067343213a810a0bfc54566d9be09da1484538b5d19229e928dfa8b692966a8df6785 0004 deadbeef",
+    )
+    for ((expected, encoded) <- testCases) {
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value
+      assert(decoded == expected)
+      val reEncoded = lightningMessageCodec.encode(decoded).require.bytes
+      assert(reEncoded == encoded)
     }
   }
 
