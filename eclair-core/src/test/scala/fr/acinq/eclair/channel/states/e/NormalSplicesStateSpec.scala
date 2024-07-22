@@ -58,7 +58,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + DualFunding + Splicing
+    val tags = test.tags + DualFunding
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -71,17 +71,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private val defaultSpliceOutScriptPubKey = hex"0020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-  private def useQuiescence(s: TestFSMRef[ChannelState, ChannelData, Channel]): Boolean = s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.useQuiescence
-
-  private def useQuiescence(f: FixtureParam): Boolean = useQuiescence(f.alice)
-
   private def initiateSpliceWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]): TestProbe = {
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt)
     s ! cmd
-    if (useQuiescence(s)) {
-      exchangeStfu(s, r, s2r, r2s)
-    }
+    exchangeStfu(s, r, s2r, r2s)
     s2r.expectMsgType[SpliceInit]
     s2r.forward(r)
     r2s.expectMsgType[SpliceAck]
@@ -173,37 +167,29 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   private def setupHtlcs(f: FixtureParam): TestHtlcs = {
     import f._
 
-    if (useQuiescence(f)) {
-      // add htlcs in both directions
-      val htlcsAliceToBob = Seq(
-        addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice),
-        addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
-      )
-      crossSign(alice, bob, alice2bob, bob2alice)
-      val htlcsBobToAlice = Seq(
-        addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob),
-        addHtlc(15_000_000 msat, bob, alice, bob2alice, alice2bob)
-      )
-      crossSign(bob, alice, bob2alice, alice2bob)
+    // add htlcs in both directions
+    val htlcsAliceToBob = Seq(
+      addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice),
+      addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
+    )
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val htlcsBobToAlice = Seq(
+      addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob),
+      addHtlc(15_000_000 msat, bob, alice, bob2alice, alice2bob)
+    )
+    crossSign(bob, alice, bob2alice, alice2bob)
 
-      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-      assert(initialState.commitments.latest.capacity == 1_500_000.sat)
-      assert(initialState.commitments.latest.localCommit.spec.toLocal == 770_000_000.msat)
-      assert(initialState.commitments.latest.localCommit.spec.toRemote == 665_000_000.msat)
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.latest.capacity == 1_500_000.sat)
+    assert(initialState.commitments.latest.localCommit.spec.toLocal == 770_000_000.msat)
+    assert(initialState.commitments.latest.localCommit.spec.toRemote == 665_000_000.msat)
 
-      alice2relayer.expectMsgType[Relayer.RelayForward]
-      alice2relayer.expectMsgType[Relayer.RelayForward]
-      bob2relayer.expectMsgType[Relayer.RelayForward]
-      bob2relayer.expectMsgType[Relayer.RelayForward]
+    alice2relayer.expectMsgType[Relayer.RelayForward]
+    alice2relayer.expectMsgType[Relayer.RelayForward]
+    bob2relayer.expectMsgType[Relayer.RelayForward]
+    bob2relayer.expectMsgType[Relayer.RelayForward]
 
-      TestHtlcs(htlcsAliceToBob, htlcsBobToAlice)
-    } else {
-      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-      assert(initialState.commitments.latest.capacity == 1_500_000.sat)
-      assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
-      assert(initialState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
-      TestHtlcs(Seq.empty, Seq.empty)
-    }
+    TestHtlcs(htlcsAliceToBob, htlcsBobToAlice)
   }
 
   def spliceOutFee(f: FixtureParam, capacity: Satoshi): Satoshi = {
@@ -223,7 +209,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     // if the swap includes a splice-in, swap-out fees will be paid from bitcoind so final capacity is predictable
-    val (outgoingHtlcs, incomingHtlcs) = if (useQuiescence(f)) (30_000_000.msat, 35_000_000.msat) else (0.msat, 0.msat)
+    val outgoingHtlcs = 30_000_000.msat
+    val incomingHtlcs = 35_000_000.msat
     val postSpliceState = alice.stateData.asInstanceOf[ChannelDataWithCommitments]
     assert(postSpliceState.commitments.latest.capacity == 1_900_000.sat - spliceOutFee)
     assert(postSpliceState.commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat - spliceOutFee - outgoingHtlcs)
@@ -237,23 +224,21 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     checkPostSpliceState(f, spliceOutFee)
 
-    if (useQuiescence(f)) {
-      // resolve pre-splice HTLCs after splice
-      val Seq((preimage1a, htlc1a), (preimage2a, htlc2a)) = htlcs.aliceToBob
-      val Seq((preimage1b, htlc1b), (preimage2b, htlc2b)) = htlcs.bobToAlice
-      fulfillHtlc(htlc1a.id, preimage1a, bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(htlc2a.id, preimage2a, bob, alice, bob2alice, alice2bob)
-      crossSign(bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(htlc1b.id, preimage1b, alice, bob, alice2bob, bob2alice)
-      fulfillHtlc(htlc2b.id, preimage2b, alice, bob, alice2bob, bob2alice)
-      crossSign(alice, bob, alice2bob, bob2alice)
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
-      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
-      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
-    }
+    // resolve pre-splice HTLCs after splice
+    val Seq((preimage1a, htlc1a), (preimage2a, htlc2a)) = htlcs.aliceToBob
+    val Seq((preimage1b, htlc1b), (preimage2b, htlc2b)) = htlcs.bobToAlice
+    fulfillHtlc(htlc1a.id, preimage1a, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc2a.id, preimage2a, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc1b.id, preimage1b, alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc2b.id, preimage2b, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.spec.htlcs.collect(outgoing).isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteCommit.spec.htlcs.collect(outgoing).isEmpty)
 
-    val settledHtlcs = if (useQuiescence(f)) 5_000_000.msat else 0.msat
+    val settledHtlcs = 5_000_000.msat
     val finalState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(finalState.commitments.latest.capacity == 1_900_000.sat - spliceOutFee)
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat - spliceOutFee + settledHtlcs)
@@ -276,10 +261,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   }
 
   test("recv CMD_SPLICE (splice-in, non dual-funded channel)") { () =>
-    val f = init(tags = Set(DualFunding, Splicing))
+    val f = init(tags = Set(DualFunding))
     import f._
 
-    reachNormal(f, tags = Set(Splicing)) // we open a non dual-funded channel
+    reachNormal(f, tags = Set.empty) // we open a non dual-funded channel
     alice2bob.ignoreMsg { case _: ChannelUpdate => true }
     bob2alice.ignoreMsg { case _: ChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL && bob.stateName == NORMAL)
@@ -304,7 +289,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(postSpliceState.commitments.latest.remoteChannelReserve == 15_000.sat)
   }
 
-  test("recv CMD_SPLICE (splice-in, local and remote commit index mismatch)", Tag(Quiescence)) { f =>
+  test("recv CMD_SPLICE (splice-in, local and remote commit index mismatch)") { f =>
     import f._
 
     // Alice and Bob asynchronously exchange HTLCs, which makes their commit indices diverge.
@@ -368,18 +353,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
   }
 
-  test("recv CMD_SPLICE (splice-out, would go below reserve)") { f =>
-    import f._
-
-    setupHtlcs(f)
-
-    val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(780_000.sat, defaultSpliceOutScriptPubKey)))
-    alice ! cmd
-    sender.expectMsgType[RES_FAILURE[_, _]]
-  }
-
-  test("recv CMD_SPLICE (splice-out, would go below reserve, quiescent)", Tag(Quiescence), Tag(NoMaxHtlcValueInFlight)) { f =>
+  test("recv CMD_SPLICE (splice-out, would go below reserve)", Tag(NoMaxHtlcValueInFlight)) { f =>
     import f._
 
     setupHtlcs(f)
@@ -397,6 +371,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = None)
     alice ! cmd
+    exchangeStfu(f)
     // we tweak the feerate
     val spliceInit = alice2bob.expectMsgType[SpliceInit].copy(feerate = FeeratePerKw(100.sat))
     bob.setFeerates(alice.nodeParams.currentFeerates.copy(minimum = FeeratePerKw(101.sat)))
@@ -416,6 +391,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val bobBalance = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100_000 sat)), spliceOut_opt = None)
+    exchangeStfu(f)
     val spliceInit = alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob, spliceInit)
     val spliceAck = bob2alice.expectMsgType[SpliceAck]
@@ -460,20 +436,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
   }
 
-  def testSpliceInAndOutCmd(f: FixtureParam): Unit = {
-    val htlcs = setupHtlcs(f)
-
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
-
-    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
-  }
-
   test("recv CMD_SPLICE (splice-in + splice-out)") { f =>
-    testSpliceInAndOutCmd(f)
-  }
-
-  test("recv CMD_SPLICE (splice-in + splice-out, quiescence)", Tag(Quiescence)) { f =>
-    testSpliceInAndOutCmd(f)
+    val htlcs = setupHtlcs(f)
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
   test("recv TxAbort (before TxComplete)") { f =>
@@ -481,6 +447,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)))
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -505,6 +472,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)))
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -540,6 +508,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None)
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -772,7 +741,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
   }
 
-  test("emit post-splice events", Tag(NoMaxHtlcValueInFlight), Tag(Quiescence)) { f =>
+  test("emit post-splice events", Tag(NoMaxHtlcValueInFlight)) { f =>
     import f._
 
     // Alice and Bob asynchronously exchange HTLCs, which makes their commit indices diverge.
@@ -902,6 +871,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
@@ -913,6 +883,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -923,36 +894,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
   }
 
-  test("recv UpdateAddHtlc while a splice is requested") { f =>
-    import f._
-    val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
-    alice ! cmd
-    alice2bob.expectMsgType[SpliceInit]
-    // we're holding the splice_init to create a race
-
-    val (_, cmdAdd: CMD_ADD_HTLC) = makeCmdAdd(5_000_000 msat, bob.underlyingActor.remoteNodeId, bob.underlyingActor.nodeParams.currentBlockHeight)
-    bob ! cmdAdd
-    bob2alice.expectMsgType[UpdateAddHtlc]
-    bob2alice.forward(alice)
-    // now we forward the splice_init
-    alice2bob.forward(bob)
-    // bob rejects the SpliceInit because they have a pending htlc
-    bob2alice.expectMsgType[TxAbort]
-    bob2alice.forward(alice)
-    // alice returns a warning and schedules a disconnect after receiving UpdateAddHtlc
-    alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
-    // alice confirms the splice abort
-    alice2bob.expectMsgType[TxAbort]
-    // the htlc is not added
-    assert(!alice.stateData.asInstanceOf[DATA_NORMAL].commitments.hasPendingOrProposedHtlcs)
-  }
-
   test("recv UpdateAddHtlc while a splice is in progress") { f =>
     import f._
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -1091,6 +1038,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
+    exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
@@ -1102,7 +1050,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
 
-  def testDisconnectCommitSigNotReceived(f: FixtureParam): Unit = {
+  test("disconnect (commit_sig not received)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1133,15 +1081,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, 0.sat)
   }
 
-  test("disconnect (commit_sig not received)") { f =>
-    testDisconnectCommitSigNotReceived(f)
-  }
-
-  test("disconnect (commit_sig not received, quiescence)", Tag(Quiescence)) { f =>
-    testDisconnectCommitSigNotReceived(f)
-  }
-
-  def testDisconnectCommitSigReceivedByAlice(f: FixtureParam): Unit = {
+  test("disconnect (commit_sig received by alice)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1173,15 +1113,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (commit_sig received by alice)") { f =>
-    testDisconnectCommitSigReceivedByAlice(f)
-  }
-
-  test("disconnect (commit_sig received by alice, quiescence)", Tag(Quiescence)) { f =>
-    testDisconnectCommitSigReceivedByAlice(f)
-  }
-
-  def testDisconnectTxSignaturesSentByBob(f: FixtureParam): Unit = {
+  test("disconnect (tx_signatures sent by bob)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1215,15 +1147,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (tx_signatures sent by bob)") { f =>
-    testDisconnectTxSignaturesSentByBob(f)
-  }
-
-  test("disconnect (tx_signatures sent by bob, quiescence)", Tag(Quiescence)) { f =>
-    testDisconnectTxSignaturesSentByBob(f)
-  }
-
-  def testDisconnectTxSignaturesReceivedByAlice(f: FixtureParam): Unit = {
+  test("disconnect (tx_signatures received by alice)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1264,15 +1188,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("disconnect (tx_signatures received by alice)") { f =>
-    testDisconnectTxSignaturesReceivedByAlice(f)
-  }
-
-  test("disconnect (tx_signatures received by alice, quiescence)", Tag(Quiescence)) { f =>
-    testDisconnectTxSignaturesReceivedByAlice(f)
-  }
-
-  def testDisconnectTxSignaturesReceivedByAliceZeroConf(f: FixtureParam): Unit = {
+  test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1312,14 +1228,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
-  }
-
-  test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testDisconnectTxSignaturesReceivedByAliceZeroConf(f)
-  }
-
-  test("disconnect (tx_signatures received by alice, zero-conf, quiescence)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs), Tag(Quiescence)) { f =>
-    testDisconnectTxSignaturesReceivedByAliceZeroConf(f)
   }
 
   test("disconnect (tx_signatures sent by alice, splice confirms while bob is offline)") { f =>
@@ -1475,7 +1383,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  def testForceCloseWithMultipleSplicesSimple(f: FixtureParam): Unit = {
+  test("force-close with multiple splices (simple)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1547,15 +1455,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[LocalClose]))
   }
 
-  test("force-close with multiple splices (simple)") { f =>
-    testForceCloseWithMultipleSplicesSimple(f)
-  }
-
-  test("force-close with multiple splices (simple, quiescence)", Tag(Quiescence)) { f =>
-    testForceCloseWithMultipleSplicesSimple(f)
-  }
-
-  def testForceCloseWithMultipleSplicesPreviousActiveRemote(f: FixtureParam): Unit = {
+  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1633,15 +1533,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
 
-  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
-  }
-
-  test("force-close with multiple splices (previous active remote, quiescence)", Tag(Quiescence), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesPreviousActiveRemote(f)
-  }
-
-  def testForceCloseWithMultipleSplicesPreviousActiveRevoked(f: FixtureParam): Unit = {
+  test("force-close with multiple splices (previous active revoked)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1713,15 +1605,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
   }
 
-  test("force-close with multiple splices (previous active revoked)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
-  }
-
-  test("force-close with multiple splices (previous active revoked, quiescent)", Tag(Quiescence), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesPreviousActiveRevoked(f)
-  }
-
-  def testForceCloseWithMultipleSplicesInactiveRemote(f: FixtureParam): Unit = {
+  test("force-close with multiple splices (inactive remote)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1828,15 +1712,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
 
-  test("force-close with multiple splices (inactive remote)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesInactiveRemote(f)
-  }
-
-  test("force-close with multiple splices (inactive remote, quiescence)", Tag(Quiescence), Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesInactiveRemote(f)
-  }
-
-  def testForceCloseWithMultipleSplicesInactiveRevoked(f: FixtureParam): Unit = {
+  test("force-close with multiple splices (inactive revoked)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1947,14 +1823,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
   }
 
-  test("force-close with multiple splices (inactive revoked)", Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesInactiveRevoked(f)
-  }
-
-  test("force-close with multiple splices (inactive revoked, quiescence)", Tag(Quiescence), Tag(ZeroConf), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testForceCloseWithMultipleSplicesInactiveRevoked(f)
-  }
-
   test("put back watches after restart") { f =>
     import f._
 
@@ -2049,7 +1917,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
   }
 
-  test("recv CMD_SPLICE (splice-in + splice-out) with pre and post splice htlcs", Tag(Quiescence)) { f =>
+  test("recv CMD_SPLICE (splice-in + splice-out) with pre and post splice htlcs") { f =>
     import f._
     val htlcs = setupHtlcs(f)
 
@@ -2086,7 +1954,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked", Tag(Quiescence), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked", Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -2105,7 +1973,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
-  test("recv multiple CMD_SPLICE (splice-in, splice-out, quiescence)", Tag(Quiescence)) { f =>
+  test("recv multiple CMD_SPLICE (splice-in, splice-out)") { f =>
     val htlcs = setupHtlcs(f)
 
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
@@ -2114,7 +1982,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = spliceOutFee(f, capacity = 1_900_000.sat))
   }
 
-  test("recv invalid htlc signatures during splice-in", Tag(Quiescence)) { f =>
+  test("recv invalid htlc signatures during splice-in") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)

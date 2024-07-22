@@ -102,7 +102,9 @@ object TestConstants {
           Wumbo -> Optional,
           PaymentMetadata -> Optional,
           RouteBlinding -> Optional,
-          StaticRemoteKey -> Mandatory
+          StaticRemoteKey -> Mandatory,
+          Quiescence -> Optional,
+          Splicing -> Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -274,7 +276,9 @@ object TestConstants {
         PaymentMetadata -> Optional,
         RouteBlinding -> Optional,
         StaticRemoteKey -> Mandatory,
-        AnchorOutputsZeroFeeHtlcTx -> Optional
+        AnchorOutputsZeroFeeHtlcTx -> Optional,
+        Quiescence -> Optional,
+        Splicing -> Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,

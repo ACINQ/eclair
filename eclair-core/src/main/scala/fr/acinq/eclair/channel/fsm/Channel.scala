@@ -853,20 +853,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
       if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.Splicing)) {
         d.spliceStatus match {
-          case SpliceStatus.NoSplice if d.commitments.params.useQuiescence =>
+          case SpliceStatus.NoSplice =>
             startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
             if (d.commitments.localIsQuiescent) {
               stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, initiator = true)
             } else {
               stay() using d.copy(spliceStatus = SpliceStatus.QuiescenceRequested(cmd))
-            }
-          case SpliceStatus.NoSplice if !d.commitments.params.useQuiescence =>
-            initiateSplice(cmd, d) match {
-              case Left(f) =>
-                cmd.replyTo ! RES_FAILURE(cmd, f)
-                stay()
-              case Right(spliceInit) =>
-                stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
             }
           case _ =>
             log.warning("cannot initiate splice, another one is already in progress")
@@ -885,62 +877,53 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       stay()
 
     case Event(msg: Stfu, d: DATA_NORMAL) =>
-      if (d.commitments.params.useQuiescence) {
-        if (d.commitments.remoteIsQuiescent) {
-          d.spliceStatus match {
-            case SpliceStatus.NoSplice =>
-              startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
-              if (d.commitments.localIsQuiescent) {
-                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
-              } else {
-                stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
-              }
-            case SpliceStatus.QuiescenceRequested(cmd) =>
-              // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
-              // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
-              log.warning("our peer initiated quiescence before us, cancelling our splice attempt")
-              cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
+      if (d.commitments.remoteIsQuiescent) {
+        d.spliceStatus match {
+          case SpliceStatus.NoSplice =>
+            startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
+            if (d.commitments.localIsQuiescent) {
+              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
+            } else {
               stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
-            case SpliceStatus.InitiatorQuiescent(cmd) =>
-              // if both sides send stfu at the same time, the quiescence initiator is the channel opener
-              if (!msg.initiator || d.commitments.params.localParams.isChannelOpener) {
-                initiateSplice(cmd, d) match {
-                  case Left(f) =>
-                    cmd.replyTo ! RES_FAILURE(cmd, f)
-                    context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-                    stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
-                  case Right(spliceInit) =>
-                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
-                }
-              } else {
-                log.warning("concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt")
-                cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
-                stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
+            }
+          case SpliceStatus.QuiescenceRequested(cmd) =>
+            // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
+            // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
+            log.warning("our peer initiated quiescence before us, cancelling our splice attempt")
+            cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
+            stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
+          case SpliceStatus.InitiatorQuiescent(cmd) =>
+            // if both sides send stfu at the same time, the quiescence initiator is the channel opener
+            if (!msg.initiator || d.commitments.params.localParams.isChannelOpener) {
+              initiateSplice(cmd, d) match {
+                case Left(f) =>
+                  cmd.replyTo ! RES_FAILURE(cmd, f)
+                  context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+                  stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
+                case Right(spliceInit) =>
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
               }
-            case _ =>
-              log.warning("ignoring duplicate stfu")
-              stay()
-          }
-        } else {
-          log.warning("our peer sent stfu but is not quiescent")
-          // NB: we use a small delay to ensure we've sent our warning before disconnecting.
-          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
+            } else {
+              log.warning("concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt")
+              cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
+              stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent)
+            }
+          case _ =>
+            log.warning("ignoring duplicate stfu")
+            stay()
         }
       } else {
-        log.warning("ignoring stfu because both peers do not advertise quiescence")
-        stay()
+        log.warning("our peer sent stfu but is not quiescent")
+        // NB: we use a small delay to ensure we've sent our warning before disconnecting.
+        context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+        stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
       }
 
     case Event(_: QuiescenceTimeout, d: DATA_NORMAL) => handleQuiescenceTimeout(d)
 
-    case Event(_: SpliceInit, d: DATA_NORMAL) if d.spliceStatus == SpliceStatus.NoSplice && d.commitments.params.useQuiescence =>
-      log.info("rejecting splice attempt: quiescence not negotiated")
-      stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
-
     case Event(msg: SpliceInit, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.NoSplice | SpliceStatus.NonInitiatorQuiescent =>
+        case SpliceStatus.NonInitiatorQuiescent =>
           if (!d.commitments.isQuiescent) {
             log.info("rejecting splice request: channel not quiescent")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
@@ -981,6 +964,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             txBuilder ! InteractiveTxBuilder.Start(self)
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, sessionId, txBuilder, remoteCommitSig = None)) sending spliceAck
           }
+        case SpliceStatus.NoSplice =>
+          log.info("rejecting splice attempt: quiescence not negotiated")
+          stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
         case SpliceStatus.SpliceAborted =>
           log.info("rejecting splice attempt: our previous tx_abort was not acked")
           stay() sending Warning(d.channelId, InvalidSpliceTxAbortNotAcked(d.channelId).getMessage)

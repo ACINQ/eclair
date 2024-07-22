@@ -133,9 +133,6 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
-  /** If both peers support quiescence, we have to exchange stfu when splicing. */
-  def useQuiescence: Boolean = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.Quiescence)
-
 }
 
 object ChannelParams {
@@ -824,7 +821,7 @@ case class Commitments(params: ChannelParams,
   def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
   def remoteIsQuiescent: Boolean = changes.remoteChanges.all.isEmpty
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isQuiescent: Boolean = (params.useQuiescence || active.head.hasNoPendingHtlcs) && localIsQuiescent && remoteIsQuiescent
+  def isQuiescent: Boolean = localIsQuiescent && remoteIsQuiescent
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
