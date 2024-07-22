@@ -92,6 +92,7 @@ case object ERR_INFORMATION_LEAK extends ChannelState
 
 case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         fundingAmount: Satoshi,
+                                        maxExcess_opt: Option[Satoshi],
                                         dualFunded: Boolean,
                                         commitTxFeerate: FeeratePerKw,
                                         fundingTxFeerate: FeeratePerKw,

@@ -180,6 +180,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
       fundingAmount = fundingAmount,
+      maxExcess_opt = None,
       channelType_opt = None,
       pushAmount_opt = Some(pushMsat),
       fundingTxFeerate_opt = None,
