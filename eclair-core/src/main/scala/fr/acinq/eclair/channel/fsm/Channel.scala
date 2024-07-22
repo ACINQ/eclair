@@ -851,7 +851,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.Splicing)) {
         d.spliceStatus match {
           case SpliceStatus.NoSplice if d.commitments.params.useQuiescence =>
             startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
@@ -2526,7 +2526,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   /** For splices we will send one commit_sig per active commitments. */
   private def aggregateSigs(commit: CommitSig): Option[Seq[CommitSig]] = {
     sigStash = sigStash :+ commit
-    log.debug("received sig for batch of size={}", commit.batchSize)
+    log.debug("received sig for batch of size={} for fundingTxId={}", commit.batchSize, commit.fundingTxId_opt)
     if (sigStash.size == commit.batchSize) {
       val sigs = sigStash
       sigStash = Nil
