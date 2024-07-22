@@ -212,7 +212,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case p: SpliceTxRbf => p.feeBudget_opt
       case _ => None
     }
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt, addExcessToRecipientPosition_opt = None, maxExcess_opt = None)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }
