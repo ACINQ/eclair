@@ -346,6 +346,7 @@ object Features {
     DualFunding,
     Quiescence,
     OnionMessages,
+    ProvideStorage,
     ChannelType,
     ScidAlias,
     PaymentMetadata,
