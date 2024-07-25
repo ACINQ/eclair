@@ -44,7 +44,8 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
-import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, PeerStorageRetrieval, PeerStorageStore, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import scodec.bits.ByteVector
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -84,7 +85,7 @@ class Peer(val nodeParams: NodeParams,
         FinalChannelId(state.channelId) -> channel
       }.toMap
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
-      goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      goto(DISCONNECTED) using DisconnectedData(channels, None) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -93,7 +94,7 @@ class Peer(val nodeParams: NodeParams,
       stay()
 
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
-      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
+      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) }, d.peerStorage)
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
       // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -461,7 +462,7 @@ class Peer(val nodeParams: NodeParams,
           stopPeer()
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.peerStorage)
         }
 
       case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
@@ -480,7 +481,7 @@ class Peer(val nodeParams: NodeParams,
         log.debug(s"got new connection, killing current one and switching")
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        gotoConnected(connectionReady, d.channels)
+        gotoConnected(connectionReady, d.channels, d.peerStorage)
 
       case Event(msg: OnionMessage, _: ConnectedData) =>
         OnionMessages.process(nodeParams.privateKey, msg) match {
@@ -512,6 +513,9 @@ class Peer(val nodeParams: NodeParams,
         logMessage(unknownMsg, "OUT")
         d.peerConnection forward unknownMsg
         stay()
+
+      case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.channels.nonEmpty =>
+        stay() using d.copy(peerStorage = Some(store.blob))
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -744,7 +748,7 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
-  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
+  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], peerStorage: Option[ByteVector]): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeId: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
@@ -753,6 +757,9 @@ class Peer(val nodeParams: NodeParams,
       // any previous address is overwritten
       nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address)
     }
+
+    // If we have some data stored from our peer, we send it to them before doing anything else.
+    peerStorage.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
 
     // let's bring existing/requested channels online
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -771,7 +778,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, feerates, None)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, feerates, None, peerStorage)
   }
 
   /**
@@ -908,10 +915,14 @@ object Peer {
 
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def peerStorage: Option[ByteVector]
   }
-  case object Nothing extends Data { override def channels = Map.empty }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates]) extends Data {
+  case object Nothing extends Data {
+    override def channels = Map.empty
+    override def peerStorage: Option[ByteVector] = None
+  }
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], peerStorage: Option[ByteVector]) extends Data
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: Option[ByteVector]) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
