@@ -313,7 +313,7 @@ class Peer(val nodeParams: NodeParams,
         d.peerConnection forward unknownMsg
         stay()
 
-      case Event(store: PeerStorageStore, d: ConnectedData) =>
+      case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.channels.nonEmpty =>
         stay() using d.copy(peerStorage = Some(store.blob))
 
       case Event(unhandledMsg: LightningMessage, _) =>
