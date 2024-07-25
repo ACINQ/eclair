@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.NodeAddress
+import scodec.bits.ByteVector
 
 trait PeersDb {
 
@@ -33,5 +34,9 @@ trait PeersDb {
   def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit
 
   def getRelayFees(nodeId: PublicKey): Option[RelayFees]
+
+  def updateStorage(nodeId: PublicKey, data: ByteVector): Unit
+
+  def getStorage(nodeId: PublicKey): Option[ByteVector]
 
 }
