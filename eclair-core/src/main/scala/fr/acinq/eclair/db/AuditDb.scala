@@ -54,7 +54,7 @@ trait AuditDb {
 
   def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 
-  def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats]
+  def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[Stats]
 
 }
 

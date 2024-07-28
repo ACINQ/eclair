@@ -154,8 +154,10 @@ trait Channel {
   }
 
   val channelStats: Route = postRequest("channelstats") { implicit t =>
-    formFields(fromFormParam(), toFormParam()) { (from, to) =>
-      complete(eclairApi.channelStats(from, to))
+    withPaginated { paginated_opt =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
+        complete(eclairApi.channelStats(from, to, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
+      }
     }
   }
 
