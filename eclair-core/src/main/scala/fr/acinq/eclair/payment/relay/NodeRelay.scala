@@ -259,7 +259,8 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def doSend(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
-    relay(upstream, nextPayload, nextPacket_opt, confidence = 0.5)
+    val confidence = (upstream.received.map(_.add.endorsement).min + 0.5) / 8
+    relay(upstream, nextPayload, nextPacket_opt, confidence)
   }
 
   /**

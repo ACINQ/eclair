@@ -68,7 +68,8 @@ object ChannelRelay {
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), TimestampMilli.now(), originNode)
         context.self ! DoRelay
-        new ChannelRelay(nodeParams, register, channels, r, upstream, confidence = 0.5, context).relay(Seq.empty)
+        val confidence = (r.add.endorsement + 0.5) / 8
+        new ChannelRelay(nodeParams, register, channels, r, upstream, confidence, context).relay(Seq.empty)
       }
     }
 
