@@ -588,7 +588,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     // command for a large payment (larger than local balance pre-slice)
-    val cmd = CMD_ADD_HTLC(sender.ref, 1_000_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    val cmd = CMD_ADD_HTLC(sender.ref, 1_000_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     // first attempt at payment fails (not enough balance)
     alice ! cmd
     sender.expectMsgType[RES_ADD_FAILED[_]]
@@ -840,7 +840,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -869,7 +869,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -903,7 +903,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
-    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
     alice2bob.expectNoMessage(100 millis)
   }
@@ -918,7 +918,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[SpliceAck]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAddInput]
-    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
     alice2bob.expectNoMessage(100 millis)
   }
@@ -960,7 +960,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[TxAddInput]
 
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
-    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None)
+    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
     bob2alice.forward(alice, fakeHtlc)
     // alice returns a warning and schedules a disconnect after receiving UpdateAddHtlc
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))

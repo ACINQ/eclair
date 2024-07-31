@@ -90,9 +90,9 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     }
 
     // we use this to build a valid onion
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret))
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret), 1.0)
     // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(randomBytes32(), 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
+    val add_ab = UpdateAddHtlc(randomBytes32(), 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
     register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
   }
@@ -100,8 +100,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("relay an htlc-add at the final node to the payment handler") { f =>
     import f._
 
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops.take(1), None), ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret))
-    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops.take(1), None), ClearRecipient(b, Features.empty, finalAmount, finalExpiry, paymentSecret), 1.0)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
@@ -119,10 +119,10 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val finalTrampolinePayload = NodePayload(b, FinalPayload.Standard.createPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
     val Right(trampolineOnion) = buildOnion(Seq(finalTrampolinePayload), paymentHash, None)
     val recipient = ClearRecipient(b, nodeParams.features.invoiceFeatures(), finalAmount, finalExpiry, randomBytes32(), nextTrampolineOnion_opt = Some(trampolineOnion.packet))
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), None), recipient)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), None), recipient, 1.0)
     assert(payment.cmd.amount == finalAmount)
     assert(payment.cmd.cltvExpiry == finalExpiry)
-    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fp = paymentHandler.expectMessageType[FinalPacket]
@@ -140,9 +140,9 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     // we use this to build a valid onion
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret))
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, hops, None), ClearRecipient(e, Features.empty, finalAmount, finalExpiry, paymentSecret), 1.0)
     // and then manually build an htlc with an invalid onion (hmac)
-    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion.copy(hmac = payment.cmd.onion.hmac.reverse), None)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion.copy(hmac = payment.cmd.onion.hmac.reverse), None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
@@ -160,8 +160,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val routeExpiry = CltvExpiry(nodeParams.currentBlockHeight - 10)
     val (_, blindedHop, recipient) = blindedRouteFromHops(finalAmount, finalExpiry, Seq(channelHopFromUpdate(b, c, channelUpdate_bc)), routeExpiry, paymentPreimage, hex"deadbeef")
     val route = Route(finalAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), Some(blindedHop))
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient)
-    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, 1.0)
+    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
@@ -177,7 +177,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     // we use an expired blinded route.
     val Right(payment) = buildOutgoingBlindedPaymentAB(paymentHash, routeExpiry = CltvExpiry(nodeParams.currentBlockHeight - 1))
-    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt)
+    val add_ab = UpdateAddHtlc(channelId_ab, 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
@@ -196,10 +196,10 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_c.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures)
     val trampolineHop = NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b)
     val recipient = TrampolineRecipient(invoice, finalAmount, finalExpiry, trampolineHop, randomBytes32())
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(recipient.trampolineAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), Some(trampolineHop)), recipient)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(recipient.trampolineAmount, Seq(channelHopFromUpdate(priv_a.publicKey, b, channelUpdate_ab)), Some(trampolineHop)), recipient, 1.0)
 
     // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None)
+    val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
@@ -213,8 +213,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     val replyTo = TestProbe[Any]()
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket, None)
-    val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), TestConstants.emptyOnionPacket, None)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket, None, 1.0)
+    val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), TestConstants.emptyOnionPacket, None, 1.0)
     val channelOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey))
     val trampolineOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Trampoline(Seq(Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey))))
 

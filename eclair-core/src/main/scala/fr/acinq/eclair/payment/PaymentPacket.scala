@@ -285,12 +285,12 @@ object OutgoingPaymentPacket {
   }
 
   /** Build the command to add an HTLC for the given recipient using the provided route. */
-  def buildOutgoingPayment(origin: Origin.Hot, paymentHash: ByteVector32, route: Route, recipient: Recipient): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
+  def buildOutgoingPayment(origin: Origin.Hot, paymentHash: ByteVector32, route: Route, recipient: Recipient, confidence: Double): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
     for {
       payment <- recipient.buildPayloads(paymentHash, route)
       onion <- buildOnion(payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(origin.replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerBlinding_opt, origin, commit = true)
+      val cmd = CMD_ADD_HTLC(origin.replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerBlinding_opt, confidence, origin, commit = true)
       OutgoingPaymentPacket(cmd, route.hops.head.shortChannelId, onion.sharedSecrets)
     }
   }

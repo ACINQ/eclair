@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -54,7 +54,12 @@ object ChannelRelay {
   case class RelaySuccess(selectedChannelId: ByteVector32, cmdAdd: CMD_ADD_HTLC) extends RelayResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, register: ActorRef, channels: Map[ByteVector32, Relayer.OutgoingChannel], originNode: PublicKey, relayId: UUID, r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
+  def apply(nodeParams: NodeParams,
+            register: ActorRef,
+            channels: Map[ByteVector32, Relayer.OutgoingChannel],
+            originNode:PublicKey,
+            relayId: UUID,
+            r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
@@ -63,7 +68,8 @@ object ChannelRelay {
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), TimestampMilli.now(), originNode)
         context.self ! DoRelay
-        new ChannelRelay(nodeParams, register, channels, r, upstream, context).relay(Seq.empty)
+        val confidence = (r.add.endorsement + 0.5) / 8
+        new ChannelRelay(nodeParams, register, channels, r, upstream, confidence, context).relay(Seq.empty)
       }
     }
 
@@ -107,6 +113,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            channels: Map[ByteVector32, Relayer.OutgoingChannel],
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
+                           confidence: Double,
                            context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
@@ -149,22 +156,24 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.self ! DoRelay
         relay(previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
 
-      case WrappedAddResponse(_: RES_SUCCESS[_]) =>
+      case WrappedAddResponse(r: RES_SUCCESS[_]) =>
         context.log.debug("sent htlc to the downstream channel")
-        waitForAddSettled()
+        waitForAddSettled(r.channelId)
     }
 
-  def waitForAddSettled(): Behavior[Command] =
+  def waitForAddSettled(channelId: ByteVector32): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.debug("relaying fulfill to upstream")
+        context.log.info("relaying fulfill to upstream, startedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, TimestampMilli.now(), confidence, upstream.receivedFrom, channelId)
+        Metrics.relayFulfill(confidence)
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, TimestampMilli.now()))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail)) =>
-        context.log.debug("relaying fail to upstream")
+        context.log.info("relaying fail to upstream, startedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, TimestampMilli.now(), confidence, upstream.receivedFrom, channelId)
+        Metrics.relayFail(confidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail)
         recordRelayDuration(isSuccess = false)
@@ -312,7 +321,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextBlinding)
           case _: IntermediatePayload.ChannelRelay.Standard => None
         }
-        RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, origin, commit = true))
+        RelaySuccess(c.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, confidence, origin, commit = true))
     }
   }
 

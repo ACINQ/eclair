@@ -38,7 +38,6 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
-import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import scala.concurrent.duration._
 import scala.util.Random
@@ -119,7 +118,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty))
+      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty), 1.0)
       payment.cmd
     }
 
