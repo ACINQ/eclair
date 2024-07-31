@@ -4,6 +4,36 @@
 
 ## Major changes
 
+### Channel Splicing
+
+With this release, we add support for the final version of [splicing](https://github.com/lightning/bolts/pull/1160) that was recently added to the BOLTs.
+Splicing allows node operators to change the size of their existing channels, which makes it easier and more efficient to allocate liquidity where it is most needed.
+Most node operators can now have a single channel with each of their peer, which costs less on-chain fees and resources, and makes path-finding easier.
+
+The size of an existing channel can be increased with the `splicein` API:
+
+```sh
+eclair-cli splicein --channelId=<channel_id> --amountIn=<amount_satoshis>
+```
+
+Once that transaction confirms, the additional liquidity can be used to send outgoing payments.
+If the transaction doesn't confirm, the node operator can speed up confirmation with the `rbfsplice` API:
+
+```sh
+eclair-cli rbfsplice --channelId=<channel_id> --targetFeerateSatByte=<feerate_satoshis_per_byte> --fundingFeeBudgetSatoshis=<maximum_on_chain_fee_satoshis>
+```
+
+If the node operator wants to reduce the size of a channel, or send some of the channel funds to an on-chain address, they can use the `spliceout` API:
+
+```sh
+eclair-cli spliceout --channelId=<channel_id> --amountOut=<amount_satoshis> --scriptPubKey=<on_chain_address>
+```
+
+That operation can also be RBF-ed with the `rbfsplice` API to speed up confirmation if necessary.
+
+Note that eclair had already introduced support for a splicing prototype in v0.9.0, which helped improve the BOLT proposal.
+We're removing support for the previous splicing prototype feature: users that depended on this protocol must upgrade to create official splice transactions.
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 27.1.
@@ -26,7 +56,8 @@ Eclair will not allow remote peers to open new obsolete channels that do not sup
 
 ### API changes
 
-- `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
+- `channelstats` now accept `--count` and `--skip` parameters to limit the number of retrieved items (#2890)
+- `rbfsplice` lets any channel participant RBF the current unconfirmed splice transaction (#2887)
 
 ### Miscellaneous improvements and bug fixes
 

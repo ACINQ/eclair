@@ -49,8 +49,8 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: BlockHash } // <- not in the spec
 sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
-sealed trait ForbiddenMessageDuringSplice extends LightningMessage // <- not in the spec
-sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageDuringSplice // <- not in the spec
+sealed trait ForbiddenMessageWhenQuiescent extends LightningMessage // <- not in the spec
+sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageWhenQuiescent // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the spec
 // @formatter:on
@@ -380,7 +380,7 @@ object ExperimentalSpliceLocked {
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
-                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageWhenQuiescent
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
