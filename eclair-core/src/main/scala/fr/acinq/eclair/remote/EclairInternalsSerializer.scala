@@ -151,7 +151,8 @@ object EclairInternalsSerializer {
     ("peer" | actorRefCodec(system)) ::
       ("chainHash" | blockHash) ::
       ("features" | variableSizeBytes(uint16, initFeaturesCodec)) ::
-      ("doSync" | bool(8))).as[PeerConnection.InitializeConnection]
+      ("doSync" | bool(8)) ::
+      ("fundingRates" | optional(bool(8), LiquidityAds.Codecs.willFundRates))).as[PeerConnection.InitializeConnection]
 
   def connectionReadyCodec(system: ExtendedActorSystem): Codec[PeerConnection.ConnectionReady] = (
     ("peerConnection" | actorRefCodec(system)) ::
