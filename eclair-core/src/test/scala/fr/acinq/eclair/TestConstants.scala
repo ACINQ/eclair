@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, Re
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -52,6 +52,10 @@ object TestConstants {
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
+  val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
+    fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat) :: Nil,
+    paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
+  )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
   val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
@@ -231,7 +235,9 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      willFundRates_opt = Some(defaultLiquidityRates),
+      wakeUpTimeout = 30 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -401,7 +407,9 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      willFundRates_opt = Some(defaultLiquidityRates),
+      wakeUpTimeout = 30 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

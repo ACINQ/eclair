@@ -63,8 +63,13 @@ trait PathFinding {
   }
 
   val nodes: Route = postRequest("nodes") { implicit t =>
-    formFields(nodeIdsFormParam.?) { nodeIds_opt =>
-      complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)))
+    formFields(nodeIdsFormParam.?, "liquidityProvider".as[Boolean].?) { (nodeIds_opt, liquidityProviders_opt) =>
+      complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)).map(_.filter { n =>
+        liquidityProviders_opt match {
+          case Some(true) => n.fundingRates_opt.nonEmpty
+          case _ => true
+        }
+      }))
     }
   }
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelFlags
@@ -87,7 +87,9 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      willFundRates_opt: Option[LiquidityAds.WillFundRates],
+                      wakeUpTimeout: FiniteDuration) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -476,6 +478,32 @@ object NodeParams extends Logging {
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
 
+    val willFundRates_opt = {
+      val supportedPaymentTypes = Map(
+        LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance
+      )
+      val paymentTypes: Set[LiquidityAds.PaymentType] = config.getStringList("liquidity-ads.payment-types").asScala.map(s => {
+        supportedPaymentTypes.get(s) match {
+          case Some(paymentType) => paymentType
+          case None => throw new IllegalArgumentException(s"unknown liquidity ads payment type: $s")
+        }
+      }).toSet
+      val fundingRates: List[LiquidityAds.FundingRate] = config.getConfigList("liquidity-ads.funding-rates").asScala.map { r =>
+        LiquidityAds.FundingRate(
+          minAmount = r.getLong("min-funding-amount-satoshis").sat,
+          maxAmount = r.getLong("max-funding-amount-satoshis").sat,
+          fundingWeight = r.getInt("funding-weight"),
+          feeBase = r.getLong("fee-base-satoshis").sat,
+          feeProportional = r.getInt("fee-basis-points")
+        )
+      }.toList
+      if (fundingRates.nonEmpty && paymentTypes.nonEmpty) {
+        Some(LiquidityAds.WillFundRates(fundingRates, paymentTypes))
+      } else {
+        None
+      }
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -611,7 +639,9 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      willFundRates_opt = willFundRates_opt,
+      wakeUpTimeout = 30 seconds,
     )
   }
 }

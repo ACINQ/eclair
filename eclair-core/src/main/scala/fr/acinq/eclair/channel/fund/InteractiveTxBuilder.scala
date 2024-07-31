@@ -347,6 +347,7 @@ object InteractiveTxBuilder {
             purpose: Purpose,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
+            liquidityPurchase_opt: Option[LiquidityAds.Purchase],
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       // The stash is used to buffer messages that arrive while we're funding the transaction.
@@ -356,9 +357,13 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelParams.remoteParams.nodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo) =>
+              val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
+                // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
+                case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
+              }).getOrElse(0 sat)
               // Note that pending HTLCs are ignored: splices only affect the main outputs.
-              val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution
-              val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution
+              val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution - localPushAmount + remotePushAmount - liquidityFee
+              val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution - remotePushAmount + localPushAmount + liquidityFee
               if (fundingParams.fundingAmount < fundingParams.dustLimit) {
                 replyTo ! LocalFailure(FundingAmountTooLow(channelParams.channelId, fundingParams.fundingAmount, fundingParams.dustLimit))
                 Behaviors.stopped
@@ -366,7 +371,7 @@ object InteractiveTxBuilder {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
                 Behaviors.stopped
               } else {
-                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
+                val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, liquidityPurchase_opt, wallet, stash, context)
                 actor.start()
               }
             case Abort => Behaviors.stopped
@@ -389,6 +394,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
                                    purpose: Purpose,
                                    localPushAmount: MilliSatoshi,
                                    remotePushAmount: MilliSatoshi,
+                                   liquidityPurchase_opt: Option[LiquidityAds.Purchase],
                                    wallet: OnChainChannelFunder,
                                    stash: StashBuffer[InteractiveTxBuilder.Command],
                                    context: ActorContext[InteractiveTxBuilder.Command])(implicit ec: ExecutionContext) {
@@ -751,10 +757,14 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def signCommitTx(completeTx: SharedTransaction): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
+    val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
+      // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
+      case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
+    }).getOrElse(0 sat)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
-      toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,
-      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount,
+      toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
+      toRemote = completeTx.sharedOutput.remoteAmount - remotePushAmount + localPushAmount + liquidityFee,
       localHtlcs = purpose.localHtlcs,
       purpose.commitTxFeerate,
       fundingTxIndex = purpose.fundingTxIndex,
