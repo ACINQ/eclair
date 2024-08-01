@@ -479,7 +479,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
+  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }
@@ -505,7 +505,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
     // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
-    allChannels.toSeq.flatMap(channelId => {
+    val result = allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)
       val (in, out) = relayed.getOrElse(channelId, Nil).partition(_.direction == "IN")
       ((in, "IN") :: (out, "OUT") :: Nil).map { case (r, direction) =>
@@ -518,6 +518,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           Stats(channelId, direction, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
         }
       }
-    })
+    }).sortBy(s => s.channelId.toHex + s.direction)
+    paginated_opt match {
+      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+      case None => result
+    }
   }
 }

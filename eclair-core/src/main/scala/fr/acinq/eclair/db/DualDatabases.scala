@@ -201,9 +201,9 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.listNetworkFees(from, to)
   }
 
-  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.Stats] = {
-    runAsync(secondary.stats(from, to))
-    primary.stats(from, to)
+  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[AuditDb.Stats] = {
+    runAsync(secondary.stats(from, to, paginated_opt))
+    primary.stats(from, to, paginated_opt)
   }
 }
 
