@@ -133,9 +133,6 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
-  /** If both peers support quiescence, we have to exchange stfu when splicing. */
-  def useQuiescence: Boolean = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.Quiescence)
-
 }
 
 object ChannelParams {
@@ -638,9 +635,11 @@ case class Commitment(fundingTxIndex: Long,
     log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","))
     Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
 
-    val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, TlvStream(Set(
-      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize)) else None
-    ).flatten[CommitSigTlv]))
+    val tlvs = Set(
+      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize, fundingTxId)) else None,
+      if (batchSize > 1) Some(CommitSigTlv.ExperimentalBatchTlv(batchSize)) else None,
+    ).flatten[CommitSigTlv]
+    val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, TlvStream(tlvs))
     val nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
     (copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig)
   }
@@ -822,7 +821,7 @@ case class Commitments(params: ChannelParams,
   def localIsQuiescent: Boolean = changes.localChanges.all.isEmpty
   def remoteIsQuiescent: Boolean = changes.remoteChanges.all.isEmpty
   // HTLCs and pending changes are the same for all active commitments, so we don't need to loop through all of them.
-  def isQuiescent: Boolean = (params.useQuiescence || active.head.hasNoPendingHtlcs) && localIsQuiescent && remoteIsQuiescent
+  def isQuiescent: Boolean = localIsQuiescent && remoteIsQuiescent
   def hasNoPendingHtlcsOrFeeUpdate: Boolean = active.head.hasNoPendingHtlcsOrFeeUpdate(changes)
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
@@ -1021,8 +1020,10 @@ case class Commitments(params: ChannelParams,
     }
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex + 1)
-    // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
-    val active1 = active.zip(commits).map { case (commitment, commit) =>
+    val active1 = active.zipWithIndex.map { case (commitment, idx) =>
+      // If the funding_txid isn't provided, we assume that signatures are sent in order (most recent first).
+      // This matches the behavior of peers who only support the experimental version of splicing.
+      val commit = commits.find(_.fundingTxId_opt.contains(commitment.fundingTxId)).getOrElse(commits(idx))
       commitment.receiveCommit(keyManager, params, changes, localPerCommitmentPoint, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1

@@ -94,6 +94,23 @@ object InteractiveTxFunder {
     spliceInAmount - spliceOut.map(_.amount).sum - fees
   }
 
+  private def needsAdditionalFunding(fundingParams: InteractiveTxParams): Boolean = {
+    if (fundingParams.isInitiator) {
+      // We're the initiator, we always have to pay on-chain fees, even if we don't splice in or out.
+      // If we're not paying those on-chain fees by lowering our channel contribution, we must add more funding.
+      fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum >= 0.sat
+    } else {
+      // We're not the initiator, so we don't have to pay on-chain fees for the common transaction fields.
+      if (fundingParams.localOutputs.isEmpty) {
+        // We're not splicing out: we only need to add funds if we're splicing in.
+        fundingParams.localContribution > 0.sat
+      } else {
+        // We need to add funds if we're not paying on-chain fees by lowering our channel contribution.
+        fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum >= 0.sat
+      }
+    }
+  }
+
   private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
     // Wallet input transaction must fit inside the tx_add_input message.
     val previousTxSizeOk = Transaction.write(previousTx).length <= 65000
@@ -137,7 +154,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
 
   private val log = context.log
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
-    case rbf: InteractiveTxBuilder.PreviousTxRbf => rbf.previousTransactions
+    case rbf: InteractiveTxBuilder.FundingTxRbf => rbf.previousTransactions
+    case rbf: InteractiveTxBuilder.SpliceTxRbf => rbf.previousTransactions
     case _ => Nil
   }
 
@@ -148,8 +166,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     // The balances in the shared input may have changed since the previous funding attempt, so we ignore the previous
     // shared input and will add it explicitly later.
     val previousWalletInputs = previousTransactions.flatMap(_.tx.localInputs).distinctBy(_.outPoint)
-    val hasEnoughFunding = fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum <= 0.sat
-    if (hasEnoughFunding) {
+    if (!needsAdditionalFunding(fundingParams)) {
       log.info("we seem to have enough funding, no need to request wallet inputs from bitcoind")
       // We're not contributing to the shared output or we have enough funds in our shared input, so we don't need to
       // ask bitcoind for more inputs. When splicing some funds out, we assume that the caller has allocated enough
@@ -191,7 +208,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
     val feeBudget_opt = purpose match {
       case p: FundingTx => p.feeBudget_opt
-      case p: PreviousTxRbf => p.feeBudget_opt
+      case p: FundingTxRbf => p.feeBudget_opt
+      case p: SpliceTxRbf => p.feeBudget_opt
       case _ => None
     }
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {

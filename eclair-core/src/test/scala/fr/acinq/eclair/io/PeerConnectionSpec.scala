@@ -19,10 +19,11 @@ package fr.acinq.eclair.io
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, StaticRemoteKey, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ConnectionDown
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -494,6 +495,48 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       val isPublicIP = NodeAddress.isPublicIPAddress(address)
       assert(isPublicIP == expected)
     }
+  }
+
+  test("convert experimental splice messages") { f =>
+    import f._
+    val remoteInit = protocol.Init(Bob.nodeParams.features.initFeatures().copy(unknown = Set(UnknownFeature(155))))
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit)
+
+    val spliceInit = SpliceInit(randomBytes32(), 100_000 sat, FeeratePerKw(5000 sat), 0, randomKey().publicKey)
+    val spliceAck = SpliceAck(randomBytes32(), 50_000 sat, randomKey().publicKey)
+    val spliceLocked = SpliceLocked(randomBytes32(), TxId(randomBytes32()))
+
+    // Outgoing messages use the experimental version of splicing.
+    peer.send(peerConnection, spliceInit)
+    transport.expectMsg(ExperimentalSpliceInit.from(spliceInit))
+    peer.send(peerConnection, spliceAck)
+    transport.expectMsg(ExperimentalSpliceAck.from(spliceAck))
+    peer.send(peerConnection, spliceLocked)
+    transport.expectMsg(ExperimentalSpliceLocked.from(spliceLocked))
+
+    // Incoming messages are converted from their experimental version.
+    transport.send(peerConnection, ExperimentalSpliceInit.from(spliceInit))
+    peer.expectMsg(spliceInit)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceAck.from(spliceAck))
+    peer.expectMsg(spliceAck)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceLocked.from(spliceLocked))
+    peer.expectMsg(spliceLocked)
+    transport.expectMsgType[TransportHandler.ReadAck]
+
+    // Incompatible TLVs are dropped when sending messages to peers using the experimental version.
+    val txAddInput = TxAddInput(randomBytes32(), UInt64(0), OutPoint(TxId(randomBytes32()), 3), 0)
+    assert(txAddInput.tlvStream.get[TxAddInputTlv.SharedInputTxId].nonEmpty)
+    peer.send(peerConnection, txAddInput)
+    assert(transport.expectMsgType[TxAddInput].tlvStream.get[TxAddInputTlv.SharedInputTxId].isEmpty)
+    val txSignatures = TxSignatures(randomBytes32(), Transaction(2, Nil, Nil, 0), Nil, Some(randomBytes64()))
+    assert(txSignatures.tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].nonEmpty)
+    peer.send(peerConnection, txSignatures)
+    assert(transport.expectMsgType[TxSignatures].tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].isEmpty)
+    val commitSig = CommitSig(randomBytes32(), randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2, TxId(randomBytes32())), CommitSigTlv.ExperimentalBatchTlv(2)))
+    peer.send(peerConnection, commitSig)
+    assert(transport.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.BatchTlv].isEmpty)
   }
 
 }

@@ -264,8 +264,7 @@ object Features {
     val mandatory = 28
   }
 
-  // TODO: this should also extend NodeFeature once the spec is finalized
-  case object Quiescence extends Feature with InitFeature {
+  case object Quiescence extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
   }
@@ -300,6 +299,11 @@ object Features {
     val mandatory = 54
   }
 
+  case object Splicing extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_splice"
+    val mandatory = 62
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -315,12 +319,6 @@ object Features {
   case object AsyncPaymentPrototype extends Feature with InitFeature with Bolt11Feature {
     val rfcName = "async_payment_prototype"
     val mandatory = 152
-  }
-
-  // TODO: @pm47 custom splices implementation for phoenix, to be replaced once splices is spec-ed (currently reserved here: https://github.com/lightning/bolts/issues/605)
-  case object SplicePrototype extends Feature with InitFeature {
-    val rfcName = "splice_prototype"
-    val mandatory = 154
   }
 
   val knownFeatures: Set[Feature] = Set(
@@ -346,9 +344,9 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    Splicing,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
-    SplicePrototype,
   )
 
   // Features may depend on other features, as specified in Bolt 9.
