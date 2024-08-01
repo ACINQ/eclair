@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.reputation.Reputation.ReputationConfig
 import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams}
@@ -136,7 +137,8 @@ object Relayer extends Logging {
                          privateChannelFees: RelayFees,
                          minTrampolineFees: RelayFees,
                          enforcementDelay: FiniteDuration,
-                         asyncPaymentsParams: AsyncPaymentsParams) {
+                         asyncPaymentsParams: AsyncPaymentsParams,
+                         peerReputationConfig: ReputationConfig) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees

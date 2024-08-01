@@ -88,8 +88,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
-                      localReputationConfig: ReputationConfig) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -563,7 +562,12 @@ object NodeParams extends Logging {
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
-        asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks)
+        asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks),
+        peerReputationConfig = ReputationConfig(
+          FiniteDuration(config.getDuration("relay.peer-reputation.half-life").getSeconds, TimeUnit.SECONDS),
+          FiniteDuration(config.getDuration("relay.peer-reputation.max-htlc-relay-duration").getSeconds, TimeUnit.SECONDS),
+          config.getDouble("relay.peer-reputation.pending-multiplier"),
+        ),
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -613,12 +617,7 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      ),
-      localReputationConfig = ReputationConfig(
-        FiniteDuration(config.getDuration("local-reputation.half-life").getSeconds, TimeUnit.SECONDS),
-        FiniteDuration(config.getDuration("local-reputation.good-htlc-duration").getSeconds, TimeUnit.SECONDS),
-        config.getDouble("local-reputation.pending-multiplier"),
-      ),
+      )
     )
   }
 }

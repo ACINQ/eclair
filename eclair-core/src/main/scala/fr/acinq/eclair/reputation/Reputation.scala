@@ -76,7 +76,7 @@ object Reputation {
     }
   }
 
-  case class ReputationConfig(halfLife: FiniteDuration, goodDuration: FiniteDuration, pendingMultiplier: Double)
+  case class ReputationConfig(halfLife: FiniteDuration, maxHtlcRelayDuration: FiniteDuration, pendingMultiplier: Double)
 
-  def init(config: ReputationConfig): Reputation = Reputation(0.0, 0.0, TimestampMilli.min, Map.empty, config.halfLife, config.goodDuration, config.pendingMultiplier)
+  def init(config: ReputationConfig): Reputation = Reputation(0.0, 0.0, TimestampMilli.min, Map.empty, config.halfLife, config.maxHtlcRelayDuration, config.pendingMultiplier)
 }

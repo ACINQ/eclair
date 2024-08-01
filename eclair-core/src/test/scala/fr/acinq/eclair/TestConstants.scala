@@ -166,7 +166,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = ReputationConfig(1 day, 10 seconds, 100),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -233,7 +235,6 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      localReputationConfig = ReputationConfig(1 day, 10 seconds, 100),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -337,7 +338,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = ReputationConfig(2 day, 20 seconds, 200),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -404,7 +407,6 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      localReputationConfig = ReputationConfig(2 days, 20 seconds, 200),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

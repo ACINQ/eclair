@@ -97,7 +97,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
     val offerManager = system.spawn(OfferManager(nodeParams, router, 1 minute), "offer-manager")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
-    val reputationRecorder = system.spawn(ReputationRecorder(nodeParams.localReputationConfig, Map.empty), "reputation-recorder")
+    val reputationRecorder = system.spawn(ReputationRecorder(nodeParams.relayParams.peerReputationConfig, Map.empty), "reputation-recorder")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler, triggerer.ref.toTyped, reputationRecorder), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcherTyped, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
