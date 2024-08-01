@@ -26,7 +26,7 @@ Eclair will not allow remote peers to open new obsolete channels that do not sup
 
 ### API changes
 
-- `channelstats` now takes optional parameters `--count` and `--skip` to define to control pagination. By default, it will return first 10 entries. (#2890)
+- `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
 
 ### Miscellaneous improvements and bug fixes
 
