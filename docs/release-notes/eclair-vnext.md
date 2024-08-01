@@ -24,6 +24,12 @@ Existing `static_remote_key` channels will continue to work. You can override th
 
 Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
 
+### New MPP splitting strategy
+
+Eclair can send large payments using multiple low-capacity routes by sending as much as it can through each route (if `randomize-route-selection = false`) or some random fraction (if `randomize-route-selection = true`).
+These splitting strategies are now specified using `mpp.splitting-strategy = "full-capacity"` or `mpp.splitting-strategy = "randomize"`.
+In addition, a new strategy is available: `mpp.splitting-strategy = "max-expected-amount"` will send through each route the amount that maximizes the expected delivered amount (amount sent times success probability).
+
 ### API changes
 
 - `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)

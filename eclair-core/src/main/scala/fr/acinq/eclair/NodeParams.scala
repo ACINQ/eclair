@@ -429,7 +429,12 @@ object NodeParams extends Logging {
       },
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
-        config.getInt("mpp.max-parts")),
+        config.getInt("mpp.max-parts"),
+        config.getString("mpp.splitting-strategy") match {
+          case "full-capacity" => MultiPartParams.FullCapacity
+          case "randomize" => MultiPartParams.Randomize
+          case "max-expected-amount" => MultiPartParams.MaxExpectedAmount
+        }),
       experimentName = name,
       experimentPercentage = config.getInt("percentage"))
 
