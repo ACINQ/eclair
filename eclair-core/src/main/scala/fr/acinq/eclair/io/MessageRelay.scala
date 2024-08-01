@@ -201,6 +201,7 @@ private class MessageRelay(nodeParams: NodeParams,
         r.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerUnavailable) =>
+        Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.ConnectionFailure).increment()
         log.info("could not wake up {}: onion message cannot be relayed", nextNodeId)
         replyTo_opt.foreach(_ ! Disconnected(messageId))
         Behaviors.stopped
