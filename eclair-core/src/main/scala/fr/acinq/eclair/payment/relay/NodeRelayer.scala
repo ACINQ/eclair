@@ -61,7 +61,7 @@ object NodeRelayer {
    */
   def apply(nodeParams: NodeParams,
             register: akka.actor.ActorRef,
-            reputationRecorder: typed.ActorRef[ReputationRecorder.TrampolineCommand],
+            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.TrampolineRelayCommand]],
             outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory,
             triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command],
             router: akka.actor.ActorRef,
@@ -80,15 +80,15 @@ object NodeRelayer {
               case None =>
                 val relayId = UUID.randomUUID()
                 context.log.debug(s"spawning a new handler with relayId=$relayId")
-                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, reputationRecorder, relayId, nodeRelayPacket, outgoingPaymentFactory, triggerer, router), relayId.toString)
+                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, reputationRecorder_opt, relayId, nodeRelayPacket, outgoingPaymentFactory, triggerer, router), relayId.toString)
                 context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
                 handler ! NodeRelay.Relay(nodeRelayPacket, originNode)
-                apply(nodeParams, register, reputationRecorder, outgoingPaymentFactory, triggerer, router, children + (childKey -> handler))
+                apply(nodeParams, register, reputationRecorder_opt, outgoingPaymentFactory, triggerer, router, children + (childKey -> handler))
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>
             // we do a back-and-forth between parent and child before stopping the child to prevent a race condition
             childHandler ! NodeRelay.Stop
-            apply(nodeParams, register, reputationRecorder, outgoingPaymentFactory, triggerer, router, children - PaymentKey(paymentHash, paymentSecret))
+            apply(nodeParams, register, reputationRecorder_opt, outgoingPaymentFactory, triggerer, router, children - PaymentKey(paymentHash, paymentSecret))
           case GetPendingPayments(replyTo) =>
             replyTo ! children
             Behaviors.same

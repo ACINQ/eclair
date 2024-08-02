@@ -19,55 +19,70 @@ package fr.acinq.eclair.reputation
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.reputation.Reputation.ReputationConfig
 import fr.acinq.eclair.MilliSatoshi
 
 import java.util.UUID
 
+/**
+ * Created by thomash on 21/07/2023.
+ */
+
 object ReputationRecorder {
+  // @formatter:off
   sealed trait Command
 
-  sealed trait StandardCommand extends Command
-  case class GetConfidence(replyTo: ActorRef[Confidence], originNode: PublicKey, endorsement: Int, relayId: UUID, fee: MilliSatoshi) extends StandardCommand
-  case class CancelRelay(originNode: PublicKey, endorsement: Int, relayId: UUID) extends StandardCommand
-  case class RecordResult(originNode: PublicKey, endorsement: Int, relayId: UUID, isSuccess: Boolean) extends StandardCommand
+  sealed trait ChannelRelayCommand extends Command
+  case class GetConfidence(replyTo: ActorRef[Confidence], originNode: PublicKey, endorsement: Int, relayId: UUID, fee: MilliSatoshi) extends ChannelRelayCommand
+  case class CancelRelay(originNode: PublicKey, endorsement: Int, relayId: UUID) extends ChannelRelayCommand
+  case class RecordResult(originNode: PublicKey, endorsement: Int, relayId: UUID, isSuccess: Boolean) extends ChannelRelayCommand
 
-  sealed trait TrampolineCommand extends Command
-  case class GetTrampolineConfidence(replyTo: ActorRef[Confidence], fees: Map[(PublicKey, Int), MilliSatoshi], relayId: UUID) extends TrampolineCommand
-  case class RecordTrampolineFailure(keys: Set[(PublicKey, Int)], relayId: UUID) extends TrampolineCommand
-  case class RecordTrampolineSuccess(fees: Map[(PublicKey, Int), MilliSatoshi], relayId: UUID) extends TrampolineCommand
+  sealed trait TrampolineRelayCommand extends Command
+  case class GetTrampolineConfidence(replyTo: ActorRef[Confidence], fees: Map[PeerEndorsement, MilliSatoshi], relayId: UUID) extends TrampolineRelayCommand
+  case class RecordTrampolineFailure(upstream: Set[PeerEndorsement], relayId: UUID) extends TrampolineRelayCommand
+  case class RecordTrampolineSuccess(fees: Map[PeerEndorsement, MilliSatoshi], relayId: UUID) extends TrampolineRelayCommand
+  // @formatter:on
 
+  /**
+   * @param nodeId      nodeId of the upstream peer.
+   * @param endorsement endorsement value set by the upstream peer in the HTLC we received.
+   */
+  case class PeerEndorsement(nodeId: PublicKey, endorsement: Int)
+
+  /** Confidence that the outgoing HTLC will succeed. */
   case class Confidence(value: Double)
 
-  def apply(reputationConfig: ReputationConfig, reputations: Map[(PublicKey, Int), Reputation]): Behavior[Command] = {
+  def apply(reputationConfig: Reputation.Config, reputations: Map[PeerEndorsement, Reputation]): Behavior[Command] = {
     Behaviors.receiveMessage {
       case GetConfidence(replyTo, originNode, endorsement, relayId, fee) =>
-        val (updatedReputation, confidence) = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).attempt(relayId, fee)
+        val (updatedReputation, confidence) = reputations.getOrElse(PeerEndorsement(originNode, endorsement), Reputation.init(reputationConfig)).attempt(relayId, fee)
         replyTo ! Confidence(confidence)
-        ReputationRecorder(reputationConfig, reputations.updated((originNode, endorsement), updatedReputation))
+        ReputationRecorder(reputationConfig, reputations.updated(PeerEndorsement(originNode, endorsement), updatedReputation))
       case CancelRelay(originNode, endorsement, relayId) =>
-        val updatedReputation = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).cancel(relayId)
-        ReputationRecorder(reputationConfig, reputations.updated((originNode, endorsement), updatedReputation))
+        val updatedReputation = reputations.getOrElse(PeerEndorsement(originNode, endorsement), Reputation.init(reputationConfig)).cancel(relayId)
+        ReputationRecorder(reputationConfig, reputations.updated(PeerEndorsement(originNode, endorsement), updatedReputation))
       case RecordResult(originNode, endorsement, relayId, isSuccess) =>
-        val updatedReputation = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).record(relayId, isSuccess)
-        ReputationRecorder(reputationConfig, reputations.updated((originNode, endorsement), updatedReputation))
+        val updatedReputation = reputations.getOrElse(PeerEndorsement(originNode, endorsement), Reputation.init(reputationConfig)).record(relayId, isSuccess)
+        ReputationRecorder(reputationConfig, reputations.updated(PeerEndorsement(originNode, endorsement), updatedReputation))
       case GetTrampolineConfidence(replyTo, fees, relayId) =>
-        val (confidence, updatedReputations) = fees.foldLeft((1.0, reputations)){case ((c, r), ((originNode, endorsement), fee)) =>
-          val (updatedReputation, confidence) = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).attempt(relayId, fee)
-          (c.min(confidence), r.updated((originNode, endorsement), updatedReputation))
+        val (confidence, updatedReputations) = fees.foldLeft((1.0, reputations)) {
+          case ((c, r), (peerEndorsement, fee)) =>
+            val (updatedReputation, confidence) = reputations.getOrElse(peerEndorsement, Reputation.init(reputationConfig)).attempt(relayId, fee)
+            (c.min(confidence), r.updated(peerEndorsement, updatedReputation))
         }
         replyTo ! Confidence(confidence)
         ReputationRecorder(reputationConfig, updatedReputations)
       case RecordTrampolineFailure(keys, relayId) =>
-        val updatedReputations = keys.foldLeft(reputations) { case (r, (originNode, endorsement)) =>
-          val updatedReputation = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).record(relayId, isSuccess = false)
-          r.updated((originNode, endorsement), updatedReputation)
+        val updatedReputations = keys.foldLeft(reputations) {
+          case (r, peerEndorsement) =>
+            val updatedReputation = reputations.getOrElse(peerEndorsement, Reputation.init(reputationConfig)).record(relayId, isSuccess = false)
+            r.updated(peerEndorsement, updatedReputation)
         }
         ReputationRecorder(reputationConfig, updatedReputations)
       case RecordTrampolineSuccess(fees, relayId) =>
-        val updatedReputations = fees.foldLeft(reputations) { case (r, ((originNode, endorsement), fee)) =>
-          val updatedReputation = reputations.getOrElse((originNode, endorsement), Reputation.init(reputationConfig)).record(relayId, isSuccess = true, Some(fee))
-          r.updated((originNode, endorsement), updatedReputation)
+        val updatedReputations = fees.foldLeft(reputations) {
+          case (r, (peerEndorsement, fee)) =>
+            val updatedReputation = reputations.getOrElse(peerEndorsement, Reputation.init(reputationConfig)).record(relayId, isSuccess = true, Some(fee))
+            r.updated(peerEndorsement, updatedReputation)
         }
         ReputationRecorder(reputationConfig, updatedReputations)
     }

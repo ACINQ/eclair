@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.reputation.Reputation.ReputationConfig
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
@@ -167,7 +167,7 @@ object TestConstants {
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
-        peerReputationConfig = ReputationConfig(1 day, 10 seconds, 100),
+        peerReputationConfig = Reputation.Config(enabled = false, 1 day, 10 seconds, 100),
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
@@ -339,7 +339,7 @@ object TestConstants {
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
-        peerReputationConfig = ReputationConfig(2 day, 20 seconds, 200),
+        peerReputationConfig = Reputation.Config(enabled = false, 2 day, 20 seconds, 200),
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,

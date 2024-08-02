@@ -55,7 +55,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val nodeParams = TestConstants.Bob.nodeParams
     val register = TestProbe[Any]("register")
     val reputationRecorder = TestProbe[ReputationRecorder.Command]("reputation-recorder")
-    val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic, reputationRecorder.ref))
+    val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic, Some(reputationRecorder.ref)))
     try {
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register, reputationRecorder)))
     } finally {

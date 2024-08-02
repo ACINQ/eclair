@@ -37,7 +37,6 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.reputation.ReputationRecorder
-import fr.acinq.eclair.reputation.ReputationRecorder.{GetTrampolineConfidence, RecordTrampolineFailure, RecordTrampolineSuccess}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -88,7 +87,7 @@ object NodeRelay {
   def apply(nodeParams: NodeParams,
             parent: typed.ActorRef[NodeRelayer.Command],
             register: ActorRef,
-            reputationRecorder: typed.ActorRef[ReputationRecorder.TrampolineCommand],
+            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.TrampolineRelayCommand]],
             relayId: UUID,
             nodeRelayPacket: NodeRelayPacket,
             outgoingPaymentFactory: OutgoingPaymentFactory,
@@ -112,7 +111,7 @@ object NodeRelay {
           case IncomingPaymentPacket.RelayToTrampolinePacket(_, _, _, nextPacket) => Some(nextPacket)
           case _: IncomingPaymentPacket.RelayToBlindedPathsPacket => None
         }
-        new NodeRelay(nodeParams, parent, register, reputationRecorder, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
+        new NodeRelay(nodeParams, parent, register, reputationRecorder_opt, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
           .receiving(Queue.empty, nodeRelayPacket.innerPayload, nextPacket_opt, incomingPaymentHandler)
       }
     }
@@ -187,7 +186,7 @@ object NodeRelay {
 class NodeRelay private(nodeParams: NodeParams,
                         parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
                         register: ActorRef,
-                        reputationRecorder: typed.ActorRef[ReputationRecorder.TrampolineCommand],
+                        reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.TrampolineRelayCommand]],
                         relayId: UUID,
                         paymentHash: ByteVector32,
                         paymentSecret: ByteVector32,
@@ -265,10 +264,13 @@ class NodeRelay private(nodeParams: NodeParams,
   private def doSend(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     val totalFee = upstream.amountIn - nextPayload.amountToForward
-    val fees = upstream.received.foldLeft(Map.empty[(PublicKey, Int), MilliSatoshi])((fees, r) =>
-      fees.updatedWith((r.receivedFrom, r.add.endorsement))(fee =>
+    val fees = upstream.received.foldLeft(Map.empty[ReputationRecorder.PeerEndorsement, MilliSatoshi])((fees, r) =>
+      fees.updatedWith(ReputationRecorder.PeerEndorsement(r.receivedFrom, r.add.endorsement))(fee =>
         Some(fee.getOrElse(MilliSatoshi(0)) + r.add.amountMsat * totalFee.toLong / upstream.amountIn.toLong)))
-    reputationRecorder ! GetTrampolineConfidence(context.messageAdapter[ReputationRecorder.Confidence](confidence => WrappedConfidence(confidence.value)), fees, relayId)
+    reputationRecorder_opt match {
+      case Some(reputationRecorder) => reputationRecorder ! ReputationRecorder.GetTrampolineConfidence(context.messageAdapter[ReputationRecorder.Confidence](confidence => WrappedConfidence(confidence.value)), fees, relayId)
+      case None => context.self ! WrappedConfidence((upstream.received.map(_.add.endorsement).min + 0.5) / 8)
+    }
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         case WrappedConfidence(confidence) =>
@@ -302,10 +304,10 @@ class NodeRelay private(nodeParams: NodeParams,
           context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
           val totalFee = upstream.amountIn - paymentSent.amountWithFees
-          val fees = upstream.received.foldLeft(Map.empty[(PublicKey, Int), MilliSatoshi])((fees, r) =>
-            fees.updatedWith((r.receivedFrom, r.add.endorsement))(fee =>
+          val fees = upstream.received.foldLeft(Map.empty[ReputationRecorder.PeerEndorsement, MilliSatoshi])((fees, r) =>
+            fees.updatedWith(ReputationRecorder.PeerEndorsement(r.receivedFrom, r.add.endorsement))(fee =>
               Some(fee.getOrElse(MilliSatoshi(0)) + r.add.amountMsat * totalFee.toLong / upstream.amountIn.toLong)))
-          reputationRecorder ! RecordTrampolineSuccess(fees, relayId)
+          reputationRecorder_opt.foreach(_ ! ReputationRecorder.RecordTrampolineSuccess(fees, relayId))
           recordRelayDuration(startedAt, isSuccess = true)
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
@@ -313,7 +315,7 @@ class NodeRelay private(nodeParams: NodeParams,
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
-          reputationRecorder ! RecordTrampolineFailure(upstream.received.map(r => (r.receivedFrom, r.add.endorsement)).toSet, relayId)
+          reputationRecorder_opt.foreach(_ ! ReputationRecorder.RecordTrampolineFailure(upstream.received.map(r => ReputationRecorder.PeerEndorsement(r.receivedFrom, r.add.endorsement)).toSet, relayId))
           recordRelayDuration(startedAt, isSuccess = fulfilledUpstream)
           stopping()
       }

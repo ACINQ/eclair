@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.reputation
 
+import fr.acinq.eclair.reputation.Reputation._
 import fr.acinq.eclair.{MilliSatoshiLong, TimestampMilli}
-import fr.acinq.eclair.reputation.Reputation.ReputationConfig
-import org.scalatest.funsuite.AnyFunSuite
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
+import org.scalatest.funsuite.AnyFunSuite
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -28,7 +28,7 @@ class ReputationSpec extends AnyFunSuite {
   val (uuid1, uuid2, uuid3, uuid4, uuid5, uuid6, uuid7) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
 
   test("basic") {
-    val r0 = Reputation.init(ReputationConfig(1 day, 1 second, 2))
+    val r0 = Reputation.init(Config(enabled = true, 1 day, 1 second, 2))
     val (r1, c1) = r0.attempt(uuid1, 10000 msat)
     assert(c1 == 0)
     val r2 = r1.record(uuid1, isSuccess = true)
@@ -51,7 +51,7 @@ class ReputationSpec extends AnyFunSuite {
   }
 
   test("long HTLC") {
-    val r0 = Reputation.init(ReputationConfig(1000 day, 1 second, 10))
+    val r0 = Reputation.init(Config(enabled = true, 1000 day, 1 second, 10))
     val (r1, c1) = r0.attempt(uuid1, 100000 msat, TimestampMilli(0))
     assert(c1 == 0)
     val r2 = r1.record(uuid1, isSuccess = true, now = TimestampMilli(0))
@@ -63,7 +63,7 @@ class ReputationSpec extends AnyFunSuite {
   }
 
   test("exponential decay") {
-    val r0 = Reputation.init(ReputationConfig(100 seconds, 1 second, 1))
+    val r0 = Reputation.init(Config(enabled = true, 100 seconds, 1 second, 1))
     val (r1, _) = r0.attempt(uuid1, 1000 msat, TimestampMilli(0))
     val r2 = r1.record(uuid1, isSuccess = true, now = TimestampMilli(0))
     val (r3, c3) = r2.attempt(uuid2, 1000 msat, TimestampMilli(0))

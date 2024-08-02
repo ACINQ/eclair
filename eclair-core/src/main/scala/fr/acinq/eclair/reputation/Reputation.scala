@@ -16,67 +16,80 @@
 
 package fr.acinq.eclair.reputation
 
-import fr.acinq.eclair.reputation.Reputation.Pending
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
 import java.util.UUID
 import scala.concurrent.duration.FiniteDuration
 
-/** Local reputation per incoming node and endorsement level
- *
- * @param pastWeight        How much fees we would have collected in the past if all HTLCs had succeeded (exponential moving average).
- * @param pastScore         How much fees we have collected in the past (exponential moving average).
- * @param lastSettlementAt  Timestamp of the last recorded HTLC settlement.
- * @param pending           Set of pending HTLCs.
- * @param halfLife          Half life for the exponential moving average.
- * @param goodDuration      Duration after which HTLCs are penalized for staying pending too long.
- * @param pendingMultiplier How much to penalize pending HTLCs.
+/**
+ * Created by thomash on 21/07/2023.
  */
-case class Reputation(pastWeight: Double, pastScore: Double, lastSettlementAt: TimestampMilli, pending: Map[UUID, Pending], halfLife: FiniteDuration, goodDuration: FiniteDuration, pendingMultiplier: Double) {
+
+/**
+ * Local reputation for a given incoming node, that should be track for each incoming endorsement level.
+ *
+ * @param pastWeight        How much fees we would have collected in the past if all payments had succeeded (exponential moving average).
+ * @param pastScore         How much fees we have collected in the past (exponential moving average).
+ * @param lastSettlementAt  Timestamp of the last recorded payment settlement.
+ * @param pending           Set of pending payments (payments may contain multiple HTLCs when using trampoline).
+ * @param halfLife          Half life for the exponential moving average.
+ * @param maxRelayDuration  Duration after which payments are penalized for staying pending too long.
+ * @param pendingMultiplier How much to penalize pending payments.
+ */
+case class Reputation(pastWeight: Double, pastScore: Double, lastSettlementAt: TimestampMilli, pending: Map[UUID, Reputation.PendingPayment], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
   private def decay(now: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
 
-  private def pendingWeight(now: TimestampMilli): Double = pending.values.map(_.weight(now, goodDuration, pendingMultiplier)).sum
+  private def pendingWeight(now: TimestampMilli): Double = pending.values.map(_.weight(now, maxRelayDuration, pendingMultiplier)).sum
 
-  /** Register a HTLC to relay and estimate the confidence that it will succeed.
+  /**
+   * Register a payment to relay and estimate the confidence that it will succeed.
+   *
    * @return (updated reputation, confidence)
    */
   def attempt(relayId: UUID, fee: MilliSatoshi, now: TimestampMilli = TimestampMilli.now()): (Reputation, Double) = {
     val d = decay(now)
-    val newReputation = copy(pending = pending + (relayId -> Pending(fee, now)))
+    val newReputation = copy(pending = pending + (relayId -> Reputation.PendingPayment(fee, now)))
     val confidence = d * pastScore / (d * pastWeight + newReputation.pendingWeight(now))
     (newReputation, confidence)
   }
 
-  /** Mark a previously registered HTLC as failed without trying to relay it (usually because its confidence was too low).
+  /**
+   * Mark a previously registered payment as failed without trying to relay it (usually because its confidence was too low).
+   *
    * @return updated reputation
    */
   def cancel(relayId: UUID): Reputation = copy(pending = pending - relayId)
 
-  /** When a HTLC is settled, we record whether it succeeded and how long it took.
+  /**
+   * When a payment is settled, we record whether it succeeded and how long it took.
    *
    * @param feeOverride When relaying trampoline payments, the actual fee is only known when the payment succeeds. This
    *                    is used instead of the fee upper bound that was known when first attempting the relay.
    * @return updated reputation
    */
   def record(relayId: UUID, isSuccess: Boolean, feeOverride: Option[MilliSatoshi] = None, now: TimestampMilli = TimestampMilli.now()): Reputation = {
-    val d = decay(now)
-    var p = pending.getOrElse(relayId, Pending(MilliSatoshi(0), now))
-    feeOverride.foreach(fee => p = p.copy(fee = fee))
-    val newWeight = d * pastWeight + p.weight(now, goodDuration, 1.0)
-    val newScore = d * pastScore + (if (isSuccess) p.fee.toLong.toDouble else 0)
-    Reputation(newWeight, newScore, now, pending - relayId, halfLife, goodDuration, pendingMultiplier)
+    pending.get(relayId) match {
+      case Some(p) =>
+        val d = decay(now)
+        val p1 = p.copy(fee = feeOverride.getOrElse(p.fee))
+        val newWeight = d * pastWeight + p1.weight(now, maxRelayDuration, 1.0)
+        val newScore = d * pastScore + (if (isSuccess) p1.fee.toLong.toDouble else 0)
+        Reputation(newWeight, newScore, now, pending - relayId, halfLife, maxRelayDuration, pendingMultiplier)
+      case None => this
+    }
   }
 }
 
 object Reputation {
-  case class Pending(fee: MilliSatoshi, startedAt: TimestampMilli) {
+  /** We're relaying that payment and are waiting for it to settle. */
+  case class PendingPayment(fee: MilliSatoshi, startedAt: TimestampMilli) {
     def weight(now: TimestampMilli, minDuration: FiniteDuration, multiplier: Double): Double = {
       val duration = now - startedAt
       fee.toLong.toDouble * (duration / minDuration).max(multiplier)
     }
   }
 
-  case class ReputationConfig(halfLife: FiniteDuration, maxHtlcRelayDuration: FiniteDuration, pendingMultiplier: Double)
+  case class Config(enabled: Boolean, halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double)
 
-  def init(config: ReputationConfig): Reputation = Reputation(0.0, 0.0, TimestampMilli.min, Map.empty, config.halfLife, config.maxHtlcRelayDuration, config.pendingMultiplier)
+  def init(config: Config): Reputation = Reputation(0.0, 0.0, TimestampMilli.min, Map.empty, config.halfLife, config.maxRelayDuration, config.pendingMultiplier)
 }
