@@ -215,6 +215,7 @@ object TestConstants {
           experimentPercentage = 100))),
         messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
+        numberOfWorkers = 0,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -385,6 +386,7 @@ object TestConstants {
           experimentPercentage = 100))),
         messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
+        numberOfWorkers = 0
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
