@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
@@ -60,6 +60,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     stopBitcoind()
   }
 
+  def makeFundingTx(bitcoinCoreClient: BitcoinCoreClient, sender: TestProbe, pubkeyScript: ByteVector, amount: Btc, feeratePerKw: FeeratePerKw): Future[SignFundingTxResponse] = {
+    bitcoinCoreClient.makeFundingTx(pubkeyScript, amount, feeratePerKw).pipeTo(sender.ref)
+    val res = sender.expectMsgType[MakeFundingTxResponse]
+    bitcoinCoreClient.signFundingTx(res.fundingTx, pubkeyScript, res.fundingTxOutputIndex, res.fee, feeratePerKw).pipeTo(sender.ref)
+  }
+
   test("encrypt wallet") {
     assume(!useEclairSigner)
 
@@ -71,7 +77,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     restartBitcoind(sender)
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
-    bitcoinClient.makeFundingTx(pubkeyScript, 50 millibtc, FeeratePerKw(10000 sat)).pipeTo(sender.ref)
+    makeFundingTx(bitcoinClient, sender, pubkeyScript, Btc(0.1), FeeratePerKw(250 sat))
 
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
     assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
@@ -382,16 +388,18 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     val fundingTxs = for (_ <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
-      bitcoinClient.makeFundingTx(pubkeyScript, Satoshi(500), FeeratePerKw(250 sat)).pipeTo(sender.ref)
-      val fundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
+      makeFundingTx(bitcoinClient, sender, pubkeyScript, Satoshi(500), FeeratePerKw(250 sat))
+
+      val fundingTx = sender.expectMsgType[SignFundingTxResponse].fundingTx
       bitcoinClient.publishTransaction(fundingTx.copy(txIn = Nil)).pipeTo(sender.ref) // try publishing an invalid version of the tx
       sender.expectMsgType[Failure]
       bitcoinClient.rollback(fundingTx).pipeTo(sender.ref) // rollback the locked outputs
       sender.expectMsg(true)
 
       // now fund a tx with correct feerate
-      bitcoinClient.makeFundingTx(pubkeyScript, 50 millibtc, FeeratePerKw(250 sat)).pipeTo(sender.ref)
-      sender.expectMsgType[MakeFundingTxResponse].fundingTx
+      makeFundingTx(bitcoinClient, sender, pubkeyScript, 50 millibtc, FeeratePerKw(250 sat))
+
+      sender.expectMsgType[SignFundingTxResponse].fundingTx
     }
 
     bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
@@ -426,8 +434,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     // 200 sat/kw is below the min-relay-fee
-    bitcoinClient.makeFundingTx(pubkeyScript, 5 millibtc, FeeratePerKw(200 sat)).pipeTo(sender.ref)
-    val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
+    makeFundingTx(bitcoinClient, sender, pubkeyScript, 5 millibtc, FeeratePerKw(200 sat))
+    val SignFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[SignFundingTxResponse]
 
     bitcoinClient.commit(fundingTx).pipeTo(sender.ref)
     sender.expectMsg(true)
@@ -501,8 +509,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = makeBitcoinCoreClient()
 
     // create a huge tx so we make sure it has > 2 inputs
-    bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-    val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+    makeFundingTx(bitcoinClient, sender, pubkeyScript, 250 btc, FeeratePerKw(1000 sat))
+    val SignFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[SignFundingTxResponse]
     assert(fundingTx.txIn.length > 2)
 
     // spend the first 2 inputs
@@ -732,8 +740,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     {
       // test #1: unlock wallet outpoints that are actually locked
       // create a huge tx so we make sure it has > 1 inputs
-      bitcoinClient.makeFundingTx(nonWalletScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
+      makeFundingTx(bitcoinClient, sender, nonWalletScript, 250 btc, FeeratePerKw(1000 sat))
+      val SignFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[SignFundingTxResponse]
       assert(fundingTx.txIn.size > 2)
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
       sender.expectMsg(fundingTx.txIn.map(_.outPoint).toSet)
@@ -742,8 +750,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     {
       // test #2: some outpoints are locked, some are unlocked
-      bitcoinClient.makeFundingTx(nonWalletScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-      val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
+      makeFundingTx(bitcoinClient, sender, nonWalletScript, 250 btc, FeeratePerKw(1000 sat))
+      val SignFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[SignFundingTxResponse]
       assert(fundingTx.txIn.size > 2)
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
       sender.expectMsg(fundingTx.txIn.map(_.outPoint).toSet)

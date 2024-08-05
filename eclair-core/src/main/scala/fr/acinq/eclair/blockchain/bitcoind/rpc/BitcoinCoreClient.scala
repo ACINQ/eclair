@@ -22,11 +22,10 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{Bech32, Block, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
-import fr.acinq.eclair.json.SatoshiSerializer
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -262,8 +261,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq), feeBudget_opt = feeBudget_opt)
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None, addExcessToRecipientPosition_opt: Option[Int] = None, maxExcess_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq, add_excess_to_recipient_position = addExcessToRecipientPosition_opt, max_excess = maxExcess_opt), feeBudget_opt = feeBudget_opt)
   }
 
   private def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
@@ -308,9 +307,30 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     }
   }
 
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw, feeBudget_opt: Option[Satoshi] = None, maxExcess_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
 
-    def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw): Future[MakeFundingTxResponse] = {
+    val partialFundingTx = Transaction(
+      version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(amount, pubkeyScript) :: Nil,
+      lockTime = 0)
+
+    for {
+      // TODO: we should check that mempoolMinFee is not dangerously high
+      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
+      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, add_excess_to_recipient_position = None, max_excess = maxExcess_opt), feeBudget_opt = feeBudget_opt)
+      fundingOutputIndex = Transactions.findPubKeyScriptIndex(tx, pubkeyScript) match {
+        case Left(_) => return Future.failed(new RuntimeException("cannot find expected funding output: bitcoin core may be malicious"))
+        case Right(outputIndex) => outputIndex
+      }
+      makeFundingTxResponse = MakeFundingTxResponse(tx, fundingOutputIndex, fee)
+    } yield makeFundingTxResponse
+  }
+
+  def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
+
+    def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
       import KotlinUtils._
 
       val fundingOutputIndex = Transactions.findPubKeyScriptIndex(tx, pubkeyScript) match {
@@ -331,22 +351,16 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         maxFeerate = requestedFeeRate * 1.5
         _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested feerate $targetFeerate")
         _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$fundingOutputIndex fee=$fees")
-      } yield MakeFundingTxResponse(fundingTx, fundingOutputIndex, fees)
+      } yield SignFundingTxResponse(fundingTx, fundingOutputIndex, fees)
     }
 
-    val partialFundingTx = Transaction(
-      version = 2,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, pubkeyScript) :: Nil,
-      lockTime = 0)
+    val tx1 = tx.copy(txOut = tx.txOut.updated(outputIndex, tx.txOut(outputIndex).copy(publicKeyScript = pubkeyScript)))
 
     for {
       // TODO: we should check that mempoolMinFee is not dangerously high
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
-      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate), feeBudget_opt = feeBudget_opt)
-      lockedUtxos = tx.txIn.map(_.outPoint)
-      signedTx <- unlockIfFails(lockedUtxos)(verifyAndSign(tx, fee, feerate))
+      lockedUtxos = tx1.txIn.map(_.outPoint)
+      signedTx <- unlockIfFails(lockedUtxos)(verifyAndSign(tx1, fee, feerate))
     } yield signedTx
   }
 
@@ -585,7 +599,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     val theirOutput = TxOut(amount, pubkeyScript)
     val tx = Transaction(version = 2, txIn = Nil, txOut = theirOutput :: Nil, lockTime = 0)
     for {
-      fundedTx <- fundTransaction(tx, feeratePerKw, replaceable = true)
+      fundedTx <- fundTransaction(tx, feeratePerKw, replaceable = true, addExcessToRecipientPosition_opt = None, maxExcess_opt = None)
       lockedOutputs = fundedTx.tx.txIn.map(_.outPoint)
       theirOutputPos = fundedTx.tx.txOut.indexOf(theirOutput)
       signedPsbt <- unlockIfFails(lockedOutputs)(signPsbt(new Psbt(fundedTx.tx), fundedTx.tx.txIn.indices, fundedTx.tx.txOut.indices.filterNot(_ == theirOutputPos)))
@@ -704,10 +718,10 @@ object BitcoinCoreClient {
     def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.value.toHex, outPoint.index, weight)
   }
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]], add_excess_to_recipient_position: Option[Int], max_excess: Option[Satoshi])
 
   object FundTransactionOptions {
-    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil, add_excess_to_recipient_position: Option[Int] = None, max_excess: Option[Satoshi] = None): FundTransactionOptions = {
       FundTransactionOptions(
         BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8),
         replaceable,
@@ -721,7 +735,9 @@ object BitcoinCoreClient {
         // potentially be double-spent.
         lockUnspents = true,
         changePosition,
-        if (inputWeights.isEmpty) None else Some(inputWeights)
+        if (inputWeights.isEmpty) None else Some(inputWeights),
+        add_excess_to_recipient_position,
+        max_excess
       )
     }
   }

@@ -23,7 +23,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -36,6 +36,7 @@ import fr.acinq.eclair.{BlockHeight, RealShortChannelId, TestConstants, TestKitB
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -174,8 +175,10 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchPublished(probe.ref, publishedTx.txid)
       probe.expectMsg(WatchPublishedTriggered(publishedTx))
 
-      bitcoinClient.makeFundingTx(Script.write(Script.pay2wpkh(randomKey().publicKey)), 150_000 sat, FeeratePerKw(2500 sat)).pipeTo(probe.ref)
-      val unpublishedTx = probe.expectMsgType[MakeFundingTxResponse].fundingTx
+      bitcoinClient.makeFundingTx(ByteVector.empty, 150_000 sat, FeeratePerKw(2500 sat)).pipeTo(probe.ref)
+      val res = probe.expectMsgType[MakeFundingTxResponse]
+      bitcoinClient.signFundingTx(res.fundingTx, Script.write(Script.pay2wpkh(randomKey().publicKey)), res.fundingTxOutputIndex, res.fee, FeeratePerKw(2500 sat)).pipeTo(probe.ref)
+      val unpublishedTx = probe.expectMsgType[SignFundingTxResponse].fundingTx
       watcher ! WatchPublished(probe.ref, unpublishedTx.txid)
       probe.expectNoMessage(100 millis)
 

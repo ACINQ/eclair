@@ -190,7 +190,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val probe = TestProbe[Any]()
     val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None), defaultFeatures, defaultFeatures.add(Wumbo, Optional))
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None, None), defaultFeatures, defaultFeatures.add(Wumbo, Optional))
     assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("you must enable large channels support"))
   }
 
@@ -199,7 +199,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val probe = TestProbe[Any]()
     val fundingAmountBig = Channel.MAX_FUNDING_WITHOUT_WUMBO + 10_000.sat
-    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None), defaultFeatures.add(Wumbo, Optional), defaultFeatures)
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, fundingAmountBig, None, None, None, None, None, None, None), defaultFeatures.add(Wumbo, Optional), defaultFeatures)
     assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == s"fundingAmount=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
 
