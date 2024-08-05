@@ -179,6 +179,7 @@ object PeerReadyNotifier {
     case channel.WAIT_FOR_OPEN_CHANNEL => true
     case channel.WAIT_FOR_ACCEPT_CHANNEL => true
     case channel.WAIT_FOR_FUNDING_INTERNAL => true
+    case channel.WAIT_FOR_FUNDING_SIGNED_INTERNAL => true
     case channel.WAIT_FOR_FUNDING_CREATED => true
     case channel.WAIT_FOR_FUNDING_SIGNED => true
     case channel.WAIT_FOR_FUNDING_CONFIRMED => true

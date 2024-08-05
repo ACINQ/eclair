@@ -22,11 +22,10 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{Bech32, Block, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
-import fr.acinq.eclair.json.SatoshiSerializer
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -310,7 +309,28 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw, feeBudget_opt: Option[Satoshi] = None, maxExcess_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
 
-    def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw): Future[MakeFundingTxResponse] = {
+    val partialFundingTx = Transaction(
+      version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(amount, pubkeyScript) :: Nil,
+      lockTime = 0)
+
+    for {
+      // TODO: we should check that mempoolMinFee is not dangerously high
+      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
+      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, add_excess_to_recipient_position = None, max_excess = maxExcess_opt), feeBudget_opt = feeBudget_opt)
+      fundingOutputIndex = Transactions.findPubKeyScriptIndex(tx, pubkeyScript) match {
+        case Left(_) => return Future.failed(new RuntimeException("cannot find expected funding output: bitcoin core may be malicious"))
+        case Right(outputIndex) => outputIndex
+      }
+      makeFundingTxResponse = MakeFundingTxResponse(tx, fundingOutputIndex, fee)
+    } yield makeFundingTxResponse
+  }
+
+  def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
+
+    def verifyAndSign(tx: Transaction, fees: Satoshi, requestedFeeRate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
       import KotlinUtils._
 
       val fundingOutputIndex = Transactions.findPubKeyScriptIndex(tx, pubkeyScript) match {
@@ -331,22 +351,16 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
         maxFeerate = requestedFeeRate * 1.5
         _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested feerate $targetFeerate")
         _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$fundingOutputIndex fee=$fees")
-      } yield MakeFundingTxResponse(fundingTx, fundingOutputIndex, fees)
+      } yield SignFundingTxResponse(fundingTx, fundingOutputIndex, fees)
     }
 
-    val partialFundingTx = Transaction(
-      version = 2,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, pubkeyScript) :: Nil,
-      lockTime = 0)
+    val tx1 = tx.copy(txOut = tx.txOut.updated(outputIndex, tx.txOut(outputIndex).copy(publicKeyScript = pubkeyScript)))
 
     for {
       // TODO: we should check that mempoolMinFee is not dangerously high
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
-      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, add_excess_to_recipient_position = None, max_excess = maxExcess_opt), feeBudget_opt = feeBudget_opt)
-      lockedUtxos = tx.txIn.map(_.outPoint)
-      signedTx <- unlockIfFails(lockedUtxos)(verifyAndSign(tx, fee, feerate))
+      lockedUtxos = tx1.txIn.map(_.outPoint)
+      signedTx <- unlockIfFails(lockedUtxos)(verifyAndSign(tx1, fee, feerate))
     } yield signedTx
   }
 

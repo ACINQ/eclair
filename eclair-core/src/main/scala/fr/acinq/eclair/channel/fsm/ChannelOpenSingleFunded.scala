@@ -20,7 +20,7 @@ import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.pattern.pipe
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
-import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
+import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
@@ -74,6 +74,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL)(handleExceptions {
     case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
       val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+      val dummyPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingPubKey, fundingPubKey)))
+      wallet.makeFundingTx(dummyPubkeyScript, input.fundingAmount, input.fundingTxFeerate, input.fundingTxFeeBudget_opt, maxExcess_opt = input.maxExcess_opt).pipeTo(self)
+      goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(input)
+  })
+
+  when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
+    case Event(makeFundingTxResponse@MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, _), DATA_WAIT_FOR_FUNDING_INTERNAL(input)) =>
+      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
       val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -81,7 +89,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val open = OpenChannel(
         chainHash = nodeParams.chainHash,
         temporaryChannelId = input.temporaryChannelId,
-        fundingSatoshis = input.fundingAmount,
+        fundingSatoshis = fundingTx.txOut(fundingTxOutputIndex).amount,
         pushMsat = input.pushAmount_opt.getOrElse(0 msat),
         dustLimitSatoshis = input.localParams.dustLimit,
         maxHtlcValueInFlightMsat = UInt64(input.localParams.maxHtlcValueInFlightMsat.toLong),
@@ -101,7 +109,28 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
           ChannelTlv.ChannelTypeTlv(input.channelType)
         ))
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open) sending open
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(input, open, makeFundingTxResponse) sending open
+
+    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      log.error(t, s"wallet returned error: ")
+      d.input.replyTo ! OpenChannelResponse.Rejected(s"wallet error: ${t.getMessage}")
+      handleLocalError(ChannelFundingError(d.channelId), d, None) // we use a generic exception and don't send the internal error to the peer
+
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.input.replyTo ! OpenChannelResponse.Cancelled
+      handleFastClose(c, d.channelId)
+
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.input.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
+      handleRemoteError(e, d)
+
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.input.replyTo ! OpenChannelResponse.Disconnected
+      goto(CLOSED)
+
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      d.input.replyTo ! OpenChannelResponse.TimedOut
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -162,9 +191,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open)) =>
+    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(init, open, fundingTxResponse)) =>
       Helpers.validateParamsSingleFundedFunder(nodeParams, init.channelType, init.localParams.initFeatures, init.remoteInit.features, open, accept) match {
         case Left(t) =>
+          wallet.rollback(fundingTxResponse.fundingTx)
           d.initFunder.replyTo ! OpenChannelResponse.Rejected(t.getMessage)
           handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
@@ -186,34 +216,40 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
           val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath, fundingTxIndex = 0)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, accept.fundingPubkey)))
-          wallet.makeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate, init.fundingTxFeeBudget_opt, maxExcess_opt = None).pipeTo(self)
+          wallet.signFundingTx(fundingTxResponse.fundingTx, fundingPubkeyScript, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.fee, init.fundingTxFeerate).pipeTo(self)
           val params = ChannelParams(init.temporaryChannelId, init.channelConfig, channelFeatures, init.localParams, remoteParams, open.channelFlags)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(params, init.fundingAmount, init.pushAmount_opt.getOrElse(0 msat), init.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, d.initFunder.replyTo)
+          goto(WAIT_FOR_FUNDING_SIGNED_INTERNAL) using DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL(fundingTxResponse.fundingTx, params, open.fundingSatoshis, init.pushAmount_opt.getOrElse(0 msat), init.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, init.replyTo)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      wallet.rollback(d.fundingTxResponse.fundingTx)
       d.initFunder.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.lastSent.temporaryChannelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      wallet.rollback(d.fundingTxResponse.fundingTx)
       d.initFunder.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      wallet.rollback(d.fundingTxResponse.fundingTx)
       d.initFunder.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      wallet.rollback(d.fundingTxResponse.fundingTx)
       d.initFunder.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
 
-  when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_INTERNAL(params, fundingAmount, pushMsat, commitTxFeerate, remoteFundingPubKey, remoteFirstPerCommitmentPoint, replyTo)) =>
+  when(WAIT_FOR_FUNDING_SIGNED_INTERNAL)(handleExceptions {
+    case Event(SignFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL(_, params, fundingAmount, pushMsat, commitTxFeerate, remoteFundingPubKey, remoteFirstPerCommitmentPoint, replyTo)) =>
       val temporaryChannelId = params.channelId
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       Funding.makeFirstCommitTxs(keyManager, params, localFundingAmount = fundingAmount, remoteFundingAmount = 0 sat, localPushAmount = pushMsat, remotePushAmount = 0 msat, commitTxFeerate, fundingTx.txid, fundingTxOutputIndex, remoteFundingPubKey = remoteFundingPubKey, remoteFirstPerCommitmentPoint = remoteFirstPerCommitmentPoint) match {
-        case Left(ex) => handleLocalError(ex, d, None)
+        case Left(ex) =>
+          wallet.rollback(fundingTx)
+          handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
           val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0), TxOwner.Remote, params.commitmentFormat)
@@ -233,24 +269,29 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(params1, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated, replyTo) sending fundingCreated
       }
 
-    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL) =>
+      wallet.rollback(d.lastFundingTx)
       log.error(t, s"wallet returned error: ")
       d.replyTo ! OpenChannelResponse.Rejected(s"wallet error: ${t.getMessage}")
       handleLocalError(ChannelFundingError(d.channelId), d, None) // we use a generic exception and don't send the internal error to the peer
 
-    case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL) =>
+      wallet.rollback(d.lastFundingTx)
       d.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.channelId)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL) =>
+      wallet.rollback(d.lastFundingTx)
       d.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL) =>
+      wallet.rollback(d.lastFundingTx)
       d.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
-    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+    case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL) =>
+      wallet.rollback(d.lastFundingTx)
       d.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)
   })
@@ -317,7 +358,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
-          // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
           d.replyTo ! OpenChannelResponse.Rejected(cause.getMessage)
           handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, fundingTxIndex = 0, localCommitTx.tx), d, Some(msg))
@@ -349,25 +389,21 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.Cancelled
       handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.RemoteError(e.toAscii)
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.Disconnected
       goto(CLOSED)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
-      // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.TimedOut
       goto(CLOSED)

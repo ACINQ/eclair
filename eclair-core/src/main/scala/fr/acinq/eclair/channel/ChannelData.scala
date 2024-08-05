@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
+import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -53,6 +54,7 @@ sealed trait ChannelState
 case object WAIT_FOR_INIT_INTERNAL extends ChannelState
 // Single-funder channel opening:
 case object WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_FUNDING_SIGNED_INTERNAL extends ChannelState
 case object WAIT_FOR_OPEN_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_CHANNEL extends ChannelState
 case object WAIT_FOR_FUNDING_INTERNAL extends ChannelState
@@ -522,17 +524,11 @@ sealed trait ChannelDataWithCommitments extends PersistentChannelData {
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel, fundingTxResponse: MakeFundingTxResponse) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
-                                                fundingAmount: Satoshi,
-                                                pushAmount: MilliSatoshi,
-                                                commitTxFeerate: FeeratePerKw,
-                                                remoteFundingPubKey: PublicKey,
-                                                remoteFirstPerCommitmentPoint: PublicKey,
-                                                replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
-  val channelId: ByteVector32 = params.channelId
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(input: INPUT_INIT_CHANNEL_INITIATOR) extends TransientChannelData {
+  val channelId: ByteVector32 = input.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
                                                fundingAmount: Satoshi,
@@ -566,6 +562,11 @@ final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL
 }
 final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel) extends TransientChannelData {
   val channelId: ByteVector32 = lastSent.temporaryChannelId
+}
+final case class DATA_WAIT_FOR_FUNDING_SIGNED_INTERNAL(lastFundingTx: Transaction, params: ChannelParams, fundingAmount: Satoshi,
+                                                       pushAmount: MilliSatoshi, commitTxFeerate: FeeratePerKw, remoteFundingPubKey: PublicKey,
+                                                       remoteFirstPerCommitmentPoint: PublicKey, replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
+  val channelId: ByteVector32 = params.channelId
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     channelParams: ChannelParams,

@@ -54,10 +54,13 @@ trait OnChainChannelFunder {
    */
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId]
 
-  /** Create a fully signed channel funding transaction with the provided pubkeyScript. */
+  /** Create an unsigned channel funding transaction with the provided dummy pubkeyScript. */
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRate: FeeratePerKw, feeBudget_opt: Option[Satoshi], maxExcess_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
-  /**
+  /** Sign a funding transaction with an updated pubkeyScript. */
+  def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse]
+
+    /**
    * Committing *must* include publishing the transaction on the network.
    *
    * We need to be very careful here, we don't want to consider a commit 'failed' if we are not absolutely sure that the
@@ -154,6 +157,8 @@ object OnChainWallet {
   final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
 
   final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+
+  final case class SignFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
 
   final case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum

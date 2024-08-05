@@ -95,8 +95,10 @@ object AnnouncementsBatchValidationSpec {
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
     val fundingTxFuture = bitcoinClient.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat))
     val res = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(bitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
+    val signedTxFuture = bitcoinClient.signFundingTx(res.fundingTx, fundingPubkeyScript, res.fundingTxOutputIndex, res.fee, FeeratePerKw(10000 sat))
+    val res1 = Await.result(signedTxFuture, 10 seconds)
+    Await.result(bitcoinClient.publishTransaction(res1.fundingTx), 10 seconds)
+    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res1.fundingTx, res1.fundingTxOutputIndex)
   }
 
   def makeChannelAnnouncement(c: SimulatedChannel, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): ChannelAnnouncement = {

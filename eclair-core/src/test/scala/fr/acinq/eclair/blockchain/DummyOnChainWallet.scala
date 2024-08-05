@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
+import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse, SignFundingTxResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.randomKey
@@ -65,7 +65,13 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw, feeBudget_opt: Option[Satoshi], maxExcess_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val tx = DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount)
     funded += (tx.fundingTx.txid -> tx.fundingTx)
-    Future.successful(tx)
+    Future.successful(MakeFundingTxResponse(tx.fundingTx, tx.fundingTxOutputIndex, tx.fee))
+  }
+
+  override def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
+    val tx1 = DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, tx.txOut(outputIndex).amount)
+    funded += (tx1.fundingTx.txid -> tx1.fundingTx)
+    Future.successful(tx1)
   }
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).map(_ => true)
@@ -112,6 +118,8 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = Future.successful(tx.txid)
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw, feeBudget_opt: Option[Satoshi], maxExcess_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise().future // will never be completed
+
+  override def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = Promise().future // will never be completed
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
@@ -217,8 +225,15 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     val tx = Transaction(2, Nil, Seq(TxOut(amount, pubkeyScript)), 0)
     for {
       fundedTx <- fundTransaction(tx, feeRatePerKw, replaceable = true, feeBudget_opt = feeBudget_opt, addExcessToRecipientPosition_opt = Some(0), maxExcess_opt = maxExcess_opt)
-      signedTx <- signTransaction(fundedTx.tx)
-    } yield MakeFundingTxResponse(signedTx.tx, 0, fundedTx.fee)
+    } yield MakeFundingTxResponse(fundedTx.tx, 0, fundedTx.fee)
+  }
+
+  override def signFundingTx(tx: Transaction, pubkeyScript: ByteVector, outputIndex: Int, fee: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[SignFundingTxResponse] = {
+    val txOut1 = tx.txOut.updated(outputIndex, tx.txOut(outputIndex).copy(publicKeyScript = pubkeyScript))
+    val fundingTx1 = tx.copy(txOut = txOut1)
+    for {
+      signedTx <- signTransaction(fundingTx1)
+    } yield SignFundingTxResponse(signedTx.tx, outputIndex, fee)
   }
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
@@ -254,14 +269,14 @@ object DummyOnChainWallet {
   val dummyReceiveAddress: String = "bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux"
   val dummyReceivePubkey: PublicKey = PublicKey(hex"028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12")
 
-  def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): MakeFundingTxResponse = {
+  def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): SignFundingTxResponse = {
     val fundingTx = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(TxId.fromValidHex("0101010101010101010101010101010101010101010101010101010101010101"), 42), signatureScript = Nil, sequence = SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0
     )
-    MakeFundingTxResponse(fundingTx, 0, 420 sat)
+    SignFundingTxResponse(fundingTx, 0, 420 sat)
   }
 
 }
