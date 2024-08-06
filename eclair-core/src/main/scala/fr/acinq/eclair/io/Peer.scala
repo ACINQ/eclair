@@ -276,12 +276,8 @@ class Peer(val nodeParams: NodeParams,
                 proposal.createFulfillCommands(status.preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
                 pending.copy(proposed = pending.proposed :+ proposal)
               case status: OnTheFlyFunding.Status.Funded =>
-                log.info("rejecting extra payment for on-the-fly funding that has already been funded with txId={} (payment_hash={}, amount={})", status.txId, cmd.paymentHash, cmd.amount)
-                // The payer is buggy and is paying the same payment_hash multiple times. We could simply claim that
-                // extra payment for ourselves, but we're nice and instead immediately fail it.
-                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream)
-                proposal.createFailureCommands(None).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
-                pending
+                log.info("received extra payment for on-the-fly funding that has already been funded with txId={} (payment_hash={}, amount={})", status.txId, cmd.paymentHash, cmd.amount)
+                pending.copy(proposed = pending.proposed :+ OnTheFlyFunding.Proposal(htlc, cmd.upstream))
             }
           case None =>
             self ! Peer.OutgoingMessage(htlc, d.peerConnection)
