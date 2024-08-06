@@ -42,7 +42,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(commitInput.outPoint, commitInput.redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
+      Seq(TxIn(commitInput.outPoint, commitInput.redeemScriptOrEmptyScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
