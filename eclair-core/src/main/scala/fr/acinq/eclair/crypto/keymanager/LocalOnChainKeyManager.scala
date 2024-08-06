@@ -202,7 +202,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
     // Update the input with the right script for a p2wpkh input, which is a *p2pkh* script, then sign and finalize.
-    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths)
+    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths, null, null, java.util.Map.of())
     val signed = updated.flatMap(_.sign(priv, pos))
     val finalized = signed.flatMap(s => {
       require(s.getSig.last.toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
