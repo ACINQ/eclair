@@ -1,5 +1,7 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
+import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -109,10 +111,26 @@ private[channel] object ChannelCodecs4 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    val inputInfoCodec: Codec[InputInfo] = (
+    val scriptTreeCodec: Codec[ScriptTree] = lengthDelimited(bytes.xmap(d => ScriptTree.read(new ByteArrayInput(d.toArray)), d => ByteVector.view(d.write())))
+
+    val scriptTreeAndInternalKey: Codec[ScriptTreeAndInternalKey] = (scriptTreeCodec :: xonlyPublicKey).as[ScriptTreeAndInternalKey]
+
+    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey], dummy: Boolean)
+
+    // To support the change from redeemScript to "either redeem script or script tree" while remaining backwards-compatible with the previous version 4 codec, we use
+    // the redeem script itself as a left/write indicator: empty -> right, not empty -> left
+    private val inputInfoExCodec: Codec[InputInfoEx] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript =>
+          ("redeemScriptOrScriptTree" | either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)) :: ("dummy" | provide(false))
+        })
+      ).as[InputInfoEx]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoExCodec.xmap(
+      iex => InputInfo(iex.outPoint, iex.txOut, iex.redeemScriptOrScriptTree),
+      i => InputInfoEx(i.outPoint, i.txOut, i.redeemScriptOrScriptTree.swap.toOption.getOrElse(ByteVector.empty), i.redeemScriptOrScriptTree, false)
+    )
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::
