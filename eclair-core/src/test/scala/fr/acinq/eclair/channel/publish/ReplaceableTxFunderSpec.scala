@@ -146,7 +146,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     localParams.dustLimit.returns(1000 sat)
     commitment.localParams.returns(localParams)
     val localCommit = mock[LocalCommit]
-    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, PlaceHolderSig))
+    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, Left(PlaceHolderSig)))
     commitment.localCommit.returns(localCommit)
 
     // We can handle a small feerate update by lowering the change output.

@@ -121,7 +121,7 @@ private[channel] object ChannelTypes0 {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
-      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
+      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, Left(remoteSig))
       val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
         case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
           val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
