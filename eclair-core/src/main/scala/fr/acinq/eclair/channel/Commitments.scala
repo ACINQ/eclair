@@ -1143,7 +1143,7 @@ case class Commitments(params: ChannelParams,
       val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
       val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-      commitment.commitInput.redeemScript == fundingScript
+      commitment.commitInput.redeemScriptOrScriptTree == Left(fundingScript)
     }
   }
 
