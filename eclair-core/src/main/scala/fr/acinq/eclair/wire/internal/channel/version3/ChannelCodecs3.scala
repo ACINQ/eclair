@@ -113,10 +113,14 @@ private[channel] object ChannelCodecs3 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    val inputInfoCodec: Codec[InputInfo] = (
+    private case class InputInfoLegacy(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector)
+
+    private val inputInfoLegacyCodec: Codec[InputInfoLegacy] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        ("redeemScript" | lengthDelimited(bytes))).as[InputInfoLegacy]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoLegacyCodec.xmap[InputInfo](legacy => InputInfo(legacy.outPoint, legacy.txOut, Left(legacy.redeemScript)), _ => ???).decodeOnly
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

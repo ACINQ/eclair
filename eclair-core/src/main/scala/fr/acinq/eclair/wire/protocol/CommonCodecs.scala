@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
@@ -166,6 +166,8 @@ object CommonCodecs {
     (pub: PublicKey) => bytes(33).encode(pub.value),
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
   )
+
+  val xonlyPublicKey: Codec[XonlyPublicKey] = publicKey.xmap(p => p.xOnly, x => x.publicKey)
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 

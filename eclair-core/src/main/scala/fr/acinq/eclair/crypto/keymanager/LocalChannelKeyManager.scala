@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector6
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import fr.acinq.eclair.{KamonExt, randomLong}
 import grizzled.slf4j.Logging
