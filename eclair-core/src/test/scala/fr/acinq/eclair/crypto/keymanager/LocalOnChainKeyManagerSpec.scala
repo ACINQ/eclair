@@ -54,13 +54,13 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
       txOut = TxOut(Satoshi(1000_000), Script.pay2wpkh(getPublicKey(0))) :: Nil, lockTime = 0)
 
     val Right(psbt) = for {
-      p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
-      p1 <- p0.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1)))
-      p2 <- p1.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2)))
+      p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of())
+      p1 <- p0.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1)), null, null, java.util.Map.of())
+      p2 <- p1.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2)), null, null, java.util.Map.of())
       p3 <- p2.updateNonWitnessInput(utxos(0), 0, null, null, java.util.Map.of())
       p4 <- p3.updateNonWitnessInput(utxos(1), 0, null, null, java.util.Map.of())
       p5 <- p4.updateNonWitnessInput(utxos(2), 0, null, null, java.util.Map.of())
-      p6 <- p5.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
+      p6 <- p5.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, java.util.Map.of())
     } yield p6
 
     {
@@ -78,38 +78,38 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
     }
     {
       // provide a wrong derivation path for the first input
-      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(2))).getRight // wrong bip32 path
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(2)), null, null, java.util.Map.of()).getRight // wrong bip32 path
       val Failure(error) = onChainKeyManager.sign(updated, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("derived public key doesn't match"))
     }
     {
       // provide a wrong derivation path for the first output
-      val updated = psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(1))).getRight // wrong path
+      val updated = psbt.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(1)), null, java.util.Map.of()).getRight // wrong path
       val Failure(error) = onChainKeyManager.sign(updated, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("could not verify output 0"))
     }
     {
       // lie about the amount being spent
-      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0).copy(amount = Satoshi(10)), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0))).getRight
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0).copy(amount = Satoshi(10)), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of()).getRight
       val Failure(error) = onChainKeyManager.sign(updated, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("utxo mismatch"))
     }
     {
       // do not provide non-witness utxo for utxo #2
       val Right(psbt) = for {
-        p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
-        p1 <- p0.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1)))
-        p2 <- p1.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2)))
+        p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of())
+        p1 <- p0.updateWitnessInput(OutPoint(utxos(1), 0), utxos(1).txOut(0), null, Script.pay2pkh(getPublicKey(1)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(1), bip32paths(1)), null, null, java.util.Map.of())
+        p2 <- p1.updateWitnessInput(OutPoint(utxos(2), 0), utxos(2).txOut(0), null, Script.pay2pkh(getPublicKey(2)).map(scala2kmp).asJava, null, java.util.Map.of(getPublicKey(2), bip32paths(2)), null, null, java.util.Map.of())
         p3 <- p2.updateNonWitnessInput(utxos(0), 0, null, null, java.util.Map.of())
         p4 <- p3.updateNonWitnessInput(utxos(1), 0, null, null, java.util.Map.of())
-        p5 <- p4.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)))
+        p5 <- p4.updateWitnessOutput(0, null, null, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, java.util.Map.of())
       } yield p5
       val Failure(error) = onChainKeyManager.sign(psbt, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("non-witness utxo is missing"))
     }
     {
       // use sighash type != SIGHASH_ALL
-      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, SigHash.SIGHASH_SINGLE, java.util.Map.of(getPublicKey(0), bip32paths(0))).getRight
+      val updated = psbt.updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, Script.pay2pkh(getPublicKey(0)).map(scala2kmp).asJava, SigHash.SIGHASH_SINGLE, java.util.Map.of(getPublicKey(0), bip32paths(0)), null, null, java.util.Map.of()).getRight
       val Failure(error) = onChainKeyManager.sign(updated, Seq(0, 1, 2), Seq(0))
       assert(error.getMessage.contains("input sighash must be SIGHASH_ALL"))
     }
