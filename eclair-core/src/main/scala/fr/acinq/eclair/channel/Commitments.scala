@@ -918,24 +918,22 @@ case class Commitments(channelParams: ChannelParams,
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
     val canSendAdds = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.confidence))
-    // Log only for jamming protection.
-    canSendAdds.collectFirst {
-      case Left(f: TooManySmallHtlcs) =>
-        log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}}", f.number, f.below)
-        Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-      case Left(f: ConfidenceTooLow) =>
-        log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
-        Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-    }
-    canSendAdds.flatMap { // TODO: We ignore jamming protection, delete this flatMap to activate jamming protection.
-        case Left(_: TooManySmallHtlcs) | Left(_: ConfidenceTooLow) => None
-        case x => Some(x)
-      }
-      .collectFirst { case Left(f) =>
+    val result = canSendAdds.collectFirst { case Left(f) if !f.isInstanceOf[ChannelJammingException] => // We ignore jamming protection. TODO: enable jamming protection
         Metrics.dropHtlc(f, Tags.Directions.Outgoing)
         Left(f)
+      }.getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
+    // Jamming protection is disabled but we still log which HTLCs would be dropped if it was enabled.
+    if (result.isRight) {
+      canSendAdds.collectFirst {
+        case Left(f: TooManySmallHtlcs) =>
+          log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}}", f.number, f.below)
+          Metrics.dropHtlc(f, Tags.Directions.Outgoing)
+        case Left(f: ConfidenceTooLow) =>
+          log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
+          Metrics.dropHtlc(f, Tags.Directions.Outgoing)
       }
-      .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
+    }
+    result
   }
 
   def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {

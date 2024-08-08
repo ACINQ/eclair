@@ -514,6 +514,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
+          context.system.eventStream.publish(OutgoingHtlcAdded(add, c.origin.upstream, nodeFee(d.channelUpdate.relayFees, add.amountMsat)))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -540,6 +541,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Right((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
           relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          context.system.eventStream.publish(OutgoingHtlcFulfilled(fulfill))
           stay() using d.copy(commitments = commitments1)
         case Left(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -573,12 +575,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
+      context.system.eventStream.publish(OutgoingHtlcFailed(fail))
       d.commitments.receiveFail(fail) match {
         case Right((commitments1, _, _)) => stay() using d.copy(commitments = commitments1)
         case Left(cause) => handleLocalError(cause, d, Some(fail))
       }
 
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_NORMAL) =>
+      context.system.eventStream.publish(OutgoingHtlcFailed(fail))
       d.commitments.receiveFailMalformed(fail) match {
         case Right((commitments1, _, _)) => stay() using d.copy(commitments = commitments1)
         case Left(cause) => handleLocalError(cause, d, Some(fail))
