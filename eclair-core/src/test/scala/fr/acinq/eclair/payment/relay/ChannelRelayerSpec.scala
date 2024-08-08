@@ -92,7 +92,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.message.copy(htlcReceivedAt_opt = None) == cmd.copy(htlcReceivedAt_opt = None))
     assert(fwd.channelId == channelId)
-    reputationRecorder.expectMessageType[ReputationRecorder.CancelRelay]
     fwd
   }
 
@@ -111,7 +110,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
-    assert(getConfidence.originNode == TestConstants.Alice.nodeParams.nodeId)
+    assert(getConfidence.upstream.receivedFrom == TestConstants.Alice.nodeParams.nodeId)
     getConfidence.replyTo ! ReputationRecorder.Confidence(value)
   }
 
@@ -444,8 +443,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
         assert(fail.onionHash == Sphinx.hash(r.add.onionRoutingPacket))
         assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
       }
-
-      reputationRecorder.expectMessageType[ReputationRecorder.CancelRelay]
     }
   }
 
@@ -695,7 +692,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val fwdFail = register.expectMessageType[Register.Forward[channel.Command]]
       assert(fwdFail.message == testCase.cmd)
       assert(fwdFail.channelId == r.add.channelId)
-      assert(!reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
     }
   }
 
@@ -737,7 +733,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
           assert(fail.onionHash == Sphinx.hash(r.add.onionRoutingPacket))
           assert(fail.failureCode == InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code)
         }
-        assert(!reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
       }
     }
   }
@@ -776,8 +771,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
       assert(paymentRelayed.copy(receivedAt = 0 unixms, settledAt = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, receivedAt = 0 unixms, settledAt = 0 unixms))
-
-      assert(reputationRecorder.expectMessageType[ReputationRecorder.RecordResult].isSuccess)
     }
   }
 
