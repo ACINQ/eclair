@@ -60,7 +60,7 @@ object NodeRelayer {
    */
   def apply(nodeParams: NodeParams,
             register: akka.actor.ActorRef,
-            reputationRecorder_opt: Option[ActorRef[ReputationRecorder.TrampolineRelayCommand]],
+            reputationRecorder_opt: Option[ActorRef[ReputationRecorder.GetTrampolineConfidence]],
             outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory,
             router: akka.actor.ActorRef,
             children: Map[PaymentKey, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
