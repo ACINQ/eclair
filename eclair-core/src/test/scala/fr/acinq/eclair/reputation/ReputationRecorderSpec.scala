@@ -20,7 +20,9 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.channel.Upstream
 import fr.acinq.eclair.reputation.ReputationRecorder._
+import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshiLong, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -37,7 +39,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   override def withFixture(test: OneArgTest): Outcome = {
     val config = Reputation.Config(enabled = true, 1 day, 10 seconds, 2)
     val replyTo = TestProbe[Confidence]("confidence")
-    val reputationRecorder = testKit.spawn(ReputationRecorder(config, Map.empty))
+    val reputationRecorder = testKit.spawn(ReputationRecorder(config))
     withFixture(test.toNoArgTest(FixtureParam(config, reputationRecorder.ref, replyTo)))
   }
 
