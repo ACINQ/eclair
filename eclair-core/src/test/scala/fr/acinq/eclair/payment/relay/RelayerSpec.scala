@@ -75,7 +75,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
-    assert(getConfidence.originNode == TestConstants.Alice.nodeParams.nodeId)
+    assert(getConfidence.upstream.receivedFrom == TestConstants.Alice.nodeParams.nodeId)
     getConfidence.replyTo ! ReputationRecorder.Confidence(value)
   }
 

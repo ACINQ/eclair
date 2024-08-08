@@ -59,7 +59,7 @@ object ChannelRelayer {
 
   def apply(nodeParams: NodeParams,
             register: ActorRef,
-            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.ChannelRelayCommand]],
+            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.GetConfidence]],
             channels: Map[ByteVector32, Relayer.OutgoingChannel] = Map.empty,
             scid2channels: Map[ShortChannelId, ByteVector32] = Map.empty,
             node2channels: mutable.MultiDict[PublicKey, ByteVector32] = mutable.MultiDict.empty): Behavior[Command] =

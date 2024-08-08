@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.reputation
 
+import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.eclair.reputation.Reputation.HtlcId
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
-import java.util.UUID
 import scala.concurrent.duration.FiniteDuration
 
 /**
@@ -26,7 +27,7 @@ import scala.concurrent.duration.FiniteDuration
  */
 
 /**
- * Local reputation for a given incoming node, that should be track for each incoming endorsement level.
+ * Local reputation for a given incoming node, that should be tracked for each incoming endorsement level.
  *
  * @param pastWeight        How much fees we would have collected in the past if all payments had succeeded (exponential moving average).
  * @param pastScore         How much fees we have collected in the past (exponential moving average).
@@ -36,51 +37,47 @@ import scala.concurrent.duration.FiniteDuration
  * @param maxRelayDuration  Duration after which payments are penalized for staying pending too long.
  * @param pendingMultiplier How much to penalize pending payments.
  */
-case class Reputation(pastWeight: Double, pastScore: Double, lastSettlementAt: TimestampMilli, pending: Map[UUID, Reputation.PendingPayment], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
+case class Reputation(pastWeight: Double, pastScore: Double, lastSettlementAt: TimestampMilli, pending: Map[HtlcId, Reputation.PendingPayment], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
   private def decay(now: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
 
   private def pendingWeight(now: TimestampMilli): Double = pending.values.map(_.weight(now, maxRelayDuration, pendingMultiplier)).sum
 
   /**
-   * Register a payment to relay and estimate the confidence that it will succeed.
-   *
-   * @return (updated reputation, confidence)
+   * Estimate the confidence that a payment will succeed.
    */
-  def attempt(relayId: UUID, fee: MilliSatoshi, now: TimestampMilli = TimestampMilli.now()): (Reputation, Double) = {
+  def getConfidence(fee: MilliSatoshi, now: TimestampMilli = TimestampMilli.now()): Double = {
     val d = decay(now)
-    val newReputation = copy(pending = pending + (relayId -> Reputation.PendingPayment(fee, now)))
-    val confidence = d * pastScore / (d * pastWeight + newReputation.pendingWeight(now))
-    (newReputation, confidence)
+    d * pastScore / (d * pastWeight + pendingWeight(now) + fee.toLong.toDouble * pendingMultiplier)
   }
 
   /**
-   * Mark a previously registered payment as failed without trying to relay it (usually because its confidence was too low).
+   * Register a pending relay.
    *
    * @return updated reputation
    */
-  def cancel(relayId: UUID): Reputation = copy(pending = pending - relayId)
+  def attempt(htlcId: HtlcId, fee: MilliSatoshi, now: TimestampMilli = TimestampMilli.now()): Reputation =
+    copy(pending = pending + (htlcId -> Reputation.PendingPayment(fee, now)))
 
   /**
    * When a payment is settled, we record whether it succeeded and how long it took.
    *
-   * @param feeOverride When relaying trampoline payments, the actual fee is only known when the payment succeeds. This
-   *                    is used instead of the fee upper bound that was known when first attempting the relay.
    * @return updated reputation
    */
-  def record(relayId: UUID, isSuccess: Boolean, feeOverride: Option[MilliSatoshi] = None, now: TimestampMilli = TimestampMilli.now()): Reputation = {
-    pending.get(relayId) match {
+  def record(htlcId: HtlcId, isSuccess: Boolean, now: TimestampMilli = TimestampMilli.now()): Reputation = {
+    pending.get(htlcId) match {
       case Some(p) =>
         val d = decay(now)
-        val p1 = p.copy(fee = feeOverride.getOrElse(p.fee))
-        val newWeight = d * pastWeight + p1.weight(now, maxRelayDuration, 1.0)
-        val newScore = d * pastScore + (if (isSuccess) p1.fee.toLong.toDouble else 0)
-        Reputation(newWeight, newScore, now, pending - relayId, halfLife, maxRelayDuration, pendingMultiplier)
+        val newWeight = d * pastWeight + p.weight(now, maxRelayDuration, if (isSuccess) 1.0 else 0.0)
+        val newScore = d * pastScore + (if (isSuccess) p.fee.toLong.toDouble else 0)
+        Reputation(newWeight, newScore, now, pending - htlcId, halfLife, maxRelayDuration, pendingMultiplier)
       case None => this
     }
   }
 }
 
 object Reputation {
+  case class HtlcId(channelId: ByteVector32, id: Long)
+
   /** We're relaying that payment and are waiting for it to settle. */
   case class PendingPayment(fee: MilliSatoshi, startedAt: TimestampMilli) {
     def weight(now: TimestampMilli, minDuration: FiniteDuration, multiplier: Double): Double = {

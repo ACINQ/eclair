@@ -61,7 +61,7 @@ object NodeRelayer {
    */
   def apply(nodeParams: NodeParams,
             register: akka.actor.ActorRef,
-            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.TrampolineRelayCommand]],
+            reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.GetTrampolineConfidence]],
             outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory,
             triggerer: typed.ActorRef[AsyncPaymentTriggerer.Command],
             router: akka.actor.ActorRef,
