@@ -46,7 +46,7 @@ import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient}
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, RouteRequest}
 import fr.acinq.eclair.router.{BalanceTooLow, BlindedRouteCreation, RouteNotFound, Router}
 import fr.acinq.eclair.reputation.ReputationRecorder
-import fr.acinq.eclair.reputation.ReputationRecorder.{Confidence, GetTrampolineConfidence, RecordTrampolineFailure, RecordTrampolineSuccess}
+import fr.acinq.eclair.reputation.ReputationRecorder.{Confidence, GetTrampolineConfidence}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
@@ -395,7 +395,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)).toSet == incomingAsyncPayment.map(i => (i.add.amountMsat, i.add.channelId)).toSet)
     assert(relayEvent.outgoing.nonEmpty)
     parent.expectMessageType[NodeRelayer.RelayComplete]
-    reputationRecorder.expectMessageType[RecordTrampolineSuccess]
     register.expectNoMessage(100 millis)
   }
 
@@ -486,7 +485,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient()), commit = true))
     }
 
-    reputationRecorder.expectMessageType[RecordTrampolineFailure]
     register.expectNoMessage(100 millis)
     eventListener.expectNoMessage(100 millis)
   }
@@ -514,7 +512,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure()), commit = true))
     }
 
-    reputationRecorder.expectMessageType[RecordTrampolineFailure]
     register.expectNoMessage(100 millis)
   }
 
@@ -540,7 +537,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(TrampolineFeeInsufficient()), commit = true))
     }
 
-    reputationRecorder.expectMessageType[RecordTrampolineFailure]
     register.expectNoMessage(100 millis)
   }
 
@@ -565,7 +561,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, Right(FinalIncorrectHtlcAmount(42 msat)), commit = true))
     }
 
-    reputationRecorder.expectMessageType[RecordTrampolineFailure]
     register.expectNoMessage(100 millis)
   }
 
@@ -623,7 +618,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)).toSet == incomingMultiPart.map(i => (i.add.amountMsat, i.add.channelId)).toSet)
     assert(relayEvent.outgoing.nonEmpty)
-    reputationRecorder.expectMessageType[RecordTrampolineSuccess]
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
@@ -655,7 +649,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)) == Seq((incomingSinglePart.add.amountMsat, incomingSinglePart.add.channelId)))
     assert(relayEvent.outgoing.nonEmpty)
-    reputationRecorder.expectMessageType[RecordTrampolineSuccess]
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
@@ -779,7 +772,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)) == incomingMultiPart.map(i => (i.add.amountMsat, i.add.channelId)))
     assert(relayEvent.outgoing.nonEmpty)
-    reputationRecorder.expectMessageType[RecordTrampolineSuccess]
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
@@ -826,7 +818,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.map(p => (p.amount, p.channelId)) == incomingMultiPart.map(i => (i.add.amountMsat, i.add.channelId)))
     assert(relayEvent.outgoing.length == 1)
-    reputationRecorder.expectMessageType[RecordTrampolineSuccess]
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
   }
