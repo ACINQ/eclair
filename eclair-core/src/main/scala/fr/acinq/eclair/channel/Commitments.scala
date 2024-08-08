@@ -429,7 +429,7 @@ case class Commitment(fundingTxIndex: Long,
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf, confidence: Double): Either[ChannelException, Unit] = {
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
@@ -488,8 +488,7 @@ case class Commitment(fundingTxIndex: Long,
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
-    val maxAcceptedHtlcs = params.localParams.maxAcceptedHtlcs.min(params.remoteParams.maxAcceptedHtlcs)
-    if (maxAcceptedHtlcs < outgoingHtlcs.size) {
+    if (Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
       return Left(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
     }
 
@@ -506,19 +505,34 @@ case class Commitment(fundingTxIndex: Long,
       return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
     }
 
-    // Jamming protection
-    // Must be the last checks so that they can be ignored for shadow deployment.
+    Right(())
+  }
+
+  def checkJamming(params: ChannelParams, changes: CommitmentChanges, confidence: Double): Option[ChannelException] = {
+    // let's compute the current commitments *as seen by them* with the additional htlc
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
+    // the HTLC we are about to create is outgoing, but from their point of view it is incoming
+    val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
+    val maxAcceptedHtlcs = params.localParams.maxAcceptedHtlcs.min(params.remoteParams.maxAcceptedHtlcs)
+    // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
+    val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
+    val allowedHtlcValueInFlight = params.maxHtlcAmount
+
     for ((amountMsat, i) <- outgoingHtlcs.toSeq.map(_.amountMsat).sorted.zipWithIndex) {
       if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toLong.toDouble / maxAcceptedHtlcs) < i)) {
-        return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
+        return Some(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
       }
     }
+
     val occupancy = (outgoingHtlcs.size.toDouble / maxAcceptedHtlcs).max(htlcValueInFlight.toLong.toDouble / allowedHtlcValueInFlight.toLong.toDouble)
     if (confidence + 0.05 < occupancy) {
-      return Left(ConfidenceTooLow(params.channelId, confidence, occupancy))
+      return Some(ConfidenceTooLow(params.channelId, confidence, occupancy))
     }
 
-    Right(())
+    None
   }
 
   def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
@@ -563,14 +577,6 @@ case class Commitment(fundingTxIndex: Long,
 
     if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
       return Left(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
-    }
-
-    // Jamming protection
-    // Must be the last checks so that they can be ignored for shadow deployment.
-    for ((amountMsat, i) <- incomingHtlcs.toSeq.map(_.amountMsat).sorted.zipWithIndex) {
-      if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * params.localParams.maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toLong.toDouble / params.localParams.maxAcceptedHtlcs) < i)) {
-        return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
-      }
     }
 
     Right(())
@@ -880,28 +886,21 @@ case class Commitments(params: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val canSendAdds = active.map(_.canSendAdd(add.amountMsat, params, changes1, feerates, feeConf, cmd.confidence))
-    // Log only for jamming protection.
-    canSendAdds.collectFirst {
-      case Left(f: TooManySmallHtlcs) =>
-        log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}}", f.number, f.below)
-        Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-      case Left(f: ConfidenceTooLow) =>
-        log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
-        Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-    }
-    canSendAdds.flatMap { // TODO: We ignore jamming protection, delete this flatMap to activate jamming protection.
-        case Left(_: TooManySmallHtlcs) | Left(_: ConfidenceTooLow) => None
-        case x => Some(x)
-      }
-      .collectFirst { case Left(f) =>
+    active.map(_.canSendAdd(add.amountMsat, params, changes1, feerates, feeConf))
+      .collectFirst { case Left(f) => f } match {
+      case Some(f) =>
         Metrics.dropHtlc(f, Tags.Directions.Outgoing)
         Left(f)
-      }
-      .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
+      case None =>
+        active.head.checkJamming(params, changes1, cmd.confidence).foreach(f => {
+          log.info("Jamming protection: {}", f)
+          Metrics.dropHtlc(f, Tags.Directions.Outgoing)
+        })
+        Right(copy(changes = changes1, originChannels = originChannels1), add)
+    }
   }
 
-  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
     }
@@ -914,21 +913,8 @@ case class Commitments(params: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    val canReceiveAdds = active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
-    // Log only for jamming protection.
-    canReceiveAdds.collectFirst {
-      case Left(f: TooManySmallHtlcs) =>
-        log.info("TooManySmallHtlcs: {} incoming HTLCs are below {}}", f.number, f.below)
-        Metrics.dropHtlc(f, Tags.Directions.Incoming)
-    }
-    canReceiveAdds.flatMap { // TODO: We ignore jamming protection, delete this flatMap to activate jamming protection.
-        case Left(_: TooManySmallHtlcs) | Left(_: ConfidenceTooLow) => None
-        case x => Some(x)
-      }
-      .collectFirst { case Left(f) =>
-        Metrics.dropHtlc(f, Tags.Directions.Incoming)
-        Left(f)
-      }
+    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
+      .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1)))
   }
 
