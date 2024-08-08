@@ -34,6 +34,7 @@ case class RemoteError(e: protocol.Error) extends ChannelError
 // @formatter:on
 
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
+class ChannelJammingException(override val channelId: ByteVector32, message: String) extends ChannelException(channelId, message)
 
 // @formatter:off
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: BlockHash, remote: BlockHash) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
@@ -130,8 +131,6 @@ case class ExpiryTooBig                            (override val channelId: Byte
 case class HtlcValueTooSmall                       (override val channelId: ByteVector32, minimum: MilliSatoshi, actual: MilliSatoshi) extends ChannelException(channelId, s"htlc value too small: minimum=$minimum actual=$actual")
 case class HtlcValueTooHighInFlight                (override val channelId: ByteVector32, maximum: UInt64, actual: MilliSatoshi) extends ChannelException(channelId, s"in-flight htlcs hold too much value: maximum=${maximum.toBigInt} msat actual=$actual")
 case class TooManyAcceptedHtlcs                    (override val channelId: ByteVector32, maximum: Long) extends ChannelException(channelId, s"too many accepted htlcs: maximum=$maximum")
-case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelException(channelId, s"too many small htlcs: $number HTLCs below $below")
-case class ConfidenceTooLow                        (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelException(channelId, s"confidence too low: confidence=$confidence occupancy=$occupancy")
 case class LocalDustHtlcExposureTooHigh            (override val channelId: ByteVector32, maximum: Satoshi, actual: MilliSatoshi) extends ChannelException(channelId, s"dust htlcs hold too much value: maximum=$maximum actual=$actual")
 case class RemoteDustHtlcExposureTooHigh           (override val channelId: ByteVector32, maximum: Satoshi, actual: MilliSatoshi) extends ChannelException(channelId, s"dust htlcs hold too much value: maximum=$maximum actual=$actual")
 case class InsufficientFunds                       (override val channelId: ByteVector32, amount: MilliSatoshi, missing: Satoshi, reserve: Satoshi, fees: Satoshi) extends ChannelException(channelId, s"insufficient funds: missing=$missing reserve=$reserve fees=$fees")
@@ -152,4 +151,6 @@ case class CommandUnavailableInThisState           (override val channelId: Byte
 case class ForbiddenDuringSplice                   (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while splicing")
 case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
 case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
+case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelJammingException(channelId, s"too many small htlcs: $number HTLCs below $below")
+case class ConfidenceTooLow                        (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"confidence too low: confidence=$confidence occupancy=$occupancy")
 // @formatter:on
