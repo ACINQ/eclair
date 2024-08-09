@@ -36,6 +36,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send._
+import fr.acinq.eclair.reputation.ReputationRecorder.GetTrampolineConfidence
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -64,6 +65,7 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private[relay] case class WrappedPeerReadyResult(result: AsyncPaymentTriggerer.Result) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
+  private case class WrappedConfidence(confidence: Double) extends Command
   // @formatter:on
 
   trait OutgoingPaymentFactory {
@@ -85,6 +87,7 @@ object NodeRelay {
   def apply(nodeParams: NodeParams,
             parent: typed.ActorRef[NodeRelayer.Command],
             register: ActorRef,
+            reputationRecorder_opt: Option[typed.ActorRef[GetTrampolineConfidence]],
             relayId: UUID,
             nodeRelayPacket: NodeRelayPacket,
             outgoingPaymentFactory: OutgoingPaymentFactory,
@@ -108,7 +111,7 @@ object NodeRelay {
           case IncomingPaymentPacket.RelayToTrampolinePacket(_, _, _, nextPacket) => Some(nextPacket)
           case _: IncomingPaymentPacket.RelayToBlindedPathsPacket => None
         }
-        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
+        new NodeRelay(nodeParams, parent, register, reputationRecorder_opt, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, triggerer, router)
           .receiving(Queue.empty, nodeRelayPacket.innerPayload, nextPacket_opt, incomingPaymentHandler)
       }
     }
@@ -183,6 +186,7 @@ object NodeRelay {
 class NodeRelay private(nodeParams: NodeParams,
                         parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
                         register: ActorRef,
+                        reputationRecorder_opt: Option[typed.ActorRef[GetTrampolineConfidence]],
                         relayId: UUID,
                         paymentHash: ByteVector32,
                         paymentSecret: ByteVector32,
@@ -259,8 +263,17 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def doSend(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
-    val confidence = (upstream.received.map(_.add.endorsement).min + 0.5) / 8
-    relay(upstream, nextPayload, nextPacket_opt, confidence)
+    val totalFee = upstream.amountIn - nextPayload.amountToForward
+    reputationRecorder_opt match {
+      case Some(reputationRecorder) => reputationRecorder ! GetTrampolineConfidence(context.messageAdapter(confidence => WrappedConfidence(confidence.value)), upstream, totalFee)
+      case None => context.self ! WrappedConfidence((upstream.received.map(_.add.endorsement).min + 0.5) / 8)
+    }
+    Behaviors.receiveMessagePartial {
+      rejectExtraHtlcPartialFunction orElse {
+        case WrappedConfidence(confidence) =>
+          relay(upstream, nextPayload, nextPacket_opt, confidence)
+      }
+    }
   }
 
   /**
