@@ -29,6 +29,7 @@ import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
@@ -165,7 +166,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = false, 1 day, 10 seconds, 100),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -231,7 +234,7 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -335,7 +338,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = false, 2 day, 20 seconds, 200),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -401,7 +406,7 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
