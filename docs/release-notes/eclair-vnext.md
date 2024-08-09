@@ -37,7 +37,7 @@ To configure, edit `eclair.conf`:
 ```eclair.conf
 // We assign reputations to our peers to prioritize payments during congestion.
 // The reputation is computed as fees paid divided by what should have been paid if all payments were successful.
-eclair.peer-reputation {
+eclair.relay.peer-reputation {
     // Set this parameter to false to disable the reputation algorithm and simply relay the incoming endorsement
     // value, as described by https://github.com/lightning/blips/blob/master/blip-0004.md,
     enabled = true

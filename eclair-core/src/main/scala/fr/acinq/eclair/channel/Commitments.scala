@@ -565,14 +565,6 @@ case class Commitment(fundingTxIndex: Long,
       return Left(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
     }
 
-    // Jamming protection
-    // Must be the last checks so that they can be ignored for shadow deployment.
-    for ((amountMsat, i) <- incomingHtlcs.toSeq.map(_.amountMsat).sorted.zipWithIndex) {
-      if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * params.localParams.maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toLong.toDouble / params.localParams.maxAcceptedHtlcs) < i)) {
-        return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
-      }
-    }
-
     Right(())
   }
 
@@ -901,7 +893,7 @@ case class Commitments(params: ChannelParams,
       .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
   }
 
-  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
     }
@@ -914,21 +906,8 @@ case class Commitments(params: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    val canReceiveAdds = active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
-    // Log only for jamming protection.
-    canReceiveAdds.collectFirst {
-      case Left(f: TooManySmallHtlcs) =>
-        log.info("TooManySmallHtlcs: {} incoming HTLCs are below {}}", f.number, f.below)
-        Metrics.dropHtlc(f, Tags.Directions.Incoming)
-    }
-    canReceiveAdds.flatMap { // TODO: We ignore jamming protection, delete this flatMap to activate jamming protection.
-        case Left(_: TooManySmallHtlcs) | Left(_: ConfidenceTooLow) => None
-        case x => Some(x)
-      }
-      .collectFirst { case Left(f) =>
-        Metrics.dropHtlc(f, Tags.Directions.Incoming)
-        Left(f)
-      }
+    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
+      .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1)))
   }
 
