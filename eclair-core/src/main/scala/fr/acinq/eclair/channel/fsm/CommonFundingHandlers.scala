@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFunde
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
-import fr.acinq.eclair.transactions.Transactions.SimpleTaprootChannelsStagingCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.{SimpleTaprootChannelsStagingCommitmentFormat, SimpleTaprootChannelsStagingLegacyCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, ChannelTlv, TlvStream}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -116,13 +116,11 @@ trait CommonFundingHandlers extends CommonHandlers {
   def createChannelReady(shortIds: ShortIds, params: ChannelParams): ChannelReady = {
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-    val tlvStream: TlvStream[ChannelReadyTlv] = params.commitmentFormat match {
-      case SimpleTaprootChannelsStagingCommitmentFormat =>
-        // TODO: fundingTxIndex = 0 ?
-        val (_, nextLocalNonce) = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 1)
-        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias), ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
-      case _ =>
-        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias))
+    val tlvStream: TlvStream[ChannelReadyTlv] = if (params.commitmentFormat.useTaproot) {
+      val (_, nextLocalNonce) = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 1)
+      TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias), ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
+    } else {
+      TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias))
     }
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
     ChannelReady(params.channelId, nextPerCommitmentPoint, tlvStream)

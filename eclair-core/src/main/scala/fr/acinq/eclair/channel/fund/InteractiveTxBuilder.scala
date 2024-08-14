@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, SimpleTaprootChannelsStagingCommitmentFormat, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, SimpleTaprootChannelsStagingCommitmentFormat, SimpleTaprootChannelsStagingLegacyCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -460,9 +460,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private val log = context.log
   private val keyManager = nodeParams.channelKeyManager
   private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
-  private val fundingPubkeyScript: ByteVector = channelParams.commitmentFormat match {
-    case SimpleTaprootChannelsStagingCommitmentFormat => Script.write(Scripts.musig2FundingScript(localFundingPubKey, fundingParams.remoteFundingPubKey))
-    case _ => Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, fundingParams.remoteFundingPubKey)))
+  private val fundingPubkeyScript: ByteVector = if (channelParams.commitmentFormat.useTaproot) {
+    Script.write(Scripts.musig2FundingScript(localFundingPubKey, fundingParams.remoteFundingPubKey))
+  } else {
+    Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, fundingParams.remoteFundingPubKey)))
   }
   private val remoteNodeId = channelParams.remoteParams.nodeId
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
@@ -542,7 +543,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         receive(next)
       case Nil =>
         val publicNonces = (session.remoteInputs ++ session.localInputs).sortBy(_.serialId).collect {
-          case i: Input.Shared if this.channelParams.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat => session.secretNonces.get(i.serialId).map(_._2).getOrElse(throw new RuntimeException("missing secret nonce"))
+          case i: Input.Shared if this.channelParams.commitmentFormat.useTaproot => session.secretNonces.get(i.serialId).map(_._2).getOrElse(throw new RuntimeException("missing secret nonce"))
         }
         val txComplete = TxComplete(fundingParams.channelId, publicNonces.toList)
         replyTo ! SendMessage(sessionId, txComplete)
@@ -872,18 +873,18 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
         val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
-        val localSigOfRemoteTx = channelParams.commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat => ByteVector64.Zeroes
-          case _ => keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
+        val localSigOfRemoteTx = if (channelParams.commitmentFormat.useTaproot) {
+          ByteVector64.Zeroes
+        } else {
+          keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
         }
-        val tlvStream: TlvStream[CommitSigTlv] = channelParams.commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat =>
-            val localNonce = keyManager.signingNonce(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
-            val Right(psig) = keyManager.partialSign(remoteCommitTx, fundingPubKey, fundingParams.remoteFundingPubKey, TxOwner.Remote, localNonce, nextRemoteNonce_opt.get)
-            log.debug(s"signCommitTx: creating partial signature $psig for commit tx ${remoteCommitTx.tx.txid} with local nonce ${localNonce._2} remote nonce ${nextRemoteNonce_opt.get}")
-            TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(PartialSignatureWithNonce(psig, localNonce._2)))
-          case _ =>
-            TlvStream.empty
+        val tlvStream: TlvStream[CommitSigTlv] = if (channelParams.commitmentFormat.useTaproot) {
+          val localNonce = keyManager.signingNonce(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
+          val Right(psig) = keyManager.partialSign(remoteCommitTx, fundingPubKey, fundingParams.remoteFundingPubKey, TxOwner.Remote, localNonce, nextRemoteNonce_opt.get)
+          log.debug(s"signCommitTx: creating partial signature $psig for commit tx ${remoteCommitTx.tx.txid} with local nonce ${localNonce._2} remote nonce ${nextRemoteNonce_opt.get}")
+          TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(PartialSignatureWithNonce(psig, localNonce._2)))
+        } else {
+          TlvStream.empty
         }
         val localPerCommitmentPoint = keyManager.htlcPoint(keyManager.keyPath(channelParams.localParams, channelParams.channelConfig))
         val htlcSignatures = sortedHtlcTxs.map(keyManager.sign(_, localPerCommitmentPoint, purpose.remotePerCommitmentPoint, TxOwner.Remote, channelParams.commitmentFormat)).toList
@@ -1170,9 +1171,10 @@ object InteractiveTxSigningSession {
         case Left(unsignedLocalCommit) =>
           val channelKeyPath = nodeParams.channelKeyManager.keyPath(channelParams.localParams, channelParams.channelConfig)
           val localPerCommitmentPoint = nodeParams.channelKeyManager.commitmentPoint(channelKeyPath, localCommitIndex)
-          val localNonce_opt = channelParams.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat => Some(nodeParams.channelKeyManager.verificationNonce(channelParams.localParams.fundingKeyPath, fundingTxIndex, channelKeyPath, localCommitIndex))
-            case _ => None
+          val localNonce_opt = if (channelParams.commitmentFormat.useTaproot) {
+            Some(nodeParams.channelKeyManager.verificationNonce(channelParams.localParams.fundingKeyPath, fundingTxIndex, channelKeyPath, localCommitIndex))
+          } else {
+            None
           }
           LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint, localNonce_opt).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
