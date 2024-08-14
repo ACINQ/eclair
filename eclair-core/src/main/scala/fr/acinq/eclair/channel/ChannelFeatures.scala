@@ -34,7 +34,8 @@ case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
   val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature((Features.SimpleTaprootStaging))
   /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
   val commitmentFormat: CommitmentFormat = if (hasFeature(Features.SimpleTaprootStaging)) {
-    SimpleTaprootChannelsStagingCommitmentFormat
+    if (hasFeature(Features.AnchorOutputs)) SimpleTaprootChannelsStagingLegacyCommitmentFormat
+    else SimpleTaprootChannelsStagingCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputs)) {
     UnsafeLegacyAnchorOutputsCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
@@ -136,7 +137,7 @@ object ChannelTypes {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootStaging)
+      Some(Features.SimpleTaprootStaging),
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = SimpleTaprootChannelsStagingCommitmentFormat

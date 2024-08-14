@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Transactions.{InputInfo, SimpleTaprootChannelsStagingCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{InputInfo, SimpleTaprootChannelsStagingCommitmentFormat, SimpleTaprootChannelsStagingLegacyCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
@@ -107,9 +107,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     private val nextLocalNonceA = nodeParamsA.channelKeyManager.verificationNonce(channelParamsA.localParams.fundingKeyPath, 0, nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, channelParamsA.channelConfig), 0)
     private val nextLocalNonceB = nodeParamsB.channelKeyManager.verificationNonce(channelParamsB.localParams.fundingKeyPath, 0, nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, channelParamsB.channelConfig), 0)
     assert(channelParamsA.commitmentFormat == channelParamsB.commitmentFormat)
-    val fundingPubkeyScript: ByteVector = channelParamsA.commitmentFormat match {
-      case SimpleTaprootChannelsStagingCommitmentFormat => Script.write(Scripts.musig2FundingScript(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey))
-      case _ => Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
+    val fundingPubkeyScript: ByteVector = if (channelParamsA.commitmentFormat.useTaproot) {
+      Script.write(Scripts.musig2FundingScript(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey))
+    } else {
+      Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
     }
 
     Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))

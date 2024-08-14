@@ -378,23 +378,20 @@ object Helpers {
   }
 
   object Funding {
-    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat = DefaultCommitmentFormat): ByteVector = {
-      if (commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
-        write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
-      } else {
-        write(musig2FundingScript(localFundingKey, remoteFundingKey))
-      }
+    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): ByteVector = if (commitmentFormat.useTaproot) {
+      write(musig2FundingScript(localFundingKey, remoteFundingKey))
+    } else {
+      write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
     }
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat = DefaultCommitmentFormat): InputInfo = {
-      if (commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
-        val fundingScript = musig2FundingScript(fundingPubkey1, fundingPubkey2)
-        val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
-        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
-      } else {
-        val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
-        val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
-      }
+
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = if (commitmentFormat.useTaproot) {
+      val fundingScript = musig2FundingScript(fundingPubkey1, fundingPubkey2)
+      val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
+      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
+    } else {
+      val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
+      val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
     }
 
     /**
@@ -543,12 +540,11 @@ object Helpers {
         val channelKeyPath = keyManager.keyPath(commitments.params.localParams, commitments.params.channelConfig)
         val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
-        val tlvStream: TlvStream[RevokeAndAckTlv] = commitments.params.commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat =>
-            val nonces = commitments.active.map(c => keyManager.verificationNonce(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex, channelKeyPath, commitments.localCommitIndex + 1))
-            TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
-          case _ =>
-            TlvStream.empty
+        val tlvStream: TlvStream[RevokeAndAckTlv] = if (commitments.params.commitmentFormat.useTaproot) {
+          val nonces = commitments.active.map(c => keyManager.verificationNonce(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex, channelKeyPath, commitments.localCommitIndex + 1))
+          TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
+        } else {
+          TlvStream.empty
         }
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
@@ -709,27 +705,27 @@ object Helpers {
       def makeClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFees: ClosingFees, localClosingNonce_opt: Option[(SecretNonce, IndividualNonce)] = None, remoteClosingNonce_opt: Option[IndividualNonce] = None)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitment.specs2String)
         val dustLimit = commitment.localParams.dustLimit.max(commitment.remoteParams.dustLimit)
-        val sequence = commitment.params.commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat => 0xfffffffdL // RBF enabled
-          case _ => 0xffffffffL // RBF disabled
+        val sequence = if (commitment.params.commitmentFormat.useTaproot) {
+          0xfffffffdL
+        } else {
+          0xffffffffL
         }
         val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, dustLimit, closingFees.preferred, commitment.localCommit.spec, sequence)
-        val closingSigned = commitment.params.commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat =>
-            val Some(localClosingNonce) = localClosingNonce_opt
-            val Some(remoteClosingNonce) = remoteClosingNonce_opt
-            log.info("using closing nonce = {} remote closing nonce = {}", localClosingNonce, remoteClosingNonce)
-            val Right(localClosingPartialSig) = keyManager.partialSign(
-              closingTx,
-              keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex), commitment.remoteFundingPubKey,
-              TxOwner.Local,
-              localClosingNonce, remoteClosingNonce,
-            )
-            log.info("closing tx id = {} outputs = {} tx = {}", closingTx.tx.txid, closingTx.tx.txOut, closingTx.tx)
-            ClosingSigned(commitment.channelId, closingFees.preferred, ByteVector64.Zeroes, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max), ClosingSignedTlv.PartialSignature(localClosingPartialSig)))
-          case _ =>
-            val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex), TxOwner.Local, commitment.params.commitmentFormat)
-            ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
+        val closingSigned = if (commitment.params.commitmentFormat.useTaproot) {
+          val Some(localClosingNonce) = localClosingNonce_opt
+          val Some(remoteClosingNonce) = remoteClosingNonce_opt
+          log.info("using closing nonce = {} remote closing nonce = {}", localClosingNonce, remoteClosingNonce)
+          val Right(localClosingPartialSig) = keyManager.partialSign(
+            closingTx,
+            keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex), commitment.remoteFundingPubKey,
+            TxOwner.Local,
+            localClosingNonce, remoteClosingNonce,
+          )
+          log.info("closing tx id = {} outputs = {} tx = {}", closingTx.tx.txid, closingTx.tx.txOut, closingTx.tx)
+          ClosingSigned(commitment.channelId, closingFees.preferred, ByteVector64.Zeroes, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max), ClosingSignedTlv.PartialSignature(localClosingPartialSig)))
+        } else {
+          val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex), TxOwner.Local, commitment.params.commitmentFormat)
+          ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
         }
         log.debug(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")
         log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
@@ -884,20 +880,18 @@ object Helpers {
       def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): LocalCommitPublished = {
         if (shouldUpdateAnchorTxs(lcp.claimAnchorTxs, confirmationTarget)) {
           val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
-          val localPaymentKey = commitment.params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
-              val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index)
-              val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-              localDelayedPaymentPubkey
-            case _ =>
-              localFundingPubKey
+          val localPaymentKey = if (commitment.params.commitmentFormat.useTaproot) {
+            val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
+            val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index)
+            val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+            localDelayedPaymentPubkey
+          } else {
+            localFundingPubKey
           }
-          val remotePaymentKey = commitment.params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              commitment.remoteParams.paymentBasepoint
-            case _ =>
-              commitment.remoteFundingPubKey
+          val remotePaymentKey = if (commitment.params.commitmentFormat.useTaproot) {
+            commitment.remoteParams.paymentBasepoint
+          } else {
+            commitment.remoteFundingPubKey
           }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
@@ -1022,19 +1016,17 @@ object Helpers {
           val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
 
           // taproot channels do not re-use the funding pubkeys for anchor outputs
-          val localPaymentKey = commitment.params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
-              commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-            case _ =>
-              localFundingPubkey
+          val localPaymentKey = if (commitment.params.commitmentFormat.useTaproot) {
+            val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
+            commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+          } else {
+            localFundingPubkey
           }
-          val remotePaymentKey = commitment.params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, commitment.remoteCommit.remotePerCommitmentPoint)
-              remoteDelayedPaymentPubkey
-            case _ =>
-              commitment.remoteFundingPubKey
+          val remotePaymentKey = if (commitment.params.commitmentFormat.useTaproot) {
+            val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, commitment.remoteCommit.remotePerCommitmentPoint)
+            remoteDelayedPaymentPubkey
+          } else {
+            commitment.remoteFundingPubKey
           }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
@@ -1230,42 +1222,40 @@ object Helpers {
         val htlcInfos = db.listHtlcInfos(channelId, commitmentNumber)
         log.info("got {} htlcs for commitmentNumber={}", htlcInfos.size, commitmentNumber)
 
-        val htlcPenaltyTxs = commitmentFormat match {
-          case SimpleTaprootChannelsStagingCommitmentFormat =>
-            val scriptTrees = (
-              htlcInfos.map { case (paymentHash, cltvExpiry) => Taproot.receivedHtlcTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash, cltvExpiry) } ++
-                htlcInfos.map { case (paymentHash, _) => Taproot.offeredHtlcTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash) })
-              .map(scriptTree => Script.write(Script.pay2tr(remoteRevocationPubkey.xOnly, Some(scriptTree))) -> scriptTree)
-              .toMap
+        val htlcPenaltyTxs = if (commitmentFormat.useTaproot) {
+          val scriptTrees = (
+            htlcInfos.map { case (paymentHash, cltvExpiry) => Taproot.receivedHtlcTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash, cltvExpiry) } ++
+              htlcInfos.map { case (paymentHash, _) => Taproot.offeredHtlcTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash) })
+            .map(scriptTree => Script.write(Script.pay2tr(remoteRevocationPubkey.xOnly, Some(scriptTree))) -> scriptTree)
+            .toMap
 
-            commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if scriptTrees.contains(txOut.publicKeyScript) =>
-              val scriptTree = scriptTrees(txOut.publicKeyScript)
-              withTxGenerationLog("htlc-penalty") {
-                Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, ScriptTreeAndInternalKey(scriptTree, remoteRevocationPubkey.xOnly), localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
-                  val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
-                  Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey, commitmentFormat)
-                })
-              }
-            }.toList.flatten
+          commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if scriptTrees.contains(txOut.publicKeyScript) =>
+            val scriptTree = scriptTrees(txOut.publicKeyScript)
+            withTxGenerationLog("htlc-penalty") {
+              Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, ScriptTreeAndInternalKey(scriptTree, remoteRevocationPubkey.xOnly), localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
+                val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
+                Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey, commitmentFormat)
+              })
+            }
+          }.toList.flatten
+        } else {
+          val htlcsRedeemScripts = (
+            htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
+              htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
+            )
+            .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
+            .toMap
 
-          case _ =>
-            val htlcsRedeemScripts = (
-              htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
-                htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
-              )
-              .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
-              .toMap
-
-            // and finally we steal the htlc outputs
-            commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-              val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-              withTxGenerationLog("htlc-penalty") {
-                Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
-                  val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
-                  Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey, commitmentFormat)
-                })
-              }
-            }.toList.flatten
+          // and finally we steal the htlc outputs
+          commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+            val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+            withTxGenerationLog("htlc-penalty") {
+              Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
+                val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
+                Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey, commitmentFormat)
+              })
+            }
+          }.toList.flatten
         }
 
         RevokedCommitPublished(

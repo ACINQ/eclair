@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.{SimpleTaprootChannelsStagingCommitmentFormat, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{SimpleTaprootChannelsStagingCommitmentFormat, SimpleTaprootChannelsStagingLegacyCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, PartialSignatureWithNonceTlv, TlvStream}
 import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
@@ -80,7 +80,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
       val localShutdownScript = input.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
-      val tlvStream: TlvStream[OpenChannelTlv] = if (input.channelType.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
+      val tlvStream: TlvStream[OpenChannelTlv] = if (input.channelType.commitmentFormat.useTaproot) {
         val localNonce = keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
         TlvStream(
           ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
@@ -145,7 +145,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = d.initFundee.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
-          val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
+          val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType.commitmentFormat.useTaproot) {
             val localNonce = keyManager.verificationNonce(d.initFundee.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
             TlvStream(
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
@@ -207,9 +207,10 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           log.debug("remote params: {}", remoteParams)
           log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
           val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath, fundingTxIndex = 0)
-          val fundingPubkeyScript = init.channelType.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat => Script.write(Scripts.musig2FundingScript(localFundingPubkey.publicKey, accept.fundingPubkey))
-            case _ => Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, accept.fundingPubkey)))
+          val fundingPubkeyScript = if (init.channelType.commitmentFormat.useTaproot) {
+            Script.write(Scripts.musig2FundingScript(localFundingPubkey.publicKey, accept.fundingPubkey))
+          } else {
+            Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, accept.fundingPubkey)))
           }
           wallet.makeFundingTx(fundingPubkeyScript, init.fundingAmount, init.fundingTxFeerate, init.fundingTxFeeBudget_opt).pipeTo(self)
           val params = ChannelParams(init.temporaryChannelId, init.channelConfig, channelFeatures, init.localParams, remoteParams, open.channelFlags)
@@ -244,29 +245,28 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
           val fundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
           // signature of their initial commitment tx that pays remote pushMsat
-          val fundingCreated = params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
-              val inputIndex = remoteCommitTx.tx.txIn.zipWithIndex.find(_._1.outPoint == OutPoint(fundingTx.txid, fundingTxOutputIndex)).get._2
-              val Right(sig) = keyManager.partialSign(remoteCommitTx,
-                fundingPubkey, remoteFundingPubKey, TxOwner.Remote,
-                localNonce, remoteNextLocalNonces.head
-              )
-              FundingCreated(
-                temporaryChannelId = temporaryChannelId,
-                fundingTxId = fundingTx.txid,
-                fundingOutputIndex = fundingTxOutputIndex,
-                signature = ByteVector64.Zeroes,
-                tlvStream = TlvStream(PartialSignatureWithNonceTlv(PartialSignatureWithNonce(sig, localNonce._2)))
-              )
-            case _ =>
-              val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubkey, TxOwner.Remote, params.commitmentFormat)
-              FundingCreated(
-                temporaryChannelId = temporaryChannelId,
-                fundingTxId = fundingTx.txid,
-                fundingOutputIndex = fundingTxOutputIndex,
-                signature = localSigOfRemoteTx,
-              )
+          val fundingCreated = if (params.commitmentFormat.useTaproot) {
+            val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
+            val inputIndex = remoteCommitTx.tx.txIn.zipWithIndex.find(_._1.outPoint == OutPoint(fundingTx.txid, fundingTxOutputIndex)).get._2
+            val Right(sig) = keyManager.partialSign(remoteCommitTx,
+              fundingPubkey, remoteFundingPubKey, TxOwner.Remote,
+              localNonce, remoteNextLocalNonces.head
+            )
+            FundingCreated(
+              temporaryChannelId = temporaryChannelId,
+              fundingTxId = fundingTx.txid,
+              fundingOutputIndex = fundingTxOutputIndex,
+              signature = ByteVector64.Zeroes,
+              tlvStream = TlvStream(PartialSignatureWithNonceTlv(PartialSignatureWithNonce(sig, localNonce._2)))
+            )
+          } else {
+            val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubkey, TxOwner.Remote, params.commitmentFormat)
+            FundingCreated(
+              temporaryChannelId = temporaryChannelId,
+              fundingTxId = fundingTx.txid,
+              fundingOutputIndex = fundingTxOutputIndex,
+              signature = localSigOfRemoteTx,
+            )
           }
           val channelId = toLongId(fundingTx.txid, fundingTxOutputIndex)
           val params1 = params.copy(channelId = channelId)
@@ -309,42 +309,40 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // check remote signature validity
           val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
 
-          val signedLocalCommitTx = params.commitmentFormat match {
-            case SimpleTaprootChannelsStagingCommitmentFormat =>
-              val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
-              val Right(localPartialSigOfLocalTx) = keyManager.partialSign(localCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Local, localNonce, remoteNextLocalNonce.get)
-              val Right(remoteSigOfLocalTx) = fc.sigOrPartialSig
-              val Right(aggSig) = Musig2.aggregateTaprootSignatures(
-                Seq(localPartialSigOfLocalTx, remoteSigOfLocalTx.partialSig),
-                localCommitTx.tx, localCommitTx.tx.txIn.indexWhere(_.outPoint == localCommitTx.input.outPoint), Seq(localCommitTx.input.txOut),
-                Scripts.sort(Seq(fundingPubKey.publicKey, remoteFundingPubKey)),
-                Seq(localNonce._2, remoteNextLocalNonce.get),
-                None)
-              localCommitTx.copy(tx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig)))
-            case _ =>
-              val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.commitmentFormat)
-              Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+          val signedLocalCommitTx = if (params.commitmentFormat.useTaproot) {
+            val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
+            val Right(localPartialSigOfLocalTx) = keyManager.partialSign(localCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Local, localNonce, remoteNextLocalNonce.get)
+            val Right(remoteSigOfLocalTx) = fc.sigOrPartialSig
+            val Right(aggSig) = Musig2.aggregateTaprootSignatures(
+              Seq(localPartialSigOfLocalTx, remoteSigOfLocalTx.partialSig),
+              localCommitTx.tx, localCommitTx.tx.txIn.indexWhere(_.outPoint == localCommitTx.input.outPoint), Seq(localCommitTx.input.txOut),
+              Scripts.sort(Seq(fundingPubKey.publicKey, remoteFundingPubKey)),
+              Seq(localNonce._2, remoteNextLocalNonce.get),
+              None)
+            localCommitTx.copy(tx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig)))
+          } else {
+            val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.commitmentFormat)
+            Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           }
 
           Transactions.checkSpendable(signedLocalCommitTx) match {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, fundingTxIndex = 0, localCommitTx.tx), d, None)
             case Success(_) =>
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
-              val fundingSigned = params.commitmentFormat match {
-                case SimpleTaprootChannelsStagingCommitmentFormat =>
-                  val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
-                  val Right(localPartialSigOfRemoteTx) = keyManager.partialSign(remoteCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Remote, localNonce, remoteNextLocalNonce.get)
-                  FundingSigned(
-                    channelId = channelId,
-                    signature = ByteVector64.Zeroes,
-                    TlvStream(PartialSignatureWithNonceTlv(PartialSignatureWithNonce(localPartialSigOfRemoteTx, localNonce._2)))
-                  )
-                case _ =>
-                  val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, params.commitmentFormat)
-                  FundingSigned(
-                    channelId = channelId,
-                    signature = localSigOfRemoteTx
-                  )
+              val fundingSigned = if (params.commitmentFormat.useTaproot) {
+                val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
+                val Right(localPartialSigOfRemoteTx) = keyManager.partialSign(remoteCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Remote, localNonce, remoteNextLocalNonce.get)
+                FundingSigned(
+                  channelId = channelId,
+                  signature = ByteVector64.Zeroes,
+                  TlvStream(PartialSignatureWithNonceTlv(PartialSignatureWithNonce(localPartialSigOfRemoteTx, localNonce._2)))
+                )
+              } else {
+                val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, params.commitmentFormat)
+                FundingSigned(
+                  channelId = channelId,
+                  signature = localSigOfRemoteTx
+                )
               }
               val commitment = Commitment(
                 fundingTxIndex = 0,
@@ -384,27 +382,26 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(msg@FundingSigned(_, _, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
-      val signedLocalCommitTx = params.commitmentFormat match {
-        case SimpleTaprootChannelsStagingCommitmentFormat =>
-          require(msg.sigOrPartialSig.isRight, "missing partial signature and nonce")
-          val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
-          val Right(remotePartialSigWithNonce) = msg.sigOrPartialSig
-          val Right(partialSig) = keyManager.partialSign(
-            localCommitTx,
-            fundingPubKey, remoteFundingPubKey,
-            TxOwner.Local,
-            localNonce, remotePartialSigWithNonce.nonce)
-          val Right(aggSig) = Transactions.aggregatePartialSignatures(localCommitTx,
-            partialSig, remotePartialSigWithNonce.partialSig,
-            fundingPubKey.publicKey, remoteFundingPubKey,
-            localNonce._2, remotePartialSigWithNonce.nonce)
-          val signedCommitTx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig))
-          Transaction.correctlySpends(signedCommitTx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-          localCommitTx.copy(tx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig)))
-        case _ =>
-          val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.commitmentFormat)
-          val Left(remoteSig) = msg.sigOrPartialSig
-          Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = if (params.commitmentFormat.useTaproot) {
+        require(msg.sigOrPartialSig.isRight, "missing partial signature and nonce")
+        val localNonce = keyManager.verificationNonce(params.localParams.fundingKeyPath, 0, keyManager.keyPath(params.localParams, params.channelConfig), 0)
+        val Right(remotePartialSigWithNonce) = msg.sigOrPartialSig
+        val Right(partialSig) = keyManager.partialSign(
+          localCommitTx,
+          fundingPubKey, remoteFundingPubKey,
+          TxOwner.Local,
+          localNonce, remotePartialSigWithNonce.nonce)
+        val Right(aggSig) = Transactions.aggregatePartialSignatures(localCommitTx,
+          partialSig, remotePartialSigWithNonce.partialSig,
+          fundingPubKey.publicKey, remoteFundingPubKey,
+          localNonce._2, remotePartialSigWithNonce.nonce)
+        val signedCommitTx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig))
+        Transaction.correctlySpends(signedCommitTx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        localCommitTx.copy(tx = localCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig)))
+      } else {
+        val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, params.commitmentFormat)
+        val Left(remoteSig) = msg.sigOrPartialSig
+        Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
       }
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
@@ -466,7 +463,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      if (d.commitments.params.commitmentFormat == SimpleTaprootChannelsStagingCommitmentFormat) {
+      if (d.commitments.params.commitmentFormat.useTaproot) {
         require(remoteChannelReady.nexLocalNonce_opt.isDefined, "missing next local nonce")
       }
       // We are here if:
