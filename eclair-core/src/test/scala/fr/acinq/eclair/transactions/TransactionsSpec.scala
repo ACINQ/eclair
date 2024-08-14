@@ -17,7 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, XonlyPublicKey, ripemd160, sha256}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, KotlinUtils, MilliBtc, MilliBtcDouble, Musig2, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
@@ -1173,6 +1173,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     test(SimpleTaprootChannelsStagingCommitmentFormat)
     test(SimpleTaprootChannelsStagingLegacyCommitmentFormat)
+  }
+
+  test("generate taproot NUMS point") {
+    val bin = 2.toByte +: Crypto.sha256(ByteVector.fromValidHex("0000000000000002") ++ ByteVector.view("Lightning Simple Taproot".getBytes))
+    val pub = PublicKey(bin)
+    assert(pub == NUMS_POINT)
   }
 
   test("sort the htlc outputs using BIP69 and cltv expiry") {
