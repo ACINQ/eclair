@@ -433,7 +433,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val htlcTimeoutTx = aliceCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
 
     // the HTLC times out, alice needs to close the channel
-    alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight)
+    alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight, None)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcTimeoutTx.txid)
@@ -457,7 +457,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val htlcSuccessTx = bobCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
 
     // bob does not force-close unless there is a pending preimage for the incoming htlc
-    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
+    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt, None)
     bob2blockchain.expectNoMessage(100 millis)
 
     // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
@@ -465,7 +465,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     safeSend(bob, Seq(fulfillHtlc))
 
     // the HTLC timeout from alice is near, bob needs to close the channel to avoid an on-chain race condition
-    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
+    bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt, None)
     // bob publishes a first set of force-close transactions
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     bob2blockchain.expectMsgType[PublishTx] // main delayed

@@ -211,21 +211,21 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CurrentBlockCount (funder)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    alice ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    alice ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1, None)
     alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout not reached)") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE - 1)
+    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE - 1, None)
     bob2alice.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout reached)") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
-    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    bob ! CurrentBlockHeight(initialState.waitingSince + Channel.FUNDING_TIMEOUT_FUNDEE + 1, None)
     bob2alice.expectMsgType[Error]
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)

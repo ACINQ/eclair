@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Re
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, SubscriptionsComplete, TestBitcoinCoreClient, TestConstants, TestDatabases}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -74,6 +74,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
         torAddress_opt = None,
         database = TestDatabases.inMemoryDb(),
         blockHeight = new AtomicLong(400_000),
+        blockHeader = new AtomicReference(TestConstants.defaultBlockHeader),
         feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
       ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)

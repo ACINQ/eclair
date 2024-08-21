@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
+import fr.acinq.bitcoin.BlockHeader
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
@@ -57,6 +58,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onChainKeyManager_opt: Option[OnChainKeyManager],
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
+                      private val blockHeader: AtomicReference[BlockHeader],
                       private val feerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
@@ -99,6 +101,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginOpenChannelInterceptor: Option[InterceptOpenChannelPlugin] = pluginParams.collectFirst { case p: InterceptOpenChannelPlugin => p }
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
+
+  def currentBlockHeader: BlockHeader = blockHeader.get()
 
   def currentFeerates: FeeratesPerKw = feerates.get()
 
@@ -215,7 +219,7 @@ object NodeParams extends Logging {
 
   def makeNodeParams(config: Config, instanceId: UUID,
                      nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onChainKeyManager_opt: Option[OnChainKeyManager],
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, blockHeader: AtomicReference[BlockHeader], feerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -482,6 +486,7 @@ object NodeParams extends Logging {
       onChainKeyManager_opt = onChainKeyManager_opt,
       instanceId = instanceId,
       blockHeight = blockHeight,
+      blockHeader = blockHeader,
       feerates = feerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),

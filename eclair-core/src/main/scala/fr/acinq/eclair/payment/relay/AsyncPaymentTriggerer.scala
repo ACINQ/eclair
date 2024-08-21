@@ -113,7 +113,7 @@ private class AsyncPaymentTriggerer(context: ActorContext[Command]) {
           case (remoteNodeId, peer) => peer.cancel(paymentHash).map(peer1 => remoteNodeId -> peer1)
         }
         watching(peers1)
-      case WrappedCurrentBlockHeight(CurrentBlockHeight(currentBlockHeight)) =>
+      case WrappedCurrentBlockHeight(CurrentBlockHeight(currentBlockHeight, _)) =>
         val peers1 = peers.flatMap {
           case (remoteNodeId, peer) => peer.update(currentBlockHeight).map(peer1 => remoteNodeId -> peer1)
         }
