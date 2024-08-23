@@ -57,7 +57,7 @@ class HeadersOverDnsSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   }
 
   test("ignore testnet requests", TestTags.ExternalApi) {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.TestnetGenesisBlock.hash, BlockHeight(500000)))
+    val headersOverDns = testKit.spawn(HeadersOverDns(Block.Testnet3GenesisBlock.hash, BlockHeight(500000)))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
     sender.expectNoMessage(1 second)

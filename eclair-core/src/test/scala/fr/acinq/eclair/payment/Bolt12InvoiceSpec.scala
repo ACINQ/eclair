@@ -210,7 +210,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
   }
 
   test("encode/decode invoice with many fields") {
-    val chain = Block.TestnetGenesisBlock.hash
+    val chain = Block.Testnet3GenesisBlock.hash
     val amount = 123456 msat
     val description = "invoice with many fields"
     val features = Features.empty
@@ -337,7 +337,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(payerKey.publicKey == PublicKey(hex"027c6d03fa8f366e2ef8017cdfaf5d3cf1a3b0123db1318263b662c0aa9ec9c959"))
     val preimage = ByteVector32(hex"99221825b86576e94391b179902be8b22c7cfa7c3d14aec6ae86657dfd9bd2a8")
     val offer = Offer(TlvStream[OfferTlv](
-      OfferChains(Seq(Block.TestnetGenesisBlock.hash)),
+      OfferChains(Seq(Block.Testnet3GenesisBlock.hash)),
       OfferAmount(100000 msat),
       OfferDescription("offer with quantity"),
       OfferIssuer("alice@bigshop.com"),
@@ -346,7 +346,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val encodedOffer = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqvqcdgq2zdhkven9wgs8w6t5dqs8zatpde6xjarezggkzmrfvdj5qcnfvaeksmms9e3k7mg5qgp7s93pqvn6l4vemgezdarq3wt2kpp0u4vt74vzz8futen7ej97n93jypp57"
     assert(offer.toString == encodedOffer)
     assert(Offer.decode(encodedOffer).get == offer)
-    val request = InvoiceRequest(offer, 7200000 msat, 72, Features.empty, payerKey, Block.TestnetGenesisBlock.hash)
+    val request = InvoiceRequest(offer, 7200000 msat, 72, Features.empty, payerKey, Block.Testnet3GenesisBlock.hash)
     // Invoice request generation is not reproducible because we add randomness in the first TLV.
     val encodedRequest = "lnr1qqs8lqvnh3kg9uj003lxlxyj8hthymgq4p9ms0ag0ryx5uw8gsuus4gzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrqxr2qzsndanxvetjypmkjargypch2ctww35hg7gjz9skc6trv4qxy6t8wd5x7upwvdhk69qzq05pvggry7hatxw6xgn0gcytj64sgtl9tzl4tqs360z7vlkv305evv3qgd84qgzrf9la07pxj4cs3a9rplvuasawhfuewgyyay826q02xvysqqqqqpfqxmwaqptqzjzcyyp8cmgrl28nvm3wlqqheha0t570rgaszg7mzvvzvwmx9s92nmyujk0sgpef8dt57nygu3dnfhglymt6mnle6j8s28rler8wv3zygen07v4ddfplc9qs7nkdzwcelm2rs552slkpv45xxng65ne6y4dlq2764gqv"
     val decodedRequest = InvoiceRequest.decode(encodedRequest).get

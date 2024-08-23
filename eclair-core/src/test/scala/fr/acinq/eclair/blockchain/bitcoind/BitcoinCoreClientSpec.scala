@@ -254,7 +254,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx2.tx, 0, inputScript1, SigHash.SIGHASH_ALL, 250_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
       val psbt = new Psbt(fundedTx2.tx)
-        .updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of()).getRight
+        .updateWitnessInput(outpoint1, txOut1, null, null, null, java.util.Map.of(), null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, bobPriv).map(_.publicKey), Seq(externalSig))).getRight
       // And let bitcoind sign the wallet input.
       walletExternalFunds.signPsbt(psbt, fundedTx2.tx.txIn.indices, Nil).pipeTo(sender.ref)
@@ -284,7 +284,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
       val psbt = new Psbt(fundedTx.tx)
-        .updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
+        .updateWitnessInput(externalOutpoint, tx2.txOut(0), null, null, null, java.util.Map.of(), null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))).getRight
       // bitcoind signs the wallet input.
       walletExternalFunds.signPsbt(psbt, fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
@@ -320,7 +320,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // We sign our external input.
       val externalSig = Transaction.signInput(fundedTx.tx, 0, inputScript2, SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, alicePriv)
       val psbt = new Psbt(fundedTx.tx)
-        .updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of()).getRight
+        .updateWitnessInput(OutPoint(tx2, 0), tx2.txOut(0), null, null, null, java.util.Map.of(), null, null, java.util.Map.of()).getRight
         .finalizeWitnessInput(0, Script.witnessMultiSigMofN(Seq(alicePriv, carolPriv).map(_.publicKey), Seq(externalSig))).getRight
       // bitcoind signs the wallet input.
       walletExternalFunds.signPsbt(psbt, fundedTx.tx.txIn.indices, Nil).pipeTo(sender.ref)
@@ -816,7 +816,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedNonWalletInput = txWithNonWalletInput.updateWitness(0, nonWalletWitness)
       val psbt = new Psbt(txWithSignedNonWalletInput)
-      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, txToRemote.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths, null, null, java.util.Map.of())
       val Right(psbt1) = updated.flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
       bitcoinClient.signPsbt(psbt1, txWithSignedNonWalletInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       val signTxResponse2 = sender.expectMsgType[ProcessPsbtResponse]
@@ -848,7 +848,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedUnconfirmedInput = txWithUnconfirmedInput.updateWitness(0, nonWalletWitness)
       val psbt = new Psbt(txWithSignedUnconfirmedInput)
-      val Right(psbt1) = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths)
+      val Right(psbt1) = psbt.updateWitnessInput(psbt.global.tx.txIn.get(0).outPoint, unconfirmedTx.txOut(0), null, fr.acinq.bitcoin.Script.pay2pkh(nonWalletKey.publicKey), SigHash.SIGHASH_ALL, psbt.getInput(0).getDerivationPaths, null, null, java.util.Map.of())
         .flatMap(_.finalizeWitnessInput(0, nonWalletWitness))
       bitcoinClient.signPsbt(psbt1, txWithSignedUnconfirmedInput.txIn.indices.tail, Nil).pipeTo(sender.ref)
       assert(sender.expectMsgType[ProcessPsbtResponse].complete)
@@ -1521,7 +1521,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val txOut = Seq(TxOut(outputAmount, Script.pay2wpkh(randomKey().publicKey)))
       var psbt = new Psbt(Transaction(2, txIn, txOut, 0))
       (fromInput until toInput).foreach { i =>
-        psbt = psbt.updateWitnessInput(OutPoint(parentTx, i), parentTx.txOut(i), null, null, null, psbt.getInput(i - fromInput).getDerivationPaths).getRight
+        psbt = psbt.updateWitnessInput(OutPoint(parentTx, i), parentTx.txOut(i), null, null, null, psbt.getInput(i - fromInput).getDerivationPaths, null, null, java.util.Map.of()).getRight
         psbt = psbt.finalizeWitnessInput(i - fromInput, ScriptWitness(Seq(ByteVector(1), bigInputScript))).getRight
       }
       val signedTx: Transaction = psbt.extract().getRight

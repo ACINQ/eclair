@@ -32,7 +32,7 @@ import scodec.bits.ByteVector
 
 object LocalChannelKeyManager {
   def keyBasePath(chainHash: BlockHash): List[Long] = (chainHash: @unchecked) match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
+    case Block.RegtestGenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.SignetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
     case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
 }

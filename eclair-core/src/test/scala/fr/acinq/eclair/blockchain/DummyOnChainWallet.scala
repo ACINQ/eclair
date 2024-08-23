@@ -204,7 +204,15 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
       case (currentPsbt, (txIn, index)) => inputs.find(_.txid == txIn.outPoint.txid) match {
         case Some(inputTx) =>
           val sig = Transaction.signInput(tx, index, Script.pay2pkh(pubkey), SigHash.SIGHASH_ALL, inputTx.txOut.head.amount, SigVersion.SIGVERSION_WITNESS_V0, privkey)
-          val updated = currentPsbt.updateWitnessInput(txIn.outPoint, inputTx.txOut(txIn.outPoint.index.toInt), null, Script.pay2pkh(pubkey).map(scala2kmp).asJava, null, java.util.Map.of()).getRight
+          val updated = currentPsbt.updateWitnessInput(
+            txIn.outPoint,
+            inputTx.txOut(txIn.outPoint.index.toInt),
+            null,
+            Script.pay2pkh(pubkey).map(scala2kmp).asJava,
+            null, java.util.Map.of(),
+            null,
+            null,
+            java.util.Map.of()).getRight
           updated.finalizeWitnessInput(txIn.outPoint, Script.witnessPay2wpkh(pubkey, sig)).getRight
         case None => currentPsbt
       }
