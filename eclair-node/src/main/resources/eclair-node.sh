@@ -349,7 +349,7 @@ declare -r real_script_path="$(realpath "$0")"
 declare -r app_home="$(realpath "$(dirname "$real_script_path")")"
 declare -r lib_dir="$(realpath "${app_home:0:${#app_home}-4}/lib")" # {app_home:0:${#app_home}-4} transforms ../bin in ../
 declare -a app_mainclass=("fr.acinq.eclair.Boot")
-declare -a app_entrypoint=$(ls "$lib_dir" |grep eclair-node) # TODO: improve this
+declare -a app_entrypoint=$(ls "$lib_dir" | grep eclair-node) # TODO: improve this
 declare -a app_classpath=("$lib_dir:$lib_dir/$app_entrypoint")
 
 # java_cmd is overrode in process_args when -java-home is used
