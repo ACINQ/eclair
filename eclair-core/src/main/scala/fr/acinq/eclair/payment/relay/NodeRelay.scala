@@ -332,7 +332,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
     val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
     payFSM ! payment
-    sending(upstream, payloadOut, TimestampMilli.now(), fulfilledUpstream = false)
+    sending(upstream, payloadOut, recipient, TimestampMilli.now(), fulfilledUpstream = false)
   }
 
   /**
@@ -342,7 +342,11 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, startedAt: TimestampMilli, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Hot.Trampoline,
+                      nextPayload: IntermediatePayload.NodeRelay,
+                      recipient: Recipient,
+                      startedAt: TimestampMilli,
+                      fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -351,7 +355,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage)
-            sending(upstream, nextPayload, startedAt, fulfilledUpstream = true)
+            sending(upstream, nextPayload, recipient, startedAt, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
