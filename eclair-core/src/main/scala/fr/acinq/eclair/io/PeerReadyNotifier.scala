@@ -134,17 +134,42 @@ object PeerReadyNotifier {
                   case cbc => NewBlockNotTimedOut(cbc.blockHeight)
                 })
               }
-              // In case the peer is not currently connected, we will wait for them to connect instead of regularly
-              // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
-              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => if (e.nodeId == remoteNodeId) PeerConnected else ToBeIgnored))
-              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => if (e.nodeId == remoteNodeId) PeerDisconnected else ToBeIgnored))
               // The actor should never throw, but for extra safety we wrap it with a supervisor.
               Behaviors.supervise {
-                new PeerReadyNotifier(replyTo, remoteNodeId, context, timers).register()
+                start(replyTo, remoteNodeId, context, timers)
               }.onFailure(SupervisorStrategy.stop)
           }
         }
       }
+    }
+  }
+
+  private def start(replyTo: ActorRef[Result], remoteNodeId: PublicKey, context: ActorContext[Command], timers: TimerScheduler[Command]): Behavior[Command] = {
+    // We start by registering ourself to see if other instances are running.
+    context.system.receptionist ! Receptionist.Find(PeerReadyManager.PeerReadyManagerServiceKey, context.messageAdapter[Receptionist.Listing](WrappedListing))
+    Behaviors.receiveMessagePartial {
+      case WrappedListing(PeerReadyManager.PeerReadyManagerServiceKey.Listing(listings)) =>
+        listings.headOption match {
+          case Some(peerReadyManager) =>
+            peerReadyManager ! PeerReadyManager.Register(context.messageAdapter[PeerReadyManager.Registered](WrappedRegistered), remoteNodeId)
+            Behaviors.same
+          case None =>
+            context.log.error("no peer-ready-manager found")
+            replyTo ! PeerUnavailable(remoteNodeId)
+            Behaviors.stopped
+        }
+      case WrappedRegistered(registered) =>
+        context.log.info("checking if peer is ready ({} other attempts)", registered.otherAttempts)
+        val isFirstAttempt = registered.otherAttempts == 0
+        // In case the peer is not currently connected, we will wait for them to connect instead of regularly
+        // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => if (e.nodeId == remoteNodeId) PeerConnected else ToBeIgnored))
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => if (e.nodeId == remoteNodeId) PeerDisconnected else ToBeIgnored))
+        new PeerReadyNotifier(replyTo, remoteNodeId, isFirstAttempt, context, timers).findSwitchboard()
+      case Timeout =>
+        context.log.info("timed out finding peer-ready-manager actor")
+        replyTo ! PeerUnavailable(remoteNodeId)
+        Behaviors.stopped
     }
   }
 
@@ -183,6 +208,7 @@ object PeerReadyNotifier {
 
 private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
                                 remoteNodeId: PublicKey,
+                                isFirstAttempt: Boolean,
                                 context: ActorContext[PeerReadyNotifier.Command],
                                 timers: TimerScheduler[PeerReadyNotifier.Command]) {
 
@@ -190,38 +216,13 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
 
   private val log = context.log
 
-  private def register(): Behavior[Command] = {
-    context.system.receptionist ! Receptionist.Find(PeerReadyManager.PeerReadyManagerServiceKey, context.messageAdapter[Receptionist.Listing](WrappedListing))
-    Behaviors.receiveMessagePartial {
-      case WrappedListing(PeerReadyManager.PeerReadyManagerServiceKey.Listing(listings)) =>
-        listings.headOption match {
-          case Some(peerReadyManager) =>
-            peerReadyManager ! PeerReadyManager.Register(context.messageAdapter[PeerReadyManager.Registered](WrappedRegistered), remoteNodeId)
-            Behaviors.same
-          case None =>
-            log.error("no peer-ready-manager found")
-            replyTo ! PeerUnavailable(remoteNodeId)
-            Behaviors.stopped
-        }
-      case WrappedRegistered(registered) =>
-        log.info("checking if peer is available ({} other attempts)", registered.otherAttempts)
-        findSwitchboard(isFirstAttempt = registered.otherAttempts == 0)
-      case Timeout =>
-        log.info("timed out finding peer-ready-manager actor")
-        replyTo ! PeerUnavailable(remoteNodeId)
-        Behaviors.stopped
-      case ToBeIgnored =>
-        Behaviors.same
-    }
-  }
-
-  private def findSwitchboard(isFirstAttempt: Boolean): Behavior[Command] = {
+  private def findSwitchboard(): Behavior[Command] = {
     context.system.receptionist ! Receptionist.Find(Switchboard.SwitchboardServiceKey, context.messageAdapter[Receptionist.Listing](WrappedListing))
     Behaviors.receiveMessagePartial {
       case WrappedListing(Switchboard.SwitchboardServiceKey.Listing(listings)) =>
         listings.headOption match {
           case Some(switchboard) =>
-            waitForPeerConnected(switchboard, isFirstAttempt)
+            waitForPeerConnected(switchboard)
           case None =>
             log.error("no switchboard found")
             replyTo ! PeerUnavailable(remoteNodeId)
@@ -236,7 +237,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
     }
   }
 
-  private def waitForPeerConnected(switchboard: ActorRef[Switchboard.GetPeerInfo], isFirstAttempt: Boolean): Behavior[Command] = {
+  private def waitForPeerConnected(switchboard: ActorRef[Switchboard.GetPeerInfo]): Behavior[Command] = {
     val peerInfoAdapter = context.messageAdapter[Peer.PeerInfoResponse] {
       // We receive this when we don't have any channel to the given peer and are not currently connected to them.
       // In that case we still want to wait for a connection, because we may want to open a channel to them.
@@ -262,7 +263,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
           Behaviors.stopped
         } else {
           log.debug("peer is connected with {} channels", channelCount)
-          waitForChannelsReady(peer, switchboard, isFirstAttempt)
+          waitForChannelsReady(peer, switchboard)
         }
       case NewBlockNotTimedOut(currentBlockHeight) =>
         log.debug("waiting for peer to connect at block {}", currentBlockHeight)
@@ -276,7 +277,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
     }
   }
 
-  private def waitForChannelsReady(peer: ActorRef[Peer.GetPeerChannels], switchboard: ActorRef[Switchboard.GetPeerInfo], isFirstAttempt: Boolean): Behavior[Command] = {
+  private def waitForChannelsReady(peer: ActorRef[Peer.GetPeerChannels], switchboard: ActorRef[Switchboard.GetPeerInfo]): Behavior[Command] = {
     timers.startTimerWithFixedDelay(ChannelsReadyTimerKey, CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
     Behaviors.receiveMessagePartial {
       case CheckChannelsReady =>
@@ -299,7 +300,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
       case PeerDisconnected =>
         log.debug("peer disconnected, waiting for them to reconnect")
         timers.cancel(ChannelsReadyTimerKey)
-        waitForPeerConnected(switchboard, isFirstAttempt)
+        waitForPeerConnected(switchboard)
       case Timeout =>
         log.info("timed out waiting for channels to be ready")
         replyTo ! PeerUnavailable(remoteNodeId)
