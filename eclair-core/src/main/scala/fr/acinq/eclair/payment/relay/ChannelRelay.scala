@@ -149,7 +149,7 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   private def wakeUp(walletNodeId: PublicKey): Behavior[Command] = {
     context.log.info("trying to wake up channel peer (nodeId={})", walletNodeId)
-    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.wakeUpTimeout)))).onFailure(SupervisorStrategy.stop))
+    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout)))).onFailure(SupervisorStrategy.stop))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
     Behaviors.receiveMessagePartial {
       case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerUnavailable) =>

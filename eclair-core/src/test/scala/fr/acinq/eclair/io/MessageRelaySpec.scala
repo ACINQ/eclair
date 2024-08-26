@@ -28,6 +28,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.MessageRelay._
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerNotFound}
+import fr.acinq.eclair.io.PeerReadyNotifier.WakeUpConfig
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
@@ -56,7 +57,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val peerConnection = TypedProbe[Nothing]("peerConnection")
     val peer = TypedProbe[Peer.RelayOnionMessage]("peer")
     val probe = TypedProbe[Status]("probe")
-    val nodeParams = if (test.tags.contains(wakeUpTimeout)) Alice.nodeParams.copy(wakeUpTimeout = 100 millis) else Alice.nodeParams
+    val nodeParams = if (test.tags.contains(wakeUpTimeout)) Alice.nodeParams.copy(peerWakeUpConfig = WakeUpConfig(100 millis)) else Alice.nodeParams
     val relay = testKit.spawn(MessageRelay(nodeParams, switchboard.ref, register.ref, router.ref))
     try {
       withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, probe)))

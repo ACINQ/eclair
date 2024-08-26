@@ -33,6 +33,8 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
  */
 object PeerReadyNotifier {
 
+  case class WakeUpConfig(timeout: FiniteDuration)
+
   // @formatter:off
   sealed trait Command
   case class NotifyWhenPeerReady(replyTo: ActorRef[Result]) extends Command

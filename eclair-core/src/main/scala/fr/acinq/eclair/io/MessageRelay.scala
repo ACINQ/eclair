@@ -34,8 +34,6 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessage
 import fr.acinq.eclair.{EncodedNodeId, Logs, NodeParams, ShortChannelId}
 
-import scala.concurrent.duration.DurationInt
-
 object MessageRelay {
   // @formatter:off
   sealed trait Command
@@ -148,7 +146,7 @@ private class MessageRelay(nodeParams: NodeParams,
             waitForConnection(msg, nodeId)
         }
       case EncodedNodeId.WithPublicKey.Wallet(nodeId) =>
-        val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.wakeUpTimeout)))).onFailure(SupervisorStrategy.stop))
+        val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout)))).onFailure(SupervisorStrategy.stop))
         notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
         waitForWalletNodeUp(msg, nodeId)
     }
