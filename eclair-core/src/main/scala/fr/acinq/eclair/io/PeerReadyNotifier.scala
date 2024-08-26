@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.receptionist.Receptionist
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
-import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.{BlockHeight, Logs, channel}
@@ -40,15 +40,16 @@ object PeerReadyNotifier {
   case class NotifyWhenPeerReady(replyTo: ActorRef[Result]) extends Command
   private final case class WrappedListing(wrapped: Receptionist.Listing) extends Command
   private case object PeerNotConnected extends Command
-  private case class SomePeerConnected(nodeId: PublicKey) extends Command
-  private case class SomePeerDisconnected(nodeId: PublicKey) extends Command
+  private case object PeerConnected extends Command
+  private case object PeerDisconnected extends Command
   private case class WrappedPeerInfo(peer: ActorRef[Peer.GetPeerChannels], channelCount: Int) extends Command
   private case class NewBlockNotTimedOut(currentBlockHeight: BlockHeight) extends Command
   private case object CheckChannelsReady extends Command
   private case class WrappedPeerChannels(wrapped: Peer.PeerChannels) extends Command
   private case object Timeout extends Command
+  private case object ToBeIgnored extends Command
 
-  sealed trait Result
+  sealed trait Result { def remoteNodeId: PublicKey }
   case class PeerReady(remoteNodeId: PublicKey, peer: akka.actor.ActorRef, channelInfos: Seq[Peer.ChannelInfo]) extends Result { val channelsCount: Int = channelInfos.size }
   case class PeerUnavailable(remoteNodeId: PublicKey) extends Result
 
@@ -59,21 +60,24 @@ object PeerReadyNotifier {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
-          Behaviors.receiveMessagePartial {
-            case NotifyWhenPeerReady(replyTo) =>
-              timeout_opt.foreach {
-                case Left(d) => timers.startSingleTimer(Timeout, d)
-                case Right(h) => context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight] {
-                  case cbc if h <= cbc.blockHeight => Timeout
-                  case cbc => NewBlockNotTimedOut(cbc.blockHeight)
-                })
-              }
-              // In case the peer is not currently connected, we will wait for them to connect instead of regularly
-              // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
-              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => SomePeerConnected(e.nodeId)))
-              context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => SomePeerDisconnected(e.nodeId)))
-              new PeerReadyNotifier(replyTo, remoteNodeId, context, timers).findSwitchboard()
-          }
+            Behaviors.receiveMessagePartial {
+              case NotifyWhenPeerReady(replyTo) =>
+                timeout_opt.foreach {
+                  case Left(d) => timers.startSingleTimer(Timeout, d)
+                  case Right(h) => context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight] {
+                    case cbc if h <= cbc.blockHeight => Timeout
+                    case cbc => NewBlockNotTimedOut(cbc.blockHeight)
+                  })
+                }
+                // In case the peer is not currently connected, we will wait for them to connect instead of regularly
+                // polling the switchboard. This makes more sense for long timeouts such as the ones used for async payments.
+                context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => if (e.nodeId == remoteNodeId) PeerConnected else ToBeIgnored))
+                context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](e => if (e.nodeId == remoteNodeId) PeerDisconnected else ToBeIgnored))
+                // The actor should never throw, but for extra safety we wrap it with a supervisor.
+                Behaviors.supervise {
+                  new PeerReadyNotifier(replyTo, remoteNodeId, context, timers).findSwitchboard()
+                }.onFailure(SupervisorStrategy.stop)
+            }
         }
       }
     }
@@ -137,6 +141,8 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
         log.info("timed out finding switchboard actor")
         replyTo ! PeerUnavailable(remoteNodeId)
         Behaviors.stopped
+      case ToBeIgnored =>
+        Behaviors.same
     }
   }
 
@@ -154,12 +160,10 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
       case PeerNotConnected =>
         log.debug("peer is not connected yet")
         Behaviors.same
-      case SomePeerConnected(nodeId) =>
-        if (nodeId == remoteNodeId) {
-          switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
-        }
+      case PeerConnected =>
+        switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
         Behaviors.same
-      case SomePeerDisconnected(_) =>
+      case PeerDisconnected =>
         Behaviors.same
       case WrappedPeerInfo(peer, channelCount) =>
         if (channelCount == 0) {
@@ -177,6 +181,8 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
         log.info("timed out waiting for peer to connect")
         replyTo ! PeerUnavailable(remoteNodeId)
         Behaviors.stopped
+      case ToBeIgnored =>
+        Behaviors.same
     }
   }
 
@@ -198,20 +204,18 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
       case NewBlockNotTimedOut(currentBlockHeight) =>
         log.debug("waiting for channels to be ready at block {}", currentBlockHeight)
         Behaviors.same
-      case SomePeerConnected(_) =>
+      case PeerConnected =>
         Behaviors.same
-      case SomePeerDisconnected(nodeId) =>
-        if (nodeId == remoteNodeId) {
-          log.debug("peer disconnected, waiting for them to reconnect")
-          timers.cancel(ChannelsReadyTimerKey)
-          waitForPeerConnected(switchboard)
-        } else {
-          Behaviors.same
-        }
+      case PeerDisconnected =>
+        log.debug("peer disconnected, waiting for them to reconnect")
+        timers.cancel(ChannelsReadyTimerKey)
+        waitForPeerConnected(switchboard)
       case Timeout =>
         log.info("timed out waiting for channels to be ready")
         replyTo ! PeerUnavailable(remoteNodeId)
         Behaviors.stopped
+      case ToBeIgnored =>
+        Behaviors.same
     }
   }
 

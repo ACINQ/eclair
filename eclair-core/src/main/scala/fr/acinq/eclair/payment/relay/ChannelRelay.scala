@@ -17,10 +17,10 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.actor.ActorRef
+import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -154,7 +154,7 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   private def wakeUp(walletNodeId: PublicKey): Behavior[Command] = {
     context.log.info("trying to wake up channel peer (nodeId={})", walletNodeId)
-    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout)))).onFailure(SupervisorStrategy.stop))
+    val notifier = context.spawnAnonymous(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
     Behaviors.receiveMessagePartial {
       case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerUnavailable) =>

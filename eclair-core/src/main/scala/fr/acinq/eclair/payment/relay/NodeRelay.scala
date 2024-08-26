@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.payment.relay
 
+import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{Behavior, SupervisorStrategy}
 import akka.actor.{ActorRef, typed}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.ByteVector32
@@ -298,7 +298,7 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def waitForPeerReady(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.info("trying to wake up next peer (nodeId={})", walletNodeId)
-    val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout)))).onFailure(SupervisorStrategy.stop))
+    val notifier = context.spawnAnonymous(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {

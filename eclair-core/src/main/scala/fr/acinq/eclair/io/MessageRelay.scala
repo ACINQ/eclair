@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{Behavior, SupervisorStrategy}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -146,7 +146,7 @@ private class MessageRelay(nodeParams: NodeParams,
             waitForConnection(msg, nodeId)
         }
       case EncodedNodeId.WithPublicKey.Wallet(nodeId) =>
-        val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout)))).onFailure(SupervisorStrategy.stop))
+        val notifier = context.spawnAnonymous(PeerReadyNotifier(nodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
         notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
         waitForWalletNodeUp(msg, nodeId)
     }
