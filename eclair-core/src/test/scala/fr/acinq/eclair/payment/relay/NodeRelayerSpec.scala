@@ -32,7 +32,7 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.io.{Peer, Switchboard}
+import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.IncomingPaymentPacket.{RelayToBlindedPathsPacket, RelayToTrampolinePacket}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -790,6 +790,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("relay to blinded path with wake-up") { f =>
     import f._
 
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]()
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
@@ -798,9 +800,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     // The remote node is a wallet node: we try to wake them up before relaying the payment.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(wakeUp.remoteNodeId == outgoingNodeId)
     wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -832,6 +836,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("fail to relay to blinded path when wake-up fails", Tag(wakeUpTimeout)) { f =>
     import f._
 
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]()
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
@@ -840,7 +846,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming, randomKey().publicKey))
 
     // The remote node is a wallet node: we try to wake them up before relaying the payment, but it times out.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == outgoingNodeId)
+    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
     mockPayFSM.expectNoMessage(100 millis)
 

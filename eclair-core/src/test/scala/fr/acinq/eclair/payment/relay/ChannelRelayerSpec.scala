@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.PeerReadyNotifier.WakeUpConfig
-import fr.acinq.eclair.io.{Peer, Switchboard}
+import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
@@ -176,6 +176,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("relay blinded payment (wake up wallet node)") { f =>
     import f._
 
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]()
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
@@ -188,12 +190,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
       // We try to wake-up the next node.
+      peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
       val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
       assert(wakeUp.remoteNodeId == outgoingNodeId)
       wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
       expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     })
 
+    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
   }
 
@@ -327,6 +331,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay blinded payment (cannot wake up remote node)", Tag(wakeUpTimeout)) { f =>
     import f._
 
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]()
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]()
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
 
@@ -338,10 +344,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
     // We try to wake-up the next node, but we timeout before they connect.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == outgoingNodeId)
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fail.message.reason.contains(InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))))
 
+    system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
   }
 

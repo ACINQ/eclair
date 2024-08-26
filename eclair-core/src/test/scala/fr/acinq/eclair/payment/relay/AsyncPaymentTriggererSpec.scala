@@ -11,7 +11,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.NEGOTIATING
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
-import fr.acinq.eclair.io.{Peer, PeerConnected, Switchboard}
+import fr.acinq.eclair.io.{Peer, PeerConnected, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer._
 import fr.acinq.eclair.{BlockHeight, TestConstants, randomKey}
 import org.scalatest.Outcome
@@ -21,18 +21,21 @@ import scala.concurrent.duration.DurationInt
 
 class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(remoteNodeId: PublicKey, switchboard: TestProbe[Switchboard.GetPeerInfo], peer: TestProbe[Peer.GetPeerChannels], probe: TestProbe[Result], triggerer: ActorRef[Command])
+  case class FixtureParam(remoteNodeId: PublicKey, peerReadyManager: TestProbe[PeerReadyManager.Register], switchboard: TestProbe[Switchboard.GetPeerInfo], peer: TestProbe[Peer.GetPeerChannels], probe: TestProbe[Result], triggerer: ActorRef[Command])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = TestConstants.Alice.nodeParams.nodeId
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]("peer-ready-manager")
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]("switchboard")
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
     val peer = TestProbe[Peer.GetPeerChannels]("peer")
     val probe = TestProbe[Result]()
     val triggerer = testKit.spawn(AsyncPaymentTriggerer())
     try {
-      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe, triggerer)))
+      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, peerReadyManager, switchboard, peer, probe, triggerer)))
     } finally {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
       system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
     }
   }
@@ -41,6 +44,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
     // We haven't reached the timeout yet.
@@ -60,6 +64,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
     // cancel of an unwatched payment does nothing
@@ -75,6 +80,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // create two identical watches
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
 
@@ -86,6 +92,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     // create two different watches
     val probe2 = TestProbe[Result]()
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 1)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
     triggerer ! Watch(probe2.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
 
@@ -101,6 +108,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     // create watches for two payments with the same payment hash
     val probe2 = TestProbe[Result]()
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
     triggerer ! Watch(probe2.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
 
@@ -114,6 +122,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
@@ -137,6 +146,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     import f._
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
@@ -162,6 +172,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
     // watch remote node
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
@@ -169,8 +180,9 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     val remoteNodeId2 = TestConstants.Bob.nodeParams.nodeId
     val probe2 = TestProbe[Result]()
     triggerer ! Watch(probe2.ref, remoteNodeId2, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(101))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId2, otherAttempts = 0)
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
     // First remote node times out
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
@@ -193,6 +205,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
   test("triggerer treats an unexpected stop of the notifier as a cancel") { f =>
     import f._
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
     triggerer ! NotifierStopped(remoteNodeId)
