@@ -47,9 +47,11 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
   val wakeUpTimeout = "wake_up_timeout"
 
-  case class FixtureParam(relay: ActorRef[Command], switchboard: TestProbe, register: TestProbe, router: TypedProbe[Router.GetNodeId], peerConnection: TypedProbe[Nothing], peer: TypedProbe[Peer.RelayOnionMessage], probe: TypedProbe[Status])
+  case class FixtureParam(relay: ActorRef[Command], switchboard: TestProbe, register: TestProbe, router: TypedProbe[Router.GetNodeId], peerConnection: TypedProbe[Nothing], peer: TypedProbe[Peer.RelayOnionMessage], peerReadyManager: TestProbe, probe: TypedProbe[Status])
 
   override def withFixture(test: OneArgTest): Outcome = {
+    val peerReadyManager = TestProbe("peer-ready-manager")(system.classicSystem)
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref.toTyped)
     val switchboard = TestProbe("switchboard")(system.classicSystem)
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref.toTyped)
     val register = TestProbe("register")(system.classicSystem)
@@ -60,8 +62,9 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val nodeParams = if (test.tags.contains(wakeUpTimeout)) Alice.nodeParams.copy(peerWakeUpConfig = WakeUpConfig(100 millis)) else Alice.nodeParams
     val relay = testKit.spawn(MessageRelay(nodeParams, switchboard.ref, register.ref, router.ref))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, probe)))
+      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, peerReadyManager, probe)))
     } finally {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref.toTyped)
       system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref.toTyped)
       testKit.stop(relay)
     }
@@ -99,6 +102,10 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
     val messageId = randomBytes32()
     relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.WithPublicKey.Wallet(bobId)), message, RelayChannelsOnly, None)
+
+    val register = peerReadyManager.expectMsgType[PeerReadyManager.Register]
+    assert(register.remoteNodeId == bobId)
+    register.replyTo ! PeerReadyManager.Registered(bobId, otherAttempts = 0)
 
     val request = switchboard.expectMsgType[GetPeerInfo]
     assert(request.remoteNodeId == bobId)
