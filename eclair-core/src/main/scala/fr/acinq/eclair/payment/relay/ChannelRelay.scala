@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, TimestampMilli, TimestampSecond, channel, nodeFee}
+import fr.acinq.eclair.{Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -78,7 +78,7 @@ object ChannelRelay {
    * This helper method translates relaying errors (returned by the downstream outgoing channel) to BOLT 4 standard
    * errors that we should return upstream.
    */
-  private def translateLocalError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
+  private def translateLocalError(error: ChannelException, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
     (error, channelUpdate_opt) match {
       case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(Some(channelUpdate))
       case (_: ExpiryTooBig, _) => ExpiryTooFar()
@@ -136,14 +136,19 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
+  private val (requestedShortChannelId_opt, walletNodeId_opt) = r.payload.outgoing match {
+    case Left(walletNodeId) => (None, Some(walletNodeId))
+    case Right(shortChannelId) => (Some(shortChannelId), None)
+  }
+
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 
   def start(): Behavior[Command] = {
-    r.payload.outgoing match {
-      case Left(walletNodeId) => wakeUp(walletNodeId)
-      case Right(requestedShortChannelId) =>
+    walletNodeId_opt match {
+      case Some(walletNodeId) => wakeUp(walletNodeId)
+      case None =>
         context.self ! DoRelay
-        relay(Some(requestedShortChannelId), Seq.empty)
+        relay(Seq.empty)
     }
   }
 
@@ -158,11 +163,11 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
       case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerReady) =>
         context.self ! DoRelay
-        relay(None, Seq.empty)
+        relay(Seq.empty)
     }
   }
 
-  def relay(requestedShortChannelId_opt: Option[ShortChannelId], previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
+  def relay(previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case DoRelay =>
         if (previousFailures.isEmpty) {
@@ -170,7 +175,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, requestedShortChannelId_opt, nextNodeId_opt.getOrElse(""))
         }
         context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
-        handleRelay(requestedShortChannelId_opt, previousFailures) match {
+        handleRelay(previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
@@ -178,12 +183,12 @@ class ChannelRelay private(nodeParams: NodeParams,
           case RelaySuccess(selectedChannelId, cmdAdd) =>
             context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
             register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
-            waitForAddResponse(selectedChannelId, requestedShortChannelId_opt, previousFailures)
+            waitForAddResponse(selectedChannelId, previousFailures)
         }
     }
   }
 
-  private def waitForAddResponse(selectedChannelId: ByteVector32, requestedShortChannelId_opt: Option[ShortChannelId], previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
+  private def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, _))) =>
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
@@ -194,7 +199,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
         context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
         context.self ! DoRelay
-        relay(requestedShortChannelId_opt, previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
+        relay(previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
 
       case WrappedAddResponse(_: RES_SUCCESS[_]) =>
         context.log.debug("sent htlc to the downstream channel")
@@ -251,9 +256,9 @@ class ChannelRelay private(nodeParams: NodeParams,
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  private def handleRelay(requestedShortChannelId_opt: Option[ShortChannelId], previousFailures: Seq[PreviouslyTried]): RelayResult = {
+  private def handleRelay(previousFailures: Seq[PreviouslyTried]): RelayResult = {
     val alreadyTried = previousFailures.map(_.channelId)
-    selectPreferredChannel(requestedShortChannelId_opt, alreadyTried) match {
+    selectPreferredChannel(alreadyTried) match {
       case Some(outgoingChannel) => relayOrFail(outgoingChannel)
       case None =>
         // No more channels to try.
@@ -278,7 +283,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    *
    * If no suitable channel is found we default to the originally requested channel.
    */
-  private def selectPreferredChannel(requestedShortChannelId_opt: Option[ShortChannelId], alreadyTried: Seq[ByteVector32]): Option[OutgoingChannel] = {
+  private def selectPreferredChannel(alreadyTried: Seq[ByteVector32]): Option[OutgoingChannel] = {
     context.log.debug("selecting next channel with requestedShortChannelId={}", requestedShortChannelId_opt)
     // we filter out channels that we have already tried
     val candidateChannels: Map[ByteVector32, OutgoingChannel] = channels -- alreadyTried
