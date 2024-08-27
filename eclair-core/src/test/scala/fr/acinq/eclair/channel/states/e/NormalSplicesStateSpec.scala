@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.DummyOnChainWallet.SingleKeyOnChainWallet.invalidFundingAmount
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -1392,6 +1393,27 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
+  }
+
+  test("Funding failed before a splice is requested from our peer") { f =>
+    import f._
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(invalidFundingAmount, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! cmd
+    exchangeStfu(f)
+    sender.expectMsg(RES_FAILURE(cmd, ChannelFundingError(channelId(alice))))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("Excess added to additional local funding", Tag(ChannelStateTestsTags.ChangelessFunding)) { f =>
+    import f._
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100000.sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! cmd
+    exchangeStfu(f)
+    val spliceInit = alice2bob.expectMsgType[SpliceInit]
+    assert(spliceInit.fundingContribution == 101000.sat)
   }
 
   test("recv CMD_ADD_HTLC while a splice is requested") { f =>
