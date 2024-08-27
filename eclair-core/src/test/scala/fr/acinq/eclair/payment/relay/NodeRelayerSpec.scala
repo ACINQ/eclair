@@ -67,6 +67,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   import NodeRelayerSpec._
 
+  val wakeUpEnabled = "wake_up_enabled"
   val wakeUpTimeout = "wake_up_timeout"
 
   case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent]) {
@@ -97,6 +98,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeParams = TestConstants.Bob.nodeParams
       .modify(_.multiPartPaymentExpiry).setTo(5 seconds)
       .modify(_.relayParams.asyncPaymentsParams.holdTimeoutBlocks).setToIf(test.tags.contains("long_hold_timeout"))(200000) // timeout after payment expires
+      .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
@@ -787,7 +789,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("relay to blinded path with wake-up") { f =>
+  test("relay to blinded path with wake-up", Tag(wakeUpEnabled)) { f =>
     import f._
 
     val peerReadyManager = TestProbe[PeerReadyManager.Register]()
@@ -833,7 +835,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("fail to relay to blinded path when wake-up fails", Tag(wakeUpTimeout)) { f =>
+  test("fail to relay to blinded path when wake-up fails", Tag(wakeUpEnabled), Tag(wakeUpTimeout)) { f =>
     import f._
 
     val peerReadyManager = TestProbe[PeerReadyManager.Register]()

@@ -30,7 +30,6 @@ import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.io.PeerReadyNotifier.WakeUpConfig
 import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
@@ -52,13 +51,16 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   import ChannelRelayerSpec._
 
+  val wakeUpEnabled = "wake_up_enabled"
   val wakeUpTimeout = "wake_up_timeout"
 
   case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any])
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
-    val nodeParams = if (test.tags.contains(wakeUpTimeout)) TestConstants.Bob.nodeParams.copy(peerWakeUpConfig = WakeUpConfig(100 millis)) else TestConstants.Bob.nodeParams
+    val nodeParams = TestConstants.Bob.nodeParams
+      .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
+      .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
     val register = TestProbe[Any]("register")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
     try {
@@ -173,7 +175,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
   }
 
-  test("relay blinded payment (wake up wallet node)") { f =>
+  test("relay blinded payment (wake up wallet node)", Tag(wakeUpEnabled)) { f =>
     import f._
 
     val peerReadyManager = TestProbe[PeerReadyManager.Register]()
@@ -328,7 +330,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
   }
 
-  test("fail to relay blinded payment (cannot wake up remote node)", Tag(wakeUpTimeout)) { f =>
+  test("fail to relay blinded payment (cannot wake up remote node)", Tag(wakeUpEnabled), Tag(wakeUpTimeout)) { f =>
     import f._
 
     val peerReadyManager = TestProbe[PeerReadyManager.Register]()

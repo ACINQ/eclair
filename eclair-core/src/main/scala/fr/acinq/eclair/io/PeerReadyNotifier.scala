@@ -97,7 +97,7 @@ object PeerReadyManager {
  */
 object PeerReadyNotifier {
 
-  case class WakeUpConfig(timeout: FiniteDuration)
+  case class WakeUpConfig(enabled: Boolean, timeout: FiniteDuration)
 
   // @formatter:off
   sealed trait Command

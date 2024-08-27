@@ -145,8 +145,8 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def start(): Behavior[Command] = {
     walletNodeId_opt match {
-      case Some(walletNodeId) => wakeUp(walletNodeId)
-      case None =>
+      case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => wakeUp(walletNodeId)
+      case _ =>
         context.self ! DoRelay
         relay(Seq.empty)
     }

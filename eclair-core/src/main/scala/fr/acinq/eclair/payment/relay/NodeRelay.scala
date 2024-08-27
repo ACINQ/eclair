@@ -287,8 +287,8 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def ensureRecipientReady(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     nextWalletNodeId(nodeParams, recipient) match {
-      case Some(walletNodeId) => waitForPeerReady(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
-      case None => relay(upstream, recipient, nextPayload, nextPacket_opt)
+      case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => waitForPeerReady(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
+      case _ => relay(upstream, recipient, nextPayload, nextPacket_opt)
     }
   }
 

@@ -232,7 +232,7 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(30 seconds),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -403,7 +403,7 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(30 seconds),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

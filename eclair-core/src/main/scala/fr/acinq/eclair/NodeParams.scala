@@ -614,6 +614,7 @@ object NodeParams extends Logging {
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
       ),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
+        enabled = config.getBoolean("peer-wake-up.enabled"),
         timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS)
       ),
     )
