@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Script, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -944,7 +944,28 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
                     stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
                   case Right(spliceInit) =>
-                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+                    // use our fundingPubKey as a placeholder for the remote funder's pubkey
+                    val fundingPubKey = spliceInit.fundingPubKey
+                    val parentCommitment = d.commitments.latest.commitment
+                    // assume our peer requires confirmed inputs when we initiate a splice
+                    val requireConfirmedInputs = RequireConfirmedInputs(forLocal = true, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+                    val fundingParams = InteractiveTxParams(
+                      channelId = spliceInit.channelId,
+                      isInitiator = true,
+                      localContribution = spliceInit.fundingContribution,
+                      remoteContribution = 0 sat,
+                      sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                      remoteFundingPubKey = fundingPubKey,
+                      localOutputs = cmd.spliceOutputs,
+                      lockTime = nodeParams.currentBlockHeight.toLong,
+                      dustLimit = d.commitments.params.localParams.dustLimit,
+                      targetFeerate = spliceInit.feerate,
+                      requireConfirmedInputs = requireConfirmedInputs
+                    )
+                    val dummyFundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingPubKey, fundingPubKey)))
+                    val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, dummyFundingPubkeyScript, purpose = InteractiveTxBuilder.SpliceTx(parentCommitment), wallet, nodeParams.channelConf.maxExcess_opt))
+                    txFunder ! InteractiveTxFunder.FundTransaction(self)
+                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit, None))
                 }
                 case cmd: CMD_BUMP_FUNDING_FEE => initiateSpliceRbf(cmd, d) match {
                   case Left(f) =>
@@ -1018,6 +1039,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               channelParams = d.commitments.params,
               purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
               localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
+              None,
               wallet
             ))
             txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1036,7 +1058,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: SpliceAck, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
+        case SpliceStatus.SpliceRequested(cmd, spliceInit, fundingContributions_opt) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
           val fundingParams = InteractiveTxParams(
@@ -1059,6 +1081,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             channelParams = d.commitments.params,
             purpose = InteractiveTxBuilder.SpliceTx(parentCommitment),
             localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
+            fundingContributions_opt = fundingContributions_opt,
             wallet
           ))
           txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1066,6 +1089,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ =>
           log.info(s"ignoring unexpected splice_ack=$msg")
           stay()
+      }
+
+    case Event(msg: InteractiveTxFunder.Response, d: DATA_NORMAL) =>
+      d.spliceStatus match {
+        case SpliceStatus.SpliceRequested(cmd, spliceInit, _) =>
+          msg match {
+            case InteractiveTxFunder.FundingFailed =>
+              cmd.replyTo ! RES_FAILURE(cmd, ChannelFundingError(d.channelId))
+              stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) calling endQuiescence(d)
+            case fundingContributions: InteractiveTxFunder.FundingContributions =>
+              val spliceInit1 = spliceInit.copy(fundingContribution = spliceInit.fundingContribution + fundingContributions.addExcess_opt.getOrElse(0 sat))
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit1, Some(fundingContributions))) sending spliceInit1
+          }
+        case _ =>
+          log.warning("received unexpected response from txFunder: {}, current splice status is {}", msg, d.spliceStatus)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) calling endQuiescence(d)
       }
 
     case Event(msg: InteractiveTxConstructionMessage, d: DATA_NORMAL) =>
@@ -1116,6 +1155,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 channelParams = d.commitments.params,
                 purpose = rbf,
                 localPushAmount = 0 msat, remotePushAmount = 0 msat,
+                None,
                 wallet
               ))
               txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1160,6 +1200,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 channelParams = d.commitments.params,
                 purpose = rbf,
                 localPushAmount = 0 msat, remotePushAmount = 0 msat,
+                None,
                 wallet
               ))
               txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1183,7 +1224,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
-        case SpliceStatus.SpliceRequested(cmd, _) =>
+        case SpliceStatus.SpliceRequested(cmd, _, _) =>
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"splice attempt rejected by our peer: ${msg.toAscii}"))
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
@@ -2996,7 +3037,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
     val cmd_opt = spliceStatus match {
       case SpliceStatus.NegotiatingQuiescence(cmd_opt, _) => cmd_opt
-      case SpliceStatus.SpliceRequested(cmd, _) => Some(cmd)
+      case SpliceStatus.SpliceRequested(cmd, _, _) => Some(cmd)
       case SpliceStatus.RbfRequested(cmd, _) => Some(cmd)
       case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort

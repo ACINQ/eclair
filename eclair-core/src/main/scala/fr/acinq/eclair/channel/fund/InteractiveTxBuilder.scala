@@ -157,17 +157,26 @@ object InteractiveTxBuilder {
   }
 
   // @formatter:off
-  sealed trait Purpose {
+  sealed trait FundingInfo {
     def previousLocalBalance: MilliSatoshi
     def previousRemoteBalance: MilliSatoshi
     def previousFundingAmount: Satoshi
+    def localHtlcs: Set[DirectedHtlc]
+    def htlcBalance: MilliSatoshi = localHtlcs.toSeq.map(_.add.amountMsat).sum
+  }
+  sealed trait CommitmentInfo {
     def localCommitIndex: Long
     def remoteCommitIndex: Long
     def remotePerCommitmentPoint: PublicKey
     def commitTxFeerate: FeeratePerKw
     def fundingTxIndex: Long
-    def localHtlcs: Set[DirectedHtlc]
-    def htlcBalance: MilliSatoshi = localHtlcs.toSeq.map(_.add.amountMsat).sum
+  }
+  sealed trait Purpose extends FundingInfo with CommitmentInfo
+  case class DummyFundingTx(feeBudget_opt: Option[Satoshi]) extends FundingInfo {
+    override val previousLocalBalance: MilliSatoshi = 0 msat
+    override val previousRemoteBalance: MilliSatoshi = 0 msat
+    override val previousFundingAmount: Satoshi = 0 sat
+    override val localHtlcs: Set[DirectedHtlc] = Set.empty
   }
   case class FundingTx(commitTxFeerate: FeeratePerKw, remotePerCommitmentPoint: PublicKey, feeBudget_opt: Option[Satoshi]) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = 0 msat
@@ -364,6 +373,7 @@ object InteractiveTxBuilder {
             purpose: Purpose,
             localPushAmount: MilliSatoshi,
             remotePushAmount: MilliSatoshi,
+            fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions],
             wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       // The stash is used to buffer messages that arrive while we're funding the transaction.
@@ -384,7 +394,7 @@ object InteractiveTxBuilder {
                 Behaviors.stopped
               } else {
                 val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, wallet, stash, context)
-                actor.start()
+                actor.start(fundingContributions_opt)
               }
             case Abort => Behaviors.stopped
           }
@@ -423,34 +433,42 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     case _ => Nil
   }
 
-  def start(): Behavior[Command] = {
-    val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, fundingPubkeyScript, purpose, wallet))
-    txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)))
-    Behaviors.receiveMessagePartial {
-      case FundTransactionResult(result) => result match {
-        case InteractiveTxFunder.FundingFailed =>
-          if (previousTransactions.nonEmpty && !fundingParams.isInitiator) {
-            // We don't have enough funds to reach the desired feerate, but this is an RBF attempt that we did not initiate.
-            // It still makes sense for us to contribute whatever we're able to (by using our previous set of inputs and
-            // outputs): the final feerate will be less than what the initiator intended, but it's still better than being
-            // stuck with a low feerate transaction that won't confirm.
-            log.warn("could not fund interactive tx at {}, re-using previous inputs and outputs", fundingParams.targetFeerate)
-            val previousTx = previousTransactions.head.tx
-            stash.unstashAll(buildTx(InteractiveTxFunder.FundingContributions(previousTx.localInputs, previousTx.localOutputs)))
-          } else {
-            // We use a generic exception and don't send the internal error to the peer.
-            replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
-            Behaviors.stopped
-          }
-        case fundingContributions: InteractiveTxFunder.FundingContributions =>
-          stash.unstashAll(buildTx(fundingContributions))
+  def start(fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions]): Behavior[Command] = {
+    if (fundingContributions_opt.isDefined) {
+      val fundingContributions1 = fundingContributions_opt.get.copy(outputs = fundingContributions_opt.get.outputs.map {
+        case o: InteractiveTxBuilder.Output.Shared => Output.Shared(o.serialId, fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution, purpose.htlcBalance)
+        case o => o
+      })
+      stash.unstashAll(buildTx(fundingContributions1))
+    } else {
+      val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, fundingPubkeyScript, purpose, wallet))
+      txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)))
+      Behaviors.receiveMessagePartial {
+        case FundTransactionResult(result) => result match {
+          case InteractiveTxFunder.FundingFailed =>
+            if (previousTransactions.nonEmpty && !fundingParams.isInitiator) {
+              // We don't have enough funds to reach the desired feerate, but this is an RBF attempt that we did not initiate.
+              // It still makes sense for us to contribute whatever we're able to (by using our previous set of inputs and
+              // outputs): the final feerate will be less than what the initiator intended, but it's still better than being
+              // stuck with a low feerate transaction that won't confirm.
+              log.warn("could not fund interactive tx at {}, re-using previous inputs and outputs", fundingParams.targetFeerate)
+              val previousTx = previousTransactions.head.tx
+              stash.unstashAll(buildTx(InteractiveTxFunder.FundingContributions(previousTx.localInputs, previousTx.localOutputs, addExcess_opt = None)))
+            } else {
+              // We use a generic exception and don't send the internal error to the peer.
+              replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
+              Behaviors.stopped
+            }
+          case fundingContributions: InteractiveTxFunder.FundingContributions =>
+            stash.unstashAll(buildTx(fundingContributions))
+        }
+        case msg: ReceiveMessage =>
+          stash.stash(msg)
+          Behaviors.same
+        case Abort =>
+          stash.stash(Abort)
+          Behaviors.same
       }
-      case msg: ReceiveMessage =>
-        stash.stash(msg)
-        Behaviors.same
-      case Abort =>
-        stash.stash(Abort)
-        Behaviors.same
     }
   }
 
@@ -769,6 +787,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def signCommitTx(completeTx: SharedTransaction): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
+    require(fundingOutputIndex >= 0, "shared output not found in funding tx!")
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount,

@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.DummyOnChainWallet.SingleKeyOnChainWallet.invalidFundingAmount
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -155,6 +156,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long], feeBudget_opt: Option[Satoshi], addExcessToRecipientPosition_opt: Option[Int], maxExcess_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum
     val amountOut = tx.txOut.map(_.amount).sum
+    if (amountOut >= invalidFundingAmount) return Future.failed(new RuntimeException(s"invalid funding amount"))
     // We add a single input to reach the desired feerate.
     val inputAmount = amountOut + 100_000.sat
     val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, Script.pay2wpkh(pubkey))), 0)
@@ -249,6 +251,10 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
 }
 
+class SingleKeyOnChainWalletWithConfirmedInputs extends SingleKeyOnChainWallet {
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(6))
+}
+
 object DummyOnChainWallet {
 
   val dummyReceiveAddress: String = "bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux"
@@ -262,6 +268,10 @@ object DummyOnChainWallet {
       lockTime = 0
     )
     MakeFundingTxResponse(fundingTx, 0, 420 sat)
+  }
+
+  object SingleKeyOnChainWallet {
+    val invalidFundingAmount: Satoshi = 2_100_000_000 sat
   }
 
 }

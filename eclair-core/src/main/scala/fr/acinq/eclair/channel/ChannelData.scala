@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -62,6 +62,7 @@ case object WAIT_FOR_FUNDING_CONFIRMED extends ChannelState
 case object WAIT_FOR_CHANNEL_READY extends ChannelState
 // Dual-funded channel opening:
 case object WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL extends ChannelState
+case object WAIT_FOR_DUAL_FUNDING_INTERNAL extends ChannelState
 case object WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL extends ChannelState
 case object WAIT_FOR_DUAL_FUNDING_CREATED extends ChannelState
@@ -506,7 +507,7 @@ object SpliceStatus {
   /** The channel is quiescent, we wait for our peer to send splice_init or tx_init_rbf. */
   case object NonInitiatorQuiescent extends SpliceStatus
   /** We told our peer we want to splice funds in the channel. */
-  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends SpliceStatus
+  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit, fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions]) extends SpliceStatus
   /** We told our peer we want to RBF the latest splice transaction. */
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE, rbf: TxInitRbf) extends SpliceStatus
   /** We both agreed to splice/rbf and are building the corresponding transaction. */
@@ -583,10 +584,14 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
 }
 final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
 
+final case class DATA_WAIT_FOR_DUAL_FUNDING_INTERNAL(input: INPUT_INIT_CHANNEL_INITIATOR) extends TransientChannelData {
+  val channelId: ByteVector32 = input.temporaryChannelId
+}
+
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel) extends TransientChannelData {
+final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenDualFundedChannel, fundingContributions: InteractiveTxFunder.FundingContributions) extends TransientChannelData {
   val channelId: ByteVector32 = lastSent.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,

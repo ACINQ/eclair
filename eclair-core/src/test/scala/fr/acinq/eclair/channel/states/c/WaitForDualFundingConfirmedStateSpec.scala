@@ -21,7 +21,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWalletWithConfirmedInputs}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
@@ -40,10 +40,10 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, aliceListener: TestProbe, bobListener: TestProbe, wallet: SingleKeyOnChainWallet)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, aliceListener: TestProbe, bobListener: TestProbe, wallet: SingleKeyOnChainWalletWithConfirmedInputs)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val wallet = new SingleKeyOnChainWallet()
+    val wallet = new SingleKeyOnChainWalletWithConfirmedInputs()
     val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
 
