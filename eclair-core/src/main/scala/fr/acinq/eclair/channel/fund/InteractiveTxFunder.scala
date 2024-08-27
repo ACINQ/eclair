@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.weight2fee
 import fr.acinq.eclair.wire.protocol.TxAddInput
 import fr.acinq.eclair.{Logs, UInt64}
 import scodec.bits.ByteVector
@@ -45,17 +46,17 @@ object InteractiveTxFunder {
   // @formatter:off
   sealed trait Command
   case class FundTransaction(replyTo: ActorRef[Response]) extends Command
-  private case class FundTransactionResult(tx: Transaction, changePosition: Option[Int]) extends Command
+  private case class FundTransactionResult(tx: Transaction, changePosition: Option[Int], excess_opt: Option[Satoshi] ) extends Command
   private case class InputDetails(usableInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]) extends Command
   private case class WalletFailure(t: Throwable) extends Command
   private case object UtxosUnlocked extends Command
 
   sealed trait Response
-  case class FundingContributions(inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]) extends Response
+  case class FundingContributions(inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput], excess_opt: Option[Satoshi]) extends Response
   case object FundingFailed extends Response
   // @formatter:on
 
-  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, fundingPubkeyScript: ByteVector, purpose: InteractiveTxBuilder.Purpose, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
+  def apply(remoteNodeId: PublicKey, fundingParams: InteractiveTxParams, fundingPubkeyScript: ByteVector, purpose: InteractiveTxBuilder.FundingInfo, wallet: OnChainChannelFunder)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(fundingParams.channelId))) {
         Behaviors.receiveMessagePartial {
@@ -121,7 +122,7 @@ object InteractiveTxFunder {
     previousTxSizeOk && isNativeSegwit && confirmationsOk
   }
 
-  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
+  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput], excess_opt: Option[Satoshi]): FundingContributions = {
     // We always randomize the order of inputs and outputs.
     val sortedInputs = Random.shuffle(inputs).zipWithIndex.map { case (input, i) =>
       val serialId = UInt64(2 * i + fundingParams.serialIdParity)
@@ -138,7 +139,7 @@ object InteractiveTxFunder {
         case output: Output.Shared => output.copy(serialId = serialId)
       }
     }
-    FundingContributions(sortedInputs, sortedOutputs)
+    FundingContributions(sortedInputs, sortedOutputs, excess_opt)
   }
 
 }
@@ -146,7 +147,7 @@ object InteractiveTxFunder {
 private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response],
                                   fundingParams: InteractiveTxParams,
                                   fundingPubkeyScript: ByteVector,
-                                  purpose: InteractiveTxBuilder.Purpose,
+                                  purpose: InteractiveTxBuilder.FundingInfo,
                                   wallet: OnChainChannelFunder,
                                   context: ActorContext[InteractiveTxFunder.Command])(implicit ec: ExecutionContext) {
 
@@ -177,12 +178,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         val sharedInput = fundingParams.sharedInput_opt.toSeq.map(sharedInput => Input.Shared(UInt64(0), sharedInput.info.outPoint, sharedInput.info.txOut.publicKeyScript, 0xfffffffdL, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance))
         val sharedOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution, purpose.htlcBalance)
         val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
-        val fundingContributions = sortFundingContributions(fundingParams, sharedInput ++ previousWalletInputs, sharedOutput +: nonChangeOutputs)
+        val fundingContributions = sortFundingContributions(fundingParams, sharedInput ++ previousWalletInputs, sharedOutput +: nonChangeOutputs, excess_opt = Some(0 sat))
         replyTo ! fundingContributions
         Behaviors.stopped
       } else {
         val nonChangeOutputs = fundingParams.localOutputs.map(txOut => Output.Local.NonChange(UInt64(0), txOut.amount, txOut.publicKeyScript))
-        val fundingContributions = sortFundingContributions(fundingParams, previousWalletInputs, nonChangeOutputs)
+        val fundingContributions = sortFundingContributions(fundingParams, previousWalletInputs, nonChangeOutputs, excess_opt = Some(0 sat))
         replyTo ! fundingContributions
         Behaviors.stopped
       }
@@ -207,6 +208,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
     val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
     val feeBudget_opt = purpose match {
+      case p: DummyFundingTx => p.feeBudget_opt
       case p: FundingTx => p.feeBudget_opt
       case p: FundingTxRbf => p.feeBudget_opt
       case p: SpliceTxRbf => p.feeBudget_opt
@@ -214,10 +216,20 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     }
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
-      case Success(result) => FundTransactionResult(result.tx, result.changePosition)
+      case Success(result) =>
+        // TODO: detect if inputs are not p2wpkh and add appropriate dummy witness, or fail
+        val dummyWitness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, ByteVector.fill(73)(0))
+        val dummySignedTx = result.tx.copy(
+          txIn = result.tx.txIn.filterNot(i => sharedInputWeight.contains(i.outPoint)).map(_.copy(witness = dummyWitness)),
+          txOut = result.tx.txOut,
+        )
+        val dummyFee = Transactions.weight2fee(fundingParams.targetFeerate, dummySignedTx.weight() + sharedInputWeight.values.sum.toInt)
+        val excess = result.fee - dummyFee
+        val excess_opt = if (result.changePosition.isEmpty && excess > 0.sat) Some(excess) else None
+        FundTransactionResult(result.tx, result.changePosition, excess_opt)
     }
     Behaviors.receiveMessagePartial {
-      case FundTransactionResult(fundedTx, changePosition) =>
+      case FundTransactionResult(fundedTx, changePosition, excess_opt) =>
         // Those inputs were already selected by bitcoind and considered unsuitable for interactive tx.
         val lockedUnusableInputs = fundedTx.txIn.map(_.outPoint).filter(o => unusableInputs.map(_.outpoint).contains(o))
         if (lockedUnusableInputs.nonEmpty) {
@@ -226,7 +238,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           log.error("could not fund interactive tx: bitcoind included already known unusable inputs that should have been locked: {}", lockedUnusableInputs.mkString(","))
           sendResultAndStop(FundingFailed, currentInputs.map(_.outPoint).toSet ++ fundedTx.txIn.map(_.outPoint) ++ unusableInputs.map(_.outpoint))
         } else {
-          filterInputs(fundedTx, changePosition, currentInputs, unusableInputs)
+          filterInputs(fundedTx, changePosition, currentInputs, unusableInputs, excess_opt)
         }
       case WalletFailure(t) =>
         log.error("could not fund interactive tx: ", t)
@@ -235,7 +247,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
   }
 
   /** Not all inputs are suitable for interactive tx construction. */
-  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
+  private def filterInputs(fundedTx: Transaction, changePosition: Option[Int], currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput], excess_opt: Option[Satoshi]): Behavior[Command] = {
     context.pipeToSelf(Future.sequence(fundedTx.txIn.map(txIn => getInputDetails(txIn, currentInputs)))) {
       case Failure(t) => WalletFailure(t)
       case Success(results) => InputDetails(results.collect { case Right(i) => i }, results.collect { case Left(i) => i }.toSet)
@@ -258,7 +270,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
             val inputs = inputDetails.usableInputs
             val fundingOutput = Output.Shared(UInt64(0), fundingPubkeyScript, purpose.previousLocalBalance + fundingParams.localContribution, purpose.previousRemoteBalance + fundingParams.remoteContribution, purpose.htlcBalance)
             val outputs = Seq(fundingOutput) ++ nonChangeOutputs ++ changeOutput_opt.toSeq
-            sortFundingContributions(fundingParams, inputs, outputs)
+            sortFundingContributions(fundingParams, inputs, outputs, excess_opt)
           } else {
             // The non-initiator must not include the shared input or the shared output.
             val inputs = inputDetails.usableInputs.filterNot(_.isInstanceOf[Input.Shared])
@@ -279,7 +291,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
                 nonChangeOutputs :+ changeOutput.copy(amount = changeOutput.amount + overpaidFees)
               case None => nonChangeOutputs
             }
-            sortFundingContributions(fundingParams, inputs, outputs)
+            sortFundingContributions(fundingParams, inputs, outputs, excess_opt)
           }
           log.debug("added {} inputs and {} outputs to interactive tx", fundingContributions.inputs.length, fundingContributions.outputs.length)
           // We unlock the unusable inputs (if any) as they can be used outside of interactive-tx sessions.
