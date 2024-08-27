@@ -985,6 +985,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val previousTxs = d.commitments.active.filter(_.fundingTxIndex == d.commitments.latest.fundingTxIndex).map(_.fundingTxId)
             log.info("rejecting splice request: the previous splice has unconfirmed rbf attempts ({})", previousTxs.mkString(", "))
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedRbf(d.channelId, previousTxs).getMessage)
+          } else if (d.commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]) {
+            log.info("rejecting splice request: the previous funding transaction is unconfirmed ({})", d.commitments.latest.fundingTxId)
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
           } else {
             log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
             val parentCommitment = d.commitments.latest.commitment

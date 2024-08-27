@@ -31,6 +31,9 @@ eclair-cli spliceout --channelId=<channel_id> --amountOut=<amount_satoshis> --sc
 
 That operation can also be RBF-ed with the `rbfsplice` API to speed up confirmation if necessary.
 
+Note that when 0-conf is used for the channel, it is not possible to RBF splice transactions.
+Node operators should instead create a new splice transaction (with `splicein` or `spliceout`) to CPFP the previous transaction.
+
 Note that eclair had already introduced support for a splicing prototype in v0.9.0, which helped improve the BOLT proposal.
 We're removing support for the previous splicing prototype feature: users that depended on this protocol must upgrade to create official splice transactions.
 

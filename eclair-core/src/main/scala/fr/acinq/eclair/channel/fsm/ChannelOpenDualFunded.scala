@@ -675,7 +675,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           }
         case _ =>
           // This can happen if we received a tx_abort right before receiving the interactive-tx result.
-          log.warning("ignoring interactive-tx result with rbfStatus={}", d.status.getClass.getSimpleName)
+          log.warning("ignoring interactive-tx result with funding status={}", d.status.getClass.getSimpleName)
           stay()
       }
 
