@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, RemoteClose, RevokedClose}
@@ -1563,13 +1563,36 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
   }
 
+  test("Funding failed before a splice is requested from our peer") { f =>
+    import f._
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(DummyOnChainWallet.invalidFundingAmount, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! cmd
+    exchangeStfu(f)
+    sender.expectMsg(RES_FAILURE(cmd, ChannelFundingError(channelId(alice))))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("Excess added to additional local funding", Tag(ChannelStateTestsTags.ChangelessFunding)) { f =>
+    import f._
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! cmd
+    exchangeStfu(f)
+    val spliceInit = alice2bob.expectMsgType[SpliceInit]
+    // When we request an input of 100_000 sat, we should get an input of 101_000 sat + fees from our dummy wallet.
+    assert(spliceInit.fundingContribution == 101_000.sat)
+  }
+
   test("recv CMD_ADD_HTLC while a splice is requested") { f =>
     import f._
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
     alice ! cmd
     exchangeStfu(f)
-    alice2bob.expectMsgType[SpliceInit]
+    val spliceInit = alice2bob.expectMsgType[SpliceInit]
+    assert(spliceInit.fundingContribution == 500_000.sat)
     alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
     alice2bob.expectNoMessage(100 millis)
