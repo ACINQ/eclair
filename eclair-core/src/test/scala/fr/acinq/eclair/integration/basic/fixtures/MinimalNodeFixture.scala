@@ -10,7 +10,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
-import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
+import fr.acinq.eclair.blockchain.SingleKeyOnChainWalletWithConfirmedInputs
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchFundingConfirmedTriggered}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -57,7 +57,7 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand],
                                       postman: typed.ActorRef[Postman.Command],
                                       watcher: TestProbe,
-                                      wallet: SingleKeyOnChainWallet,
+                                      wallet: SingleKeyOnChainWalletWithConfirmedInputs,
                                       bitcoinClient: TestBitcoinCoreClient) {
   val nodeId = nodeParams.nodeId
   val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
@@ -89,7 +89,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val readyListener = TestProbe("ready-listener")
     system.eventStream.subscribe(readyListener.ref, classOf[SubscriptionsComplete])
     val bitcoinClient = new TestBitcoinCoreClient()
-    val wallet = new SingleKeyOnChainWallet()
+    val wallet = new SingleKeyOnChainWalletWithConfirmedInputs()
     val watcher = TestProbe("watcher")
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
     val register = system.actorOf(Register.props(), "register")

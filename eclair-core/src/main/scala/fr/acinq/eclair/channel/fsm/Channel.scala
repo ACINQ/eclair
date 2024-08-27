@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapte
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Script, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
@@ -979,7 +979,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
                     stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
                   case Right(spliceInit) =>
-                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+                    val parentCommitment = d.commitments.latest.commitment
+                    val fundingParams = InteractiveTxParams(
+                      channelId = spliceInit.channelId,
+                      isInitiator = true,
+                      localContribution = spliceInit.fundingContribution,
+                      remoteContribution = 0 sat,
+                      sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                      remoteFundingPubKey = Transactions.PlaceHolderPubKey,
+                      localOutputs = cmd.spliceOutputs,
+                      lockTime = nodeParams.currentBlockHeight.toLong,
+                      dustLimit = d.commitments.params.localParams.dustLimit,
+                      targetFeerate = spliceInit.feerate,
+                      // Assume our peer requires confirmed inputs when we initiate a splice.
+                      requireConfirmedInputs = RequireConfirmedInputs(forLocal = true, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+                    )
+                    val dummyFundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)))
+                    val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, dummyFundingPubkeyScript, purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes), wallet))
+                    txFunder ! InteractiveTxFunder.FundTransaction(self)
+                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit, None))
                 }
                 case cmd: CMD_BUMP_FUNDING_FEE => initiateSpliceRbf(cmd, d) match {
                   case Left(f) =>
@@ -1004,6 +1022,28 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         // NB: we use a small delay to ensure we've sent our warning before disconnecting.
         context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
         stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
+      }
+
+    case Event(msg: InteractiveTxFunder.Response, d: DATA_NORMAL) =>
+      d.spliceStatus match {
+        case SpliceStatus.SpliceRequested(cmd, spliceInit, _) =>
+          msg match {
+            case InteractiveTxFunder.FundingFailed =>
+              cmd.replyTo ! RES_FAILURE(cmd, ChannelFundingError(d.channelId))
+              stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) calling endQuiescence(d)
+            case fundingContributions: InteractiveTxFunder.FundingContributions =>
+              val spliceInit1 = spliceInit.copy(fundingContribution = spliceInit.fundingContribution + fundingContributions.excess_opt.getOrElse(0 sat))
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit1, Some(fundingContributions))) sending spliceInit1
+          }
+        case _ =>
+          msg match {
+            case InteractiveTxFunder.FundingFailed =>
+              log.warning("received unexpected response from txFunder: {}, current splice status is {}.", msg, d.spliceStatus)
+            case fundingContributions: InteractiveTxFunder.FundingContributions =>
+              log.warning("received unexpected response from txFunder: {}, current splice status is {}. Rolling back funding contributions.", msg, d.spliceStatus)
+              rollbackOpenAttempt(fundingContributions)
+          }
+          stay()
       }
 
     case Event(_: QuiescenceTimeout, d: DATA_NORMAL) => handleQuiescenceTimeout(d)
@@ -1063,6 +1103,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                   localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
                   liquidityPurchase_opt = willFund_opt.map(_.purchase),
+                  None,
                   wallet
                 ))
                 txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1082,7 +1123,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: SpliceAck, d: DATA_NORMAL) =>
       d.spliceStatus match {
-        case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
+        case SpliceStatus.SpliceRequested(cmd, spliceInit, fundingContributions_opt) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
           val fundingParams = InteractiveTxParams(
@@ -1113,6 +1154,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                 localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
                 liquidityPurchase_opt = liquidityPurchase_opt,
+                fundingContributions_opt = fundingContributions_opt,
                 wallet
               ))
               txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1181,6 +1223,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     purpose = rbf,
                     localPushAmount = 0 msat, remotePushAmount = 0 msat,
                     willFund_opt.map(_.purchase),
+                    None,
                     wallet
                   ))
                   txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1234,6 +1277,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     purpose = rbf,
                     localPushAmount = 0 msat, remotePushAmount = 0 msat,
                     liquidityPurchase_opt = liquidityPurchase_opt,
+                    None,
                     wallet
                   ))
                   txBuilder ! InteractiveTxBuilder.Start(self)
@@ -1259,9 +1303,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
-        case SpliceStatus.SpliceRequested(cmd, _) =>
+        case SpliceStatus.SpliceRequested(_, _, None) =>
+          log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
+          // Our pending funding attempt will be rolled back if it succeeds.
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
+        case SpliceStatus.SpliceRequested(cmd, _, fundingContributions_opt) =>
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"splice attempt rejected by our peer: ${msg.toAscii}"))
+          fundingContributions_opt.foreach(rollbackOpenAttempt)
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.RbfRequested(cmd, _) =>
           log.info("our peer rejected our rbf attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
@@ -3345,13 +3394,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleQuiescenceTimeout(d: DATA_NORMAL): State = {
-    if (d.spliceStatus == SpliceStatus.NoSplice) {
-      log.warning("quiescence timed out with no ongoing splice, did we forget to cancel the timer?")
-      stay()
-    } else {
-      log.warning("quiescence timed out in state {}, closing connection", d.spliceStatus.getClass.getSimpleName)
-      context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-      stay() sending Warning(d.channelId, SpliceAttemptTimedOut(d.channelId).getMessage)
+    d.spliceStatus match {
+      case SpliceStatus.NoSplice =>
+        log.warning("quiescence timed out with no ongoing splice, did we forget to cancel the timer?")
+        stay()
+      case SpliceStatus.SpliceRequested(_, _, Some(fundingContributions)) =>
+        log.warning("quiescence timed out after sending splice request, rolling back funding contributions and closing connection")
+        rollbackOpenAttempt(fundingContributions)
+        context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+        stay() sending Warning(d.channelId, SpliceAttemptTimedOut(d.channelId).getMessage)
+      case _ =>
+        log.warning("quiescence timed out in state {}, closing connection", d.spliceStatus.getClass.getSimpleName)
+        context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+        stay() sending Warning(d.channelId, SpliceAttemptTimedOut(d.channelId).getMessage)
     }
   }
 
@@ -3367,7 +3422,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
     val cmd_opt = spliceStatus match {
       case SpliceStatus.NegotiatingQuiescence(cmd_opt, _) => cmd_opt
-      case SpliceStatus.SpliceRequested(cmd, _) => Some(cmd)
+      case SpliceStatus.SpliceRequested(cmd, _, _) => Some(cmd)
       case SpliceStatus.RbfRequested(cmd, _) => Some(cmd)
       case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
