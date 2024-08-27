@@ -144,7 +144,8 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
-        acceptIncomingStaticRemoteKeyChannels = false
+        acceptIncomingStaticRemoteKeyChannels = false,
+        maxExcess_opt = None
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -316,7 +317,8 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
-        acceptIncomingStaticRemoteKeyChannels = false
+        acceptIncomingStaticRemoteKeyChannels = false,
+        maxExcess_opt = None
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),

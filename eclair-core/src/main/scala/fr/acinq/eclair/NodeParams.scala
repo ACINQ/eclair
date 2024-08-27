@@ -476,6 +476,8 @@ object NodeParams extends Logging {
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
 
+    val maxExcess_opt = if (config.getInt("channel.max-excess") > 0) Some(Satoshi(config.getInt("channel.max-excess"))) else None
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -524,7 +526,8 @@ object NodeParams extends Logging {
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
-        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
+        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels"),
+        maxExcess_opt = maxExcess_opt,
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
