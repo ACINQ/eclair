@@ -126,7 +126,7 @@ object IncomingPaymentPacket {
             decryptEncryptedRecipientData(add, privateKey, payload, encrypted.data).flatMap {
               case DecodedEncryptedRecipientData(blindedPayload, nextBlinding) =>
                 validateBlindedChannelRelayPayload(add, payload, blindedPayload, nextBlinding, nextPacket).flatMap {
-                  case ChannelRelayPacket(_, payload, nextPacket) if payload.outgoingChannelId == ShortChannelId.toSelf =>
+                  case ChannelRelayPacket(_, payload, nextPacket) if payload.outgoing == Right(ShortChannelId.toSelf) =>
                     decrypt(add.copy(onionRoutingPacket = nextPacket, tlvStream = add.tlvStream.copy(records = Set(UpdateAddHtlcTlv.BlindingPoint(nextBlinding)))), privateKey, features)
                   case relayPacket => Right(relayPacket)
                 }

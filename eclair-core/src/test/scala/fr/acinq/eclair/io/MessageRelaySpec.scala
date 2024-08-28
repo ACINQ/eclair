@@ -19,8 +19,10 @@ package fr.acinq.eclair.io
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe => TypedProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.typed.receptionist.Receptionist
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -33,8 +35,8 @@ import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{EncodedNodeId, RealShortChannelId, ShortChannelId, UInt64, randomBytes32, randomKey}
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
 import scala.concurrent.duration.DurationInt
@@ -43,19 +45,30 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   val aliceId: PublicKey = Alice.nodeParams.nodeId
   val bobId: PublicKey = Bob.nodeParams.nodeId
 
-  case class FixtureParam(relay: ActorRef[Command], switchboard: TestProbe, register: TestProbe, router: TypedProbe[Router.GetNodeId], peerConnection: TypedProbe[Nothing], peer: TypedProbe[Peer.RelayOnionMessage], probe: TypedProbe[Status])
+  val wakeUpEnabled = "wake_up_enabled"
+  val wakeUpTimeout = "wake_up_timeout"
+
+  case class FixtureParam(relay: ActorRef[Command], switchboard: TestProbe, register: TestProbe, router: TypedProbe[Router.GetNodeId], peerConnection: TypedProbe[Nothing], peer: TypedProbe[Peer.RelayOnionMessage], peerReadyManager: TestProbe, probe: TypedProbe[Status])
 
   override def withFixture(test: OneArgTest): Outcome = {
+    val peerReadyManager = TestProbe("peer-ready-manager")(system.classicSystem)
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref.toTyped)
     val switchboard = TestProbe("switchboard")(system.classicSystem)
+    system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref.toTyped)
     val register = TestProbe("register")(system.classicSystem)
     val router = TypedProbe[Router.GetNodeId]("router")
     val peerConnection = TypedProbe[Nothing]("peerConnection")
     val peer = TypedProbe[Peer.RelayOnionMessage]("peer")
     val probe = TypedProbe[Status]("probe")
-    val relay = testKit.spawn(MessageRelay(Alice.nodeParams, switchboard.ref, register.ref, router.ref))
+    val nodeParams = Alice.nodeParams
+      .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
+      .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
+    val relay = testKit.spawn(MessageRelay(nodeParams, switchboard.ref, register.ref, router.ref))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, probe)))
+      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, register, router, peerConnection, peer, peerReadyManager, probe)))
     } finally {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref.toTyped)
+      system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref.toTyped)
       testKit.stop(relay)
     }
   }
@@ -86,6 +99,23 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
+  test("relay after waking up next node", Tag(wakeUpEnabled)) { f =>
+    import f._
+
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.WithPublicKey.Wallet(bobId)), message, RelayChannelsOnly, None)
+
+    val register = peerReadyManager.expectMsgType[PeerReadyManager.Register]
+    assert(register.remoteNodeId == bobId)
+    register.replyTo ! PeerReadyManager.Registered(bobId, otherAttempts = 0)
+
+    val request = switchboard.expectMsgType[GetPeerInfo]
+    assert(request.remoteNodeId == bobId)
+    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, Set.empty)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
+  }
+
   test("can't open new connection") { f =>
     import f._
 
@@ -97,6 +127,15 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(connectToNextPeer.nodeId == bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.NoAddressFound
     probe.expectMessage(ConnectionFailure(messageId, PeerConnection.ConnectionResult.NoAddressFound))
+  }
+
+  test("can't wake up next node", Tag(wakeUpEnabled), Tag(wakeUpTimeout)) { f =>
+    import f._
+
+    val Right(message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(), Recipient(bobId, None), TlvStream.empty)
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, randomKey().publicKey, Right(EncodedNodeId.WithPublicKey.Wallet(bobId)), message, RelayChannelsOnly, Some(probe.ref))
+    probe.expectMessage(Disconnected(messageId))
   }
 
   test("no channel with previous node") { f =>

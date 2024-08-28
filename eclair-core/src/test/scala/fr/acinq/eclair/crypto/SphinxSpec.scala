@@ -505,7 +505,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(decryptedPayloadBob) = RouteBlindingEncryptedDataCodecs.decode(bob, blinding, tlvsBob.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForCarol = decryptedPayloadBob.nextBlinding
       val Right(payloadBob) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsBob, decryptedPayloadBob.tlvs, blindingEphemeralKeyForCarol)
-      assert(payloadBob.outgoingChannelId == ShortChannelId(1))
+      assert(payloadBob.outgoing.contains(ShortChannelId(1)))
       assert(payloadBob.amountToForward(110_125 msat) == 100_125.msat)
       assert(payloadBob.outgoingCltv(CltvExpiry(749150)) == CltvExpiry(749100))
       assert(payloadBob.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(50), 0, 10_000 msat))
@@ -523,7 +523,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(decryptedPayloadCarol) = RouteBlindingEncryptedDataCodecs.decode(carol, blindingEphemeralKeyForCarol, tlvsCarol.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForDave = decryptedPayloadCarol.nextBlinding
       val Right(payloadCarol) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsCarol, decryptedPayloadCarol.tlvs, blindingEphemeralKeyForDave)
-      assert(payloadCarol.outgoingChannelId == ShortChannelId(2))
+      assert(payloadCarol.outgoing.contains(ShortChannelId(2)))
       assert(payloadCarol.amountToForward(100_125 msat) == 100_010.msat)
       assert(payloadCarol.outgoingCltv(CltvExpiry(749100)) == CltvExpiry(749025))
       assert(payloadCarol.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(75), 150, 100 msat))
@@ -544,7 +544,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(decryptedPayloadDave) = RouteBlindingEncryptedDataCodecs.decode(dave, blindingOverride, tlvsDave.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val blindingEphemeralKeyForEve = decryptedPayloadDave.nextBlinding
       val Right(payloadDave) = PaymentOnion.IntermediatePayload.ChannelRelay.Blinded.validate(tlvsDave, decryptedPayloadDave.tlvs, blindingEphemeralKeyForEve)
-      assert(payloadDave.outgoingChannelId == ShortChannelId(3))
+      assert(payloadDave.outgoing.contains(ShortChannelId(3)))
       assert(payloadDave.amountToForward(100_010 msat) == 100_000.msat)
       assert(payloadDave.outgoingCltv(CltvExpiry(749025)) == CltvExpiry(749000))
       assert(payloadDave.paymentRelayData.paymentRelay == RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(25), 100, 0 msat))

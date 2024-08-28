@@ -119,6 +119,7 @@ object Monitoring {
     val Failure = "failure"
 
     object FailureType {
+      val WakeUp = "WakeUp"
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
 

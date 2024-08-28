@@ -28,7 +28,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
-import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
@@ -87,7 +87,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
-                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config) {
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -611,7 +612,11 @@ object NodeParams extends Logging {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
-      )
+      ),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
+        enabled = config.getBoolean("peer-wake-up.enabled"),
+        timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS)
+      ),
     )
   }
 }

@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
-import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
+import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
@@ -231,7 +231,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -401,7 +402,8 @@ object TestConstants {
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
-      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis)
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

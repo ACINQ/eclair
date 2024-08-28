@@ -1,17 +1,18 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
-import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.receptionist.Receptionist
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.actor.typed.{ActorRef, Behavior}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel.NEGOTIATING
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
-import fr.acinq.eclair.io.{Peer, PeerConnected, Switchboard}
+import fr.acinq.eclair.io.{Peer, PeerConnected, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.relay.AsyncPaymentTriggerer._
 import fr.acinq.eclair.{BlockHeight, TestConstants, randomKey}
 import org.scalatest.Outcome
@@ -23,8 +24,20 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
   case class FixtureParam(remoteNodeId: PublicKey, switchboard: TestProbe[Switchboard.GetPeerInfo], peer: TestProbe[Peer.GetPeerChannels], probe: TestProbe[Result], triggerer: ActorRef[Command])
 
+  object DummyPeerReadyManager {
+    def apply(): Behavior[PeerReadyManager.Command] = {
+      Behaviors.receiveMessagePartial {
+        case PeerReadyManager.Register(replyTo, remoteNodeId) =>
+          replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
+          Behaviors.same
+      }
+    }
+  }
+
   override def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = TestConstants.Alice.nodeParams.nodeId
+    val peerReadyManager = testKit.spawn(DummyPeerReadyManager())
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]("switchboard")
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
     val peer = TestProbe[Peer.GetPeerChannels]("peer")
@@ -33,6 +46,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     try {
       withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe, triggerer)))
     } finally {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager)
       system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
     }
   }
@@ -170,7 +184,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     val probe2 = TestProbe[Result]()
     triggerer ! Watch(probe2.ref, remoteNodeId2, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(101))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
 
     // First remote node times out
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
@@ -192,6 +206,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
   test("triggerer treats an unexpected stop of the notifier as a cancel") { f =>
     import f._
+
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
     assert(switchboard.expectMessageType[GetPeerInfo].remoteNodeId == remoteNodeId)
 
