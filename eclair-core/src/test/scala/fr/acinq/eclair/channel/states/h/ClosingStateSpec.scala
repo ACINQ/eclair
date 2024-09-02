@@ -710,12 +710,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice receives the preimage for the incoming HTLC.
     alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, commit = true)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimMainTx.txid)
     assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[HtlcTimeoutTx])
     assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[HtlcSuccessTx])
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainTx.txid)
-    alice2blockchain.expectMsgType[WatchOutputSpent]
     alice2blockchain.expectMsgType[WatchOutputSpent]
     alice2blockchain.expectMsgType[WatchOutputSpent]
     alice2blockchain.expectNoMessage(100 millis)
@@ -742,14 +740,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
 
     // We re-publish closing transactions.
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimMainTx.txid)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimHtlcTimeoutDelayedTx.txid)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == claimHtlcSuccessDelayedTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcTimeoutDelayedTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcSuccessDelayedTx.txid)
-    alice2blockchain.expectMsgType[WatchOutputSpent]
 
     // We replay the HTLC fulfillment: nothing happens since we already published a 3rd-stage transaction.
     alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, commit = true)
