@@ -22,7 +22,6 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
@@ -140,13 +139,13 @@ object TxPublisher {
     // @formatter:on
   }
 
-  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
+  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient) extends ChildFactory {
     // @formatter:off
     override def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], txPublishContext: TxPublishContext): ActorRef[FinalTxPublisher.Command] = {
-      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"final-tx-${txPublishContext.id}")
+      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, txPublishContext), s"final-tx-${txPublishContext.id}")
     }
     override def spawnReplaceableTxPublisher(context: ActorContext[Command], txPublishContext: TxPublishContext): ActorRef[ReplaceableTxPublisher.Command] = {
-      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"replaceable-tx-${txPublishContext.id}")
+      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, txPublishContext), s"replaceable-tx-${txPublishContext.id}")
     }
     // @formatter:on
   }

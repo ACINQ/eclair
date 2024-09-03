@@ -367,7 +367,7 @@ class Setup(val datadir: File,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
 
-      txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcher, bitcoinClient)
+      txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
       pendingChannelsRateLimiter = system.spawn(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, channels)).onFailure(typed.SupervisorStrategy.resume), name = "pending-channels-rate-limiter")
       peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory, pendingChannelsRateLimiter, register, router.toTyped)

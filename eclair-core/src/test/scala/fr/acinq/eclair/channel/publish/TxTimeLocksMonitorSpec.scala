@@ -19,28 +19,47 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk, WrappedCurrentBlockHeight}
-import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.Success
 
 class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, monitor: ActorRef[TxTimeLocksMonitor.Command], watcher: TestProbe, probe: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, monitor: ActorRef[TxTimeLocksMonitor.Command], bitcoinClient: BitcoinTestClient, probe: TestProbe)
+
+  case class BitcoinTestClient() extends NoOpOnChainWallet {
+    private val requests = collection.concurrent.TrieMap.empty[TxId, Promise[Option[Int]]]
+
+    override def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = {
+      val p = Promise[Option[Int]]()
+      requests += (txId -> p)
+      p.future
+    }
+
+    def hasRequest(txId: TxId): Boolean = requests.contains(txId)
+
+    def completeRequest(txId: TxId, confirmations_opt: Option[Int]): Unit = {
+      requests.get(txId).map(_.complete(Success(confirmations_opt)))
+      requests -= txId
+    }
+  }
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(max = 30 seconds) {
       val nodeParams = TestConstants.Alice.nodeParams
       val probe = TestProbe()
-      val watcher = TestProbe()
-      val monitor = system.spawnAnonymous(TxTimeLocksMonitor(nodeParams, watcher.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, monitor, watcher, probe)))
+      val bitcoinClient = BitcoinTestClient()
+      val monitor = system.spawnAnonymous(TxTimeLocksMonitor(nodeParams, bitcoinClient, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
+      withFixture(test.toNoArgTest(FixtureParam(nodeParams, monitor, bitcoinClient, probe)))
     }
   }
 
@@ -65,12 +84,26 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val tx = Transaction(2, TxIn(OutPoint(parentTx, 0), Nil, 3) :: Nil, TxOut(25_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
     monitor ! CheckTx(probe.ref, tx, "relative-delay")
 
-    val w = watcher.expectMsgType[WatchParentTxConfirmed]
-    assert(w.txId == parentTx.txid)
-    assert(w.minDepth == 3)
+    // The parent transaction is unconfirmed: we will check again 3 blocks later (the value of the CSV timeout).
+    awaitCond(bitcoinClient.hasRequest(parentTx.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx.txid, None)
     probe.expectNoMessage(100 millis)
 
-    w.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx)
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 1)
+    assert(!bitcoinClient.hasRequest(parentTx.txid))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 2)
+    assert(!bitcoinClient.hasRequest(parentTx.txid))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 3)
+    awaitCond(bitcoinClient.hasRequest(parentTx.txid), interval = 100 millis)
+    // This time the parent transaction has 1 confirmation: we will check again in two more blocks.
+    bitcoinClient.completeRequest(parentTx.txid, Some(1))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 1)
+    probe.expectNoMessage(100 millis)
+    assert(!bitcoinClient.hasRequest(parentTx.txid))
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 2)
+    awaitCond(bitcoinClient.hasRequest(parentTx.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx.txid, Some(3))
+
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -81,23 +114,33 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val parentTx2 = Transaction(2, Nil, TxOut(45_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
     val tx = Transaction(
       2,
-      TxIn(OutPoint(parentTx1, 0), Nil, 3) :: TxIn(OutPoint(parentTx1, 1), Nil, 1) :: TxIn(OutPoint(parentTx2, 0), Nil, 1) :: Nil,
+      TxIn(OutPoint(parentTx1, 0), Nil, 3) :: TxIn(OutPoint(parentTx1, 1), Nil, 1) :: TxIn(OutPoint(parentTx2, 0), Nil, 2) :: Nil,
       TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
       0
     )
     monitor ! CheckTx(probe.ref, tx, "many-relative-delays")
 
-    // We send a single watch for parentTx1, with the max of the two delays.
-    val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
-    val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
-    watcher.expectNoMessage(100 millis)
-    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet == Set((parentTx1.txid, 3), (parentTx2.txid, 1)))
+    // The first parent transaction is unconfirmed.
+    awaitCond(bitcoinClient.hasRequest(parentTx1.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx1.txid, None)
+    // The second parent transaction is confirmed, but is still missing one confirmation.
+    awaitCond(bitcoinClient.hasRequest(parentTx2.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx2.txid, Some(1))
     probe.expectNoMessage(100 millis)
 
-    w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)
+    // A new block is found: the second parent transaction has enough confirmations.
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 1)
+    awaitCond(bitcoinClient.hasRequest(parentTx2.txid), interval = 100 millis)
+    assert(!bitcoinClient.hasRequest(parentTx1.txid))
+    bitcoinClient.completeRequest(parentTx2.txid, Some(2))
     probe.expectNoMessage(100 millis)
 
-    w2.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(1105), 0, parentTx2)
+    // Two more blocks are found: the first parent transaction now has enough confirmations.
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 3)
+    awaitCond(bitcoinClient.hasRequest(parentTx1.txid), interval = 100 millis)
+    assert(!bitcoinClient.hasRequest(parentTx2.txid))
+    bitcoinClient.completeRequest(parentTx1.txid, Some(3))
+
     probe.expectMsg(TimeLocksOk())
   }
 
@@ -114,19 +157,18 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     )
     monitor ! CheckTx(probe.ref, tx, "absolute-and-relative-delays")
 
-    // We set watches on parent txs only once the absolute delay is over.
-    watcher.expectNoMessage(100 millis)
+    // We watch parent txs only once the absolute delay is over.
+    monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 2)
+    assert(!bitcoinClient.hasRequest(parentTx1.txid))
+    assert(!bitcoinClient.hasRequest(parentTx2.txid))
+
+    // When the absolute delay is over, we check parent transactions.
     monitor ! WrappedCurrentBlockHeight(nodeParams.currentBlockHeight + 3)
-    val w1 = watcher.expectMsgType[WatchParentTxConfirmed]
-    val w2 = watcher.expectMsgType[WatchParentTxConfirmed]
-    watcher.expectNoMessage(100 millis)
-    assert(Seq(w1, w2).map(w => (w.txId, w.minDepth)).toSet == Set((parentTx1.txid, 3), (parentTx2.txid, 6)))
+    awaitCond(bitcoinClient.hasRequest(parentTx1.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx1.txid, Some(5))
     probe.expectNoMessage(100 millis)
-
-    w1.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(651), 0, parentTx1)
-    probe.expectNoMessage(100 millis)
-
-    w2.replyTo ! WatchParentTxConfirmedTriggered(BlockHeight(1105), 0, parentTx2)
+    awaitCond(bitcoinClient.hasRequest(parentTx2.txid), interval = 100 millis)
+    bitcoinClient.completeRequest(parentTx2.txid, Some(10))
     probe.expectMsg(TimeLocksOk())
   }
 
