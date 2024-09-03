@@ -53,7 +53,7 @@ object TestConstants {
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
   val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
-    fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat) :: Nil,
+    fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat, 1000 sat) :: Nil,
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
   )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)

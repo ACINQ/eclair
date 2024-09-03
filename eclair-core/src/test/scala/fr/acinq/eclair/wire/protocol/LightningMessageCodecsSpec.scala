@@ -77,8 +77,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), None, valid = true), // multiple networks
       TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 c9012a", hex"088a", List(chainHash1), None, valid = true), // network and unknown odd records
       TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101 02012a", hex"088a", Nil, None, valid = false), // network and unknown even records
-      TestCase(hex"0000 0002088a fd053b150001000186a00007a1200226006400001388000101", hex"088a", Nil, None, valid = true), // one liquidity ads with the default payment type
-      TestCase(hex"0000 0002088a fd053b3f0002000186a00007a12002260064000013880007a120004c4b40044c004b00000000001b080000000000000000000300000000000000000000000000000001", hex"088a", Nil, None, valid = true) // two liquidity ads with multiple payment types
+      TestCase(hex"0000 0002088a fd053b190001000186a00007a1200226006400001388000003e8000101", hex"088a", Nil, None, valid = true), // one liquidity ads with the default payment type
+      TestCase(hex"0000 0002088a fd053b470002000186a00007a1200226006400001388000003e80007a120004c4b40044c004b00000000000005dc001b080000000000000000000300000000000000000000000000000001", hex"088a", Nil, None, valid = true) // two liquidity ads with multiple payment types
     )
 
     for (testCase <- testCases) {
@@ -182,7 +182,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // This is random, longer mainnet transaction.
     val txBin2 = hex"0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000"
     val tx2 = Transaction.read(txBin2.toArray)
-    val fundingRate = LiquidityAds.FundingRate(25_000 sat, 250_000 sat, 750, 150, 50 sat)
+    val fundingRate = LiquidityAds.FundingRate(25_000 sat, 250_000 sat, 750, 150, 50 sat, 500 sat)
     val testCases = Seq(
       TxAddInput(channelId1, UInt64(561), Some(tx1), 1, 5) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000001 00000005",
       TxAddInput(channelId2, UInt64(0), Some(tx2), 2, 0) -> hex"0042 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000000 0100 0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000 00000002 00000000",
@@ -201,12 +201,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 1_500_000 sat, requireConfirmedInputs = true, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008000000000016e360 0200",
       TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000",
       TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), -25_000 sat, requireConfirmedInputs = false, None) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 0008ffffffffffff9e58",
-      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false, Some(LiquidityAds.RequestFunding(50_000 sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000 fd053b1a000000000000c350000061a80003d09002ee0096000000320000",
+      TxInitRbf(channelId1, 0, FeeratePerKw(4000 sat), 0 sat, requireConfirmedInputs = false, Some(LiquidityAds.RequestFunding(50_000 sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance))) -> hex"0048 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000 00000fa0 00080000000000000000 fd053b1e000000000000c350000061a80003d09002ee009600000032000001f40000",
       TxAckRbf(channelId2) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       TxAckRbf(channelId2, 450_000 sat, requireConfirmedInputs = false, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000006ddd0",
       TxAckRbf(channelId2, 0 sat, requireConfirmedInputs = false, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 00080000000000000000",
       TxAckRbf(channelId2, -250_000 sat, requireConfirmedInputs = true, None) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008fffffffffffc2f70 0200",
-      TxAckRbf(channelId2, 50_000 sat, requireConfirmedInputs = true, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000000c350 0200 fd053b56000061a80003d09002ee0096000000320004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      TxAckRbf(channelId2, 50_000 sat, requireConfirmedInputs = true, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes))) -> hex"0049 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0008000000000000c350 0200 fd053b5a000061a80003d09002ee009600000032000001f40004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
       TxAbort(channelId1, hex"") -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000",
       TxAbort(channelId1, ByteVector.view("internal error".getBytes(Charsets.US_ASCII))) -> hex"004a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 000e 696e7465726e616c206572726f72",
     )
@@ -416,20 +416,20 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("encode/decode liquidity ads") {
     val willFundRates = LiquidityAds.WillFundRates(
       fundingRates = List(
-        LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat),
-        LiquidityAds.FundingRate(500_000 sat, 5_000_000 sat, 1100, 75, 0 sat),
+        LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat, 1000 sat),
+        LiquidityAds.FundingRate(500_000 sat, 5_000_000 sat, 1100, 75, 0 sat, 1500 sat),
       ),
       Set(LiquidityAds.PaymentType.FromChannelBalance)
     )
     val nodeKey = PrivateKey(hex"57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeKey, "LN-Liquidity", Color(42, 117, 87), Nil, Features.empty, TimestampSecond(1713171401), Some(willFundRates))
-    val nodeAnnCommonBin = hex"0101 a822c88c3807659ce1c74866f3346444d0fe6ceb25f86804b245af064f77d0a83b8457732d77386a3b10cf4c80a1811d02f34770eefbef9548ab3a3ce3d629df 0000 661cebc9 03ca9b880627d2d4e3b33164f66946349f820d26aa9572fe0e525e534850cbd413 2a7557 4c4e2d4c69717569646974790000000000000000000000000000000000000000 0000"
-    val fundingRateBin1 = hex"000186a0 0007a120 0226 0064 00001388"
-    val fundingRateBin2 = hex"0007a120 004c4b40 044c 004b 00000000"
+    val nodeAnnCommonBin = hex"0101 22ec2e2a6e02f54d949e332cbce571d123ae20dda98d0340ac7e64f60f11d413659a2a9645adea8f886bb5dd40cc589bd3e0f4f8b2ab333d323b74b7762b4ca1 0000 661cebc9 03ca9b880627d2d4e3b33164f66946349f820d26aa9572fe0e525e534850cbd413 2a7557 4c4e2d4c69717569646974790000000000000000000000000000000000000000 0000"
+    val fundingRateBin1 = hex"000186a0 0007a120 0226 0064 00001388 000003e8"
+    val fundingRateBin2 = hex"0007a120 004c4b40 044c 004b 00000000 000005dc"
     // <length> <payment_types_bitfield>
     val paymentTypesBin = hex"0001 01"
     // <tag> <length> <rates_count> <rate1> <rate2> <payment_types>
-    val nodeAnnTlvsBin = hex"fd053b" ++ hex"25" ++ hex"0002" ++ fundingRateBin1 ++ fundingRateBin2 ++ paymentTypesBin
+    val nodeAnnTlvsBin = hex"fd053b" ++ hex"2d" ++ hex"0002" ++ fundingRateBin1 ++ fundingRateBin2 ++ paymentTypesBin
     assert(lightningMessageCodec.encode(nodeAnn).require.bytes == nodeAnnCommonBin ++ nodeAnnTlvsBin)
     assert(lightningMessageCodec.decode((nodeAnnCommonBin ++ nodeAnnTlvsBin).bits).require.value == nodeAnn)
     assert(Announcements.checkSig(nodeAnn))
@@ -444,18 +444,18 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     val Some(request) = LiquidityAds.requestFunding(750_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, willFundRates)
     val open = defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(request)))
-    val openBin = hex"fd053b 1a 00000000000b71b0 0007a120004c4b40044c004b00000000 0000"
+    val openBin = hex"fd053b 1e 00000000000b71b0 0007a120004c4b40044c004b00000000000005dc 0000"
     assert(lightningMessageCodec.encode(open).require.bytes == defaultOpenBin ++ openBin)
-    val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request).map(_.willFund)
+    val Right(willFund) = willFundRates.validateRequest(nodeKey, randomBytes32(), fundingScript, defaultOpen.fundingFeerate, request, isChannelCreation = true).map(_.willFund)
     val accept = defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))
-    val acceptBin = hex"fd053b 74 0007a120004c4b40044c004b00000000 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c 35962783e077e3c5214ba829752be2a3994a7c5e0e9d735ef5a9dab3ce1d6dda6282c3252b20af52e58c33c0e164167fd59e19114a8a8f9eb76b33008205dcb6"
+    val acceptBin = hex"fd053b 78 0007a120004c4b40044c004b00000000000005dc 002200202ec38203f4cf37a3b377d9a55c7ae0153c643046dbdbe2ffccfb11b74420103c c57cf393f6bd534472ec08cbfbbc7268501b32f563a21cdf02a99127c4f25168249acd6509f96b2e93843c3b838ee4808c75d0a15ff71ba886fda980b8ca954f"
     assert(lightningMessageCodec.encode(accept).require.bytes == defaultAcceptBin ++ acceptBin)
   }
 
   test("decode unknown liquidity ads payment types") {
-    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat)
+    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 500_000 sat, 550, 100, 5_000 sat, 0 sat)
     val testCases = Map(
-      hex"0001 000186a00007a1200226006400001388 001b 080000000000000000000000000000000008000000000000000001" -> LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
+      hex"0001 000186a00007a120022600640000138800000000 001b 080000000000000000000000000000000008000000000000000001" -> LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.Unknown(75), LiquidityAds.PaymentType.Unknown(211))),
     )
     for ((encoded, expected) <- testCases) {
       val decoded = LiquidityAds.Codecs.willFundRates.decode(encoded.bits)

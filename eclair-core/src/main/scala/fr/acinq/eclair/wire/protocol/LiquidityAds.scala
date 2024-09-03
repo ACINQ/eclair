@@ -52,20 +52,22 @@ object LiquidityAds {
    * Rate at which a liquidity seller sells its liquidity.
    * Liquidity fees are computed based on multiple components.
    *
-   * @param minAmount       minimum amount that can be purchased at this rate.
-   * @param maxAmount       maximum amount that can be purchased at this rate.
-   * @param fundingWeight   the seller will have to add inputs/outputs to the transaction and pay on-chain fees
-   *                        for them. The buyer refunds those on-chain fees for the given vbytes.
-   * @param feeProportional proportional fee (expressed in basis points) based on the amount contributed by the seller.
-   * @param feeBase         flat fee that must be paid regardless of the amount contributed by the seller.
+   * @param minAmount          minimum amount that can be purchased at this rate.
+   * @param maxAmount          maximum amount that can be purchased at this rate.
+   * @param fundingWeight      the seller will have to add inputs/outputs to the transaction and pay on-chain fees
+   *                           for them. The buyer refunds those on-chain fees for the given vbytes.
+   * @param feeProportional    proportional fee (expressed in basis points) based on the amount contributed by the seller.
+   * @param feeBase            flat fee that must be paid regardless of the amount contributed by the seller.
+   * @param channelCreationFee flat fee that must be paid when a new channel is created.
    */
-  case class FundingRate(minAmount: Satoshi, maxAmount: Satoshi, fundingWeight: Int, feeProportional: Int, feeBase: Satoshi) {
+  case class FundingRate(minAmount: Satoshi, maxAmount: Satoshi, fundingWeight: Int, feeProportional: Int, feeBase: Satoshi, channelCreationFee: Satoshi) {
     /** Fees paid by the liquidity buyer. */
-    def fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi): Fees = {
+    def fees(feerate: FeeratePerKw, requestedAmount: Satoshi, contributedAmount: Satoshi, isChannelCreation: Boolean): Fees = {
       val onChainFees = Transactions.weight2fee(feerate, fundingWeight)
       // If the seller adds more liquidity than requested, the buyer doesn't pay for that extra liquidity.
       val proportionalFee = requestedAmount.min(contributedAmount).toMilliSatoshi * feeProportional / 10_000
-      Fees(onChainFees, feeBase + proportionalFee.truncateToSatoshi)
+      val flatFee = if (isChannelCreation) channelCreationFee + feeBase else feeBase
+      Fees(onChainFees, flatFee + proportionalFee.truncateToSatoshi)
     }
 
     /** Return true if this rate is compatible with the requested funding amount. */
@@ -110,7 +112,7 @@ object LiquidityAds {
 
   /** Sellers offer various rates and payment options. */
   case class WillFundRates(fundingRates: List[FundingRate], paymentTypes: Set[PaymentType]) {
-    def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding): Either[ChannelException, WillFundPurchase] = {
+    def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean): Either[ChannelException, WillFundPurchase] = {
       if (!paymentTypes.contains(request.paymentDetails.paymentType)) {
         Left(InvalidLiquidityAdsPaymentType(channelId, request.paymentDetails.paymentType, paymentTypes))
       } else if (!fundingRates.contains(request.fundingRate)) {
@@ -119,7 +121,7 @@ object LiquidityAds {
         Left(InvalidLiquidityAdsRate(channelId))
       } else {
         val sig = Crypto.sign(request.fundingRate.signedData(fundingScript), nodeKey)
-        val purchase = Purchase.Standard(request.requestedAmount, request.fundingRate.fees(fundingFeerate, request.requestedAmount, request.requestedAmount), request.paymentDetails)
+        val purchase = Purchase.Standard(request.requestedAmount, request.fundingRate.fees(fundingFeerate, request.requestedAmount, request.requestedAmount, isChannelCreation), request.paymentDetails)
         Right(WillFundPurchase(WillFund(request.fundingRate, fundingScript, sig), purchase))
       }
     }
@@ -127,9 +129,9 @@ object LiquidityAds {
     def findRate(requestedAmount: Satoshi): Option[FundingRate] = fundingRates.find(r => r.minAmount <= requestedAmount && requestedAmount <= r.maxAmount)
   }
 
-  def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request_opt: Option[RequestFunding], rates_opt: Option[WillFundRates]): Either[ChannelException, Option[WillFundPurchase]] = {
+  def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, isChannelCreation: Boolean, request_opt: Option[RequestFunding], rates_opt: Option[WillFundRates]): Either[ChannelException, Option[WillFundPurchase]] = {
     (request_opt, rates_opt) match {
-      case (Some(request), Some(rates)) => rates.validateRequest(nodeKey, channelId, fundingScript, fundingFeerate, request).map(l => Some(l))
+      case (Some(request), Some(rates)) => rates.validateRequest(nodeKey, channelId, fundingScript, fundingFeerate, request, isChannelCreation).map(l => Some(l))
       case _ => Right(None)
     }
   }
@@ -147,13 +149,14 @@ object LiquidityAds {
 
   /** Request inbound liquidity from a remote peer that supports liquidity ads. */
   case class RequestFunding(requestedAmount: Satoshi, fundingRate: FundingRate, paymentDetails: PaymentDetails) {
-    def fees(fundingFeerate: FeeratePerKw): Fees = fundingRate.fees(fundingFeerate, requestedAmount, requestedAmount)
+    def fees(fundingFeerate: FeeratePerKw, isChannelCreation: Boolean): Fees = fundingRate.fees(fundingFeerate, requestedAmount, requestedAmount, isChannelCreation)
 
     def validateRemoteFunding(remoteNodeId: PublicKey,
                               channelId: ByteVector32,
                               fundingScript: ByteVector,
                               remoteFundingAmount: Satoshi,
                               fundingFeerate: FeeratePerKw,
+                              isChannelCreation: Boolean,
                               willFund_opt: Option[WillFund]): Either[ChannelException, Purchase] = {
       willFund_opt match {
         case Some(willFund) =>
@@ -165,7 +168,7 @@ object LiquidityAds {
             Left(InvalidLiquidityAdsRate(channelId))
           } else {
             val purchasedAmount = requestedAmount.min(remoteFundingAmount)
-            val fees = fundingRate.fees(fundingFeerate, requestedAmount, remoteFundingAmount)
+            val fees = fundingRate.fees(fundingFeerate, requestedAmount, remoteFundingAmount, isChannelCreation)
             Right(Purchase.Standard(purchasedAmount, fees, paymentDetails))
           }
         case None =>
@@ -182,9 +185,10 @@ object LiquidityAds {
                             fundingScript: ByteVector,
                             remoteFundingAmount: Satoshi,
                             fundingFeerate: FeeratePerKw,
+                            isChannelCreation: Boolean,
                             willFund_opt: Option[WillFund]): Either[ChannelException, Option[Purchase]] = {
     request_opt match {
-      case Some(request) => request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, willFund_opt) match {
+      case Some(request) => request.validateRemoteFunding(remoteNodeId, channelId, fundingScript, remoteFundingAmount, fundingFeerate, isChannelCreation, willFund_opt) match {
         case Left(f) => Left(f)
         case Right(purchase) => Right(Some(purchase))
       }
@@ -220,7 +224,8 @@ object LiquidityAds {
         ("maxAmount" | satoshi32) ::
         ("fundingWeight" | uint16) ::
         ("feeBasis" | uint16) ::
-        ("feeBase" | satoshi32)
+        ("feeBase" | satoshi32) ::
+        ("channelCreationFee" | satoshi32)
       ).as[FundingRate]
 
     private val paymentDetails: Codec[PaymentDetails] = discriminated[PaymentDetails].by(varint)

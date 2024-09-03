@@ -496,7 +496,8 @@ object NodeParams extends Logging {
           maxAmount = r.getLong("max-funding-amount-satoshis").sat,
           fundingWeight = r.getInt("funding-weight"),
           feeBase = r.getLong("fee-base-satoshis").sat,
-          feeProportional = r.getInt("fee-basis-points")
+          feeProportional = r.getInt("fee-basis-points"),
+          channelCreationFee = r.getLong("channel-creation-fee-satoshis").sat,
         )
       }.toList
       if (fundingRates.nonEmpty && paymentTypes.nonEmpty) {

@@ -363,7 +363,7 @@ class PeerSpec extends FixtureSpec {
     connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
-    val requestFunds = LiquidityAds.RequestFunding(50_000 sat, LiquidityAds.FundingRate(10_000 sat, 100_000 sat, 0, 0, 0 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
+    val requestFunds = LiquidityAds.RequestFunding(50_000 sat, LiquidityAds.FundingRate(10_000 sat, 100_000 sat, 0, 0, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
     val open = Peer.OpenChannel(remoteNodeId, 10000 sat, None, None, None, None, Some(requestFunds), None, None)
     peerConnection.send(peer, open)
     assert(channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].requestFunding_opt.contains(requestFunds))

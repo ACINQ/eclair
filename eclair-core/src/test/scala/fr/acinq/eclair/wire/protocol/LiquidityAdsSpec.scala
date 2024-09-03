@@ -30,19 +30,20 @@ class LiquidityAdsSpec extends AnyFunSuite {
     val nodeKey = PrivateKey(hex"57ac961f1b80ebfb610037bf9c96c6333699bde42257919a53974811c34649e3")
     assert(nodeKey.publicKey == PublicKey(hex"03ca9b880627d2d4e3b33164f66946349f820d26aa9572fe0e525e534850cbd413"))
 
-    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 1_000_000 sat, 500, 100, 10 sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 500_000 sat).total == 5635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 600_000 sat).total == 5635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 400_000 sat).total == 4635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(10 sat)), 500_000 sat, 500_000 sat).total == 6260.sat)
+    val fundingRate = LiquidityAds.FundingRate(100_000 sat, 1_000_000 sat, 500, 100, 10 sat, 1000 sat)
+    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 500_000 sat, isChannelCreation = false).total == 5635.sat)
+    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 600_000 sat, isChannelCreation = false).total == 5635.sat)
+    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 600_000 sat, isChannelCreation = true).total == 6635.sat)
+    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 400_000 sat, isChannelCreation = false).total == 4635.sat)
+    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(10 sat)), 500_000 sat, 500_000 sat, isChannelCreation = false).total == 6260.sat)
 
     val fundingRates = LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance))
     val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)
     val fundingScript = hex"00202395c9c52c02ca069f1d56a3c6124bf8b152a617328c76e6b31f83ace370c2ff"
-    val Right(willFund) = fundingRates.validateRequest(nodeKey, randomBytes32(), fundingScript, FeeratePerKw(1000 sat), request).map(_.willFund)
+    val Right(willFund) = fundingRates.validateRequest(nodeKey, randomBytes32(), fundingScript, FeeratePerKw(1000 sat), request, isChannelCreation = true).map(_.willFund)
     assert(willFund.fundingRate == fundingRate)
     assert(willFund.fundingScript == fundingScript)
-    assert(willFund.signature == ByteVector64.fromValidHex("0d99b73ecc32a81581cb761d8737e8bccf2358a01f7dea8e2f2579f32db42e94668786a2245287848c550b502fee9aca232c0c343afb16ac44d9be9c59d16f70"))
+    assert(willFund.signature == ByteVector64.fromValidHex("a53106bd20027b0215480ff0b06b2bf9324bb257c2a0e74c2604ec347493f90d3a975d56a68b21a6cc48d6763d96f70e1d630dd1720cf6b7314d4304050fe265"))
 
     val channelId = randomBytes32()
     val testCases = Seq(
@@ -53,7 +54,7 @@ class LiquidityAdsSpec extends AnyFunSuite {
     )
     testCases.foreach {
       case (fundingAmount, willFund_opt, failure_opt) =>
-        val result = request.validateRemoteFunding(nodeKey.publicKey, channelId, fundingScript, fundingAmount, FeeratePerKw(2500 sat), willFund_opt)
+        val result = request.validateRemoteFunding(nodeKey.publicKey, channelId, fundingScript, fundingAmount, FeeratePerKw(2500 sat), isChannelCreation = true, willFund_opt)
         failure_opt match {
           case Some(failure) => assert(result == Left(failure))
           case None => assert(result.isRight)
