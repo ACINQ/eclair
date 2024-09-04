@@ -21,7 +21,6 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -37,6 +36,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
+import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -724,11 +724,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // The HTLC txs confirms, so we publish 3rd-stage txs.
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, htlcTimeoutTx)
     val claimHtlcTimeoutDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcTimeoutDelayedTx.txid)
+    inside(alice2blockchain.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == claimHtlcTimeoutDelayedTx.txid)
+      assert(w.delay_opt.map(_.parentTxId).contains(htlcTimeoutTx.txid))
+    }
     Transaction.correctlySpends(claimHtlcTimeoutDelayedTx, Seq(htlcTimeoutTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, htlcSuccessTx)
     val claimHtlcSuccessDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcSuccessDelayedTx.txid)
+    inside(alice2blockchain.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == claimHtlcSuccessDelayedTx.txid)
+      assert(w.delay_opt.map(_.parentTxId).contains(htlcSuccessTx.txid))
+    }
     Transaction.correctlySpends(claimHtlcSuccessDelayedTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // We simulate a node restart after a feerate increase.
