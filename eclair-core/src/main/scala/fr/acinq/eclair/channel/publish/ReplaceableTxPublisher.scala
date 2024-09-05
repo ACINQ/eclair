@@ -19,7 +19,6 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
@@ -61,12 +60,12 @@ object ReplaceableTxPublisher {
   // Timer key to ensure we don't have multiple concurrent timers running.
   private case object BumpFeeKey
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, txPublishContext).checkPreconditions()
+            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, context, timers, txPublishContext).checkPreconditions()
             case Stop => Behaviors.stopped
           }
         }
@@ -108,7 +107,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
                                      replyTo: ActorRef[TxPublisher.PublishTxResult],
                                      cmd: TxPublisher.PublishReplaceableTx,
                                      bitcoinClient: BitcoinCoreClient,
-                                     watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
                                      timers: TimerScheduler[ReplaceableTxPublisher.Command],
                                      txPublishContext: TxPublishContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
@@ -141,7 +139,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       // There are no time locks on anchor transactions, we can claim them right away.
       case _: ClaimLocalAnchorWithWitnessData => chooseFeerate(txWithWitnessData)
       case _ =>
-        val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, txPublishContext), "time-locks-monitor")
+        val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, bitcoinClient, txPublishContext), "time-locks-monitor")
         timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
         Behaviors.receiveMessagePartial {
           case TimeLocksOk => chooseFeerate(txWithWitnessData)

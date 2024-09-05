@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.FinalTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.ConflictingTxConfirmed
@@ -48,14 +47,13 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     stopBitcoind()
   }
 
-  case class Fixture(bitcoinClient: BitcoinCoreClient, publisher: ActorRef[FinalTxPublisher.Command], watcher: TestProbe, probe: TestProbe)
+  case class Fixture(bitcoinClient: BitcoinCoreClient, publisher: ActorRef[FinalTxPublisher.Command], probe: TestProbe)
 
   def createFixture(): Fixture = {
     val probe = TestProbe()
-    val watcher = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    val publisher = system.spawnAnonymous(FinalTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
-    Fixture(bitcoinClient, publisher, watcher, probe)
+    val publisher = system.spawnAnonymous(FinalTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
+    Fixture(bitcoinClient, publisher, probe)
   }
 
   def getMempool(bitcoinClient: BitcoinCoreClient, probe: TestProbe): Seq[Transaction] = {
@@ -78,17 +76,13 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
+    createBlocks(5, probe)
+
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, sequence = 5, lockTime = 0)
     val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
-    val w = watcher.expectMsgType[WatchParentTxConfirmed]
-    assert(w.txId == parentTx.txid)
-    assert(w.minDepth == 5)
-    createBlocks(5, probe)
-    w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe), 0, parentTx)
-
-    // Once time locks are satisfied, the transaction should be published:
+    // Time locks are satisfied, the transaction should be published:
     waitTxInMempool(bitcoinClient, tx.txid, probe)
     createBlocks(1, probe)
     probe.expectNoMessage(100 millis) // we don't notify the sender until min depth has been reached
@@ -113,7 +107,6 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     publisher ! Publish(probe.ref, cmd)
 
     // Since the parent is not published yet, we can't publish the child tx either:
-    watcher.expectNoMessage(100 millis)
     assert(!getMempool(bitcoinClient, probe).map(_.txid).contains(tx.txid))
 
     // Once the parent tx is published, it will unblock publication of the child tx:

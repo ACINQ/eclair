@@ -564,7 +564,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => {
+      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed] 
+      assert(watchConfirmed.txId == claimMain.tx.txid)
+      assert(watchConfirmed.delay_opt.map(_.parentTxId).contains(publishedLocalCommitTx.txid))
+    })
 
     // we watch outputs of the commitment tx that both parties may spend and anchor outputs
     val watchedOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case tx: ClaimLocalAnchorOutputTx => tx.input.outPoint.index }

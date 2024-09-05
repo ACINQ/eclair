@@ -18,10 +18,10 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchTxConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{RelativeDelay, WatchOutputSpent, WatchTxConfirmed}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
@@ -164,9 +164,9 @@ trait ErrorHandlers extends CommonHandlers {
   /**
    * This helper method will watch txs only if they haven't yet reached minDepth
    */
-  private def watchConfirmedIfNeeded(txs: Iterable[Transaction], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
+  private def watchConfirmedIfNeeded(txs: Iterable[Transaction], irrevocablySpent: Map[OutPoint, Transaction], relativeDelays: Map[TxId, RelativeDelay]): Unit = {
     val (skip, process) = txs.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks))
+    process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthBlocks, relativeDelays.get(tx.txid)))
     skip.foreach(tx => log.debug(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
@@ -219,21 +219,23 @@ trait ErrorHandlers extends CommonHandlers {
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitment))
-        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitment) }
+        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx if !localCommitPublished.isConfirmed => PublishReplaceableTx(tx, commitment) }
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
-    // we watch:
-    // - the commitment tx itself, so that we can handle the case where we don't have any outputs
-    // - 'final txs' that send funds to our wallet and that spend outputs that only us control
+    // We watch:
+    //  - the commitment tx itself, so that we can handle the case where we don't have any outputs
+    //  - 'final txs' that send funds to our wallet and that spend outputs that only us control
+    // Our 'final txs" have a long relative delay: we provide that information to the watcher for efficiency.
+    val relativeDelays = (claimMainDelayedOutputTx ++ claimHtlcDelayedTxs).map(tx => tx.tx.txid -> RelativeDelay(tx.input.outPoint.txid, commitment.remoteParams.toSelfDelay.toInt.toLong)).toMap
     val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx.map(_.tx) ++ claimHtlcDelayedTxs.map(_.tx)
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, relativeDelays)
 
-    // we watch outputs of the commitment tx that both parties may spend
-    // we also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
-    // in the audit DB, even if we restart before confirmation
-    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => tx.input.outPoint }
+    // We watch outputs of the commitment tx that both parties may spend.
+    // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
+    // in the audit DB, even if we restart before confirmation.
+    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx if !localCommitPublished.isConfirmed => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
@@ -274,18 +276,18 @@ trait ErrorHandlers extends CommonHandlers {
   def doPublish(remoteCommitPublished: RemoteCommitPublished, commitment: FullCommitment): Unit = {
     import remoteCommitPublished._
 
-    val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => PublishReplaceableTx(tx, commitment) }
+    val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx if !remoteCommitPublished.isConfirmed => PublishReplaceableTx(tx, commitment) }
     val redeemableHtlcTxs = claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitment))
     val publishQueue = claimLocalAnchor ++ claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
-    // we watch:
+    // We watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txs' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx.map(_.tx)
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, relativeDelays = Map.empty)
 
-    // we watch outputs of the commitment tx that both parties may spend
+    // We watch outputs of the commitment tx that both parties may spend.
     val watchSpentQueue = claimHtlcTxs.keys
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
@@ -336,13 +338,13 @@ trait ErrorHandlers extends CommonHandlers {
     val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishFinalTx(tx, tx.fee, None))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
-    // we watch:
+    // We watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txs' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx.map(_.tx)
-    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, relativeDelays = Map.empty)
 
-    // we watch outputs of the commitment tx that both parties may spend
+    // We watch outputs of the commitment tx that both parties may spend.
     val watchSpentQueue = (mainPenaltyTx ++ htlcPenaltyTxs).map(_.input.outPoint)
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
