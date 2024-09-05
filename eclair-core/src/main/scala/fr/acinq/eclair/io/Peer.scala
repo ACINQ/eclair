@@ -226,10 +226,11 @@ class Peer(val nodeParams: NodeParams,
               log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
               open match {
                 case Left(open) =>
-                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, requireConfirmedInputs = false, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
                   channel ! open
                 case Right(open) =>
-                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, addFunding_opt, dualFunded = true, None, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  val requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
+                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, addFunding_opt, dualFunded = true, None, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
                   channel ! open
               }
               fulfillOnTheFlyFundingHtlcs(accept.preimages)

@@ -74,7 +74,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     // alice and bob will both have 1 000 000 sat
     alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, 2000000 sat, dualFunded = false, commitTxFeerate = feeratePerKw, fundingTxFeerate = feeratePerKw, fundingTxFeeBudget_opt = None, Some(1000000000 msat), requireConfirmedInputs = false, requestFunding_opt = None, Alice.channelParams, pipe, bobInit, ChannelFlags(announceChannel = false), channelConfig, channelType, replyTo = system.deadLetters)
     alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
+    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, Bob.channelParams, pipe, aliceInit, channelConfig, channelType)
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     pipe ! (alice, bob)
     within(30 seconds) {

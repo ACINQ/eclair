@@ -178,7 +178,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val tlvs: Set[AcceptDualFundedChannelTlv] = Set(
             upfrontShutdownScript_opt,
             Some(ChannelTlv.ChannelTypeTlv(d.init.channelType)),
-            if (nodeParams.channelConf.requireConfirmedInputsForDualFunding) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+            if (d.init.requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
             willFund_opt.map(l => ChannelTlv.ProvideFundingTlv(l.willFund)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
           ).flatten
@@ -509,7 +509,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, nodeParams.channelConf.requireConfirmedInputsForDualFunding, cmd.requestFunding_opt)
+              val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt)
               stay() using d.copy(rbfStatus = RbfStatus.RbfRequested(cmd)) sending txInitRbf
             }
           case _ =>
@@ -559,7 +559,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     remoteContribution = msg.fundingContribution,
                     lockTime = msg.lockTime,
                     targetFeerate = msg.feerate,
-                    requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+                    requireConfirmedInputs = d.latestFundingTx.fundingParams.requireConfirmedInputs.copy(forLocal = msg.requireConfirmedInputs)
                   )
                   val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                     randomBytes32(),
@@ -571,7 +571,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     wallet))
                   txBuilder ! InteractiveTxBuilder.Start(self)
                   val toSend = Seq(
-                    Some(TxAckRbf(d.channelId, fundingParams.localContribution, nodeParams.channelConf.requireConfirmedInputsForDualFunding, willFund_opt.map(_.willFund))),
+                    Some(TxAckRbf(d.channelId, fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund))),
                     if (remainingRbfAttempts <= 3) Some(Warning(d.channelId, s"will accept at most ${remainingRbfAttempts - 1} future rbf attempts")) else None,
                   ).flatten
                   stay() using d.copy(rbfStatus = RbfStatus.RbfInProgress(cmd_opt = None, txBuilder, remoteCommitSig = None)) sending toSend
