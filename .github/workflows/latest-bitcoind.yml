@@ -1,7 +1,7 @@
 name: Latest Bitcoin Core
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Build can be triggered manually from github.com
   schedule:
     # Run at midnight on Sunday and Wednesday.
     - cron: '0 0 * * 0,3'
