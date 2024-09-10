@@ -209,7 +209,8 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
             inputTx.txOut(txIn.outPoint.index.toInt),
             null,
             Script.pay2pkh(pubkey).map(scala2kmp).asJava,
-            null, java.util.Map.of(),
+            null,
+            java.util.Map.of(),
             null,
             null,
             java.util.Map.of()).getRight
