@@ -1,6 +1,7 @@
 name: Latest Bitcoin Core
 
 on:
+  workflow_dispatch: # Build can be triggered manually from github.com
   schedule:
     # Run at midnight on Sunday and Wednesday.
     - cron: '0 0 * * 0,3'
@@ -21,19 +22,15 @@ jobs:
           path: bitcoin
 
       - name: Install bitcoind dependencies
-        run: sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 libevent-dev libboost-dev                                                                                          libminiupnpc-dev libnatpmp-dev    libzmq3-dev                                        libsqlite3-dev            systemtap-sdt-dev
+        run: sudo apt-get install build-essential cmake pkg-config bsdmainutils python3 libevent-dev libboost-dev libminiupnpc-dev libnatpmp-dev libzmq3-dev libsqlite3-dev systemtap-sdt-dev
         working-directory: ./bitcoin
 
-      - name: Autogen bitcoind
-        run: ./autogen.sh
-        working-directory: ./bitcoin
-
-      - name: Configure bitcoind
-        run: ./configure --with-zmq --without-gui --disable-shared --with-pic --disable-tests --disable-bench
+      - name: Init and configure cmake build
+        run: cmake -B build -DWITH_ZMQ=ON -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF
         working-directory: ./bitcoin
 
       - name: Build bitcoind
-        run: make -j "$(($(nproc)))"
+        run: cmake --build build "-j $(($(nproc)))"
         working-directory: ./bitcoin
 
       - name: Checkout eclair master
@@ -51,5 +48,5 @@ jobs:
         run: echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
 
       - name: Run eclair tests
-        run: BITCOIND_DIR=$GITHUB_WORKSPACE/bitcoin/src mvn test
+        run: BITCOIND_DIR=$GITHUB_WORKSPACE/bitcoin/build/src mvn test
         working-directory: ./eclair
