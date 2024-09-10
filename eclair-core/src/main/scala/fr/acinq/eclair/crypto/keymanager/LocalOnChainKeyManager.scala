@@ -74,7 +74,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
   private val fingerPrintHex = String.format("%8s", fingerprint.toHexString).replace(' ', '0')
   // Root BIP32 on-chain path: we use BIP84 (p2wpkh) paths: m/84h/{0h/1h}
   private val rootPath = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => "84h/1h"
+    case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.SignetGenesisBlock.hash => "84h/1h"
     case Block.LivenetGenesisBlock.hash => "84h/0h"
     case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
   }
@@ -82,7 +82,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
 
   override def masterPubKey(account: Long): String = {
     val prefix = chainHash match {
-      case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash | Block.SignetGenesisBlock.hash => vpub
+      case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.SignetGenesisBlock.hash => vpub
       case Block.LivenetGenesisBlock.hash => zpub
       case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
     }
@@ -202,7 +202,16 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
     // Update the input with the right script for a p2wpkh input, which is a *p2pkh* script, then sign and finalize.
-    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(psbt.global.tx.txIn.get(pos).outPoint, input.getWitnessUtxo, null, Script.pay2pkh(pub), SigHash.SIGHASH_ALL, input.getDerivationPaths)
+    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(
+      psbt.global.tx.txIn.get(pos).outPoint,
+      input.getWitnessUtxo,
+      null,
+      Script.pay2pkh(pub),
+      SigHash.SIGHASH_ALL,
+      input.getDerivationPaths,
+      null,
+      null,
+      java.util.Map.of())
     val signed = updated.flatMap(_.sign(priv, pos))
     val finalized = signed.flatMap(s => {
       require(s.getSig.last.toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")

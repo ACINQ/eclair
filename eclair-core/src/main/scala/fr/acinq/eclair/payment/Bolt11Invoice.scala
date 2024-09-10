@@ -138,7 +138,8 @@ object Bolt11Invoice {
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
     Block.SignetGenesisBlock.hash -> "lntbs",
-    Block.TestnetGenesisBlock.hash -> "lntb",
+    Block.Testnet3GenesisBlock.hash -> "lntb",
+    Block.Testnet4GenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
@@ -531,7 +532,7 @@ object Bolt11Invoice {
     val lowercaseInput = input.toLowerCase
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
-    val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    val prefix: String = prefixes.values.toSeq.sortBy(_.length).findLast(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = ByteVector64(bolt11Data.signature.take(64))

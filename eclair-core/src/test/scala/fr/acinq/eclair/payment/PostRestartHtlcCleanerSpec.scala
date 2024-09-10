@@ -158,7 +158,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val invoice = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash, TestConstants.Bob.nodeKeyManager.nodeKey.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
+    val invoice = Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(500 msat), paymentHash, TestConstants.Bob.nodeKeyManager.nodeKey.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
     nodeParams.db.payments.addIncomingPayment(invoice, preimage)
     nodeParams.db.payments.receiveIncomingPayment(paymentHash, 5000 msat)
 

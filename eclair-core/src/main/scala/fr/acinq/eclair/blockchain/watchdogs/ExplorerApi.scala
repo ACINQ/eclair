@@ -118,7 +118,7 @@ object ExplorerApi {
   case class BlockcypherExplorer()(implicit val sb: SttpBackend[Future, _]) extends Explorer {
     override val name = "blockcypher.com"
     override val baseUris = Map(
-      Block.TestnetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/test3",
+      Block.Testnet3GenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/test3",
       Block.LivenetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/main"
     )
 
@@ -208,12 +208,12 @@ object ExplorerApi {
     override val name = "blockstream.info"
     override val baseUris = if (useTorEndpoints) {
       Map(
-        Block.TestnetGenesisBlock.hash -> uri"http://explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion/testnet/api",
+        Block.Testnet3GenesisBlock.hash -> uri"http://explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion/testnet/api",
         Block.LivenetGenesisBlock.hash -> uri"http://explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion/api"
       )
     } else {
       Map(
-        Block.TestnetGenesisBlock.hash -> uri"https://blockstream.info/testnet/api",
+        Block.Testnet3GenesisBlock.hash -> uri"https://blockstream.info/testnet/api",
         Block.LivenetGenesisBlock.hash -> uri"https://blockstream.info/api"
       )
     }
@@ -224,13 +224,15 @@ object ExplorerApi {
     override val name = "mempool.space"
     override val baseUris = if (useTorEndpoints) {
       Map(
-        Block.TestnetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/testnet/api",
+        Block.Testnet4GenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/testnet4/api",
+        Block.Testnet3GenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/testnet/api",
         Block.LivenetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/api",
         Block.SignetGenesisBlock.hash -> uri"http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/signet/api"
       )
     } else {
       Map(
-        Block.TestnetGenesisBlock.hash -> uri"https://mempool.space/testnet/api",
+        Block.Testnet4GenesisBlock.hash -> uri"https://mempool.space/testnet4/api",
+        Block.Testnet3GenesisBlock.hash -> uri"https://mempool.space/testnet/api",
         Block.LivenetGenesisBlock.hash -> uri"https://mempool.space/api",
         Block.SignetGenesisBlock.hash -> uri"https://mempool.space/signet/api"
       )
