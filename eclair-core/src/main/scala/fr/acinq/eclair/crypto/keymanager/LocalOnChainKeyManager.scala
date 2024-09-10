@@ -74,7 +74,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
   private val fingerPrintHex = String.format("%8s", fingerprint.toHexString).replace(' ', '0')
   // Root BIP32 on-chain path: we use BIP84 (p2wpkh) paths: m/84h/{0h/1h}
   private val rootPath = chainHash match {
-    case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.SignetGenesisBlock.hash => "84h/1h"
+    case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.SignetGenesisBlock.hash => "84h/1h"
     case Block.LivenetGenesisBlock.hash => "84h/0h"
     case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
   }
@@ -82,7 +82,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
 
   override def masterPubKey(account: Long): String = {
     val prefix = chainHash match {
-      case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.SignetGenesisBlock.hash => vpub
+      case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.SignetGenesisBlock.hash => vpub
       case Block.LivenetGenesisBlock.hash => zpub
       case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
     }
