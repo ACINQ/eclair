@@ -300,6 +300,11 @@ object Features {
     val mandatory = 54
   }
 
+  case object ZeroFeeCommitmentTx extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "zero_fee_commitment_tx"
+    val mandatory = 212
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -349,6 +354,7 @@ object Features {
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
+    ZeroFeeCommitmentTx,
   )
 
   // Features may depend on other features, as specified in Bolt 9.

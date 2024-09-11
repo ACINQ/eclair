@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
@@ -31,9 +31,11 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
 
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)
+  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature(Features.ZeroFeeCommitmentTx)
   /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
+  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.ZeroFeeCommitmentTx)) {
+    ZeroFeeCommitTxCommitmentFormat
+  } else if (hasFeature(Features.AnchorOutputs)) {
     UnsafeLegacyAnchorOutputsCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
     ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
@@ -129,6 +131,16 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class ZeroFeeCommitmentFormat(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.ZeroFeeCommitmentTx)
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeCommitTxCommitmentFormat
+    override def toString: String = s"zero_fee_commitment_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
     override def toString: String = s"0x${featureBits.toByteVector.toHex}"
@@ -151,7 +163,11 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(),
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
-    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true))
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
+    ZeroFeeCommitmentFormat(),
+    ZeroFeeCommitmentFormat(zeroConf = true),
+    ZeroFeeCommitmentFormat(scidAlias = true),
+    ZeroFeeCommitmentFormat(scidAlias = true, zeroConf = true))
     .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
 
@@ -164,7 +180,9 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
+    if (canUse(Features.ZeroFeeCommitmentTx)) {
+      ZeroFeeCommitmentFormat(scidAlias, zeroConf)
+    } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
       AnchorOutputs(scidAlias, zeroConf)

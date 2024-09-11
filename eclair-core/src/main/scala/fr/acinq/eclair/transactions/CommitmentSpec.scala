@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeCommitTxCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 
 /**
@@ -34,6 +34,7 @@ object CommitmentOutput {
   case object ToRemote extends CommitmentOutput
   case object ToLocalAnchor extends CommitmentOutput
   case object ToRemoteAnchor extends CommitmentOutput
+  case object ToSharedAnchor extends CommitmentOutput
   case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
   case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
   // @formatter:on
@@ -75,6 +76,7 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: Feera
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
     case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat => FeeratePerKw(0 sat)
+    case ZeroFeeCommitTxCommitmentFormat => FeeratePerKw(0 sat)
     case _ => commitTxFeerate
   }
 

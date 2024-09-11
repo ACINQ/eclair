@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Commitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
@@ -40,6 +41,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -47,7 +49,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.ClosingTx
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner, ZeroFeeCommitTxCommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 
@@ -609,6 +611,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
                   }
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
+                  if (d.commitments.params.commitmentFormat == ZeroFeeCommitTxCommitmentFormat) {
+                    val commitment = commitments1.latest
+                    val commitTx = commitment.localCommit.commitTxAndRemoteSig.commitTx.tx
+                    val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
+                    val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index.toInt)
+                    val localRevocationPubkey = Generators.revocationPubKey(commitment.remoteParams.revocationBasepoint, localPerCommitmentPoint)
+                    val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+                    val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
+                    Transactions.makeClaimSharedAnchorOutputTx(commitTx, ConfirmationTarget.Priority(ConfirmationPriority.Slow)).map(anchorTx => {
+                      log.info("commit-tx-id = {}, claim-anchor-tx = {}", commitTx.txid, anchorTx.tx)
+                    })
+                    Seq(FeeratePerKw(2500 sat), FeeratePerKw(5000 sat)).foreach(feerate => {
+                      val claimMain = Transactions.makeClaimLocalDelayedOutputTx(commitTx, commitment.localParams.dustLimit, localRevocationPubkey, commitment.remoteParams.toSelfDelay, localDelayedPubkey, finalScriptPubKey, feerate).map(claimDelayed => {
+                        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat)
+                        val claimTx = Transactions.addSigs(claimDelayed, sig)
+                        log.info("commit-tx-id = {}, feerate = {} claim-main-tx = {}", commitTx.txid, feerate, claimTx.tx)
+                      })
+                    })
+                  }
                   // If we're now quiescent, we may send our stfu message.
                   val (d1, toSend) = d.spliceStatus match {
                     case SpliceStatus.QuiescenceRequested(cmd) if commitments1.localIsQuiescent =>

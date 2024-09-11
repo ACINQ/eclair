@@ -642,6 +642,7 @@ object Helpers {
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
             requestedFeerate.min(commitment.localCommit.spec.commitTxFeerate)
           case _: AnchorOutputsCommitmentFormat => requestedFeerate
+          case ZeroFeeCommitTxCommitmentFormat => requestedFeerate
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
@@ -731,18 +732,19 @@ object Helpers {
      * we previously had. Note that absolute targets are always considered more aggressive than relative targets.
      */
     private def shouldUpdateAnchorTxs(anchorTxs: List[ClaimAnchorOutputTx], confirmationTarget: ConfirmationTarget): Boolean = {
-      anchorTxs
-        .collect { case tx: ClaimLocalAnchorOutputTx => tx.confirmationTarget }
-        .forall {
-          case ConfirmationTarget.Absolute(current) => confirmationTarget match {
-            case ConfirmationTarget.Absolute(proposed) => proposed < current
-            case _: ConfirmationTarget.Priority => false
-          }
-          case ConfirmationTarget.Priority(current) => confirmationTarget match {
-            case _: ConfirmationTarget.Absolute => true
-            case ConfirmationTarget.Priority(proposed) => current < proposed
-          }
+      anchorTxs.collect {
+        case tx: ClaimLocalAnchorOutputTx => tx.confirmationTarget
+        case tx: ClaimSharedAnchorOutputTx => tx.confirmationTarget
+      }.forall {
+        case ConfirmationTarget.Absolute(current) => confirmationTarget match {
+          case ConfirmationTarget.Absolute(proposed) => proposed < current
+          case _: ConfirmationTarget.Priority => false
         }
+        case ConfirmationTarget.Priority(current) => confirmationTarget match {
+          case _: ConfirmationTarget.Absolute => true
+          case ConfirmationTarget.Priority(proposed) => current < proposed
+        }
+      }
     }
 
     object LocalClose {
@@ -798,6 +800,9 @@ object Helpers {
             },
             withTxGenerationLog("remote-anchor") {
               Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
+            },
+            withTxGenerationLog("shared-anchor") {
+              Transactions.makeClaimSharedAnchorOutputTx(lcp.commitTx, confirmationTarget)
             }
           ).flatten
           lcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -957,6 +962,12 @@ object Helpers {
                 Transactions.addSigs(claimMain, sig)
               })
             }
+            case ZeroFeeCommitTxCommitmentFormat => withTxGenerationLog("remote-main") {
+              Transactions.makeClaimP2WPKHOutputTx(tx, params.localParams.dustLimit, localPubkey, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
+                val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, params.commitmentFormat)
+                Transactions.addSigs(claimMain, localPubkey, sig)
+              })
+            }
           }
         }
       }
@@ -1090,6 +1101,12 @@ object Helpers {
               Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feerateMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
+              })
+            }
+            case ZeroFeeCommitTxCommitmentFormat => withTxGenerationLog("remote-main") {
+              Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, finalScriptPubKey, feerateMain).map(claimMain => {
+                val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
+                Transactions.addSigs(claimMain, localPaymentPubkey, sig)
               })
             }
           }

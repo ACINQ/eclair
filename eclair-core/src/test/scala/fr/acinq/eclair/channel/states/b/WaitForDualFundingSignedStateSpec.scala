@@ -55,6 +55,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val commitFeerate = channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
       case _: Transactions.AnchorOutputsCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
+      case Transactions.ZeroFeeCommitTxCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
     }
     val aliceListener = TestProbe()
     val bobListener = TestProbe()

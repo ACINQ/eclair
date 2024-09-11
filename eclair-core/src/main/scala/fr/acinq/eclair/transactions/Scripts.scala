@@ -22,9 +22,9 @@ import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, ZeroFeeCommitTxCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 /**
  * Created by PM on 02/12/2016.
@@ -41,7 +41,7 @@ object Scripts {
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
-    case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitTxCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
@@ -186,10 +186,13 @@ object Scripts {
    */
   def witnessAnchorAfterDelay(anchorScript: ByteVector) = ScriptWitness(ByteVector.empty :: anchorScript :: Nil)
 
+  def pay2anchor(): Seq[ScriptElt] = OP_1 :: OP_PUSHDATA(hex"4e73") :: Nil
+
   def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat => true
+      case ZeroFeeCommitTxCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key
@@ -241,6 +244,7 @@ object Scripts {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat => true
+      case ZeroFeeCommitTxCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key
