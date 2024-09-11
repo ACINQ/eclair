@@ -42,7 +42,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route, RoutePa
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, InitFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -164,8 +164,8 @@ object NodeRelay {
   }
 
   /** If we fail to relay a payment, we may want to attempt on-the-fly funding if it makes sense. */
-  private def shouldAttemptOnTheFlyFunding(nodeParams: NodeParams, failures: Seq[PaymentFailure]): Boolean = {
-    val featureOk = nodeParams.features.hasFeature(Features.OnTheFlyFunding)
+  private def shouldAttemptOnTheFlyFunding(nodeParams: NodeParams, recipientFeatures_opt: Option[Features[InitFeature]], failures: Seq[PaymentFailure]): Boolean = {
+    val featureOk = Features.canUseFeature(nodeParams.features.initFeatures(), recipientFeatures_opt.getOrElse(Features.empty), Features.OnTheFlyFunding)
     val balanceTooLow = failures.collectFirst { case f@LocalFailure(_, _, BalanceTooLow) => f }.nonEmpty
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     featureOk && (balanceTooLow || routeNotFound)
@@ -298,7 +298,7 @@ class NodeRelay private(nodeParams: NodeParams,
   private def ensureRecipientReady(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     nextWalletNodeId(nodeParams, recipient) match {
       case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => waitForPeerReady(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
-      case _ => relay(upstream, recipient, nextPayload, nextPacket_opt)
+      case _ => relay(upstream, recipient, None, nextPayload, nextPacket_opt)
     }
   }
 
@@ -316,14 +316,14 @@ class NodeRelay private(nodeParams: NodeParams,
           context.log.warn("rejecting payment: failed to wake-up remote peer")
           rejectPayment(upstream, Some(UnknownNextPeer()))
           stopping()
-        case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerReady) =>
-          relay(upstream, recipient, nextPayload, nextPacket_opt)
+        case WrappedPeerReadyResult(r: PeerReadyNotifier.PeerReady) =>
+          relay(upstream, recipient, Some(r.remoteFeatures), nextPayload, nextPacket_opt)
       }
     }
   }
 
   /** Relay the payment to the next identified node: this is similar to sending an outgoing payment. */
-  private def relay(upstream: Upstream.Hot.Trampoline, recipient: Recipient, payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def relay(upstream: Upstream.Hot.Trampoline, recipient: Recipient, recipientFeatures_opt: Option[Features[InitFeature]], payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={})", upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     val confidence = (upstream.received.map(_.add.endorsement).min + 0.5) / 8
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, confidence)
@@ -342,7 +342,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
     val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
     payFSM ! payment
-    sending(upstream, recipient, payloadOut, TimestampMilli.now(), fulfilledUpstream = false)
+    sending(upstream, recipient, recipientFeatures_opt, payloadOut, TimestampMilli.now(), fulfilledUpstream = false)
   }
 
   /**
@@ -354,6 +354,7 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def sending(upstream: Upstream.Hot.Trampoline,
                       recipient: Recipient,
+                      recipientFeatures_opt: Option[Features[InitFeature]],
                       nextPayload: IntermediatePayload.NodeRelay,
                       startedAt: TimestampMilli,
                       fulfilledUpstream: Boolean): Behavior[Command] =
@@ -365,7 +366,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage)
-            sending(upstream, recipient, nextPayload, startedAt, fulfilledUpstream = true)
+            sending(upstream, recipient, recipientFeatures_opt, nextPayload, startedAt, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -381,7 +382,7 @@ class NodeRelay private(nodeParams: NodeParams,
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           nextWalletNodeId(nodeParams, recipient) match {
-            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, failures) =>
+            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures) =>
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
               attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, failures, startedAt)
             case _ =>

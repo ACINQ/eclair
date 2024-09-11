@@ -207,7 +207,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
       val wakeUp = switchboard.expectMessageType[Switchboard.GetPeerInfo]
       assert(wakeUp.remoteNodeId == outgoingNodeId)
-      wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+      wakeUp.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
       expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     })
 
@@ -232,7 +232,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     wakeUp.replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(peerInfo.remoteNodeId == outgoingNodeId)
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     // We try to use existing channels, but they don't have enough liquidity.
@@ -244,6 +244,29 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     assert(fwdNodeId.message.nextBlindingKey_opt.nonEmpty)
     assert(fwdNodeId.message.amount == outgoingAmount)
     assert(fwdNodeId.message.expiry == outgoingExpiry)
+  }
+
+  test("relay blinded payment (on-the-fly funding not supported)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+    import f._
+
+    val (peerReadyManager, switchboard) = createWakeUpActors()
+
+    val u = createLocalUpdate(channelId1, feeBaseMsat = 5000 msat, feeProportionalMillionths = 0)
+    val payload = createBlindedPayload(Left(outgoingNodeId), u.channelUpdate, isIntroduction = false)
+    val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
+
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    // We try to wake-up the next node.
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
+    val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
+    assert(peerInfo.remoteNodeId == outgoingNodeId)
+    // The next node doesn't support the on-the-fly funding feature.
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(Features.empty), None, Set.empty)
+    cleanUpWakeUpActors(peerReadyManager, switchboard)
+
+    // We fail without attempting on-the-fly funding.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_MALFORMED_HTLC(r.add.id, Sphinx.hash(r.add.onionRoutingPacket), InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket)).code, commit = true))
   }
 
   test("relay blinded payment (on-the-fly funding failed)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
@@ -261,7 +284,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(peerInfo.remoteNodeId == outgoingNodeId)
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     // We don't have any channel, so we attempt on-the-fly funding, but the peer is not available.
@@ -287,7 +310,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
     val peerInfo = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(peerInfo.remoteNodeId == outgoingNodeId)
-    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, None, Set.empty)
+    peerInfo.replyTo ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.CONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty)
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     // We try to use existing channels, but they reject the payment for a reason that isn't tied to the liquidity.

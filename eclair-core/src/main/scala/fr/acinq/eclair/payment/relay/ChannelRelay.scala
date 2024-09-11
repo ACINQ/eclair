@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, Logs, NodeParams, ShortChannelId, TimestampMilli, TimestampSecond, channel, nodeFee}
+import fr.acinq.eclair.{Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -153,7 +153,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => wakeUp(walletNodeId)
       case _ =>
         context.self ! DoRelay
-        relay(Seq.empty)
+        relay(None, Seq.empty)
     }
   }
 
@@ -166,13 +166,13 @@ class ChannelRelay private(nodeParams: NodeParams,
         Metrics.recordPaymentRelayFailed(Tags.FailureType.WakeUp, Tags.RelayType.Channel)
         context.log.info("rejecting htlc: failed to wake-up remote peer")
         safeSendAndStop(r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true))
-      case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerReady) =>
+      case WrappedPeerReadyResult(r: PeerReadyNotifier.PeerReady) =>
         context.self ! DoRelay
-        relay(Seq.empty)
+        relay(Some(r.remoteFeatures), Seq.empty)
     }
   }
 
-  def relay(previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
+  def relay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case DoRelay =>
         if (previousFailures.isEmpty) {
@@ -180,7 +180,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, requestedShortChannelId_opt, nextNodeId_opt.getOrElse(""))
         }
         context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
-        handleRelay(previousFailures) match {
+        handleRelay(remoteFeatures_opt, previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
@@ -192,12 +192,12 @@ class ChannelRelay private(nodeParams: NodeParams,
           case RelaySuccess(selectedChannelId, cmdAdd) =>
             context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
             register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
-            waitForAddResponse(selectedChannelId, previousFailures)
+            waitForAddResponse(selectedChannelId, remoteFeatures_opt, previousFailures)
         }
     }
   }
 
-  private def waitForAddResponse(selectedChannelId: ByteVector32, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
+  private def waitForAddResponse(selectedChannelId: ByteVector32, remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, _))) =>
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
@@ -208,7 +208,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
         context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
         context.self ! DoRelay
-        relay(previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
+        relay(remoteFeatures_opt, previousFailures :+ PreviouslyTried(selectedChannelId, addFailed))
 
       case WrappedAddResponse(_: RES_SUCCESS[_]) =>
         context.log.debug("sent htlc to the downstream channel")
@@ -280,7 +280,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  private def handleRelay(previousFailures: Seq[PreviouslyTried]): RelayResult = {
+  private def handleRelay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): RelayResult = {
     val alreadyTried = previousFailures.map(_.channelId)
     selectPreferredChannel(alreadyTried) match {
       case Some(outgoingChannel) => relayOrFail(outgoingChannel)
@@ -298,7 +298,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer()), commit = true)
         }
         walletNodeId_opt match {
-          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
+          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
           case _ => RelayFailure(cmdFail)
         }
     }
@@ -400,8 +400,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   }
 
   /** If we fail to relay a payment, we may want to attempt on-the-fly funding. */
-  private def shouldAttemptOnTheFlyFunding(previousFailures: Seq[PreviouslyTried]): Boolean = {
-    val featureOk = nodeParams.features.hasFeature(Features.OnTheFlyFunding)
+  private def shouldAttemptOnTheFlyFunding(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Boolean = {
+    val featureOk = Features.canUseFeature(nodeParams.features.initFeatures(), remoteFeatures_opt.getOrElse(Features.empty), Features.OnTheFlyFunding)
     // If we have a channel with the next node, we only want to perform on-the-fly funding for liquidity issues.
     val liquidityIssue = previousFailures.forall {
       case PreviouslyTried(_, RES_ADD_FAILED(_, _: InsufficientFunds, _)) => true
