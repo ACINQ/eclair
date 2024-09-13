@@ -135,12 +135,12 @@ trait ErrorHandlers extends CommonHandlers {
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
       // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
       case hasCommitments: ChannelDataWithCommitments =>
-        if (e.toAscii == "internal error") {
+        if ((e.toAscii == "internal error") || (e.toAscii == "link failed to shutdown")) {
           // It seems like lnd sends this error whenever something wrong happens on their side, regardless of whether
           // the channel actually needs to be closed. We ignore it to avoid paying the cost of a channel force-close,
           // it's up to them to broadcast their commitment if they wish.
-          log.warning("ignoring remote 'internal error', probably coming from lnd")
-          stay() sending Warning(d.channelId, "ignoring your 'internal error' to avoid an unnecessary force-close")
+          log.warning("ignoring remote '"+e.toAscii+"', probably coming from lnd")
+          stay() sending Warning(d.channelId, "ignoring your '"+e.toAscii+"' to avoid an unnecessary force-close")
         } else {
           spendLocalCurrent(hasCommitments)
         }
