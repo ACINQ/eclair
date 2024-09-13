@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.channel.fund
 
+import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.event.LoggingAdapter
@@ -163,6 +165,8 @@ object InteractiveTxBuilder {
     def previousFundingAmount: Satoshi
     def localCommitIndex: Long
     def remoteCommitIndex: Long
+    def localNextHtlcId: Long
+    def remoteNextHtlcId: Long
     def remotePerCommitmentPoint: PublicKey
     def commitTxFeerate: FeeratePerKw
     def fundingTxIndex: Long
@@ -175,15 +179,19 @@ object InteractiveTxBuilder {
     override val previousFundingAmount: Satoshi = 0 sat
     override val localCommitIndex: Long = 0
     override val remoteCommitIndex: Long = 0
+    override val localNextHtlcId: Long = 0
+    override val remoteNextHtlcId: Long = 0
     override val fundingTxIndex: Long = 0
     override val localHtlcs: Set[DirectedHtlc] = Set.empty
   }
-  case class SpliceTx(parentCommitment: Commitment) extends Purpose {
+  case class SpliceTx(parentCommitment: Commitment, changes: CommitmentChanges) extends Purpose {
     override val previousLocalBalance: MilliSatoshi = parentCommitment.localCommit.spec.toLocal
     override val previousRemoteBalance: MilliSatoshi = parentCommitment.remoteCommit.spec.toLocal
     override val previousFundingAmount: Satoshi = parentCommitment.capacity
     override val localCommitIndex: Long = parentCommitment.localCommit.index
     override val remoteCommitIndex: Long = parentCommitment.remoteCommit.index
+    override val localNextHtlcId: Long = changes.localNextHtlcId
+    override val remoteNextHtlcId: Long = changes.remoteNextHtlcId
     override val remotePerCommitmentPoint: PublicKey = parentCommitment.remoteCommit.remotePerCommitmentPoint
     override val commitTxFeerate: FeeratePerKw = parentCommitment.localCommit.spec.commitTxFeerate
     override val fundingTxIndex: Long = parentCommitment.fundingTxIndex + 1
@@ -199,6 +207,8 @@ object InteractiveTxBuilder {
     override val previousFundingAmount: Satoshi = (previousLocalBalance + previousRemoteBalance).truncateToSatoshi
     override val localCommitIndex: Long = replacedCommitment.localCommit.index
     override val remoteCommitIndex: Long = replacedCommitment.remoteCommit.index
+    override val localNextHtlcId: Long = 0
+    override val remoteNextHtlcId: Long = 0
     override val remotePerCommitmentPoint: PublicKey = replacedCommitment.remoteCommit.remotePerCommitmentPoint
     override val commitTxFeerate: FeeratePerKw = replacedCommitment.localCommit.spec.commitTxFeerate
     override val fundingTxIndex: Long = replacedCommitment.fundingTxIndex
@@ -792,6 +802,29 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
+        // At this point, we're not completely sure that the transaction will succeed: if our peer doesn't send their
+        // commit_sig, the transaction will be aborted. But it's a best effort, because after sending our commit_sig,
+        // we won't store details about the liquidity purchase so we'll be unable to emit that event later. Even after
+        // fully signing the transaction, it may be double-spent by a force-close, which would invalidate it as well.
+        // The right solution is to check confirmations on the funding transaction before considering that a liquidity
+        // purchase is completed, which is what we do in our AuditDb.
+        liquidityPurchase_opt.foreach { p =>
+          val purchase = LiquidityPurchase(
+            fundingTxId = signedTx.txId,
+            fundingTxIndex = purpose.fundingTxIndex,
+            isBuyer = fundingParams.isInitiator,
+            amount = p.amount,
+            fees = p.fees,
+            capacity = fundingParams.fundingAmount,
+            localContribution = fundingParams.localContribution,
+            remoteContribution = fundingParams.remoteContribution,
+            localBalance = localCommit.spec.toLocal,
+            remoteBalance = localCommit.spec.toRemote,
+            outgoingHtlcCount = purpose.localNextHtlcId,
+            incomingHtlcCount = purpose.remoteNextHtlcId,
+          )
+          context.system.eventStream ! EventStream.Publish(ChannelLiquidityPurchased(replyTo.toClassic, channelParams.channelId, remoteNodeId, purchase))
+        }
         replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, purpose.fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
         Behaviors.stopped
       case WalletFailure(t) =>

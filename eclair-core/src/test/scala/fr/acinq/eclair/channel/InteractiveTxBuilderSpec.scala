@@ -139,7 +139,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      SpliceTx(commitment),
+      SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
@@ -167,7 +167,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      SpliceTx(commitment),
+      SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
@@ -1651,6 +1651,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA1.txId)
 
+      val eventListener = TestProbe()
+      system.eventStream.subscribe(eventListener.ref, classOf[ChannelLiquidityPurchased])
+
       // Alice initiates a splice that is only funded by Bob, because she is purchasing liquidity.
       val purchase = LiquidityAds.Purchase.Standard(50_000 sat, LiquidityAds.Fees(1000 sat, 1500 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
       // Alice pays fees for the common fields of the transaction, by decreasing her balance in the shared output.
@@ -1695,6 +1698,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.25)
       walletA.publishTransaction(spliceTxA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(spliceTxA1.txId)
+
+      val event = eventListener.expectMsgType[ChannelLiquidityPurchased]
+      assert(event.purchase.fees == purchase.fees)
+      assert(event.purchase.fundingTxIndex == 1)
+      assert(event.purchase.fundingTxId == spliceTxA1.txId)
     }
   }
 

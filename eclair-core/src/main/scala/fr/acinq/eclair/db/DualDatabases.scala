@@ -30,16 +30,12 @@ import scala.util.{Failure, Success, Try}
 case class DualDatabases(primary: Databases, secondary: Databases) extends Databases with FileBackup {
 
   override val network: NetworkDb = DualNetworkDb(primary.network, secondary.network)
-
   override val audit: AuditDb = DualAuditDb(primary.audit, secondary.audit)
-
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
-
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
-
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
-
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
+  override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -410,4 +406,25 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
   }
+}
+
+case class DualLiquidityDb(primary: LiquidityDb, secondary: LiquidityDb) extends LiquidityDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-liquidity").build()))
+
+  override def addPurchase(liquidityPurchase: ChannelLiquidityPurchased): Unit = {
+    runAsync(secondary.addPurchase(liquidityPurchase))
+    primary.addPurchase(liquidityPurchase)
+  }
+
+  override def setConfirmed(remoteNodeId: PublicKey, txId: TxId): Unit = {
+    runAsync(secondary.setConfirmed(remoteNodeId, txId))
+    primary.setConfirmed(remoteNodeId, txId)
+  }
+
+  override def listPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
+    runAsync(secondary.listPurchases(remoteNodeId))
+    primary.listPurchases(remoteNodeId)
+  }
+
 }
