@@ -143,9 +143,9 @@ trait ErrorHandlers extends CommonHandlers {
           stay() sending Warning(d.channelId, "ignoring your 'internal error' to avoid an unnecessary force-close")
         } else if (e.toAscii == "link failed to shutdown") {
           // When trying to close a channel with LND older than version 0.18.0,
-          // LND will send an error if there are HTLCs on the channel.
+          // LND will send an 'link failed to shutdown' error if there are HTLCs on the channel.
           // Ignoring this error will prevent a force-close.
-          // Channel closing is retried upon every reconnect of the channel, until there are no more HTLCs on the channel.
+          // The channel closing is retried on every reconnect of the channel, until it succeeds.
           log.warning("ignoring remote 'link failed to shutdown', probably coming from lnd")
           stay() sending Warning(d.channelId, "ignoring your 'link failed to shutdown' to avoid an unnecessary force-close")
         } else {
