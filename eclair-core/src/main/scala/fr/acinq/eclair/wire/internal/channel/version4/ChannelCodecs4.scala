@@ -203,7 +203,7 @@ private[channel] object ChannelCodecs4 {
 
     private case class CommitTxAndRemoteSigEx(commitTx: CommitTx, remoteSig: ByteVector64, partialSig: Either[ByteVector64, PartialSignatureWithNonce], dummy: Boolean)
 
-    // remoteSig is now either a signature or a partial signature with nonce. To retain compatibility with the previous codec, we use remoteSig as a left/write indicator,
+    // remoteSig is now either a signature or a partial signature with nonce. To retain compatibility with the previous codec, we use remoteSig as a left/right indicator,
     // a value of all zeroes meaning right (a valid signature cannot be all zeroes)
     private val commitTxAndRemoteSigExCodec: Codec[CommitTxAndRemoteSigEx] = (
       ("commitTx" | commitTxCodec) ::
