@@ -313,7 +313,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None, None)
     val receive = paymentHandler.expectMsgType[ReceiveStandardPayment]
 
     assert(receive.amount_opt.contains(123 msat))
@@ -321,7 +321,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress_opt.contains(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None, None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -331,7 +331,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32()
 
-    eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage)).pipeTo(sender.ref)
+    eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage), None).pipeTo(sender.ref)
     assert(sender.expectMsgType[Invoice].paymentHash == Crypto.sha256(paymentPreimage))
   }
 
