@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Script}
-import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
+import fr.acinq.eclair.blockchain.SingleKeyOnChainWalletWithConfirmedInputs
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -37,10 +37,10 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWalletWithConfirmedInputs, aliceListener: TestProbe, bobListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val wallet = new SingleKeyOnChainWallet()
+    val wallet = new SingleKeyOnChainWalletWithConfirmedInputs()
     val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
     val channelConfig = ChannelConfig.standard
@@ -53,7 +53,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
       bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, None, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, maxExcess_opt = None, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, None, requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, Some(TestConstants.nonInitiatorFundingSatoshis), dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id

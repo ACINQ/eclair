@@ -86,13 +86,15 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, maxExcess_opt: Option[Satoshi], pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
 
   def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
   def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
   def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+
+  def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
@@ -206,7 +208,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[Peer.DisconnectResponse].map(_.toString)
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, maxExcess_opt: Option[Satoshi], pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     // if no budget is provided for the mining fee of the funding tx, we use a default of 0.1% of the funding amount as a safety measure
@@ -216,6 +218,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       open = Peer.OpenChannel(
         remoteNodeId = nodeId,
         fundingAmount = fundingAmount,
+        maxExcess_opt = maxExcess_opt,
         channelType_opt = channelType_opt,
         pushAmount_opt = pushAmount_opt,
         fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
@@ -227,16 +230,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong)))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong))
+    )
   }
 
   override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))),
-        spliceOut_opt = None
-      ))
+    val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None)
+    )
   }
 
   override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
@@ -247,11 +252,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(script) => Script.write(script)
       }
     }
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = None,
-        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script))
-      ))
+    val spliceOut = SpliceOut(amount = amountOut, scriptPubKey = script)
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut))
+    )
+  }
+
+  override def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong))
+    )
   }
 
   override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] = {
@@ -558,9 +570,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     case Left(channelId) => appKit.register ? Register.Forward(null, channelId, request)
     case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(null, shortChannelId, request)
   }).map {
-    case t: R@unchecked => t
-    case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-    case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+    case t: R @unchecked => t
+    case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+    case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
   }
 
   private def sendToChannelTyped[C <: Command, R <: CommandResponse[C]](channel: ApiTypes.ChannelIdentifier, cmdBuilder: akka.actor.typed.ActorRef[Any] => C)(implicit timeout: Timeout): Future[R] =
@@ -571,9 +583,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(shortChannelId) => Register.ForwardShortId(replyTo, shortChannelId, cmd)
       }
     }.map {
-      case t: R@unchecked => t
-      case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-      case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+      case t: R @unchecked => t
+      case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+      case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
     }
 
   /**

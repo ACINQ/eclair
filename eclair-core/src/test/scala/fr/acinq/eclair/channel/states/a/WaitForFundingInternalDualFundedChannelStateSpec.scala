@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2024 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.channel.states.b
+package fr.acinq.eclair.channel.states.a
 
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
@@ -24,7 +24,8 @@ import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.fund.InteractiveTxFunder
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
@@ -33,38 +34,28 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
 
-/**
- * Created by PM on 05/07/2016.
- */
+class WaitForFundingInternalDualFundedChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
-
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags)
+    val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags + ChannelStateTestsTags.DualFunding)
     import setup._
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags(announceChannel = false)
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, maxExcess_opt = None, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
-      alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, listener)))
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, maxExcess_opt = None, dualFunded = true, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = true, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      withFixture(test.toNoArgTest(FixtureParam(alice, aliceOpenReplyTo, alice2bob, listener)))
     }
   }
 
   test("recv Status.Failure (wallet error)") { f =>
     import f._
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_INTERNAL)
     alice ! Status.Failure(new RuntimeException("insufficient funds"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
@@ -104,6 +95,13 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)
+  }
+
+  test("recv funding success") { f =>
+    import f._
+    alice ! InteractiveTxFunder.FundingContributions(Seq(), Seq(), None)
+    alice2bob.expectMsgType[OpenDualFundedChannel]
+    awaitCond(alice.stateName == WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL)
   }
 
 }

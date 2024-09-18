@@ -410,16 +410,35 @@ object LightningMessageCodecs {
       ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[SpliceInit]
 
+  val experimentalSpliceInitCodec: Codec[ExperimentalSpliceInit] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("feerate" | feeratePerKw) ::
+      ("lockTime" | uint32) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[ExperimentalSpliceInit]
+
   val spliceAckCodec: Codec[SpliceAck] = (
     ("channelId" | bytes32) ::
       ("fundingContribution" | satoshiSigned) ::
       ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[SpliceAck]
 
+  val experimentalSpliceAckCodec: Codec[ExperimentalSpliceAck] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[ExperimentalSpliceAck]
+
   val spliceLockedCodec: Codec[SpliceLocked] = (
     ("channelId" | bytes32) ::
       ("fundingTxHash" | txIdAsHash) ::
       ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
+
+  val experimentalSpliceLockedCodec: Codec[ExperimentalSpliceLocked] = (
+    ("channelId" | bytes32) ::
+      ("fundingTxHash" | txIdAsHash) ::
+      ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[ExperimentalSpliceLocked]
 
   val stfuCodec: Codec[Stfu] = (
     ("channelId" | bytes32) ::
@@ -459,6 +478,9 @@ object LightningMessageCodecs {
     .typecase(72, txInitRbfCodec)
     .typecase(73, txAckRbfCodec)
     .typecase(74, txAbortCodec)
+    .typecase(77, spliceLockedCodec)
+    .typecase(80, spliceInitCodec)
+    .typecase(81, spliceAckCodec)
     .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
     .typecase(131, updateFailHtlcCodec)
@@ -480,9 +502,9 @@ object LightningMessageCodecs {
     // NB: blank lines to minimize merge conflicts
 
     //
-    .typecase(37000, spliceInitCodec)
-    .typecase(37002, spliceAckCodec)
-    .typecase(37004, spliceLockedCodec)
+    .typecase(37000, experimentalSpliceInitCodec)
+    .typecase(37002, experimentalSpliceAckCodec)
+    .typecase(37004, experimentalSpliceLockedCodec)
   //
 
   //
