@@ -71,7 +71,7 @@ case class TrampolineExpiryTooSoon(tlvs: TlvStream[FailureMessageTlv] = TlvStrea
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
 case class ExpiryTooFar(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment expiry is too far in the future" }
-case class InvalidOnionPayload(tag: UInt64, offset: Int, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "onion per-hop payload is invalid" }
+case class InvalidOnionPayload(tag: UInt64, offset: Int, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = s"onion per-hop payload is invalid (tag=$tag)" }
 case class PaymentTimeout(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "the complete payment amount was not received within a reasonable time" }
 
 /**
