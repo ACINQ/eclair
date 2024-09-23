@@ -18,6 +18,7 @@ package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -28,9 +29,9 @@ trait Invoice {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val createInvoice: Route = postRequest("createinvoice") { implicit t =>
-    formFields("description".as[String].?, "descriptionHash".as[ByteVector32].?, amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](bytes32Unmarshaller).?) {
-      case (Some(desc), None, amountMsat, expire, fallBackAddress, paymentPreimage_opt) => complete(eclairApi.receive(Left(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt))
-      case (None, Some(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt) => complete(eclairApi.receive(Right(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt))
+    formFields("description".as[String].?, "descriptionHash".as[ByteVector32].?, amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](bytes32Unmarshaller).?, "privateChannelIds".as[List[ByteVector32]](bytes32ListUnmarshaller).?) {
+      case (Some(desc), None, amountMsat, expire, fallBackAddress, paymentPreimage_opt, privateChannelIds_opt) => complete(eclairApi.receive(Left(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt, privateChannelIds_opt))
+      case (None, Some(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt, privateChannelIds_opt) => complete(eclairApi.receive(Right(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt, privateChannelIds_opt))
       case _ => failWith(new RuntimeException("Either 'description' (string) or 'descriptionHash' (sha256 hash of description string) must be supplied"))
     }
   }

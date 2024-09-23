@@ -114,7 +114,7 @@ trait Eclair {
 
   def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
-  def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice]
+  def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice]
 
   def newAddress(): Future[String]
 
@@ -330,14 +330,28 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
+  override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
     fallbackAddress_opt.foreach { fa =>
+      // If it's not a valid bitcoin address we throw an exception.
       addressToPublicKeyScript(appKit.nodeParams.chainHash, fa) match {
         case Left(failure) => throw new IllegalArgumentException(failure.toString)
         case Right(_) => ()
       }
-    } // if it's not a bitcoin address throws an exception
-    appKit.paymentHandler.toTyped.ask(ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt))
+    }
+    for {
+      routingHints <- getInvoiceRoutingHints(privateChannelIds_opt)
+      invoice <- appKit.paymentHandler.toTyped.ask[Bolt11Invoice](ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, routingHints, fallbackAddress_opt, paymentPreimage_opt))
+    } yield invoice
+  }
+
+  private def getInvoiceRoutingHints(privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[List[List[Bolt11Invoice.ExtraHop]]] = {
+    privateChannelIds_opt match {
+      case Some(channelIds) =>
+        (appKit.router ? GetRouterData).mapTo[Router.Data].map {
+          d => channelIds.flatMap(cid => d.privateChannels.get(cid)).flatMap(_.toIncomingExtraHop).map(hop => hop :: Nil)
+        }
+      case None => Future.successful(Nil)
+    }
   }
 
   override def newAddress(): Future[String] = {
