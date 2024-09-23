@@ -311,7 +311,7 @@ class OfferTypesSpec extends AnyFunSuite {
     src.close()
     for (vector <- testVectors) {
       val offer = Offer.decode(vector.bolt12)
-      assert(offer.isSuccess == vector.valid, vector.description)
+      assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
     }
   }
 }

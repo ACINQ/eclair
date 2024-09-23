@@ -334,6 +334,29 @@
     ]
   },
   {
+    "description": "same, with blinded path first_node_id using sciddir",
+    "valid": true,
+    "bolt12": "lno1pgx9getnwss8vetrw3hhyucs3yqqqqqqqqqqqqp2qgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqqyqqqqqqqqqqqqqqqqqqqqqqqqqqqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqqgzyg3zyg3zyg3z93pqthvwfzadd7jejes8q9lhc4rvjxd022zv5l44g6qah82ru5rdpnpj",
+    "field info": "short_channel_id is 0x0x42, direction is 0",
+    "fields": [
+      {
+        "type": 10,
+        "length": 12,
+        "hex": "5465737420766563746f7273"
+      },
+      {
+        "type": 16,
+        "length": 137,
+        "hex": "00000000000000002a0202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020200100000000000000000000000000000000002020202020202020202020202020202020202020202020202020202020202020200081111111111111111"
+      },
+      {
+        "type": 22,
+        "length": 33,
+        "hex": "02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"
+      }
+    ]
+  },
+  {
     "description": "with no issuer_id and blinded path via Bob (0x424242...), blinding 020202...",
     "valid": true,
     "bolt12": "lno1pgx9getnwss8vetrw3hhyucs5ypjgef743p5fzqq9nqxh0ah7y87rzv3ud0eleps9kl2d5348hq2k8qzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgqpqqqqqqqqqqqqqqqqqqqqqqqqqqqzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqqzq3zyg3zyg3zygs",
@@ -541,17 +564,17 @@
     "bolt12": "lno1pgz5znzfgdz3vggzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgp06wu6egp9qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqq"
   },
   {
-    "description": "Contains unknown feature 22 -- feature 22 is not unknown, we accept this offer",
-    "valid": true,
-    "bolt12": "lno1pgx9getnwss8vetrw3hhyucvqdqqqqqkyypwa3eyt44h6txtxquqh7lz5djge4afgfjn7k4rgrkuag0jsd5xvxg"
+    "description": "Contains unknown feature 122",
+    "valid": false,
+    "bolt12": "lno1pgx9getnwss8vetrw3hhyucvzqzqqqqqqqqqqqqqqqqqqqqqqqqpvggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs"
   },
   {
-    "description": "Missing offer_description and offer_amount -- offer_description and offer_amount are optional, we accept this offer",
-    "valid": true,
-    "bolt12": "lno1zcss9mk8y3wkklfvevcrszlmu23kfrxh49px20665dqwmn4p72pksese"
+    "description": "Missing offer_description, but has offer_amount",
+    "valid": false,
+    "bolt12": "lno1pqpzwyqkyypwa3eyt44h6txtxquqh7lz5djge4afgfjn7k4rgrkuag0jsd5xvxg"
   },
   {
-    "description": "Missing offer_issuer_id",
+    "description": "Missing offer_issuer_id and no offer_path",
     "valid": false,
     "bolt12": "lno1pgx9getnwss8vetrw3hhyuc"
   },
@@ -561,4 +584,3 @@
     "bolt12": "lno1pgx9getnwss8vetrw3hhyucsespjgef743p5fzqq9nqxh0ah7y87rzv3ud0eleps9kl2d5348hq2k8qzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgqpqqqqqqqqqqqqqqqqqqqqqqqqqqqzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqqzq3zyg3zyg3zygszqqqqyqqqqsqqvpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsq"
   }
 ]
-
