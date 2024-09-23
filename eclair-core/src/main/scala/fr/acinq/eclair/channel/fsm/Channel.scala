@@ -979,8 +979,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             log.info("rejecting splice request: channel not quiescent")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
           } else if (msg.feerate < nodeParams.currentFeerates.minimum) {
-            log.info("rejecting splice request: feerate too low")
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+            log.info(s"rejecting splice request: feerate ${msg.feerate} too low, must be above ${nodeParams.currentFeerates.minimum}")
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceFeerate(d.channelId, msg.feerate, nodeParams.currentFeerates.minimum).getMessage)
           } else if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
             val previousTxs = d.commitments.active.filter(_.fundingTxIndex == d.commitments.latest.fundingTxIndex).map(_.fundingTxId)
             log.info("rejecting splice request: the previous splice has unconfirmed rbf attempts ({})", previousTxs.mkString(", "))
