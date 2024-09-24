@@ -429,6 +429,12 @@ object LightningMessageCodecs {
 
   //
 
+  val recommendedFeeratesCodec: Codec[RecommendedFeerates] = (
+    ("chainHash" | blockHash) ::
+      ("fundingFeerate" | feeratePerKw) ::
+      ("commitmentFeerate" | feeratePerKw) ::
+      ("tlvStream" | RecommendedFeeratesTlv.recommendedFeeratesTlvCodec)).as[RecommendedFeerates]
+
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
       ("message" | bytes)
@@ -480,13 +486,14 @@ object LightningMessageCodecs {
     // NB: blank lines to minimize merge conflicts
 
     //
+    //
     .typecase(37000, spliceInitCodec)
     .typecase(37002, spliceAckCodec)
     .typecase(37004, spliceLockedCodec)
-  //
+    //
 
-  //
-
+    //
+    .typecase(39409, recommendedFeeratesCodec)
   //
 
   //

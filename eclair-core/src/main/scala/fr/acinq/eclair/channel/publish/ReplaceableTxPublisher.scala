@@ -158,7 +158,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
-        val targetFeerate = getFeerate(nodeParams.currentFeerates, confirmationTarget, currentBlockHeight, isSafe)
+        val targetFeerate = getFeerate(nodeParams.currentBitcoinCoreFeerates, confirmationTarget, currentBlockHeight, isSafe)
         fund(txWithWitnessData, targetFeerate)
       case UpdateConfirmationTarget(target) =>
         confirmationTarget = target
@@ -220,7 +220,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
         // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
         val bumpRatio = 1.2
-        val currentFeerate = getFeerate(nodeParams.currentFeerates, confirmationTarget, currentBlockHeight, isSafe)
+        val currentFeerate = getFeerate(nodeParams.currentBitcoinCoreFeerates, confirmationTarget, currentBlockHeight, isSafe)
         val targetFeerate_opt = confirmationTarget match {
           case ConfirmationTarget.Absolute(confirmBefore) =>
             if (confirmBefore <= currentBlockHeight + 6) {

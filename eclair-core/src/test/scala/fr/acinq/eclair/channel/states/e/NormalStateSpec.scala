@@ -280,7 +280,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == 0.msat)
     // We increase the feerate to get Alice's balance closer to her channel reserve.
-    bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(FeeratePerKw(17_500 sat)))
+    bob.underlyingActor.nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(FeeratePerKw(17_500 sat)))
     updateFee(FeeratePerKw(17_500 sat), alice, bob, alice2bob, bob2alice)
 
     // At this point alice has the minimal amount to sustain a channel.
@@ -557,7 +557,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val sender = TestProbe()
     bob.setFeerate(FeeratePerKw(20000 sat))
-    bob ! CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(20000 sat)))
+    bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(20000 sat)))
     bob2alice.expectNoMessage(100 millis) // we don't close because the commitment doesn't contain any HTLC
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -570,7 +570,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // we now agree on feerate so we can send HTLCs
     bob.setFeerate(FeeratePerKw(11000 sat))
-    bob ! CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
+    bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     bob2alice.expectNoMessage(100 millis)
     bob ! add
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -2313,7 +2313,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val tx = bobCommitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.remoteNodeId, bobCommitments.params.commitmentFormat, bobCommitments.latest.capacity)
+    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.remoteNodeId, bobCommitments.params.commitmentFormat, bobCommitments.latest.capacity)
     assert(bobCommitments.latest.localCommit.spec.commitTxFeerate == expectedFeeratePerKw)
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat))
     val error = bob2alice.expectMsgType[Error]
@@ -2973,23 +2973,23 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
     alice.setFeerates(event.feeratesPerKw)
     alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    val event1 = CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(minimum = FeeratePerKw(250 sat)))
+    val event1 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(minimum = FeeratePerKw(250 sat)))
     alice.setFeerates(event1.feeratesPerKw)
     alice ! event1
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
     alice2bob.expectMsgType[CommitSig]
     // The configured maximum feerate is bypassed if it's below the propagation threshold.
-    val event2 = CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = TestConstants.anchorOutputsFeeratePerKw))
+    val event2 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = TestConstants.anchorOutputsFeeratePerKw))
     alice.setFeerates(event2.feeratesPerKw)
     alice ! event2
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw * 1.25))
@@ -2997,7 +2997,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
-    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
     alice.setFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
@@ -3007,7 +3007,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    val event = CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
     alice.setFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
@@ -3015,7 +3015,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
-    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     bob.setFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(500 millis)
@@ -3027,7 +3027,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
-    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
     bob.setFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectMsgType[Error]
@@ -3051,7 +3051,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw / 2)
 
     // The network fees spike, but Bob doesn't close the channel because we're using anchor outputs.
-    val event = CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 10))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 10))
     bob.setFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis)
@@ -3061,7 +3061,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, without HTLCs)") { f =>
     import f._
 
-    val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
     bob.setFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis) // we don't close because the commitment doesn't contain any HTLC
@@ -3138,7 +3138,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(getClaimHtlcTimeoutTxs(rcp).length == 2)
 
     // assert the feerate of the claim main is what we expect
-    val expectedFeeRate = alice.underlyingActor.nodeParams.onChainFeeConf.getClosingFeerate(alice.underlyingActor.nodeParams.currentFeerates)
+    val expectedFeeRate = alice.underlyingActor.nodeParams.onChainFeeConf.getClosingFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates)
     val claimFee = claimMain.txIn.map(in => bobCommitTx.txOut(in.outPoint.index.toInt).amount).sum - claimMain.txOut.map(_.amount).sum
     val claimFeeRate = Transactions.fee2rate(claimFee, claimMain.weight())
     assert(claimFeeRate >= expectedFeeRate * 0.9 && claimFeeRate <= expectedFeeRate * 1.2)

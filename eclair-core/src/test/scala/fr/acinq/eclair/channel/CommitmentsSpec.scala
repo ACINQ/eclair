@@ -82,11 +82,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (payment_preimage, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Right((ac1, add)) = ac0.sendAdd(cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add)) = ac0.sendAdd(cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add, bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc1) = bc0.receiveAdd(add, bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -167,11 +167,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (_, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Right((ac1, add)) = ac0.sendAdd(cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add)) = ac0.sendAdd(cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Right(bc1) = bc0.receiveAdd(add, bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc1) = bc0.receiveAdd(add, bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -255,29 +255,29 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (payment_preimage1, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Right((ac1, add1)) = ac0.sendAdd(cmdAdd1, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add1)) = ac0.sendAdd(cmdAdd1, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p1 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
     val (_, cmdAdd2) = makeCmdAdd(p2, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Right((ac2, add2)) = ac1.sendAdd(cmdAdd2, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac2, add2)) = ac1.sendAdd(cmdAdd2, currentBlockHeight, alice.underlyingActor.nodeParams.channelConf, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac2.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac2.availableBalanceForReceive == b)
 
     val (payment_preimage3, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Right((bc1, add3)) = bc0.sendAdd(cmdAdd3, currentBlockHeight, bob.underlyingActor.nodeParams.channelConf, bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((bc1, add3)) = bc0.sendAdd(cmdAdd3, currentBlockHeight, bob.underlyingActor.nodeParams.channelConf, bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 
-    val Right(bc2) = bc1.receiveAdd(add1, bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc2) = bc1.receiveAdd(add1, bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc2.availableBalanceForSend == b - p3)
     assert(bc2.availableBalanceForReceive == a - p1 - htlcOutputFee)
 
-    val Right(bc3) = bc2.receiveAdd(add2, bob.underlyingActor.nodeParams.currentFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc3) = bc2.receiveAdd(add2, bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc3.availableBalanceForSend == b - p3)
     assert(bc3.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right(ac3) = ac2.receiveAdd(add3, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(ac3) = ac2.receiveAdd(add3, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 

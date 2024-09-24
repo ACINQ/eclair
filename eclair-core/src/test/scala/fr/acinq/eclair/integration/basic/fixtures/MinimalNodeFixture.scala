@@ -74,7 +74,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
         torAddress_opt = None,
         database = TestDatabases.inMemoryDb(),
         blockHeight = new AtomicLong(400_000),
-        feerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
+        bitcoinCoreFeerates = new AtomicReference(FeeratesPerKw.single(FeeratePerKw(253 sat)))
       ).modify(_.alias).setTo(alias)
       .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
       .modify(_.routerConf.routerBroadcastInterval).setTo(1 second)

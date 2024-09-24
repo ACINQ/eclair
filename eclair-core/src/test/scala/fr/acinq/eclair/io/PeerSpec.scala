@@ -25,8 +25,8 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
@@ -112,6 +112,7 @@ class PeerSpec extends FixtureSpec {
     switchboard.send(peer, Peer.Init(channels))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
+    peerConnection.expectMsgType[RecommendedFeerates]
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo = probe.expectMsgType[Peer.PeerInfo]
@@ -282,6 +283,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    peerConnection2.expectMsgType[RecommendedFeerates]
     // peer should kill previous connection
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
@@ -291,6 +293,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    peerConnection3.expectMsgType[RecommendedFeerates]
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     channel.expectMsg(INPUT_DISCONNECTED)
@@ -323,6 +326,26 @@ class PeerSpec extends FixtureSpec {
 
     // we make sure that the reconnection task has done a full circle
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
+  }
+
+  test("send recommended feerates when feerate changes") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+
+    // We regularly update our internal feerates.
+    val bitcoinCoreFeerates = FeeratesPerKw(FeeratePerKw(253 sat), FeeratePerKw(1000 sat), FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), FeeratePerKw(10_000 sat))
+    nodeParams.setBitcoinCoreFeerates(bitcoinCoreFeerates)
+    peer ! CurrentFeerates.BitcoinCore(bitcoinCoreFeerates)
+    peerConnection.expectMsg(RecommendedFeerates(
+      chainHash = Block.RegtestGenesisBlock.hash,
+      fundingFeerate = FeeratePerKw(2_500 sat),
+      commitmentFeerate = FeeratePerKw(5000 sat),
+      tlvStream = TlvStream[RecommendedFeeratesTlv](
+        RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(1250 sat), FeeratePerKw(20_000 sat)),
+        RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(2500 sat), FeeratePerKw(40_000 sat))
+      )
+    ))
   }
 
   test("don't spawn a channel with duplicate temporary channel id", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -470,14 +493,14 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
-    nodeParams.setFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
+    nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputs())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -488,14 +511,14 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
-    nodeParams.setFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
+    nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, None, None, None, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
