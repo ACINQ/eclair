@@ -38,6 +38,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
 
   private val auditDb: AuditDb = nodeParams.db.audit
   private val channelsDb: ChannelsDb = nodeParams.db.channels
+  private val liquidityDb: LiquidityDb = nodeParams.db.liquidity
 
   context.spawn(Behaviors.supervise(RevokedHtlcInfoCleaner(channelsDb, nodeParams.revokedHtlcInfoCleanerConfig)).onFailure(SupervisorStrategy.restart), name = "revoked-htlc-info-cleaner")
 
@@ -45,6 +46,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
   context.system.eventStream.subscribe(self, classOf[PaymentFailed])
   context.system.eventStream.subscribe(self, classOf[PaymentReceived])
   context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
+  context.system.eventStream.subscribe(self, classOf[ChannelLiquidityPurchased])
   context.system.eventStream.subscribe(self, classOf[TransactionPublished])
   context.system.eventStream.subscribe(self, classOf[TransactionConfirmed])
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
@@ -92,11 +94,15 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       }
       auditDb.add(e)
 
+    case e: ChannelLiquidityPurchased => liquidityDb.addPurchase(e)
+
     case e: TransactionPublished =>
       log.info(s"paying mining fee=${e.miningFee} for txid=${e.tx.txid} desc=${e.desc}")
       auditDb.add(e)
 
-    case e: TransactionConfirmed => auditDb.add(e)
+    case e: TransactionConfirmed =>
+      liquidityDb.setConfirmed(e.remoteNodeId, e.tx.txid)
+      auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
       // first pattern matching level is to ignore some errors, second level is to separate between different kind of errors

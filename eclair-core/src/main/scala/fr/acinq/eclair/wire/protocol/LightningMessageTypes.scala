@@ -58,6 +58,7 @@ sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the s
 case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
   val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
+  val fundingRates_opt = tlvStream.get[InitTlv.OptionWillFund].map(_.rates)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
@@ -134,29 +135,32 @@ case class TxInitRbf(channelId: ByteVector32,
                      tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
 }
 
 object TxInitRbf {
-  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean): TxInitRbf = {
+  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): TxInitRbf = {
     val tlvs: Set[TxInitRbfTlv] = Set(
       Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
     ).flatten
     TxInitRbf(channelId, lockTime, feerate, TlvStream(tlvs))
   }
 }
 
-case class TxAckRbf(channelId: ByteVector32,
-                    tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+case class TxAckRbf(channelId: ByteVector32, tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
 }
 
 object TxAckRbf {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean): TxAckRbf = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund]): TxAckRbf = {
     val tlvs: Set[TxAckRbfTlv] = Set(
       Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv)
     ).flatten
     TxAckRbf(channelId, TlvStream(tlvs))
   }
@@ -247,6 +251,7 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -270,6 +275,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -298,14 +304,16 @@ case class SpliceInit(channelId: ByteVector32,
                       fundingPubKey: PublicKey,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
-      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
     ).flatten
     SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
@@ -316,14 +324,16 @@ case class SpliceAck(channelId: ByteVector32,
                      fundingPubKey: PublicKey,
                      tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
-      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv)
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
@@ -490,14 +500,13 @@ case class NodeAnnouncement(signature: ByteVector64,
                             alias: String,
                             addresses: List[NodeAddress],
                             tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
-
+  val fundingRates_opt = tlvStream.get[NodeAnnouncementTlv.OptionWillFund].map(_.rates)
   val validAddresses: List[NodeAddress] = {
     // if port is equal to 0, SHOULD ignore ipv6_addr OR ipv4_addr OR hostname; SHOULD ignore Tor v2 onion services.
     val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot(address => address.isInstanceOf[Tor2])
     // if more than one type 5 address is announced, SHOULD ignore the additional data.
     validAddresses.filter(!_.isInstanceOf[DnsHostname]) ++ validAddresses.find(_.isInstanceOf[DnsHostname])
   }
-
   val shouldRebroadcast: Boolean = {
     // if more than one type 5 address is announced, MUST not forward the node_announcement.
     addresses.count(address => address.isInstanceOf[DnsHostname]) <= 1

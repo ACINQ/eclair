@@ -23,7 +23,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, Init, OpenDualFundedChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, Init, LiquidityAds, OpenDualFundedChannel}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -52,13 +52,14 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags(announceChannel = false)
     val pushAmount = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
+    val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates))) else None
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     val requireConfirmedInputs = test.tags.contains(aliceRequiresConfirmedInputs)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
     }
@@ -93,6 +94,18 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(!accept.requireConfirmedInputs)
 
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv OpenDualFundedChannel (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    val requestFunds = LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
+    val openWithFundsRequest = open.copy(tlvStream = open.tlvStream.copy(records = open.tlvStream.records + ChannelTlv.RequestFundingTlv(requestFunds)))
+    alice2bob.forward(bob, openWithFundsRequest)
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    assert(accept.fundingAmount == TestConstants.nonInitiatorFundingSatoshis)
+    assert(accept.willFund_opt.nonEmpty)
   }
 
   test("recv OpenDualFundedChannel (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

@@ -98,6 +98,11 @@ object TlvCodecs {
   /** Truncated satoshi (0 to 8 bytes unsigned). */
   val tsatoshi: Codec[Satoshi] = tu64overflow.xmap(l => Satoshi(l), s => s.toLong)
 
+  /**
+   * Truncated satoshi (0 to 4 bytes unsigned).
+   */
+  val tsatoshi32: Codec[Satoshi] = tu32.xmap(l => Satoshi(l), s => s.toLong)
+
   private def validateUnknownTlv(g: GenericTlv): Attempt[GenericTlv] = {
     if (g.tag < TLV_TYPE_HIGH_RANGE && g.tag.toBigInt % 2 == 0) {
       Attempt.Failure(Err("unknown even tlv type"))

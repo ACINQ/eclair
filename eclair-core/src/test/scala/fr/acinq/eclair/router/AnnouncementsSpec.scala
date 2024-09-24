@@ -24,7 +24,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.nodeAnnouncementCodec
-import fr.acinq.eclair.wire.protocol.NodeAddress
+import fr.acinq.eclair.wire.protocol.{NodeAddress, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -51,7 +51,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     val bitcoin_b_sig = Announcements.signChannelAnnouncement(witness, bitcoin_b)
     val ann = makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), node_a.publicKey, node_b.publicKey, bitcoin_a.publicKey, bitcoin_b.publicKey, node_a_sig, node_b_sig, bitcoin_a_sig, bitcoin_b_sig)
     assert(checkSigs(ann))
-    assert(checkSigs(ann.copy(nodeId1 = randomKey().publicKey)) == false)
+    assert(!checkSigs(ann.copy(nodeId1 = randomKey().publicKey)))
   }
 
   test("create valid signed node announcement") {
@@ -76,7 +76,10 @@ class AnnouncementsSpec extends AnyFunSuite {
       Features.BasicMultiPartPayment -> FeatureSupport.Optional,
     ))
     assert(checkSig(ann))
-    assert(checkSig(ann.copy(timestamp = 153 unixsec)) == false)
+    assert(!checkSig(ann.copy(timestamp = 153 unixsec)))
+    val annLiquidityAds = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features.nodeAnnouncementFeatures(), fundingRates_opt = Some(TestConstants.defaultLiquidityRates))
+    assert(checkSig(annLiquidityAds))
+    assert(!checkSig(annLiquidityAds.copy(tlvStream = TlvStream.empty)))
   }
 
   test("sort node announcement addresses") {
@@ -131,7 +134,7 @@ class AnnouncementsSpec extends AnyFunSuite {
   test("create valid signed channel update announcement") {
     val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey().publicKey, ShortChannelId(45561L), Alice.nodeParams.channelConf.expiryDelta, Alice.nodeParams.channelConf.htlcMinimum, Alice.nodeParams.relayParams.publicChannelFees.feeBase, Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
-    assert(checkSig(ann, randomKey().publicKey) == false)
+    assert(!checkSig(ann, randomKey().publicKey))
   }
 
   test("check flags") {

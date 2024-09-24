@@ -18,12 +18,11 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
-import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{BlockHeight, Features, ShortChannelId}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds}
+import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, ShortChannelId}
 
 /**
  * Created by PM on 17/08/2016.
@@ -78,6 +77,14 @@ case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer:
 case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) extends ChannelEvent
 
 case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments) extends ChannelEvent
+
+case class LiquidityPurchase(fundingTxId: TxId, fundingTxIndex: Long, isBuyer: Boolean, amount: Satoshi, fees: LiquidityAds.Fees, capacity: Satoshi, localContribution: Satoshi, remoteContribution: Satoshi, localBalance: MilliSatoshi, remoteBalance: MilliSatoshi, outgoingHtlcCount: Long, incomingHtlcCount: Long) {
+  val previousCapacity: Satoshi = capacity - localContribution - remoteContribution
+  val previousLocalBalance: MilliSatoshi = if (isBuyer) localBalance - localContribution + fees.total else localBalance - localContribution - fees.total
+  val previousRemoteBalance: MilliSatoshi = if (isBuyer) remoteBalance - remoteContribution - fees.total else remoteBalance - remoteContribution + fees.total
+}
+
+case class ChannelLiquidityPurchased(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, purchase: LiquidityPurchase) extends ChannelEvent
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelError, isFatal: Boolean) extends ChannelEvent
 

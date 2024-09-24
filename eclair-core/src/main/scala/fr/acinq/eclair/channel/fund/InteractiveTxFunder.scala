@@ -141,6 +141,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     case _ => Nil
   }
 
+  private val spliceInOnly = fundingParams.sharedInput_opt.nonEmpty && fundingParams.localContribution > 0.sat && fundingParams.localOutputs.isEmpty
+
   def start(): Behavior[Command] = {
     // We always double-spend all our previous inputs. It's technically overkill because we only really need to double
     // spend one input of each previous tx, but it's simpler and less error-prone this way. It also ensures that in
@@ -169,10 +171,21 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         replyTo ! fundingContributions
         Behaviors.stopped
       }
+    } else if (!fundingParams.isInitiator && spliceInOnly) {
+      // We are splicing funds in without being the initiator (most likely responding to a liquidity ads).
+      // We don't need to include the shared input, the other node will pay for its weight.
+      // We create a dummy shared output with the amount we want to splice in, and bitcoind will make sure we match that
+      // amount.
+      val sharedTxOut = TxOut(fundingParams.localContribution, fundingPubkeyScript)
+      val previousWalletTxIn = previousWalletInputs.map(i => TxIn(i.outPoint, ByteVector.empty, i.sequence))
+      val dummyTx = Transaction(2, previousWalletTxIn, Seq(sharedTxOut), fundingParams.lockTime)
+      fund(dummyTx, previousWalletInputs, Set.empty)
     } else {
       // The shared input contains funds that belong to us *and* funds that belong to our peer, so we add the previous
       // funding amount to our shared output to make sure bitcoind adds what is required for our local contribution.
       // We always include the shared input in our transaction and will let bitcoind make sure the target feerate is reached.
+      // We will later subtract the fees for that input to ensure we don't overshoot the feerate: however, if bitcoind
+      // doesn't add a change output, we won't be able to do so and will overpay miner fees.
       // Note that if the shared output amount is smaller than the dust limit, bitcoind will reject the funding attempt.
       val sharedTxOut = TxOut(purpose.previousFundingAmount + fundingParams.localContribution, fundingPubkeyScript)
       val sharedTxIn = fundingParams.sharedInput_opt.toSeq.map(sharedInput => TxIn(sharedInput.info.outPoint, ByteVector.empty, 0xfffffffdL))
@@ -188,7 +201,10 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
+    val sharedInputWeight = fundingParams.sharedInput_opt match {
+      case Some(i) if txNotFunded.txIn.exists(_.outPoint == i.info.outPoint) => Map(i.info.outPoint -> i.weight.toLong)
+      case _ => Map.empty[OutPoint, Long]
+    }
     val feeBudget_opt = purpose match {
       case p: FundingTx => p.feeBudget_opt
       case p: PreviousTxRbf => p.feeBudget_opt
@@ -249,13 +265,16 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
             // By using bitcoind's fundrawtransaction we are currently paying fees for those fields, but we can fix that
             // by increasing our change output accordingly.
             // If we don't have a change output, we will slightly overpay the fees: fixing this is not worth the extra
-            // complexity of adding a change output, which would require a call to bitcoind to get a change address.
+            // complexity of adding a change output, which would require a call to bitcoind to get a change address and
+            // create a tiny change output that would most likely be unusable and costly to spend.
             val outputs = changeOutput_opt match {
               case Some(changeOutput) =>
                 val txWeightWithoutInput = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingPubkeyScript)), 0).weight()
                 val commonWeight = fundingParams.sharedInput_opt match {
-                  case Some(sharedInput) => sharedInput.weight + txWeightWithoutInput
-                  case None => txWeightWithoutInput
+                  // If we are only splicing in, we didn't include the shared input in the funding transaction, but
+                  // otherwise we did and must thus claim the corresponding fee back.
+                  case Some(sharedInput) if !spliceInOnly => sharedInput.weight + txWeightWithoutInput
+                  case _ => txWeightWithoutInput
                 }
                 val overpaidFees = Transactions.weight2fee(fundingParams.targetFeerate, commonWeight)
                 nonChangeOutputs :+ changeOutput.copy(amount = changeOutput.amount + overpaidFees)
