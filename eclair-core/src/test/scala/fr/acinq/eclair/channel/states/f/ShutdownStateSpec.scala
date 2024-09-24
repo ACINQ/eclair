@@ -20,7 +20,7 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -909,6 +909,25 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! CMD_CLOSE(sender.ref, Some(closingScript), Some(closingFeerates2))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates.contains(closingFeerates2))
+  }
+
+  test("recv CMD_CLOSE with updated script") { f =>
+    import f._
+    val sender = TestProbe()
+    val script = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    alice ! CMD_CLOSE(sender.ref, Some(script), None)
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
+  }
+
+  test("recv CMD_CLOSE with updated script (option_simple_close)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+    val sender = TestProbe()
+    val script = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    alice ! CMD_CLOSE(sender.ref, Some(script), None)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice2bob.expectMsgType[Shutdown].scriptPubKey == script)
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].remoteShutdown.scriptPubKey == script)
   }
 
   test("recv CMD_FORCECLOSE") { f =>
