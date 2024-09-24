@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment.relay
 
 import akka.actor.Cancellable
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, TxId}
@@ -252,42 +252,41 @@ object OnTheFlyFunding {
           cmd.channel ! add
           remainingFees - htlcFees.amount
       }
-      waitForResult(cmd.proposed.size)
-    }
-
-    private def waitForResult(remaining: Int): Behavior[Command] = {
-      Behaviors.receiveMessagePartial {
-        case WrappedCommandResponse(response) => response match {
-          case _: CommandSuccess[_] => Behaviors.same
-          case failure: CommandFailure[_, _] =>
-            cmd.replyTo ! RelayFailed(paymentHash, CannotAddToChannel(failure.t))
-            stopping(remaining - 1)
-        }
-        case WrappedHtlcSettled(settled) =>
-          settled.result match {
-            case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees)
-            case failure: HtlcResult.Fail => cmd.replyTo ! RelayFailed(paymentHash, RemoteFailure(failure))
-          }
-          stopping(remaining - 1)
+      Behaviors.withStash(100) { stash =>
+        waitForResult(stash, cmd.proposed.size, expectedSettlement = 0)
       }
     }
 
-    private def stopping(remaining: Int): Behavior[Command] = {
+    private def waitForResult(stash: StashBuffer[Command], remaining: Int, expectedSettlement: Int): Behavior[Command] = {
+      if (remaining == 0) {
+        stash.unstashAll(waitForSettlement(expectedSettlement))
+      } else {
+        Behaviors.receiveMessagePartial {
+          case WrappedCommandResponse(response) => response match {
+            case _: CommandSuccess[_] =>
+              waitForResult(stash, remaining - 1, expectedSettlement + 1)
+            case failure: CommandFailure[_, _] =>
+              cmd.replyTo ! RelayFailed(paymentHash, CannotAddToChannel(failure.t))
+              waitForResult(stash, remaining - 1, expectedSettlement)
+          }
+          case msg: WrappedHtlcSettled =>
+            stash.stash(msg)
+            Behaviors.same
+        }
+      }
+    }
+
+    private def waitForSettlement(remaining: Int): Behavior[Command] = {
       if (remaining == 0) {
         Behaviors.stopped
       } else {
         Behaviors.receiveMessagePartial {
-          case WrappedCommandResponse(response) =>
-            response match {
-              case _: CommandSuccess[_] => Behaviors.same
-              case _: CommandFailure[_, _] => stopping(remaining - 1)
-            }
           case WrappedHtlcSettled(settled) =>
             settled.result match {
               case fulfill: HtlcResult.Fulfill => cmd.replyTo ! RelaySuccess(channelId, paymentHash, fulfill.paymentPreimage, cmd.status.remainingFees)
-              case _: HtlcResult.Fail => ()
+              case fail: HtlcResult.Fail => cmd.replyTo ! RelayFailed(paymentHash, RemoteFailure(fail))
             }
-            stopping(remaining - 1)
+            waitForSettlement(remaining - 1)
         }
       }
     }
