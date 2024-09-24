@@ -255,7 +255,7 @@ class Setup(val datadir: File,
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Medium).update(feeratesPerKw.get.medium.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fast).update(feeratesPerKw.get.fast.toLong.toDouble)
           blockchain.Monitoring.Metrics.FeeratesPerByte.withTag(blockchain.Monitoring.Tags.Priority, blockchain.Monitoring.Tags.Priorities.Fastest).update(feeratesPerKw.get.fastest.toLong.toDouble)
-          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+          system.eventStream.publish(CurrentFeerates.BitcoinCore(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=$feeratesPerKB feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>

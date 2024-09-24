@@ -58,7 +58,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onChainKeyManager_opt: Option[OnChainKeyManager],
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
-                      private val feerates: AtomicReference[FeeratesPerKw],
+                      private val bitcoinCoreFeerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
@@ -103,25 +103,25 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
-  def currentFeerates: FeeratesPerKw = feerates.get()
+  def currentBitcoinCoreFeerates: FeeratesPerKw = bitcoinCoreFeerates.get()
 
   /** Only to be used in tests. */
-  def setFeerates(value: FeeratesPerKw): Unit = feerates.set(value)
+  def setBitcoinCoreFeerates(value: FeeratesPerKw): Unit = bitcoinCoreFeerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
 
   /** Returns the feerates we'd like our peer to use when funding channels. */
-  def recommendedFeerates(remoteNodeId: PublicKey, currentFeerates: FeeratesPerKw, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+  def recommendedFeerates(remoteNodeId: PublicKey, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
     val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
-    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeerates)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentBitcoinCoreFeerates)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
       min = fundingFeerate * feerateTolerance.ratioLow,
       max = fundingFeerate * feerateTolerance.ratioHigh,
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
-    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
       min = commitmentFeerate * feerateTolerance.ratioLow,
       max = commitmentFormat match {
@@ -241,7 +241,7 @@ object NodeParams extends Logging {
 
   def makeNodeParams(config: Config, instanceId: UUID,
                      nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onChainKeyManager_opt: Option[OnChainKeyManager],
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, bitcoinCoreFeerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -535,7 +535,7 @@ object NodeParams extends Logging {
       onChainKeyManager_opt = onChainKeyManager_opt,
       instanceId = instanceId,
       blockHeight = blockHeight,
-      feerates = feerates,
+      bitcoinCoreFeerates = bitcoinCoreFeerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,

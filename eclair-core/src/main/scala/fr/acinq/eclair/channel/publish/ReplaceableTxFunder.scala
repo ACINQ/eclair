@@ -75,7 +75,7 @@ object ReplaceableTxFunder {
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
-            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.currentFeerates, nodeParams.onChainFeeConf))
+            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf))
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
