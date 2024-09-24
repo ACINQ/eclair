@@ -112,7 +112,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
 
   /** Returns the feerates we'd like our peer to use when funding channels. */
-  def recommendedFeerates(remoteNodeId: PublicKey, currentFeerates: FeeratesPerKw, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+  def recommendedFeerates(remoteNodeId: PublicKey, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
     val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
     val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeerates)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(

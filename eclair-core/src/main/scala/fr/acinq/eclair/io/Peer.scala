@@ -347,9 +347,9 @@ class Peer(val nodeParams: NodeParams,
       }
       stay()
 
-    case Event(current: CurrentFeerates, d) =>
+    case Event(_: CurrentFeerates, d) =>
       d match {
-        case d: ConnectedData => d.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, current.feeratesPerKw, d.localFeatures, d.remoteFeatures)
+        case d: ConnectedData => d.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, d.localFeatures, d.remoteFeatures)
         case _ => ()
       }
       stay()
@@ -399,7 +399,7 @@ class Peer(val nodeParams: NodeParams,
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
 
     // We tell our peer what our current feerates are.
-    connectionReady.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, nodeParams.currentFeerates, connectionReady.localInit.features, connectionReady.remoteInit.features)
+    connectionReady.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, connectionReady.localInit.features, connectionReady.remoteInit.features)
 
     goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
   }

@@ -664,7 +664,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice is funder
     alice.setFeerates(networkFeerates)
-    alice ! CurrentFeerates(networkFeerates)
+    alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     if (shouldClose) {
       assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     } else {
@@ -691,7 +691,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // this time Alice will ignore feerate changes for the offline channel
     alice.setFeerates(networkFeerates)
-    alice ! CurrentFeerates(networkFeerates)
+    alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     alice2blockchain.expectNoMessage()
     alice2bob.expectNoMessage()
   }
@@ -708,7 +708,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice ignores feerate changes while offline
     alice.setFeerates(networkFeerates)
-    alice ! CurrentFeerates(networkFeerates)
+    alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     alice2blockchain.expectNoMessage()
     alice2bob.expectNoMessage()
 
@@ -775,7 +775,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // bob is fundee
     bob.setFeerates(networkFeerates)
-    bob ! CurrentFeerates(networkFeerates)
+    bob ! CurrentFeerates.BitcoinCore(networkFeerates)
     if (shouldClose) {
       assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
     } else {

@@ -223,7 +223,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   // the constant delay by which we delay processing of blocks (it will be smoothened among all channels)
   private val blockProcessingDelay = Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).millis
   // this will be used to make sure the current commitment fee is up-to-date
-  context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
+  context.system.eventStream.subscribe(self, classOf[CurrentFeerates.BitcoinCore])
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -750,7 +750,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
     case Event(WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val finalRealShortId = RealScidStatus.Final(RealShortChannelId(blockHeight, txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
@@ -1402,7 +1402,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
     case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) =>
       c.feerates match {
@@ -1939,7 +1939,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -2192,7 +2192,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
@@ -2282,7 +2282,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(ProcessCurrentBlockHeight(_), _) => stay()
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentFeerates(_), _) => stay()
+    case Event(_: CurrentFeerates.BitcoinCore, _) => stay()
 
     // we only care about this event in NORMAL state
     case Event(_: BroadcastChannelUpdate, _) => stay()

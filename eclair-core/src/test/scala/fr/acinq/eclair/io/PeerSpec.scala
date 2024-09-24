@@ -334,10 +334,18 @@ class PeerSpec extends FixtureSpec {
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     // We regularly update our internal feerates.
-    peer ! CurrentFeerates(FeeratesPerKw(FeeratePerKw(253 sat), FeeratePerKw(1000 sat), FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), FeeratePerKw(10_000 sat)))
-    val tlvs = TlvStream[RecommendedFeeratesTlv](RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(1250 sat), FeeratePerKw(20_000 sat)), RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(2500 sat), FeeratePerKw(40_000 sat)))
-    val expected = RecommendedFeerates(Block.RegtestGenesisBlock.hash, FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), tlvs)
-    peerConnection.expectMsg(expected)
+    val bitcoinCoreFeerates = FeeratesPerKw(FeeratePerKw(253 sat), FeeratePerKw(1000 sat), FeeratePerKw(2500 sat), FeeratePerKw(5000 sat), FeeratePerKw(10_000 sat))
+    nodeParams.setFeerates(bitcoinCoreFeerates)
+    peer ! CurrentFeerates.BitcoinCore(bitcoinCoreFeerates)
+    peerConnection.expectMsg(RecommendedFeerates(
+      chainHash = Block.RegtestGenesisBlock.hash,
+      fundingFeerate = FeeratePerKw(2_500 sat),
+      commitmentFeerate = FeeratePerKw(5000 sat),
+      tlvStream = TlvStream[RecommendedFeeratesTlv](
+        RecommendedFeeratesTlv.FundingFeerateRange(FeeratePerKw(1250 sat), FeeratePerKw(20_000 sat)),
+        RecommendedFeeratesTlv.CommitmentFeerateRange(FeeratePerKw(2500 sat), FeeratePerKw(40_000 sat))
+      )
+    ))
   }
 
   test("don't spawn a channel with duplicate temporary channel id", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
