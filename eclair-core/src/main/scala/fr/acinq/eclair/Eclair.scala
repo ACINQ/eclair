@@ -381,9 +381,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[TxId] = {
     val feeRate = confirmationTargetOrFeerate match {
       case Left(blocks) =>
-        if (blocks < 3) appKit.nodeParams.currentFeerates.fast
-        else if (blocks > 6) appKit.nodeParams.currentFeerates.slow
-        else appKit.nodeParams.currentFeerates.medium
+        if (blocks < 3) appKit.nodeParams.currentBitcoinCoreFeerates.fast
+        else if (blocks > 6) appKit.nodeParams.currentBitcoinCoreFeerates.slow
+        else appKit.nodeParams.currentBitcoinCoreFeerates.medium
       case Right(feeratePerByte) => FeeratePerKw(feeratePerByte)
     }
     appKit.wallet match {

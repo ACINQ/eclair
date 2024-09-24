@@ -211,7 +211,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // When we only splice-out, the fees are paid by deducing them from the next funding amount.
     val fundingTx = alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.localFundingStatus.signedTx_opt.get
-    val feerate = alice.nodeParams.onChainFeeConf.getFundingFeerate(alice.nodeParams.currentFeerates)
+    val feerate = alice.nodeParams.onChainFeeConf.getFundingFeerate(alice.nodeParams.currentBitcoinCoreFeerates)
     val expectedMiningFee = Transactions.weight2fee(feerate, fundingTx.weight())
     val actualMiningFee = capacity - alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.capacity
     // Fee computation is approximate (signature size isn't constant).
@@ -518,7 +518,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! cmd
     // we tweak the feerate
     val spliceInit = alice2bob.expectMsgType[SpliceInit].copy(feerate = FeeratePerKw(100.sat))
-    bob.setFeerates(alice.nodeParams.currentFeerates.copy(minimum = FeeratePerKw(101.sat)))
+    bob.setFeerates(alice.nodeParams.currentBitcoinCoreFeerates.copy(minimum = FeeratePerKw(101.sat)))
     alice2bob.forward(bob, spliceInit)
     val txAbortBob = bob2alice.expectMsgType[TxAbort]
     bob2alice.forward(alice, txAbortBob)

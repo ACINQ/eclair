@@ -84,8 +84,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     /** Set uniform feerate for all block targets. */
     def setFeerate(feerate: FeeratePerKw, fastest: FeeratePerKw = FeeratePerKw(100_000 sat)): Unit = {
-      alice.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
-      bob.underlyingActor.nodeParams.setFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
+      alice.underlyingActor.nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
+      bob.underlyingActor.nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(feerate).copy(fastest = fastest))
     }
 
     /** Set feerate for a specific block target. */
@@ -97,8 +97,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         case _ => currentFeerates.copy(slow = feerate)
       }
 
-      alice.underlyingActor.nodeParams.setFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentFeerates))
-      bob.underlyingActor.nodeParams.setFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentFeerates))
+      alice.underlyingActor.nodeParams.setBitcoinCoreFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates))
+      bob.underlyingActor.nodeParams.setBitcoinCoreFeerates(updateFeerates(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates))
     }
 
     def getMempool(): Seq[Transaction] = {
@@ -496,7 +496,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsg(commitTx.tx.txid)
       assert(getMempool().length == 1)
 
-      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       val targetFeerate = FeeratePerKw(50_000 sat)
       assert(maxFeerate <= targetFeerate / 2)
       setFeerate(targetFeerate, blockTarget = 12)
@@ -1168,12 +1168,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 30, outgoingHtlcAmount = 5_000_000 msat, incomingHtlcAmount = 4_000_000 msat)
       setFeerate(targetFeerate, blockTarget = 12)
       assert(htlcSuccess.txInfo.fee == 0.sat)
-      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcSuccessMaxFeerate < targetFeerate / 2)
       val htlcSuccessTx = testPublishHtlcSuccess(f, commitTx, htlcSuccess, htlcSuccessMaxFeerate)
       assert(htlcSuccessTx.txIn.length > 1)
       assert(htlcTimeout.txInfo.fee == 0.sat)
-      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.currentFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcTimeoutMaxFeerate < targetFeerate / 2)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, htlcTimeoutMaxFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)
@@ -1567,7 +1567,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(11 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val currentFeerate = alice.underlyingActor.nodeParams.currentFeerates.fast
+      val currentFeerate = alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates.fast
       val (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout) = remoteCloseChannelWithHtlcs(f, aliceBlockHeight() + 50, nextCommit = false)
       val claimHtlcSuccessTx = testPublishClaimHtlcSuccess(f, remoteCommitTx, claimHtlcSuccess, currentFeerate)
       assert(claimHtlcSuccess.txInfo.fee > 0.sat)

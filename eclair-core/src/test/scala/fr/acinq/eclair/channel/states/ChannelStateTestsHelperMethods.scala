@@ -655,7 +655,7 @@ object ChannelStateTestsBase {
 
     val nodeParams: NodeParams = channel.underlyingActor.nodeParams
 
-    def setFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setFeerates(feerates)
+    def setFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setBitcoinCoreFeerates(feerates)
 
     def setFeerate(feerate: FeeratePerKw): Unit = setFeerates(FeeratesPerKw.single(feerate))
   }
