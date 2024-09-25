@@ -1003,6 +1003,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(cmd.amount == 10_000_000.msat)
     assert(cmd.fundingFee_opt.contains(LiquidityAds.FundingFee(5_000_000 msat, purchase.txId)))
     assert(cmd.paymentHash == paymentHash2)
+    cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
     channel.expectNoMessage(100 millis)
 
     val add = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextBlindingKey_opt, cmd.confidence, cmd.fundingFee_opt)
