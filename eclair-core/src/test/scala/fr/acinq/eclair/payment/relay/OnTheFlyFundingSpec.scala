@@ -553,11 +553,13 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We relay the first payment.
     channelInfo.head.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, channelData)
     val cmd1 = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd1.replyTo ! RES_SUCCESS(cmd1, purchase.channelId)
     channel.expectNoMessage(100 millis)
 
     // We relay the second payment.
     channelInfo.last.replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, purchase.channelId, channel.ref, NORMAL, channelData)
     val cmd2 = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd2.replyTo ! RES_SUCCESS(cmd1, purchase.channelId)
     channel.expectNoMessage(100 millis)
 
     // The fee is split across outgoing payments.
@@ -638,6 +640,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     adds1.take(2).foreach(add => {
       val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextBlindingKey_opt, add.confidence, add.fundingFee_opt)
       val fail = UpdateFailHtlc(channelId, htlc.id, randomBytes(50))
+      add.replyTo ! RES_SUCCESS(add, purchase.channelId)
       add.replyTo ! RES_ADD_SETTLED(add.origin, htlc, HtlcResult.RemoteFail(fail))
     })
     adds1.last.replyTo ! RES_ADD_FAILED(adds1.last, TooManyAcceptedHtlcs(channelId, 5), None)
@@ -651,6 +654,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       channel.expectMsgType[CMD_ADD_HTLC],
       channel.expectMsgType[CMD_ADD_HTLC],
     )
+    adds2.foreach(add => add.replyTo ! RES_SUCCESS(add, purchase.channelId))
     channel.expectNoMessage(100 millis)
 
     // The payment succeeds.
@@ -695,6 +699,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, channelData1)
     // We don't collect additional fees if they were paid from our peer's channel balance already.
     val cmd1 = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd1.replyTo ! RES_SUCCESS(cmd1, purchase.channelId)
     val htlc = UpdateAddHtlc(channelId, 0, cmd1.amount, paymentHash, cmd1.cltvExpiry, cmd1.onion, cmd1.nextBlindingKey_opt, cmd1.confidence, cmd1.fundingFee_opt)
     assert(cmd1.fundingFee_opt.contains(LiquidityAds.FundingFee(0 msat, purchase.txId)))
     channel.expectNoMessage(100 millis)
@@ -720,6 +725,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peerAfterRestart ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, fundingTxIndex = 1)
     channel.expectMsgType[CMD_GET_CHANNEL_INFO].replyTo ! RES_GET_CHANNEL_INFO(remoteNodeId, channelId, channel.ref, NORMAL, channelData3)
     val cmd2 = channel.expectMsgType[CMD_ADD_HTLC]
+    cmd2.replyTo ! RES_SUCCESS(cmd2, purchase.channelId)
     assert(cmd2.paymentHash == paymentHash)
     assert(cmd2.amount == cmd1.amount)
     channel.expectNoMessage(100 millis)
