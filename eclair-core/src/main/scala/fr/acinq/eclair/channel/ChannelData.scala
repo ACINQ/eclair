@@ -113,6 +113,7 @@ case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             fundingContribution_opt: Option[LiquidityAds.AddFunding],
                                             dualFunded: Boolean,
                                             pushAmount_opt: Option[MilliSatoshi],
+                                            requireConfirmedInputs: Boolean,
                                             localParams: LocalParams,
                                             remote: ActorRef,
                                             remoteInit: Init,
@@ -146,7 +147,7 @@ object Upstream {
       val expiryIn: CltvExpiry = add.cltvExpiry
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
-    case class Trampoline(received: Seq[Channel]) extends Hot {
+    case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
@@ -165,6 +166,10 @@ object Upstream {
 
     /** Our node is forwarding a single incoming HTLC. */
     case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    object Channel {
+      def apply(add: UpdateAddHtlc): Channel = Channel(add.channelId, add.id, add.amountMsat)
+    }
+
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(originHtlcs: List[Channel]) extends Cold { override val amountIn: MilliSatoshi = originHtlcs.map(_.amountIn).sum }
   }
@@ -197,7 +202,17 @@ sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option
 sealed trait ForbiddenCommandDuringSplice extends Command
 sealed trait ForbiddenCommandDuringQuiescence extends Command
 
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], confidence: Double, origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+final case class CMD_ADD_HTLC(replyTo: ActorRef,
+                              amount: MilliSatoshi,
+                              paymentHash: ByteVector32,
+                              cltvExpiry: CltvExpiry,
+                              onion: OnionRoutingPacket,
+                              nextBlindingKey_opt: Option[PublicKey],
+                              confidence: Double,
+                              fundingFee_opt: Option[LiquidityAds.FundingFee],
+                              origin: Origin.Hot,
+                              commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
@@ -666,8 +681,16 @@ case class RemoteParams(nodeId: PublicKey,
                         initFeatures: Features[InitFeature],
                         upfrontShutdownScript_opt: Option[ByteVector])
 
-case class ChannelFlags(announceChannel: Boolean) {
-  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel)"
+/**
+ * The [[nonInitiatorPaysCommitFees]] parameter is set to true when the sender wants the receiver to pay the commitment transaction fees.
+ * This is not part of the BOLTs and won't be needed anymore once commitment transactions don't pay any on-chain fees.
+ */
+case class ChannelFlags(nonInitiatorPaysCommitFees: Boolean, announceChannel: Boolean) {
+  override def toString: String = s"ChannelFlags(announceChannel=$announceChannel, nonInitiatorPaysCommitFees=$nonInitiatorPaysCommitFees)"
+}
+
+object ChannelFlags {
+  def apply(announceChannel: Boolean): ChannelFlags = ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = announceChannel)
 }
 
 /** Information about what triggered the opening of the channel */

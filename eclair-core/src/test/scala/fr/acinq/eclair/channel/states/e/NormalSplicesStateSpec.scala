@@ -36,6 +36,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
+import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -341,9 +342,19 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_400_000.sat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal < 1_300_000_000.msat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote > 1_100_000_000.msat)
+
+    // Bob signed a liquidity purchase.
+    bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseSigned =>
+        assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
+        assert(l.fundingTxIndex == 1)
+        assert(l.txId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId)
+        true
+      case _ => false
+    }
   }
 
-  test("recv CMD_SPLICE (splice-in, liquidity ads, invalid lease witness)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
+  test("recv CMD_SPLICE (splice-in, liquidity ads, invalid will_fund signature)", Tag(ChannelStateTestsTags.Quiescence)) { f =>
     import f._
 
     val sender = TestProbe()
@@ -707,7 +718,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     // command for a large payment (larger than local balance pre-slice)
-    val cmd = CMD_ADD_HTLC(sender.ref, 1_000_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    val cmd = CMD_ADD_HTLC(sender.ref, 1_000_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     // first attempt at payment fails (not enough balance)
     alice ! cmd
     sender.expectMsgType[RES_ADD_FAILED[_]]
@@ -938,6 +949,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
 
+    // The channel is now ready to use liquidity from the first splice.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
@@ -953,13 +974,23 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bobEvents.expectAvailableBalanceChanged(balance = 650_000_000.msat, capacity = 2_500_000.sat)
     aliceEvents.expectNoMessage(100 millis)
     bobEvents.expectNoMessage(100 millis)
+
+    // The channel is now ready to use liquidity from the second splice.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
   }
 
   test("recv CMD_ADD_HTLC with multiple commitments") { f =>
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -988,7 +1019,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -1022,7 +1053,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[SpliceInit]
-    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
     alice2bob.expectNoMessage(100 millis)
   }
@@ -1037,7 +1068,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[SpliceAck]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAddInput]
-    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[_]]
     alice2bob.expectNoMessage(100 millis)
   }
@@ -1079,7 +1110,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[TxAddInput]
 
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
-    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
+    val fakeHtlc = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0, fundingFee_opt = None)
     bob2alice.forward(alice, fakeHtlc)
     // alice returns a warning and schedules a disconnect after receiving UpdateAddHtlc
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
@@ -1514,6 +1545,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    // splice transactions are not locked yet: we're still at the initial funding index
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+
     // splice 1 confirms on alice's side
     watchConfirmed1a.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
@@ -1540,11 +1581,27 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    // splice transactions are not locked by bob yet: we're still at the initial funding index
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 0
+      case _ => false
+    }
+
     // splice 1 confirms on bob's side
     watchConfirmed1b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchFundingSpent]
+
+    // splice 1 is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
 
     disconnect(f)
     reconnect(f)
@@ -1556,10 +1613,25 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+
     // splice 2 confirms on bob's side
     watchConfirmed2b.replyTo ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx2.txid)
     bob2blockchain.expectMsgType[WatchFundingSpent]
+
+    // splice 2 is locked on both sides
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
 
     // NB: we disconnect *before* transmitting the splice_confirmed to alice
     disconnect(f)
@@ -1582,6 +1654,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
+
+    // splice 2 is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
   }
 
   /** Check type of published transactions */

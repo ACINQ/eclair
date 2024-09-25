@@ -23,7 +23,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.{BlockHeight, Logs, channel}
+import fr.acinq.eclair.{BlockHeight, Features, InitFeature, Logs, channel}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
@@ -107,7 +107,7 @@ object PeerReadyNotifier {
   private case object PeerNotConnected extends Command
   private case object PeerConnected extends Command
   private case object PeerDisconnected extends Command
-  private case class WrappedPeerInfo(peer: ActorRef[Peer.GetPeerChannels], channelCount: Int) extends Command
+  private case class WrappedPeerInfo(peer: ActorRef[Peer.GetPeerChannels], remoteFeatures: Features[InitFeature], channelCount: Int) extends Command
   private case class NewBlockNotTimedOut(currentBlockHeight: BlockHeight) extends Command
   private case object CheckChannelsReady extends Command
   private case class WrappedPeerChannels(wrapped: Peer.PeerChannels) extends Command
@@ -115,7 +115,7 @@ object PeerReadyNotifier {
   private case object ToBeIgnored extends Command
 
   sealed trait Result { def remoteNodeId: PublicKey }
-  case class PeerReady(remoteNodeId: PublicKey, peer: akka.actor.ActorRef, channelInfos: Seq[Peer.ChannelInfo]) extends Result { val channelsCount: Int = channelInfos.size }
+  case class PeerReady(remoteNodeId: PublicKey, peer: akka.actor.ActorRef, remoteFeatures: Features[InitFeature], channelInfos: Seq[Peer.ChannelInfo]) extends Result { val channelsCount: Int = channelInfos.size }
   case class PeerUnavailable(remoteNodeId: PublicKey) extends Result
 
   private case object ChannelsReadyTimerKey
@@ -243,7 +243,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
       // In that case we still want to wait for a connection, because we may want to open a channel to them.
       case _: Peer.PeerNotFound => PeerNotConnected
       case info: Peer.PeerInfo if info.state != Peer.CONNECTED => PeerNotConnected
-      case info: Peer.PeerInfo => WrappedPeerInfo(info.peer.toTyped, info.channels.size)
+      case info: Peer.PeerInfo => WrappedPeerInfo(info.peer.toTyped, info.features.getOrElse(Features.empty), info.channels.size)
     }
     // We check whether the peer is already connected.
     switchboard ! Switchboard.GetPeerInfo(peerInfoAdapter, remoteNodeId)
@@ -256,14 +256,14 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
         Behaviors.same
       case PeerDisconnected =>
         Behaviors.same
-      case WrappedPeerInfo(peer, channelCount) =>
+      case WrappedPeerInfo(peer, remoteFeatures, channelCount) =>
         if (channelCount == 0) {
           log.info("peer is ready with no channels")
-          replyTo ! PeerReady(remoteNodeId, peer.toClassic, Seq.empty)
+          replyTo ! PeerReady(remoteNodeId, peer.toClassic, remoteFeatures, Seq.empty)
           Behaviors.stopped
         } else {
           log.debug("peer is connected with {} channels", channelCount)
-          waitForChannelsReady(peer, switchboard)
+          waitForChannelsReady(peer, switchboard, remoteFeatures)
         }
       case NewBlockNotTimedOut(currentBlockHeight) =>
         log.debug("waiting for peer to connect at block {}", currentBlockHeight)
@@ -277,7 +277,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
     }
   }
 
-  private def waitForChannelsReady(peer: ActorRef[Peer.GetPeerChannels], switchboard: ActorRef[Switchboard.GetPeerInfo]): Behavior[Command] = {
+  private def waitForChannelsReady(peer: ActorRef[Peer.GetPeerChannels], switchboard: ActorRef[Switchboard.GetPeerInfo], remoteFeatures: Features[InitFeature]): Behavior[Command] = {
     timers.startTimerWithFixedDelay(ChannelsReadyTimerKey, CheckChannelsReady, initialDelay = 50 millis, delay = 1 second)
     Behaviors.receiveMessagePartial {
       case CheckChannelsReady =>
@@ -286,7 +286,7 @@ private class PeerReadyNotifier(replyTo: ActorRef[PeerReadyNotifier.Result],
         Behaviors.same
       case WrappedPeerChannels(peerChannels) =>
         if (peerChannels.channels.map(_.state).forall(isChannelReady)) {
-          replyTo ! PeerReady(remoteNodeId, peer.toClassic, peerChannels.channels)
+          replyTo ! PeerReady(remoteNodeId, peer.toClassic, remoteFeatures, peerChannels.channels)
           Behaviors.stopped
         } else {
           log.debug("peer has {} channels that are not ready", peerChannels.channels.count(s => !isChannelReady(s.state)))

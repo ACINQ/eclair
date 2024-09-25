@@ -53,6 +53,9 @@ case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId:
 /** This event will be sent once a channel has been successfully opened and is ready to process payments. */
 case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
+/** This event is sent once channel_ready or splice_locked have been exchanged. */
+case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxIndex: Long) extends ChannelEvent
+
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent {
   /**
    * We always include the local alias because we must always be able to route based on it.

@@ -9,6 +9,7 @@ import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDataba
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
@@ -425,6 +426,41 @@ case class DualLiquidityDb(primary: LiquidityDb, secondary: LiquidityDb) extends
   override def listPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
     runAsync(secondary.listPurchases(remoteNodeId))
     primary.listPurchases(remoteNodeId)
+  }
+
+  override def addPendingOnTheFlyFunding(remoteNodeId: PublicKey, pending: OnTheFlyFunding.Pending): Unit = {
+    runAsync(secondary.addPendingOnTheFlyFunding(remoteNodeId, pending))
+    primary.addPendingOnTheFlyFunding(remoteNodeId, pending)
+  }
+
+  override def removePendingOnTheFlyFunding(remoteNodeId: PublicKey, paymentHash: ByteVector32): Unit = {
+    runAsync(secondary.removePendingOnTheFlyFunding(remoteNodeId, paymentHash))
+    primary.removePendingOnTheFlyFunding(remoteNodeId, paymentHash)
+  }
+
+  override def listPendingOnTheFlyFunding(remoteNodeId: PublicKey): Map[ByteVector32, OnTheFlyFunding.Pending] = {
+    runAsync(secondary.listPendingOnTheFlyFunding(remoteNodeId))
+    primary.listPendingOnTheFlyFunding(remoteNodeId)
+  }
+
+  override def listPendingOnTheFlyFunding(): Map[PublicKey, Map[ByteVector32, OnTheFlyFunding.Pending]] = {
+    runAsync(secondary.listPendingOnTheFlyFunding())
+    primary.listPendingOnTheFlyFunding()
+  }
+
+  override def listPendingOnTheFlyPayments(): Map[PublicKey, Set[ByteVector32]] = {
+    runAsync(secondary.listPendingOnTheFlyPayments())
+    primary.listPendingOnTheFlyPayments()
+  }
+
+  override def addOnTheFlyFundingPreimage(preimage: ByteVector32): Unit = {
+    runAsync(secondary.addOnTheFlyFundingPreimage(preimage))
+    primary.addOnTheFlyFundingPreimage(preimage)
+  }
+
+  override def getOnTheFlyFundingPreimage(paymentHash: ByteVector32): Option[ByteVector32] = {
+    runAsync(secondary.getOnTheFlyFundingPreimage(paymentHash))
+    primary.getOnTheFlyFundingPreimage(paymentHash)
   }
 
 }

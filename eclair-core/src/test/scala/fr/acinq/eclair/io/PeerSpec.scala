@@ -109,7 +109,7 @@ class PeerSpec extends FixtureSpec {
 
   def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()))(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
-    switchboard.send(peer, Peer.Init(channels))
+    switchboard.send(peer, Peer.Init(channels, Map.empty))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
     peerConnection.expectMsgType[RecommendedFeerates]
@@ -140,7 +140,7 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set.empty))
+    probe.send(peer, Peer.Init(Set.empty, Map.empty))
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref, isPersistent = true))
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
@@ -167,7 +167,7 @@ class PeerSpec extends FixtureSpec {
     val mockAddress_opt = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).toOption
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set.empty))
+    probe.send(peer, Peer.Init(Set.empty, Map.empty))
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
     probe.send(peer, Peer.Connect(remoteNodeId, mockAddress_opt, probe.ref, isPersistent = true))
 
@@ -188,7 +188,7 @@ class PeerSpec extends FixtureSpec {
     assert(invalidDnsHostname_opt.get == DnsHostname("eclair.invalid", 9735))
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set.empty))
+    probe.send(peer, Peer.Init(Set.empty, Map.empty))
     probe.send(peer, Peer.Connect(remoteNodeId, invalidDnsHostname_opt, probe.ref, isPersistent = true))
     probe.expectMsgType[PeerConnection.ConnectionResult.ConnectionFailed]
   }
@@ -207,7 +207,7 @@ class PeerSpec extends FixtureSpec {
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     eventually {
@@ -256,7 +256,7 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     val probe = TestProbe()
-    switchboard.send(peer, Peer.Init(Set.empty))
+    switchboard.send(peer, Peer.Init(Set.empty, Map.empty))
 
     eventually {
       probe.send(peer, Peer.GetPeerInfo(None))
@@ -313,7 +313,7 @@ class PeerSpec extends FixtureSpec {
     monitor.expectMsg(FSM.CurrentState(reconnectionTask, ReconnectionTask.IDLE))
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
 
     // the reconnection task will wait a little...
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.IDLE, ReconnectionTask.WAITING))
@@ -665,7 +665,7 @@ class PeerSpec extends FixtureSpec {
     import f._
     val probe = TestProbe()
     probe.watch(peer)
-    switchboard.send(peer, Peer.Init(Set.empty))
+    switchboard.send(peer, Peer.Init(Set.empty, Map.empty))
     eventually {
       probe.send(peer, Peer.GetPeerInfo(None))
       assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)

@@ -110,7 +110,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("PeerInfo serialization") {
-    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, Set(ActorRef.noSender))
+    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, None, Set(ActorRef.noSender))
     val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","state":"CONNECTED","channels":1}"""
     JsonSerializers.serialization.write(peerInfo)(JsonSerializers.formats) shouldBe expected
   }
@@ -185,6 +185,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "channelFlags": {
+        |         "nonInitiatorPaysCommitFees": false,
         |         "announceChannel": true
         |       }
         |     },
@@ -255,6 +256,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       ),
       blinding_opt = None,
       confidence = 0.7,
+      fundingFee_opt = None,
     )
 
     val expectedIn = """{"direction":"IN","id":926,"amountMsat":12365,"paymentHash":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","cltvExpiry":621500}"""

@@ -100,10 +100,12 @@ object Monitoring {
     object RelayType {
       val Channel = "channel"
       val Trampoline = "trampoline"
+      val OnTheFly = "on-the-fly"
 
       def apply(e: PaymentRelayed): String = e match {
         case _: ChannelPaymentRelayed => Channel
         case _: TrampolinePaymentRelayed => Trampoline
+        case _: OnTheFlyFundingPaymentRelayed => OnTheFly
       }
     }
 

@@ -168,12 +168,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         ActorRef.noSender,
         nodeId = aliceNodeId,
         state = Peer.CONNECTED,
+        features = Some(Features(Features.ChannelRangeQueries -> FeatureSupport.Optional).initFeatures()),
         address = Some(NodeAddress.fromParts("127.0.0.1", 9731).get),
         channels = Set(ActorRef.noSender)),
       PeerInfo(
         ActorRef.noSender,
         nodeId = bobNodeId,
         state = Peer.DISCONNECTED,
+        features = None,
         address = None,
         channels = Set(ActorRef.noSender))))
 

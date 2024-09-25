@@ -91,6 +91,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _, _) =>
           channelsDb.updateChannelMeta(fromChannelId, ChannelEvent.EventType.PaymentReceived)
           channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
+        case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
+          incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
+          outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
       }
       auditDb.add(e)
 

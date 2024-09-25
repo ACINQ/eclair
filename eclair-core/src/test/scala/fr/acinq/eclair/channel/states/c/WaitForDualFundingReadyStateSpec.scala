@@ -38,7 +38,7 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alicePeer: TestProbe, bobPeer: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init(tags = test.tags)
@@ -53,7 +53,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
       alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, None, requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, None)), dualFunded = true, None, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, None)), dualFunded = true, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2blockchain.expectMsgType[SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]
@@ -105,7 +105,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
       }
       awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
       awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, listener)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alicePeer, bobPeer, alice2bob, bob2alice, alice2blockchain, bob2blockchain, listener)))
     }
   }
 
@@ -128,6 +128,22 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     bob2alice.forward(alice, bobChannelReady)
     listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
+
+    // The channel is now ready to process payments.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == aliceChannelReady.channelId)
+        true
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == aliceChannelReady.channelId)
+        true
+      case _ => false
+    }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest

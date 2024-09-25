@@ -72,6 +72,37 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
   val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
 
+  test("reconnect after creating channel", Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+
+    // This is a new channel: peers exchange channel_ready again.
+    val channelId = alice2bob.expectMsgType[ChannelReady].channelId
+    bob2alice.expectMsgType[ChannelReady]
+
+    // The channel is ready to process payments.
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == channelId)
+        true
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments =>
+        assert(e.fundingTxIndex == 0)
+        assert(e.channelId == channelId)
+        true
+      case _ => false
+    }
+  }
+
   test("re-send lost htlc and signature after first commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
     // alice         bob
@@ -80,7 +111,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |--- sig --X |
     //   |            |
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc
     alice2bob.forward(bob)
@@ -134,7 +165,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   | X-- rev ---|
     //   | X-- sig ---|
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc and the signature
     alice2bob.forward(bob, htlc)
@@ -178,7 +209,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |<--- rev ---|
     //   | X-- sig ---|
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc and the signature
     alice2bob.forward(bob, htlc)
@@ -511,7 +542,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMessage(300 millis)
 
     // we attempt to send a payment
-    alice ! CMD_ADD_HTLC(sender.ref, 4200 msat, randomBytes32(), CltvExpiry(123456), TestConstants.emptyOnionPacket, None, 1.0, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 4200 msat, randomBytes32(), CltvExpiry(123456), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[ChannelUnavailable]]
 
     // alice will broadcast a new disabled channel_update

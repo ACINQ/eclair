@@ -238,7 +238,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       val payments = e match {
         case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
           // non-trampoline relayed payments have one input and one output
-          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+          val in = Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt))
+          val out = Seq(RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+          in ++ out
         case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
           using(pg.prepareStatement("INSERT INTO audit.relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
             statement.setString(1, e.paymentHash.toHex)
@@ -248,7 +250,13 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt))
+          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+          in ++ out
+        case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
+          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "on-the-fly-funding", i.receivedAt))
+          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "on-the-fly-funding", o.settledAt))
+          in ++ out
       }
       for (p <- payments) {
         using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -453,6 +461,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             case Some(RelayedPart(_, _, _, "trampoline", _)) =>
               val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
               TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
+            case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
+              Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
             case _ => Nil
           }
       }.toSeq.sortBy(_.timestamp)
@@ -480,10 +490,21 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
 
   override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
-    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
-      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
-    }
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
+
+    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing): Map[ByteVector32, Seq[Relayed]] = {
+      // We ensure trampoline payments are counted only once per channel and per direction (if multiple HTLCs were sent
+      // from/to the same channel, we group them).
+      val amountIn = incoming.map(_.amount).sum
+      val amountOut = outgoing.map(_.amount).sum
+      val in = incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
+      val out = outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
+        val fee = (amountIn - amountOut) * parts.length / outgoing.length // we split the fee among outgoing channels
+        (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
+      }.toSeq
+      (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+    }
+
     val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
@@ -492,17 +513,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.toChannelId, Nil)),
         )
         case t: TrampolinePaymentRelayed =>
-          // We ensure a trampoline payment is counted only once per channel and per direction (if multiple HTLCs were
-          // sent from/to the same channel, we group them).
-          val in = t.incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
-          val out = t.outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
-            val fee = (t.amountIn - t.amountOut) * parts.length / t.outgoing.length // we split the fee among outgoing channels
-            (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
-          }.toSeq
-          (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+          aggregateRelayStats(previous, t.incoming, t.outgoing)
+        case f: OnTheFlyFundingPaymentRelayed =>
+          aggregateRelayStats(previous, f.incoming, f.outgoing)
       }
       previous ++ current
     }
+
+    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
+      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
+    }
+
     // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
     val result = allChannels.toSeq.flatMap(channelId => {

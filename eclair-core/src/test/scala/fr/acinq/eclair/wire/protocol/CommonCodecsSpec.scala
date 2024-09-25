@@ -140,8 +140,10 @@ class CommonCodecsSpec extends AnyFunSuite {
 
   test("encode/decode channel flags") {
     val testCases = Map(
-      bin"00000000" -> ChannelFlags(announceChannel = false),
-      bin"00000001" -> ChannelFlags(announceChannel = true),
+      bin"00000000" -> ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = false),
+      bin"00000001" -> ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = true),
+      bin"00000010" -> ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
+      bin"00000011" -> ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = true),
     )
     testCases.foreach { case (bin, obj) =>
       assert(channelflags.decode(bin).require == DecodeResult(obj, BitVector.empty))
@@ -149,8 +151,9 @@ class CommonCodecsSpec extends AnyFunSuite {
     }
 
     // BOLT 2: The receiving node MUST [...] ignore undefined bits in channel_flags.
-    assert(channelflags.decode(bin"11111111").require == DecodeResult(ChannelFlags(announceChannel = true), BitVector.empty))
-    assert(channelflags.decode(bin"11111110").require == DecodeResult(ChannelFlags(announceChannel = false), BitVector.empty))
+    assert(channelflags.decode(bin"11111111").require == DecodeResult(ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = true), BitVector.empty))
+    assert(channelflags.decode(bin"11111110").require == DecodeResult(ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false), BitVector.empty))
+    assert(channelflags.decode(bin"11111100").require == DecodeResult(ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = false), BitVector.empty))
   }
 
   test("encode/decode with rgb codec") {

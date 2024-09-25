@@ -18,11 +18,10 @@ package fr.acinq.eclair.payment
 
 import akka.Done
 import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -30,7 +29,8 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.buildOutgoingPayment
 import fr.acinq.eclair.payment.PaymentPacketSpec._
-import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
+import fr.acinq.eclair.payment.relay.OnTheFlyFundingSpec._
+import fr.acinq.eclair.payment.relay.{OnTheFlyFunding, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Router.Route
@@ -150,6 +150,43 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // post-restart cleaner has cleaned up the htlcs, so next time it won't fail them anymore, even if we artificially submit the former state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
+    channel.expectNoMessage(100 millis)
+  }
+
+  test("keep upstream HTLCs that weren't relayed downstream but use on-the-fly funding") { f =>
+    import f._
+
+    val channelPaymentHash = randomBytes32()
+    val trampolinePaymentHash = randomBytes32()
+
+    val htlc_ab_1 = Seq(
+      buildHtlcIn(0, channelId_ab_1, channelPaymentHash),
+      buildHtlcIn(1, channelId_ab_1, trampolinePaymentHash),
+    )
+    val htlc_ab_2 = Seq(
+      buildHtlcIn(2, channelId_ab_2, trampolinePaymentHash),
+    )
+
+    val channels = Seq(
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map(0L -> Origin.Cold(Upstream.Local(UUID.randomUUID())), 1L -> Origin.Cold(Upstream.Local(UUID.randomUUID())))),
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map(2L -> Origin.Cold(Upstream.Local(UUID.randomUUID()))))
+    )
+
+    // The HTLCs were not relayed yet, but they match pending on-the-fly funding proposals.
+    val upstreamChannel = Upstream.Hot.Channel(htlc_ab_1.head.add, TimestampMilli.now(), a)
+    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, channelPaymentHash, CltvExpiry(500)), upstreamChannel)), createStatus())
+    val upstreamTrampoline = Upstream.Hot.Trampoline(List(htlc_ab_1.last, htlc_ab_2.head).map(htlc => Upstream.Hot.Channel(htlc.add, TimestampMilli.now(), a)))
+    val downstreamTrampoline = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, trampolinePaymentHash, CltvExpiry(500)), upstreamTrampoline)), createStatus())
+    nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamChannel)
+    nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamTrampoline)
+
+    val channel = TestProbe()
+    val (relayer, _) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(channels)
+    // Upstream channels go back to the NORMAL state, but HTLCs are kept because the on-the-fly proposal was funded.
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(0).commitments)))
+    channel.expectNoMessage(100 millis)
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     channel.expectNoMessage(100 millis)
   }
 
@@ -512,7 +549,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val htlc_ab = buildHtlcIn(0, channelId_ab_1, paymentHash1, blinded = true)
-    val upstream = Upstream.Cold.Channel(htlc_ab.add.channelId, htlc_ab.add.id, htlc_ab.add.amountMsat)
+    val upstream = Upstream.Cold.Channel(htlc_ab.add)
     val htlc_bc = buildHtlcOut(6, channelId_bc_1, paymentHash1, blinded = true)
     val data_ab = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_ab), Map.empty)
     val data_bc = ChannelCodecsSpec.makeChannelDataNormal(Seq(htlc_bc), Map(6L -> Origin.Cold(upstream)))
@@ -624,6 +661,54 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     eventListener.expectNoMessage(100 millis)
   }
 
+  test("ignore relayed htlc-fail for on-the-fly funding") { f =>
+    import f._
+
+    // Upstream HTLCs.
+    val htlc_ab = Seq(
+      buildHtlcIn(0, channelId_ab_1, paymentHash1), // not relayed
+      buildHtlcIn(1, channelId_ab_1, paymentHash1), // channel relayed
+      buildHtlcIn(2, channelId_ab_1, paymentHash2), // trampoline relayed
+    )
+    // The first upstream HTLC was not relayed but has a pending on-the-fly funding proposal.
+    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, paymentHash1, CltvExpiry(500)), Upstream.Hot.Channel(htlc_ab(0).add, TimestampMilli.now(), a))), createStatus())
+    nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamChannel)
+    // The other two HTLCs were relayed after completing on-the-fly funding.
+    val htlc_bc = Seq(
+      buildHtlcOut(1, channelId_bc_1, paymentHash1).modify(_.add.tlvStream).setTo(TlvStream(UpdateAddHtlcTlv.FundingFeeTlv(LiquidityAds.FundingFee(2500 msat, TxId(randomBytes32()))))), // channel relayed
+      buildHtlcOut(2, channelId_bc_1, paymentHash2).modify(_.add.tlvStream).setTo(TlvStream(UpdateAddHtlcTlv.FundingFeeTlv(LiquidityAds.FundingFee(1500 msat, TxId(randomBytes32()))))), // trampoline relayed
+    )
+
+    val upstreamChannel = Upstream.Cold.Channel(htlc_ab(1).add)
+    val upstreamTrampoline = Upstream.Cold.Trampoline(Upstream.Cold.Channel(htlc_ab(2).add) :: Nil)
+    val data_ab = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    val data_bc = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, Map(1L -> Origin.Cold(upstreamChannel), 2L -> Origin.Cold(upstreamTrampoline)))
+
+    val (relayer, _) = f.createRelayer(nodeParams)
+    relayer ! PostRestartHtlcCleaner.Init(Seq(data_ab, data_bc))
+
+    // HTLC failures are not relayed upstream, as we will retry until we reach the HTLC timeout.
+    sender.send(relayer, buildForwardFail(htlc_bc(0).add, Upstream.Cold.Channel(htlc_ab(0).add)))
+    sender.send(relayer, buildForwardFail(htlc_bc(0).add, upstreamChannel))
+    sender.send(relayer, buildForwardOnChainFail(htlc_bc(0).add, upstreamChannel))
+    sender.send(relayer, buildForwardFail(htlc_bc(1).add, upstreamTrampoline))
+    sender.send(relayer, buildForwardOnChainFail(htlc_bc(1).add, upstreamTrampoline))
+    register.expectNoMessage(100 millis)
+
+    // HTLC fulfills are relayed upstream as soon as available.
+    sender.send(relayer, buildForwardFulfill(htlc_bc(0).add, upstreamChannel, preimage1))
+    val fulfill1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+    assert(fulfill1.channelId == channelId_ab_1)
+    assert(fulfill1.message.id == 1)
+    assert(fulfill1.message.r == preimage1)
+    sender.send(relayer, buildForwardFulfill(htlc_bc(1).add, upstreamTrampoline, preimage2))
+    val fulfill2 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
+    assert(fulfill2.channelId == channelId_ab_1)
+    assert(fulfill2.message.id == 2)
+    assert(fulfill2.message.r == preimage2)
+    register.expectNoMessage(100 millis)
+  }
+
   test("relayed standard->non-standard HTLC is retained") { f =>
     import f._
 
@@ -702,7 +787,7 @@ object PostRestartHtlcCleanerSpec {
       val (route, recipient) = (Route(finalAmount, hops, None), SpontaneousRecipient(e, finalAmount, finalExpiry, randomBytes32()))
       buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, 1.0)
     }
-    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt, 1.0)
+    UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextBlindingKey_opt, 1.0, payment.cmd.fundingFee_opt)
   }
 
   def buildHtlcIn(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32, blinded: Boolean = false): DirectedHtlc = IncomingHtlc(buildHtlc(htlcId, channelId, paymentHash, blinded))
@@ -711,7 +796,7 @@ object PostRestartHtlcCleanerSpec {
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
     val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, Route(finalAmount, Seq(channelHopFromUpdate(a, b, channelUpdate_ab)), None), SpontaneousRecipient(b, finalAmount, finalExpiry, randomBytes32()), 1.0)
-    IncomingHtlc(UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0))
+    IncomingHtlc(UpdateAddHtlc(channelId, htlcId, payment.cmd.amount, paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, 1.0, None))
   }
 
   def buildForwardFail(add: UpdateAddHtlc, upstream: Upstream.Cold): RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail] =
@@ -734,11 +819,11 @@ object PostRestartHtlcCleanerSpec {
     val parentId = UUID.randomUUID()
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
 
-    val add1 = UpdateAddHtlc(channelId_bc_1, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
+    val add1 = UpdateAddHtlc(channelId_bc_1, 72, 561 msat, paymentHash1, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0, fundingFee_opt = None)
     val origin1 = Origin.Cold(Upstream.Local(id1))
-    val add2 = UpdateAddHtlc(channelId_bc_1, 75, 1105 msat, paymentHash2, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
+    val add2 = UpdateAddHtlc(channelId_bc_1, 75, 1105 msat, paymentHash2, CltvExpiry(4250), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0, fundingFee_opt = None)
     val origin2 = Origin.Cold(Upstream.Local(id2))
-    val add3 = UpdateAddHtlc(channelId_bc_1, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0)
+    val add3 = UpdateAddHtlc(channelId_bc_1, 78, 1729 msat, paymentHash2, CltvExpiry(4300), onionRoutingPacket = TestConstants.emptyOnionPacket, blinding_opt = None, confidence = 1.0, fundingFee_opt = None)
     val origin3 = Origin.Cold(Upstream.Local(id3))
 
     // Prepare channels and payment state before restart.
@@ -763,7 +848,7 @@ object PostRestartHtlcCleanerSpec {
       buildHtlcIn(0, channelId_ab_1, paymentHash1)
     )
 
-    val upstream_1 = Upstream.Cold.Channel(htlc_ab_1.head.add.channelId, htlc_ab_1.head.add.id, htlc_ab_1.head.add.amountMsat)
+    val upstream_1 = Upstream.Cold.Channel(htlc_ab_1.head.add)
 
     val htlc_bc_1 = Seq(
       buildHtlcOut(6, channelId_bc_1, paymentHash1)
@@ -847,10 +932,10 @@ object PostRestartHtlcCleanerSpec {
 
     val notRelayed = Set((1L, channelId_bc_1), (0L, channelId_bc_2), (3L, channelId_bc_3), (5L, channelId_bc_3), (7L, channelId_bc_4))
 
-    val downstream_1_1 = UpdateAddHtlc(channelId_bc_1, 6L, finalAmount, paymentHash1, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
-    val downstream_2_1 = UpdateAddHtlc(channelId_bc_1, 8L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
-    val downstream_2_2 = UpdateAddHtlc(channelId_bc_2, 1L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
-    val downstream_2_3 = UpdateAddHtlc(channelId_bc_3, 4L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0)
+    val downstream_1_1 = UpdateAddHtlc(channelId_bc_1, 6L, finalAmount, paymentHash1, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
+    val downstream_2_1 = UpdateAddHtlc(channelId_bc_1, 8L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
+    val downstream_2_2 = UpdateAddHtlc(channelId_bc_2, 1L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
+    val downstream_2_3 = UpdateAddHtlc(channelId_bc_3, 4L, finalAmount, paymentHash2, finalExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
 
     val data_ab_1 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map.empty)
     val data_ab_2 = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map.empty)

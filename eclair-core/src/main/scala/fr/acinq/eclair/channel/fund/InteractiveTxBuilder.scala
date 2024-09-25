@@ -92,7 +92,7 @@ object InteractiveTxBuilder {
 
   sealed trait Response
   case class SendMessage(sessionId: ByteVector32, msg: LightningMessage) extends Response
-  case class Succeeded(signingSession: InteractiveTxSigningSession.WaitingForSigs, commitSig: CommitSig) extends Response
+  case class Succeeded(signingSession: InteractiveTxSigningSession.WaitingForSigs, commitSig: CommitSig, liquidityPurchase_opt: Option[LiquidityAds.Purchase]) extends Response
   sealed trait Failed extends Response { def cause: ChannelException }
   case class LocalFailure(cause: ChannelException) extends Failed
   case class RemoteFailure(cause: ChannelException) extends Failed
@@ -156,6 +156,15 @@ object InteractiveTxBuilder {
     val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
+
+    def liquidityFees(liquidityPurchase_opt: Option[LiquidityAds.Purchase]): Satoshi = {
+      liquidityPurchase_opt.map(l => l.paymentDetails match {
+        // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
+        case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => if (isInitiator) l.fees.total else -l.fees.total
+        // Fees will be paid later, when relaying HTLCs.
+        case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => 0.sat
+      }).getOrElse(0 sat)
+    }
   }
 
   // @formatter:off
@@ -367,18 +376,27 @@ object InteractiveTxBuilder {
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelParams.remoteParams.nodeId), channelId_opt = Some(fundingParams.channelId))) {
           Behaviors.receiveMessagePartial {
             case Start(replyTo) =>
-              val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
-                // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-                case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
-              }).getOrElse(0 sat)
+              val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
               // Note that pending HTLCs are ignored: splices only affect the main outputs.
               val nextLocalBalance = purpose.previousLocalBalance + fundingParams.localContribution - localPushAmount + remotePushAmount - liquidityFee
               val nextRemoteBalance = purpose.previousRemoteBalance + fundingParams.remoteContribution - remotePushAmount + localPushAmount + liquidityFee
+              val liquidityPaymentTypeOk = liquidityPurchase_opt match {
+                case Some(l) if !fundingParams.isInitiator => l.paymentDetails match {
+                  case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => true
+                  // If our peer has enough balance to pay the liquidity fees, they shouldn't use future HTLCs which
+                  // involves trust: they should directly pay from their channel balance.
+                  case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => nextRemoteBalance < l.fees.total
+                }
+                case _ => true
+              }
               if (fundingParams.fundingAmount < fundingParams.dustLimit) {
                 replyTo ! LocalFailure(FundingAmountTooLow(channelParams.channelId, fundingParams.fundingAmount, fundingParams.dustLimit))
                 Behaviors.stopped
               } else if (nextLocalBalance < 0.msat || nextRemoteBalance < 0.msat) {
                 replyTo ! LocalFailure(InvalidFundingBalances(channelParams.channelId, fundingParams.fundingAmount, nextLocalBalance, nextRemoteBalance))
+                Behaviors.stopped
+              } else if (!liquidityPaymentTypeOk) {
+                replyTo ! LocalFailure(InvalidLiquidityAdsPaymentType(channelParams.channelId, liquidityPurchase_opt.get.paymentDetails.paymentType, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc)))
                 Behaviors.stopped
               } else {
                 val actor = new InteractiveTxBuilder(replyTo, sessionId, nodeParams, channelParams, fundingParams, purpose, localPushAmount, remotePushAmount, liquidityPurchase_opt, wallet, stash, context)
@@ -745,7 +763,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
         }
       case None =>
-        val minimumFee = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
+        val feeWithoutWitness = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
+        val minimumFee = liquidityPurchase_opt.map(_.paymentDetails) match {
+          case Some(paymentDetails) => paymentDetails match {
+            case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => feeWithoutWitness
+            // We allow the feerate to be lower than requested when using on-the-fly funding, because our peer may not
+            // be able to contribute as much as expected to the funding transaction itself since they don't have funds.
+            // It's acceptable because they will be paying liquidity fees from future HTLCs.
+            case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => feeWithoutWitness * 0.5
+          }
+          case None => feeWithoutWitness
+        }
         if (sharedTx.fees < minimumFee) {
           log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
@@ -767,10 +795,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private def signCommitTx(completeTx: SharedTransaction): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
-    val liquidityFee = liquidityPurchase_opt.map(l => l.paymentDetails match {
-      // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-      case LiquidityAds.PaymentDetails.FromChannelBalance => if (fundingParams.isInitiator) l.fees.total else -l.fees.total
-    }).getOrElse(0 sat)
+    val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
@@ -825,7 +850,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           )
           context.system.eventStream ! EventStream.Publish(ChannelLiquidityPurchased(replyTo.toClassic, channelParams.channelId, remoteNodeId, purchase))
         }
-        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, purpose.fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig)
+        replyTo ! Succeeded(InteractiveTxSigningSession.WaitingForSigs(fundingParams, purpose.fundingTxIndex, signedTx, Left(localCommit), remoteCommit), commitSig, liquidityPurchase_opt)
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)
@@ -981,7 +1006,11 @@ object InteractiveTxSigningSession {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
     // We allow a 5% error margin since witness size prediction could be inaccurate.
-    if (fundingParams.localContribution != 0.sat && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
+    // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
+    // If we didn't contribute to the transaction, we don't care if they use a lower feerate than expected.
+    val localContributed = txWithSigs.tx.localInputs.nonEmpty || txWithSigs.tx.localOutputs.nonEmpty
+    val remoteContributed = txWithSigs.tx.remoteInputs.nonEmpty || txWithSigs.tx.remoteOutputs.nonEmpty
+    if (localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
       return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
     }
     val previousOutputs = {

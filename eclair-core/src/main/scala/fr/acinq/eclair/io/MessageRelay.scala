@@ -154,7 +154,7 @@ private class MessageRelay(nodeParams: NodeParams,
 
   private def waitForPreviousPeerForPolicyCheck(msg: OnionMessage, nextNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedPeerInfo(PeerInfo(_, _, _, _, channels)) if channels.nonEmpty =>
+      case WrappedPeerInfo(info: PeerInfo) if info.channels.nonEmpty =>
         switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), nextNodeId)
         waitForNextPeerForPolicyCheck(msg, nextNodeId)
       case _ =>
@@ -167,8 +167,8 @@ private class MessageRelay(nodeParams: NodeParams,
 
   private def waitForNextPeerForPolicyCheck(msg: OnionMessage, nextNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedPeerInfo(PeerInfo(peer, _, _, _, channels)) if channels.nonEmpty =>
-        peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
+      case WrappedPeerInfo(info: PeerInfo) if info.channels.nonEmpty =>
+        info.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo_opt)
         Behaviors.stopped
       case _ =>
         Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, Tags.Reasons.NoChannelWithNextPeer).increment()
