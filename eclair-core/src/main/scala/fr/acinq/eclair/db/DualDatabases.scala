@@ -463,4 +463,19 @@ case class DualLiquidityDb(primary: LiquidityDb, secondary: LiquidityDb) extends
     primary.getOnTheFlyFundingPreimage(paymentHash)
   }
 
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = {
+    runAsync(secondary.addFeeCredit(nodeId, amount, receivedAt))
+    primary.addFeeCredit(nodeId, amount, receivedAt)
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = {
+    runAsync(secondary.getFeeCredit(nodeId))
+    primary.getFeeCredit(nodeId)
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = {
+    runAsync(secondary.removeFeeCredit(nodeId, amountUsed))
+    primary.removeFeeCredit(nodeId, amountUsed)
+  }
+
 }

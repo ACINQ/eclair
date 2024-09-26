@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.TlvCodecs.{genericTlv, tlvField, tsatoshi32}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
 import fr.acinq.eclair.{MilliSatoshi, ToMilliSatoshiConversion, UInt64}
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
@@ -124,7 +124,7 @@ object LiquidityAds {
 
   /** Sellers offer various rates and payment options. */
   case class WillFundRates(fundingRates: List[FundingRate], paymentTypes: Set[PaymentType]) {
-    def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean): Either[ChannelException, WillFundPurchase] = {
+    def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, request: RequestFunding, isChannelCreation: Boolean, feeCreditUsed_opt: Option[MilliSatoshi]): Either[ChannelException, WillFundPurchase] = {
       if (!paymentTypes.contains(request.paymentDetails.paymentType)) {
         Left(InvalidLiquidityAdsPaymentType(channelId, request.paymentDetails.paymentType, paymentTypes))
       } else if (!fundingRates.contains(request.fundingRate)) {
@@ -133,7 +133,11 @@ object LiquidityAds {
         Left(InvalidLiquidityAdsRate(channelId))
       } else {
         val sig = Crypto.sign(request.fundingRate.signedData(fundingScript), nodeKey)
-        val purchase = Purchase.Standard(request.requestedAmount, request.fundingRate.fees(fundingFeerate, request.requestedAmount, request.requestedAmount, isChannelCreation), request.paymentDetails)
+        val fees = request.fundingRate.fees(fundingFeerate, request.requestedAmount, request.requestedAmount, isChannelCreation)
+        val purchase = feeCreditUsed_opt match {
+          case Some(feeCreditUsed) => Purchase.WithFeeCredit(request.requestedAmount, fees, feeCreditUsed, request.paymentDetails)
+          case None => Purchase.Standard(request.requestedAmount, fees, request.paymentDetails)
+        }
         Right(WillFundPurchase(WillFund(request.fundingRate, fundingScript, sig), purchase))
       }
     }
@@ -141,9 +145,9 @@ object LiquidityAds {
     def findRate(requestedAmount: Satoshi): Option[FundingRate] = fundingRates.find(r => r.minAmount <= requestedAmount && requestedAmount <= r.maxAmount)
   }
 
-  def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, isChannelCreation: Boolean, request_opt: Option[RequestFunding], rates_opt: Option[WillFundRates]): Either[ChannelException, Option[WillFundPurchase]] = {
+  def validateRequest(nodeKey: PrivateKey, channelId: ByteVector32, fundingScript: ByteVector, fundingFeerate: FeeratePerKw, isChannelCreation: Boolean, request_opt: Option[RequestFunding], rates_opt: Option[WillFundRates], feeCreditUsed_opt: Option[MilliSatoshi]): Either[ChannelException, Option[WillFundPurchase]] = {
     (request_opt, rates_opt) match {
-      case (Some(request), Some(rates)) => rates.validateRequest(nodeKey, channelId, fundingScript, fundingFeerate, request, isChannelCreation).map(l => Some(l))
+      case (Some(request), Some(rates)) => rates.validateRequest(nodeKey, channelId, fundingScript, fundingFeerate, request, isChannelCreation, feeCreditUsed_opt).map(l => Some(l))
       case _ => Right(None)
     }
   }
@@ -225,7 +229,11 @@ object LiquidityAds {
   }
 
   object Purchase {
+    // @formatter:off
     case class Standard(amount: Satoshi, fees: Fees, paymentDetails: PaymentDetails) extends Purchase()
+    /** The liquidity purchase was paid (partially or entirely) using [[fr.acinq.eclair.Features.FundingFeeCredit]]. */
+    case class WithFeeCredit(amount: Satoshi, fees: Fees, feeCreditUsed: MilliSatoshi, paymentDetails: PaymentDetails) extends Purchase()
+    // @formatter:on
   }
 
   case class WillFundPurchase(willFund: WillFund, purchase: Purchase)

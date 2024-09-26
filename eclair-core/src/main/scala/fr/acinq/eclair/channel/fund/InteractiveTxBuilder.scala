@@ -37,7 +37,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, UInt64}
+import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -157,13 +157,18 @@ object InteractiveTxBuilder {
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
 
-    def liquidityFees(liquidityPurchase_opt: Option[LiquidityAds.Purchase]): Satoshi = {
+    def liquidityFees(liquidityPurchase_opt: Option[LiquidityAds.Purchase]): MilliSatoshi = {
       liquidityPurchase_opt.map(l => l.paymentDetails match {
         // The initiator of the interactive-tx is the liquidity buyer (if liquidity ads is used).
-        case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => if (isInitiator) l.fees.total else -l.fees.total
+        case LiquidityAds.PaymentDetails.FromChannelBalance | _: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc =>
+          val feesOwed = l match {
+            case l: LiquidityAds.Purchase.Standard => l.fees.total.toMilliSatoshi
+            case l: LiquidityAds.Purchase.WithFeeCredit => l.fees.total.toMilliSatoshi - l.feeCreditUsed
+          }
+          if (isInitiator) feesOwed else -feesOwed
         // Fees will be paid later, when relaying HTLCs.
-        case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => 0.sat
-      }).getOrElse(0 sat)
+        case _: LiquidityAds.PaymentDetails.FromFutureHtlc | _: LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage => 0 msat
+      }).getOrElse(0 msat)
     }
   }
 
@@ -742,6 +747,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (tx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
       log.warn("invalid interactive tx: exceeds standard weight (weight={})", tx.weight())
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+    }
+
+    liquidityPurchase_opt match {
+      case Some(p: LiquidityAds.Purchase.WithFeeCredit) if !fundingParams.isInitiator =>
+        val currentFeeCredit = nodeParams.db.liquidity.getFeeCredit(remoteNodeId)
+        if (currentFeeCredit < p.feeCreditUsed) {
+          log.warn("not enough fee credit: our peer may be malicious ({} < {})", currentFeeCredit, p.feeCreditUsed)
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        }
+      case _ => ()
     }
 
     previousTransactions.headOption match {

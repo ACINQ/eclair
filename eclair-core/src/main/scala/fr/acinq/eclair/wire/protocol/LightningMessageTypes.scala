@@ -254,6 +254,7 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -307,6 +308,7 @@ case class SpliceInit(channelId: ByteVector32,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -331,11 +333,12 @@ case class SpliceAck(channelId: ByteVector32,
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund]): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
       if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
-      willFund_opt.map(ChannelTlv.ProvideFundingTlv)
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv),
+      feeCreditUsed_opt.map(ChannelTlv.FeeCreditUsedTlv),
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
@@ -672,5 +675,15 @@ case class CancelOnTheFlyFunding(channelId: ByteVector32, paymentHashes: List[By
 object CancelOnTheFlyFunding {
   def apply(channelId: ByteVector32, paymentHashes: List[ByteVector32], reason: String): CancelOnTheFlyFunding = CancelOnTheFlyFunding(channelId, paymentHashes, ByteVector.view(reason.getBytes(Charsets.US_ASCII)))
 }
+
+/**
+ * This message is used to reveal the preimage of a small payment for which it isn't economical to perform an on-chain
+ * transaction. The amount of the payment will be added to our fee credit, which can be used when a future on-chain
+ * transaction is needed. This message requires the [[Features.FundingFeeCredit]] feature.
+ */
+case class AddFeeCredit(chainHash: BlockHash, preimage: ByteVector32) extends HasChainHash
+
+/** This message contains our current fee credit: the liquidity provider is the source of truth for that value. */
+case class CurrentFeeCredit(chainHash: BlockHash, amount: MilliSatoshi) extends HasChainHash
 
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

@@ -460,6 +460,14 @@ object LightningMessageCodecs {
       ("paymentHashes" | listOfN(uint16, bytes32)) ::
       ("reason" | varsizebinarydata)).as[CancelOnTheFlyFunding]
 
+  val addFeeCreditCodec: Codec[AddFeeCredit] = (
+    ("chainHash" | blockHash) ::
+      ("preimage" | bytes32)).as[AddFeeCredit]
+
+  val currentFeeCreditCodec: Codec[CurrentFeeCredit] = (
+    ("chainHash" | blockHash) ::
+      ("amount" | millisatoshi)).as[CurrentFeeCredit]
+
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
       ("message" | bytes)
@@ -516,6 +524,10 @@ object LightningMessageCodecs {
     .typecase(41042, willFailHtlcCodec)
     .typecase(41043, willFailMalformedHtlcCodec)
     .typecase(41044, cancelOnTheFlyFundingCodec)
+    //
+    //
+    .typecase(41045, addFeeCreditCodec)
+    .typecase(41046, currentFeeCreditCodec)
     //
     .typecase(37000, spliceInitCodec)
     .typecase(37002, spliceAckCodec)

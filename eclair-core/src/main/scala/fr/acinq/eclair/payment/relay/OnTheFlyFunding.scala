@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -45,6 +45,8 @@ object OnTheFlyFunding {
   object Status {
     /** We sent will_add_htlc, but didn't fund a transaction yet. */
     case class Proposed(timer: Cancellable) extends Status
+    /** Our peer revealed the preimage to add this payment to their fee credit for a future on-chain transaction. */
+    case class AddedToFeeCredit(preimage: ByteVector32) extends Status
     /**
      * We signed a transaction matching the on-the-fly funding proposed. We're waiting for the liquidity to be
      * available (channel ready or splice locked) to relay the HTLCs and complete the payment.
@@ -89,6 +91,7 @@ object OnTheFlyFunding {
   case class Pending(proposed: Seq[Proposal], status: Status) {
     val paymentHash = proposed.head.htlc.paymentHash
     val expiry = proposed.map(_.htlc.expiry).min
+    val amountOut = proposed.map(_.htlc.amount).sum
 
     /** Maximum fees that can be collected from this HTLC set. */
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = proposed.map(_.maxFees(htlcMinimum)).sum
@@ -106,26 +109,26 @@ object OnTheFlyFunding {
     /** The incoming channel or splice cannot pay the liquidity fees: we must reject it and fail the corresponding upstream HTLCs. */
     case class Reject(cancel: CancelOnTheFlyFunding, paymentHashes: Set[ByteVector32]) extends ValidationResult
     /** We are on-the-fly funding a channel: if we received preimages, we must fulfill the corresponding upstream HTLCs. */
-    case class Accept(preimages: Set[ByteVector32]) extends ValidationResult
+    case class Accept(preimages: Set[ByteVector32], useFeeCredit_opt: Option[MilliSatoshi]) extends ValidationResult
   }
   // @formatter:on
 
   /** Validate an incoming channel that may use on-the-fly funding. */
-  def validateOpen(open: Either[OpenChannel, OpenDualFundedChannel], pendingOnTheFlyFunding: Map[ByteVector32, Pending]): ValidationResult = {
+  def validateOpen(open: Either[OpenChannel, OpenDualFundedChannel], pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
     open match {
-      case Left(_) => ValidationResult.Accept(Set.empty)
+      case Left(_) => ValidationResult.Accept(Set.empty, None)
       case Right(open) => open.requestFunding_opt match {
-        case Some(requestFunding) => validate(open.temporaryChannelId, requestFunding, isChannelCreation = true, open.fundingFeerate, open.htlcMinimum, pendingOnTheFlyFunding)
-        case None => ValidationResult.Accept(Set.empty)
+        case Some(requestFunding) => validate(open.temporaryChannelId, requestFunding, isChannelCreation = true, open.fundingFeerate, open.htlcMinimum, pendingOnTheFlyFunding, feeCredit)
+        case None => ValidationResult.Accept(Set.empty, None)
       }
     }
   }
 
   /** Validate an incoming splice that may use on-the-fly funding. */
-  def validateSplice(splice: SpliceInit, htlcMinimum: MilliSatoshi, pendingOnTheFlyFunding: Map[ByteVector32, Pending]): ValidationResult = {
+  def validateSplice(splice: SpliceInit, htlcMinimum: MilliSatoshi, pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
     splice.requestFunding_opt match {
-      case Some(requestFunding) => validate(splice.channelId, requestFunding, isChannelCreation = false, splice.feerate, htlcMinimum, pendingOnTheFlyFunding)
-      case None => ValidationResult.Accept(Set.empty)
+      case Some(requestFunding) => validate(splice.channelId, requestFunding, isChannelCreation = false, splice.feerate, htlcMinimum, pendingOnTheFlyFunding, feeCredit)
+      case None => ValidationResult.Accept(Set.empty, None)
     }
   }
 
@@ -134,7 +137,8 @@ object OnTheFlyFunding {
                        isChannelCreation: Boolean,
                        feerate: FeeratePerKw,
                        htlcMinimum: MilliSatoshi,
-                       pendingOnTheFlyFunding: Map[ByteVector32, Pending]): ValidationResult = {
+                       pendingOnTheFlyFunding: Map[ByteVector32, Pending],
+                       feeCredit: MilliSatoshi): ValidationResult = {
     val paymentHashes = requestFunding.paymentDetails match {
       case PaymentDetails.FromChannelBalance => Nil
       case PaymentDetails.FromChannelBalanceForFutureHtlc(paymentHashes) => paymentHashes
@@ -145,17 +149,24 @@ object OnTheFlyFunding {
     val totalPaymentAmount = pending.flatMap(_.proposed.map(_.htlc.amount)).sum
     // We will deduce fees from HTLCs: we check that the amount is large enough to cover the fees.
     val availableAmountForFees = pending.map(_.maxFees(htlcMinimum)).sum
-    val fees = requestFunding.fees(feerate, isChannelCreation)
+    val (feesOwed, useFeeCredit_opt) = if (feeCredit > 0.msat) {
+      // We prioritize using our peer's fee credit if they have some available.
+      val fees = requestFunding.fees(feerate, isChannelCreation).total.toMilliSatoshi
+      val useFeeCredit = feeCredit.min(fees)
+      (fees - useFeeCredit, Some(useFeeCredit))
+    } else {
+      (requestFunding.fees(feerate, isChannelCreation).total.toMilliSatoshi, None)
+    }
     val cancelAmountTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"requested amount is too low to relay HTLCs: ${requestFunding.requestedAmount} < $totalPaymentAmount")
-    val cancelFeesTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"htlc amount is too low to pay liquidity fees: $availableAmountForFees < ${fees.total}")
+    val cancelFeesTooLow = CancelOnTheFlyFunding(channelId, paymentHashes, s"htlc amount is too low to pay liquidity fees: $availableAmountForFees < $feesOwed")
     requestFunding.paymentDetails match {
-      case PaymentDetails.FromChannelBalance => ValidationResult.Accept(Set.empty)
+      case PaymentDetails.FromChannelBalance => ValidationResult.Accept(Set.empty, None)
       case _ if requestFunding.requestedAmount.toMilliSatoshi < totalPaymentAmount => ValidationResult.Reject(cancelAmountTooLow, paymentHashes.toSet)
-      case _: PaymentDetails.FromChannelBalanceForFutureHtlc => ValidationResult.Accept(Set.empty)
-      case _: PaymentDetails.FromFutureHtlc if availableAmountForFees < fees.total => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
-      case _: PaymentDetails.FromFutureHtlc => ValidationResult.Accept(Set.empty)
-      case _: PaymentDetails.FromFutureHtlcWithPreimage if availableAmountForFees < fees.total => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
-      case p: PaymentDetails.FromFutureHtlcWithPreimage => ValidationResult.Accept(p.preimages.toSet)
+      case _: PaymentDetails.FromChannelBalanceForFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
+      case _: PaymentDetails.FromFutureHtlc if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
+      case _: PaymentDetails.FromFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
+      case _: PaymentDetails.FromFutureHtlcWithPreimage if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
+      case p: PaymentDetails.FromFutureHtlcWithPreimage => ValidationResult.Accept(p.preimages.toSet, useFeeCredit_opt)
     }
   }
 
