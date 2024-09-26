@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, PrettySimpleClassName}
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import kamon.Kamon
 
@@ -127,12 +127,12 @@ object Monitoring {
 
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
         case Left(_) => Remote
-        case Right(f) => f.getClass.getSimpleName
+        case Right(f) => f.getClass.getPrettySimpleName
       }
 
       def apply(pf: PaymentFailure): String = pf match {
-        case LocalFailure(_, _, t) => t.getClass.getSimpleName
-        case RemoteFailure(_, _, e) => e.failureMessage.getClass.getSimpleName
+        case LocalFailure(_, _, t) => t.getClass.getPrettySimpleName
+        case RemoteFailure(_, _, e) => e.failureMessage.getClass.getPrettySimpleName
         case UnreadableRemoteFailure(_, _) => "UnreadableRemoteFailure"
       }
     }

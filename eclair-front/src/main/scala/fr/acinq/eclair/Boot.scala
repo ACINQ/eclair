@@ -55,7 +55,7 @@ object Boot extends App with Logging {
   }
 
   def onError(t: Throwable): Unit = {
-    val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
+    val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getPrettySimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
     sys.exit(1)

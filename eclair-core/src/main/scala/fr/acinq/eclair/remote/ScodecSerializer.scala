@@ -33,7 +33,7 @@ class ScodecSerializer[T <: AnyRef](override val identifier: Int, codec: Codec[T
   }
 
   /** we don't rely on the manifest to provide backward compatibility, we will use dedicated codecs instead */
-  override def manifest(o: AnyRef): String = fr.acinq.eclair.getSimpleClassName(o)
+  override def manifest(o: AnyRef): String = o.getClass.getName
 
   override def toBinary(o: AnyRef): Array[Byte] = codec.encode(o.asInstanceOf[T]).require.toByteArray
 

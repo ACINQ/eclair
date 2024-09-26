@@ -389,7 +389,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   when(NORMAL)(handleExceptions {
     case Event(c: ForbiddenCommandDuringQuiescence, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescenceNegotiation] =>
-      val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getSimpleName)
+      val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getPrettySimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
         // Htlc settlement commands are ignored and will be replayed when not quiescent.
@@ -400,7 +400,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
-      val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
+      val error = ForbiddenDuringSplice(d.channelId, c.getClass.getPrettySimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
         // Htlc settlement commands are ignored and will be replayed when not quiescent.
@@ -411,8 +411,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
-      log.warning("received forbidden message {} during splicing with status {}", msg.getClass.getSimpleName, d.spliceStatus.getClass.getSimpleName)
-      val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
+      log.warning("received forbidden message {} during splicing with status {}", msg.getClass.getPrettySimpleName, d.spliceStatus.getClass.getPrettySimpleName)
+      val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getPrettySimpleName)
       // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
       msg match {
         case fulfill: UpdateFulfillHtlc => d.commitments.receiveFulfill(fulfill) match {
@@ -1050,7 +1050,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           txBuilder ! InteractiveTxBuilder.ReceiveMessage(msg)
           stay()
         case _ =>
-          log.info("ignoring unexpected interactive-tx message: {}", msg.getClass.getSimpleName)
+          log.info("ignoring unexpected interactive-tx message: {}", msg.getClass.getPrettySimpleName)
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
       }
 
@@ -1094,7 +1094,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               if (sessionId == currentSessionId) {
                 stay() sending msg
               } else {
-                log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getSimpleName)
+                log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getPrettySimpleName)
                 stay()
               }
             case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt) =>
@@ -1113,7 +1113,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           }
         case _ =>
           // This can happen if we received a tx_abort right before receiving the interactive-tx result.
-          log.warning("ignoring interactive-tx result with spliceStatus={}", d.spliceStatus.getClass.getSimpleName)
+          log.warning("ignoring interactive-tx result with spliceStatus={}", d.spliceStatus.getClass.getPrettySimpleName)
           stay()
       }
 
@@ -2625,7 +2625,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: ChannelException, channelUpdate: Option[ChannelUpdate]) = {
-    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getPrettySimpleName} in state=$stateName")
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))
@@ -2633,7 +2633,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleCommandError(cause: ChannelException, c: channel.Command) = {
-    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
+    log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getPrettySimpleName} in state=$stateName")
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
@@ -2828,7 +2828,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       log.warning("quiescence timed out with no ongoing splice, did we forget to cancel the timer?")
       stay()
     } else {
-      log.warning("quiescence timed out in state {}, closing connection", d.spliceStatus.getClass.getSimpleName)
+      log.warning("quiescence timed out in state {}, closing connection", d.spliceStatus.getClass.getPrettySimpleName)
       context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
       stay() sending Warning(d.channelId, SpliceAttemptTimedOut(d.channelId).getMessage)
     }
@@ -2869,7 +2869,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
 
   override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
-    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getSimpleName)) {
+    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getPrettySimpleName)) {
       super.aroundReceive(receive, msg)
     }
   }

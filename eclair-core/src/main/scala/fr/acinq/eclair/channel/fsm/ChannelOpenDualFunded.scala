@@ -431,7 +431,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
           goto(CLOSED) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case msg: InteractiveTxConstructionMessage =>
-          log.info("received unexpected interactive-tx message: {}", msg.getClass.getSimpleName)
+          log.info("received unexpected interactive-tx message: {}", msg.getClass.getPrettySimpleName)
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
         case _: TxInitRbf =>
           log.info("ignoring unexpected tx_init_rbf message")
@@ -631,7 +631,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           txBuilder ! InteractiveTxBuilder.ReceiveMessage(msg)
           stay()
         case _ =>
-          log.info("ignoring unexpected interactive-tx message: {}", msg.getClass.getSimpleName)
+          log.info("ignoring unexpected interactive-tx message: {}", msg.getClass.getPrettySimpleName)
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
       }
 
@@ -706,7 +706,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           }
         case _ =>
           // This can happen if we received a tx_abort right before receiving the interactive-tx result.
-          log.warning("ignoring interactive-tx result with rbfStatus={}", d.rbfStatus.getClass.getSimpleName)
+          log.warning("ignoring interactive-tx result with rbfStatus={}", d.rbfStatus.getClass.getPrettySimpleName)
           stay()
       }
 

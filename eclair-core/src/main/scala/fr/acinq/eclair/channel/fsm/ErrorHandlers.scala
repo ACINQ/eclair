@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxId}
-import fr.acinq.eclair.NotificationsLogger
+import fr.acinq.eclair.{NotificationsLogger, PrettySimpleClassName}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{RelativeDelay, WatchOutputSpent, WatchTxConfirmed}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -71,9 +71,9 @@ trait ErrorHandlers extends CommonHandlers {
         log.warning(s"force-closing channel at user request")
       case _ if msg.exists(_.isInstanceOf[OpenChannel]) || msg.exists(_.isInstanceOf[AcceptChannel]) =>
         // invalid remote channel parameters are logged as warning
-        log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+        log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getPrettySimpleName} in state=$stateName")
       case _: ChannelException =>
-        log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+        log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getPrettySimpleName} in state=$stateName")
       case _ =>
         // unhandled error: we dump the channel data, and print the stack trace
         log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData:")

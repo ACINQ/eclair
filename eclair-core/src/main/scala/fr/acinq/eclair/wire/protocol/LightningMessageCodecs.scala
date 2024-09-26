@@ -550,14 +550,14 @@ object LightningMessageCodecs {
     discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
-    (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),
+    (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getPrettySimpleName))(lightningMessageCodecWithFallback.encode(msg)),
     (bits: BitVector) => {
       // this is a bit more involved, because we don't know beforehand what the type of the message will be
       val begin = System.nanoTime()
       val res = lightningMessageCodecWithFallback.decode(bits)
       val end = System.nanoTime()
       val messageType = res match {
-        case Attempt.Successful(decoded) => decoded.value.getClass.getSimpleName
+        case Attempt.Successful(decoded) => decoded.value.getClass.getPrettySimpleName
         case Attempt.Failure(_) => "unknown"
       }
       Metrics.DecodeDuration.withTag(Tags.MessageType, messageType).record(end - begin)

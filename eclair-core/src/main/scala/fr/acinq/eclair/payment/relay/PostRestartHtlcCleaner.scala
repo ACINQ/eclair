@@ -163,7 +163,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         log.info("htlc #{} from channelId={} failed downstream but has a pending on-the-fly funding", htlc.id, htlc.channelId)
         // We don't fail upstream: we haven't been paid our funding fee yet, so we will try relaying again.
       } else {
-        log.info("htlc #{} from channelId={} failed downstream: {}", htlc.id, htlc.channelId, fail.getClass.getSimpleName)
+        log.info("htlc #{} from channelId={} failed downstream: {}", htlc.id, htlc.channelId, fail.getClass.getPrettySimpleName)
         handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
       }
 

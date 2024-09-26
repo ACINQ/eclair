@@ -28,7 +28,7 @@ import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, RoutingMessage}
-import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, PrettySimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -264,7 +264,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
       case Event(msg, d) =>
         d match {
           case n: NormalData[_] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
-          case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
+          case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getPrettySimpleName}")
         }
         stay()
     }
@@ -278,7 +278,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         stateData match {
           case normal: NormalData[_] =>
             // NB: we deduplicate on the class name: each class will appear once but there may be many instances (less verbose and gives debug hints)
-            log.info("stopping (unackedReceived={} unackedSent={})", normal.unackedReceived.keys.map(getSimpleClassName).toSet.mkString(","), normal.unackedSent.map(getSimpleClassName))
+            log.info("stopping (unackedReceived={} unackedSent={})", normal.unackedReceived.keys.map(_.getClass.getPrettySimpleName).toSet.mkString(","), normal.unackedSent.map(_.getClass.getPrettySimpleName))
           case _ =>
             log.info("stopping")
         }

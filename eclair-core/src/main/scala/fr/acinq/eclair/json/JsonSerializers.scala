@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, PrettySimpleClassName, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -395,7 +395,7 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
-  case t: Throwable => JString(t.getClass.getSimpleName)
+  case t: Throwable => JString(t.getClass.getPrettySimpleName)
 })
 
 object FailureMessageSerializer extends MinimalSerializer({
@@ -509,7 +509,7 @@ object ChannelEventSerializer extends MinimalSerializer({
   case e: ChannelClosed => JObject(
     JField("type", JString("channel-closed")),
     JField("channelId", JString(e.channelId.toHex)),
-    JField("closingType", JString(e.closingType.getClass.getSimpleName))
+    JField("closingType", JString(e.closingType.getClass.getPrettySimpleName))
   )
 })
 
@@ -578,7 +578,7 @@ object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStat
 // @formatter:on
 
 object TlvStreamSerializer extends ConvertClassSerializer[TlvStream[_]](tlvs =>
-  tlvs.records.map(tlv => tlv.getClass.getSimpleName -> tlv).toMap ++
+  tlvs.records.map(tlv => tlv.getClass.getPrettySimpleName -> tlv).toMap ++
     tlvs.unknown.map(unknown => ("Unknown" + unknown.tag.toString) -> unknown.value).toMap
 )
 

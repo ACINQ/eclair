@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.scalacompat.{BtcDouble, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.router.Router.GossipDecision
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{MilliSatoshi, getSimpleClassName}
+import fr.acinq.eclair.{MilliSatoshi, PrettySimpleClassName}
 import kamon.Kamon
 import kamon.metric.{Counter, MeasurementUnit}
 
@@ -64,7 +64,7 @@ object Monitoring {
 
     def gossipResult(decision: GossipDecision): Counter = decision match {
       case _: GossipDecision.Accepted => GossipResult.withTag("result", "accepted")
-      case rejected: GossipDecision.Rejected => GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(rejected))
+      case rejected: GossipDecision.Rejected => GossipResult.withTag("result", "rejected").withTag("reason", rejected.getClass.getPrettySimpleName)
     }
 
     private val RelayProbabilityEstimate = Kamon.histogram("router.balance-estimates.remote-edge-relay", "Estimated probability (in percent) that the relay will be successful")
