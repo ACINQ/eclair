@@ -667,7 +667,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
             val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
               log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", closingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
-              closingNonce = Some(keyManager.closingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
+              closingNonce = Some(keyManager.signingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
               TlvStream(ShutdownTlv.ShutdownNonce(closingNonce.get._2))
             } else {
               TlvStream.empty
@@ -700,7 +700,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case Right(localShutdownScript) =>
             val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
               log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", closingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
-              closingNonce = Some(keyManager.closingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
+              closingNonce = Some(keyManager.signingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
               TlvStream(ShutdownTlv.ShutdownNonce(closingNonce.get._2))
             } else {
               TlvStream.empty
@@ -759,7 +759,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               case None =>
                 val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
                   log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", closingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
-                  closingNonce = Some(keyManager.closingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
+                  closingNonce = Some(keyManager.signingNonce(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex))
                   TlvStream(ShutdownTlv.ShutdownNonce(closingNonce.get._2))
                 } else {
                   TlvStream.empty
