@@ -115,21 +115,23 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   /** Returns the feerates we'd like our peer to use when funding channels. */
   def recommendedFeerates(remoteNodeId: PublicKey, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+    // Independently of target and tolerance ratios, our transactions must be publishable in our local mempool
+    val minimumFeerate = currentBitcoinCoreFeerates.minimum
     val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
     val fundingFeerate = onChainFeeConf.getFundingFeerate(currentBitcoinCoreFeerates)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
-      min = fundingFeerate * feerateTolerance.ratioLow,
-      max = fundingFeerate * feerateTolerance.ratioHigh,
+      min = (fundingFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
+      max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
     val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
-      min = commitmentFeerate * feerateTolerance.ratioLow,
-      max = commitmentFormat match {
+      min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
+      max = (commitmentFormat match {
         case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
         case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
-      },
+      }).max(minimumFeerate),
     )
     RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
   }
