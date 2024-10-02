@@ -26,14 +26,14 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.Statement
 import javax.sql.DataSource
 
 object PgPeersDb {
   val DB_NAME = "peers"
-  val CURRENT_VERSION = 3
+  val CURRENT_VERSION = 4
 }
 
 class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logging {
@@ -54,19 +54,27 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
       statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
     }
 
+    def migration34(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+    }
+
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
-          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, storage BYTEA)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
-        case Some(v@(1 | 2)) =>
+          statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+        case Some(v@(1 | 2 | 3)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 2) {
             migration12(statement)
           }
           if (v < 3) {
             migration23(statement)
+          }
+          if (v < 4) {
+            migration34(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -95,6 +103,10 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
   override def removePeer(nodeId: Crypto.PublicKey): Unit = withMetrics("peers/remove", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("DELETE FROM local.peers WHERE node_id=?")) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.executeUpdate()
+      }
+      using(pg.prepareStatement("DELETE FROM local.peer_storage WHERE node_id = ?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeUpdate()
       }
@@ -152,6 +164,33 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
           .map(rs =>
             RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
           )
+      }
+    }
+  }
+
+  override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = withMetrics("peers/update-storage", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement(
+        """
+        INSERT INTO local.peer_storage (node_id, data)
+        VALUES (?, ?)
+        ON CONFLICT (node_id)
+        DO UPDATE SET data = EXCLUDED.data
+        """)) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.setBytes(2, data.toArray)
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def getStorage(nodeId: PublicKey): Option[ByteVector] = withMetrics("peers/get-storage", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT data FROM local.peer_storage WHERE node_id = ?")) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.executeQuery()
+          .headOption
+          .map(rs => ByteVector(rs.getBytes("data")))
       }
     }
   }

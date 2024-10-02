@@ -38,7 +38,7 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.{Tag, TestData}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
@@ -108,11 +108,14 @@ class PeerSpec extends FixtureSpec {
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()))(implicit system: ActorSystem): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), sendInit: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
-    switchboard.send(peer, Peer.Init(channels, Map.empty))
+    if (sendInit) {
+      switchboard.send(peer, Peer.Init(channels, Map.empty))
+    }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
+    peerStorage.foreach(data => peerConnection.expectMsg(PeerStorageRetrieval(data)))
     peerConnection.expectMsgType[RecommendedFeerates]
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
@@ -750,6 +753,27 @@ class PeerSpec extends FixtureSpec {
     peerConnection.send(peer, open)
     channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     channel.expectMsg(open)
+  }
+
+  test("peer storage") { f =>
+    import f._
+
+    val peerConnection1 = peerConnection
+    val peerConnection2 = TestProbe()
+    val peerConnection3 = TestProbe()
+
+    nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
+    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(ChannelCodecsSpec.normal), peerStorage = Some(hex"abcdef"))
+    peerConnection1.send(peer, PeerStorageStore(hex"c0ffee"))
+    peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
+    Thread.sleep(1000)
+    peer ! Peer.Disconnect(f.remoteNodeId)
+    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"0123456789"))
+    peerConnection2.send(peer, PeerStorageStore(hex"1111"))
+    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"1111"))
+    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"c0ffee")) // Only the first update was written because of the rate limit.
+    Thread.sleep(5_000)
+    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
   }
 
 }
