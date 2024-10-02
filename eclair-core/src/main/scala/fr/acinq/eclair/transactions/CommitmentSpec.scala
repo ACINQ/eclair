@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, SimpleTaprootChannelsStagingCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 
 /**
@@ -74,7 +74,7 @@ case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
-    case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat => FeeratePerKw(0 sat)
+    case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | SimpleTaprootChannelsStagingCommitmentFormat => FeeratePerKw(0 sat)
     case _ => commitTxFeerate
   }
 
