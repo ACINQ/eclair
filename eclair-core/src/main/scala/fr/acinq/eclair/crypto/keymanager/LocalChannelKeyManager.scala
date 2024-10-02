@@ -117,12 +117,6 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
   }
 
-  override def closingNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce) = {
-    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
-    val sessionId = randomBytes32()
-    Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
-  }
-
   /**
    * @param tx               input transaction
    * @param publicKey        extended public key
