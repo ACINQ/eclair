@@ -19,7 +19,7 @@ package fr.acinq.eclair.io
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.io.Peer.ChannelId
+import fr.acinq.eclair.io.Peer.{ChannelId, PeerStorage}
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, IPv4, NodeAddress, NodeAnnouncement}
@@ -37,8 +37,8 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   private val channels = Map(Peer.FinalChannelId(randomBytes32()) -> system.deadLetters)
 
   private val PeerNothingData = Peer.Nothing
-  private val PeerDisconnectedData = Peer.DisconnectedData(channels)
-  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
+  private val PeerDisconnectedData = Peer.DisconnectedData(channels, PeerStorage(None, written = true, TimestampMilli.min))
+  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) }, PeerStorage(None, written = true, TimestampMilli.min))
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 
@@ -81,7 +81,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty)))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, PeerStorage(None, written = true, TimestampMilli.min))))
     monitor.expectNoMessage()
   }
 

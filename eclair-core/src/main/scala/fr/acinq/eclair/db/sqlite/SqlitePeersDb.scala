@@ -26,13 +26,13 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.{Connection, Statement}
 
 object SqlitePeersDb {
   val DB_NAME = "peers"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
 }
 
 class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
@@ -46,13 +46,23 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
     }
 
+    def migration23(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
-      case Some(v@1) =>
+        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL)")
+      case Some(v@(1 | 2)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration12(statement)
+        if (v < 2) {
+          migration12(statement)
+        }
+        if (v < 3) {
+          migration23(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -126,6 +136,29 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
         .map(rs =>
           RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
         )
+    }
+  }
+
+  override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = withMetrics("peers/update-storage", DbBackends.Sqlite) {
+      using(sqlite.prepareStatement("UPDATE peer_storage SET data = ? WHERE node_id = ?")) { update =>
+        update.setBytes(1, data.toArray)
+        update.setBytes(2, nodeId.value.toArray)
+        if (update.executeUpdate() == 0) {
+          using(sqlite.prepareStatement("INSERT INTO peer_storage VALUES (?, ?)")) { statement =>
+            statement.setBytes(1, nodeId.value.toArray)
+            statement.setBytes(2, data.toArray)
+            statement.executeUpdate()
+          }
+        }
+    }
+  }
+
+  override def getStorage(nodeId: PublicKey): Option[ByteVector] = withMetrics("peers/get-storage", DbBackends.Sqlite) {
+      using(sqlite.prepareStatement("SELECT data FROM peer_storage WHERE node_id = ?")) { statement =>
+        statement.setBytes(1, nodeId.value.toArray)
+        statement.executeQuery()
+          .headOption
+          .map(rs => ByteVector(rs.getBytes("data")))
     }
   }
 }
