@@ -1,4 +1,4 @@
-FROM adoptopenjdk/openjdk11:jdk-11.0.3_7-alpine as BUILD
+FROM eclipse-temurin:17-alpine as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
@@ -41,8 +41,8 @@ COPY . .
 RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.commit.id.abbrev=notag -o
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
-# We currently use a debian image for runtime because of some jni-related issue with sqlite
-FROM openjdk:11.0.4-jre-slim
+# We currently use a ubuntu image for runtime because of some jni-related issue with sqlite
+FROM eclipse-temurin:17-jre-noble
 WORKDIR /app
 
 # install jq for eclair-cli

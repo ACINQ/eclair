@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot).
+- [OpenJDK 17](https://adoptium.net/temurin/releases/?version=17).
 - [Maven](https://maven.apache.org/download.cgi) 3.6.0 or newer
 
 ## Build

@@ -26,6 +26,11 @@ To enable CoinGrinder at all fee rates and prevent the automatic consolidation o
 consolidatefeerate=0
 ```
 
+### Upgrade build and runtime platform to JDK 17
+
+Eclair is now built with and targets JDK 17 and will no longer run on JDK11.
+
+
 ### Incoming obsolete channels will be rejected
 
 Eclair will not allow remote peers to open new `static_remote_key` channels. These channels are obsolete, node operators should use `option_anchors` channels now.
@@ -68,7 +73,7 @@ $ sha256sum -c SHA256SUMS.stripped
 Eclair builds are deterministic. To reproduce our builds, please use the following environment (*):
 
 - Ubuntu 22.04
-- AdoptOpenJDK 11.0.22
+- AdoptOpenJDK 17.0.12
 - Maven 3.9.2
 
 Use the following command to generate the eclair-node package:
@@ -79,7 +84,7 @@ mvn clean install -DskipTests
 
 That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
 
-(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 11, we have not tried everything.
+(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 17, we have not tried everything.
 
 ## Upgrading
 
