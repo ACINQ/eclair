@@ -108,9 +108,9 @@ package object eclair {
     // @formatter:on
   }
 
-  /**
-   * Apparently .getClass.getSimpleName can crash java 8 with a "Malformed class name" error
-   */
-  def getSimpleClassName(o: Any): String = o.getClass.getName.split("\\$").last
+  implicit class PrettySimpleClassName[T](private val o: Class[T]) extends AnyVal {
+    /** This removes trailing $ from `case object` class names */
+    def getPrettySimpleName: String = o.getSimpleName.replace("$", "")
+  }
 
 }

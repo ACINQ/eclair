@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.BitcoinError.ChainHashMismatch
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Script, TxHash, TxId, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Script, TxId, addressToPublicKeyScript}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -114,4 +114,22 @@ class PackageSpec extends AnyFunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
+  test("non-reg getPrettySimpleName") {
+    val testCases = Map(
+      Foo() -> "Foo",
+      Foo.Bar -> "Bar",
+      Foo.Baz(42) -> "Baz"
+    )
+
+    testCases.foreach { case (o, ref) => assert(o.getClass.getPrettySimpleName == ref) }
+  }
+
 }
+
+// @formatter:off
+case class Foo()
+object Foo {
+  case object Bar
+  case class Baz(i: Int)
+}
+// @formatter:on

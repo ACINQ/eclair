@@ -125,7 +125,7 @@ private class MessageRelay(nodeParams: NodeParams,
       case EncodedNodeId.WithPublicKey.Plain(nodeId) if nodeId == nodeParams.nodeId =>
         OnionMessages.process(nodeParams.privateKey, msg) match {
           case OnionMessages.DropMessage(reason) =>
-            Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getSimpleName).increment()
+            Metrics.OnionMessagesNotRelayed.withTag(Tags.Reason, reason.getClass.getPrettySimpleName).increment()
             replyTo_opt.foreach(_ ! DroppedMessage(messageId, reason))
             Behaviors.stopped
           case OnionMessages.SendMessage(nextNode, nextMessage) =>

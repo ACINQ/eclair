@@ -79,7 +79,7 @@ object Monitoring {
       val Funded = "funded"
       val RelaySucceeded = "relay-succeeded"
 
-      def relayFailed(failure: OnTheFlyFunding.PaymentRelayer.RelayFailure) = s"relay-failed-${failure.getClass.getSimpleName}"
+      def relayFailed(failure: OnTheFlyFunding.PaymentRelayer.RelayFailure) = s"relay-failed-${failure.getClass.getPrettySimpleName}"
     }
   }
 

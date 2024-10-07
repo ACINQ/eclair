@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, PrettySimpleClassName, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.sql.{Statement, Timestamp}
@@ -302,7 +302,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     inTransaction { pg =>
       using(pg.prepareStatement("INSERT INTO audit.channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         val (errorName, errorMessage) = e.error match {
-          case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
+          case LocalError(t) => (t.getClass.getPrettySimpleName, t.getMessage)
           case RemoteError(error) => ("remote", error.toAscii)
         }
         statement.setString(1, e.channelId.toHex)

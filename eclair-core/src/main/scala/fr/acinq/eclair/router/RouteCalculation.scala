@@ -231,7 +231,7 @@ object RouteCalculation {
             ctx.sender() ! Status.Failure(failure)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
-            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
+            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getPrettySimpleName)).increment()
             ctx.sender() ! Status.Failure(failure)
         }
       }

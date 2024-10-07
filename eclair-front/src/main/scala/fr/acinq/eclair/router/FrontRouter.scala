@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, RealShortChannelId, getSimpleClassName}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, PrettySimpleClassName, RealShortChannelId}
 import kamon.Kamon
 import kamon.metric.Counter
 
@@ -128,7 +128,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
                   d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> (d.rebroadcast.updates(u) + origin))))
                 case _ =>
                   Metrics.gossipForwarded(ann).increment()
-                  log.debug("sending announcement class={} to master router", ann.getClass.getSimpleName)
+                  log.debug("sending announcement class={} to master router", ann.getClass.getPrettySimpleName)
                   remoteRouter ! PeerRoutingMessage(self, remoteNodeId, ann) // nb: we set ourselves as the origin
                   d.copy(processing = d.processing + (ann -> Set(origin)))
               }
@@ -186,7 +186,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
       }
 
     case Event(msg: PeerRoutingMessage, _) =>
-      log.debug("forwarding peer routing message class={}", msg.message.getClass.getSimpleName)
+      log.debug("forwarding peer routing message class={}", msg.message.getClass.getPrettySimpleName)
       remoteRouter forward msg
       stay()
 
@@ -224,15 +224,15 @@ object FrontRouter {
     private val RouterEvent = Kamon.counter("front.router.event")
 
     // @formatter:off
-    def gossipDropped(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "dropped").withTag("type", getSimpleClassName(ann))
-    def gossipStashed(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "stashed").withTag("type", getSimpleClassName(ann))
-    def gossipStashedRebroadcast(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "stashed-rebroadcast").withTag("type", getSimpleClassName(ann))
-    def gossipForwarded(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "forwarded").withTag("type", getSimpleClassName(ann))
+    def gossipDropped(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "dropped").withTag("type", ann.getClass.getPrettySimpleName)
+    def gossipStashed(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "stashed").withTag("type", ann.getClass.getPrettySimpleName)
+    def gossipStashedRebroadcast(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "stashed-rebroadcast").withTag("type", ann.getClass.getPrettySimpleName)
+    def gossipForwarded(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "forwarded").withTag("type", ann.getClass.getPrettySimpleName)
 
-    def gossipAccepted(ann: AnnouncementMessage): Counter = GossipResult.withTag("result", "accepted").withTag("type", getSimpleClassName(ann))
-    def gossipRejected(ann: AnnouncementMessage, reason: GossipDecision.Rejected): Counter = GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(reason)).withTag("type", getSimpleClassName(ann))
+    def gossipAccepted(ann: AnnouncementMessage): Counter = GossipResult.withTag("result", "accepted").withTag("type", ann.getClass.getPrettySimpleName)
+    def gossipRejected(ann: AnnouncementMessage, reason: GossipDecision.Rejected): Counter = GossipResult.withTag("result", "rejected").withTag("reason", reason.getClass.getPrettySimpleName).withTag("type", ann.getClass.getPrettySimpleName)
 
-    def routerEvent(event: NetworkEvent): Counter = RouterEvent.withTag("type", getSimpleClassName(event))
+    def routerEvent(event: NetworkEvent): Counter = RouterEvent.withTag("type", event.getClass.getPrettySimpleName)
     // @formatter:on
   }
 

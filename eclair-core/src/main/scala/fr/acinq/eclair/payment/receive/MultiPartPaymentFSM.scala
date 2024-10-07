@@ -99,7 +99,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
           replyTo ! MultiPartPaymentSucceeded(paymentHash, parts)
           Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record((TimestampMilli.now() - start).toMillis, TimeUnit.MILLISECONDS)
         case d =>
-          log.error("unexpected payment success data {}", d.getClass.getSimpleName)
+          log.error("unexpected payment success data {}", d.getClass.getPrettySimpleName)
       }
     case _ -> PAYMENT_FAILED =>
       nextStateData match {
@@ -108,7 +108,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
           replyTo ! MultiPartPaymentFailed(paymentHash, failure, parts)
           Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record((TimestampMilli.now() - start).toMillis, TimeUnit.MILLISECONDS)
         case d =>
-          log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
+          log.error("unexpected payment failure data {}", d.getClass.getPrettySimpleName)
       }
   }
 

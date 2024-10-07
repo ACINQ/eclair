@@ -190,7 +190,7 @@ object OnTheFlyFunding {
     case object ExpiryTooClose extends RelayFailure { override def toString: String = "htlcs are too close to expiry to be relayed" }
     case class ChannelNotAvailable(state: ChannelState) extends RelayFailure { override def toString: String = s"channel is not ready for payments (state=${state.toString})" }
     case class CannotAddToChannel(t: Throwable) extends RelayFailure { override def toString: String = s"could not relay on-the-fly HTLC: ${t.getMessage}" }
-    case class RemoteFailure(failure: HtlcResult.Fail) extends RelayFailure { override def toString: String = s"relayed on-the-fly HTLC was failed: ${failure.getClass.getSimpleName}" }
+    case class RemoteFailure(failure: HtlcResult.Fail) extends RelayFailure { override def toString: String = s"relayed on-the-fly HTLC was failed: ${failure.getClass.getPrettySimpleName}" }
     // @formatter:on
 
     def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, channelId: ByteVector32, paymentHash: ByteVector32): Behavior[Command] =
