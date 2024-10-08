@@ -929,8 +929,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             log.info("rejecting splice request: channel not quiescent")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
           } else if (msg.feerate < nodeParams.currentBitcoinCoreFeerates.minimum) {
-            log.info("rejecting splice request: feerate too low")
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+            log.info("rejecting splice request: feerate too low ({} < {})", msg.feerate, nodeParams.currentBitcoinCoreFeerates.minimum)
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceFeerate(d.channelId, msg.feerate, nodeParams.currentBitcoinCoreFeerates.minimum).getMessage)
           } else {
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
