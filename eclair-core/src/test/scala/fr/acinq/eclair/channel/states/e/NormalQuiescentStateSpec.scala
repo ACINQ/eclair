@@ -45,7 +45,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding + ChannelStateTestsTags.Splicing + ChannelStateTestsTags.Quiescence
+    val tags = test.tags + ChannelStateTestsTags.DualFunding
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
