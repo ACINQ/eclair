@@ -5,9 +5,9 @@ FROM eclipse-temurin:17-jdk-noble as BUILD
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
 RUN apt update && apt install -y curl tar bash
 
-ARG MAVEN_VERSION=3.9.2
+ARG MAVEN_VERSION=3.9.9
 ARG USER_HOME_DIR="/root"
-ARG SHA=900bdeeeae550d2d2b3920fe0e00e41b0069f32c019d566465015bdd1b3866395cbe016e22d95d25d51d3a5e614af2c83ec9b282d73309f644859bbad08b63db
+ARG SHA=a555254d6b53d267965a3404ecb14e53c3827c09c3b94b5678835887ab404556bfaf78dcfe03ba76fa2508649dca8531c74bca4d5846513522404d48e8c4ac8b
 ARG BASE_URL=https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \

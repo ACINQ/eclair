@@ -28,7 +28,7 @@ consolidatefeerate=0
 
 ### Upgrade build and runtime platform to JDK 17
 
-Eclair is now built with and targets JDK 17 and will no longer run on JDK11.
+Support for many JDK11 distributions is ending or about to end. Eclair is now built with and targets JDK 17 and will no longer run on JDK11.
 
 
 ### Incoming obsolete channels will be rejected
@@ -74,7 +74,7 @@ Eclair builds are deterministic. To reproduce our builds, please use the followi
 
 - Ubuntu 22.04
 - AdoptOpenJDK 17.0.12
-- Maven 3.9.2
+- Maven 3.9.9
 
 Use the following command to generate the eclair-node package:
 
