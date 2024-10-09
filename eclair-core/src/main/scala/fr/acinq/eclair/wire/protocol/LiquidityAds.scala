@@ -239,7 +239,7 @@ object LiquidityAds {
 
   case class WillFundPurchase(willFund: WillFund, purchase: Purchase)
 
-  /** Minimal information about a liquidity purchase. */
+  /** Minimal information about a liquidity purchase, useful for example when RBF-ing transactions. */
   case class PurchaseBasicInfo(isBuyer: Boolean, amount: Satoshi, fees: Fees)
 
   object Codecs {

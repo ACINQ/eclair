@@ -636,10 +636,10 @@ private[channel] object ChannelCodecs4 {
       (waitingForSigsWithoutLiquidityPurchaseCodec, waitingForSigsCodec)
     }
 
-    val rbfStatusCodec: Codec[RbfStatus] = discriminated[RbfStatus].by(uint8)
-      .\(0x01) { case status: RbfStatus if !status.isInstanceOf[RbfStatus.RbfWaitingForSigs] => RbfStatus.NoRbf }(provide(RbfStatus.NoRbf))
-      .\(0x03) { case status: RbfStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[RbfStatus.RbfWaitingForSigs])
-      .\(0x02) { case status: RbfStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[RbfStatus.RbfWaitingForSigs])
+    val dualFundingStatusCodec: Codec[DualFundingStatus] = discriminated[DualFundingStatus].by(uint8)
+      .\(0x01) { case status: DualFundingStatus if !status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs] => DualFundingStatus.WaitingForConfirmations }(provide(DualFundingStatus.WaitingForConfirmations))
+      .\(0x03) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[DualFundingStatus.RbfWaitingForSigs])
+      .\(0x02) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[DualFundingStatus.RbfWaitingForSigs])
 
     val spliceStatusCodec: Codec[SpliceStatus] = discriminated[SpliceStatus].by(uint8)
       .\(0x01) { case status: SpliceStatus if !status.isInstanceOf[SpliceStatus.SpliceWaitingForSigs] => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
@@ -688,7 +688,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
-        ("rbfStatus" | rbfStatusCodec) ::
+        ("status" | dualFundingStatusCodec) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_0c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
@@ -697,7 +697,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("waitingSince" | blockHeight) ::
         ("lastChecked" | blockHeight) ::
-        ("rbfStatus" | rbfStatusCodec) ::
+        ("status" | dualFundingStatusCodec) ::
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec)))).as[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_03_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
