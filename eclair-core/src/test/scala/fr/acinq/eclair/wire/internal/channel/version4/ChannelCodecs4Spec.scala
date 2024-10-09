@@ -17,7 +17,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.channelDataCodec
-import fr.acinq.eclair.wire.protocol.TxSignatures
+import fr.acinq.eclair.wire.protocol.{LiquidityAds, TxSignatures}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -141,13 +141,15 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       fundingTxIndex = 0,
       PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomTxId(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomTxId(), randomKey().publicKey)
+      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomTxId(), randomKey().publicKey),
+      Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 100_000 sat, LiquidityAds.Fees(1000 sat, 500 sat))),
     )
     val testCases = Map(
       RbfStatus.NoRbf -> RbfStatus.NoRbf,
       RbfStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), fundingFeeBudget = 100_000.sat, 0, None)) -> RbfStatus.NoRbf,
       RbfStatus.RbfInProgress(None, null, None) -> RbfStatus.NoRbf,
       RbfStatus.RbfWaitingForSigs(waitingForSigs) -> RbfStatus.RbfWaitingForSigs(waitingForSigs),
+      RbfStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)) -> RbfStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)),
       RbfStatus.RbfAborted -> RbfStatus.NoRbf,
     )
     testCases.foreach { case (status, expected) =>
@@ -184,8 +186,14 @@ class ChannelCodecs4Spec extends AnyFunSuite {
         )),
         remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
         localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)),
+      liquidityPurchase_opt = None
     )
     assert(decoded == dualFundedUnconfirmedFundingTx)
+
+    val dualFundedUnconfirmedFundingTx1 = dualFundedUnconfirmedFundingTx.copy(
+      liquidityPurchase_opt = Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 250_000 sat, LiquidityAds.Fees(1500 sat, 700 sat)))
+    )
+    assert(fundingTxStatusCodec.decode(fundingTxStatusCodec.encode(dualFundedUnconfirmedFundingTx1).require).require.value == dualFundedUnconfirmedFundingTx1)
   }
 
   test("decode local params pay commit tx fees field") {
