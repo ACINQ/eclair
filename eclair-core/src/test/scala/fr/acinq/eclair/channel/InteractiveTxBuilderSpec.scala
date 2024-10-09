@@ -1829,7 +1829,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       fwdSplice.forwardBob2Alice[TxComplete]
 
       val successA2 = alice2bob.expectMsgType[Succeeded]
+      assert(successA2.signingSession.liquidityPurchase_opt.contains(purchase.basicInfo(isBuyer = true)))
       val successB2 = bob2alice.expectMsgType[Succeeded]
+      assert(successB2.signingSession.liquidityPurchase_opt.contains(purchase.basicInfo(isBuyer = false)))
       val (spliceTxA1, commitmentA2, _, commitmentB2) = fixtureParams.exchangeSigsBobFirst(fundingParamsB1, successA2, successB2)
       assert(commitmentA2.localCommit.spec.toLocal == commitmentA1.localCommit.spec.toLocal - spliceFeeA - purchase.fees.total)
       assert(commitmentB2.localCommit.spec.toLocal == commitmentB1.localCommit.spec.toLocal + fundingB + purchase.fees.total)

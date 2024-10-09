@@ -439,6 +439,8 @@ sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]
   /** We store local signatures for the purpose of retransmitting if the funding/splicing flow is interrupted. */
   def localSigs_opt: Option[TxSignatures]
+  /** Basic information about the liquidity purchase negotiated in this transaction, if any. */
+  def liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]
 }
 object LocalFundingStatus {
   sealed trait NotLocked extends LocalFundingStatus
@@ -453,15 +455,16 @@ object LocalFundingStatus {
    */
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx with NotLocked {
     override val localSigs_opt: Option[TxSignatures] = None
+    override val liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo] = None
   }
-  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams) extends UnconfirmedFundingTx with NotLocked {
+  case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with NotLocked {
     override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
     override val localSigs_opt: Option[TxSignatures] = Some(sharedTx.localSigs)
   }
-  case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures]) extends UnconfirmedFundingTx with Locked {
+  case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
