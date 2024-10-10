@@ -529,8 +529,8 @@ class Peer(val nodeParams: NodeParams,
     case Event(r: GetPeerInfo, d) =>
       val replyTo = r.replyTo.getOrElse(sender().toTyped)
       val peerInfo = d match {
-        case c: ConnectedData => PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
-        case _ => PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+        case c: ConnectedData => PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), c.remoteInit.fundingRates_opt, Some(c.address), c.channels.values.toSet)
+        case _ => PeerInfo(self, remoteNodeId, stateName, None, None, None, d.channels.values.toSet)
       }
       replyTo ! peerInfo
       stay()
@@ -963,7 +963,7 @@ object Peer {
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse { def nodeId: PublicKey }
-  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, features: Option[Features[InitFeature]], address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, features: Option[Features[InitFeature]], fundingRates_opt: Option[LiquidityAds.WillFundRates], address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
 
   /** Return the peer's current channels: note that the data may change concurrently, never assume it is fully up-to-date. */
