@@ -51,8 +51,8 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: BlockHash } // <- not in the spec
 sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
-sealed trait ForbiddenMessageDuringSplice extends LightningMessage // <- not in the spec
-sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageDuringSplice // <- not in the spec
+sealed trait ForbiddenMessageWhenQuiescent extends LightningMessage // <- not in the spec
+sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageWhenQuiescent // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the spec
 // @formatter:on
@@ -93,11 +93,16 @@ case class TxAddInput(channelId: ByteVector32,
                       sequence: Long,
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId {
   val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput))
+    .orElse(tlvStream.get[TxAddInputTlv.ExperimentalSharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)))
 }
 
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
-    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+    val tlvs = Set[TxAddInputTlv](
+      TxAddInputTlv.SharedInputTxId(sharedInput.txid),
+      TxAddInputTlv.ExperimentalSharedInputTxId(sharedInput.txid),
+    )
+    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(tlvs))
   }
 }
 
@@ -123,11 +128,16 @@ case class TxSignatures(channelId: ByteVector32,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig)
+    .orElse(tlvStream.get[TxSignaturesTlv.ExperimentalPreviousFundingTxSig].map(_.sig))
 }
 
 object TxSignatures {
   def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ByteVector64]): TxSignatures = {
-    TxSignatures(channelId, tx.txid, witnesses, TlvStream(previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig).toSet[TxSignaturesTlv]))
+    val tlvs = Set(
+      previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig),
+      previousFundingSig_opt.map(TxSignaturesTlv.ExperimentalPreviousFundingTxSig),
+    ).flatten[TxSignaturesTlv]
+    TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
 
@@ -323,6 +333,19 @@ object SpliceInit {
   }
 }
 
+case class ExperimentalSpliceInit(channelId: ByteVector32,
+                                  fundingContribution: Satoshi,
+                                  feerate: FeeratePerKw,
+                                  lockTime: Long,
+                                  fundingPubKey: PublicKey,
+                                  tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceInit(): SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceInit {
+  def from(msg: SpliceInit): ExperimentalSpliceInit = ExperimentalSpliceInit(msg.channelId, msg.fundingContribution, msg.feerate, msg.lockTime, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceAck(channelId: ByteVector32,
                      fundingContribution: Satoshi,
                      fundingPubKey: PublicKey,
@@ -344,14 +367,35 @@ object SpliceAck {
   }
 }
 
+case class ExperimentalSpliceAck(channelId: ByteVector32,
+                                 fundingContribution: Satoshi,
+                                 fundingPubKey: PublicKey,
+                                 tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceAck(): SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceAck {
+  def from(msg: SpliceAck): ExperimentalSpliceAck = ExperimentalSpliceAck(msg.channelId, msg.fundingContribution, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceLocked(channelId: ByteVector32,
                         fundingTxId: TxId,
                         tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
 }
 
+case class ExperimentalSpliceLocked(channelId: ByteVector32,
+                                    fundingTxId: TxId,
+                                    tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceLocked(): SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
+}
+
+object ExperimentalSpliceLocked {
+  def from(msg: SpliceLocked): ExperimentalSpliceLocked = ExperimentalSpliceLocked(msg.channelId, msg.fundingTxId, msg.tlvStream)
+}
+
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
-                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageWhenQuiescent
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
@@ -415,7 +459,8 @@ case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
-  val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
+  val fundingTxId_opt: Option[TxId] = tlvStream.get[CommitSigTlv.BatchTlv].map(_.fundingTxId)
+  val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).orElse(tlvStream.get[CommitSigTlv.ExperimentalBatchTlv].map(_.size)).getOrElse(1)
 }
 
 case class RevokeAndAck(channelId: ByteVector32,

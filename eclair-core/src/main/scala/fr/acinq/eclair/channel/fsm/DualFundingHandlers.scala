@@ -137,10 +137,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     rollbackFundingAttempt(signingSession.fundingTx.tx, d.allFundingTxs.map(_.sharedTx))
   }
 
-  def reportRbfFailure(rbfStatus: RbfStatus, f: Throwable): Unit = {
-    rbfStatus match {
-      case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
-      case RbfStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
+  def reportRbfFailure(fundingStatus: DualFundingStatus, f: Throwable): Unit = {
+    fundingStatus match {
+      case DualFundingStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
+      case DualFundingStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
       case _ => ()
