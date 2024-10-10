@@ -1,13 +1,13 @@
-FROM adoptopenjdk/openjdk11:jdk-11.0.3_7-alpine as BUILD
+FROM eclipse-temurin:17-alpine as BUILD
 
 # Setup maven, we don't use https://hub.docker.com/_/maven/ as it declare .m2 as volume, we loose all mvn cache
 # We can alternatively do as proposed by https://github.com/carlossg/docker-maven#packaging-a-local-repository-with-the-image
 # this was meant to make the image smaller, but we use multi-stage build so we don't care
 RUN apk add --no-cache curl tar bash
 
-ARG MAVEN_VERSION=3.9.2
+ARG MAVEN_VERSION=3.9.9
 ARG USER_HOME_DIR="/root"
-ARG SHA=900bdeeeae550d2d2b3920fe0e00e41b0069f32c019d566465015bdd1b3866395cbe016e22d95d25d51d3a5e614af2c83ec9b282d73309f644859bbad08b63db
+ARG SHA=a555254d6b53d267965a3404ecb14e53c3827c09c3b94b5678835887ab404556bfaf78dcfe03ba76fa2508649dca8531c74bca4d5846513522404d48e8c4ac8b
 ARG BASE_URL=https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref \
@@ -41,8 +41,8 @@ COPY . .
 RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.commit.id.abbrev=notag -o
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
-# We currently use a debian image for runtime because of some jni-related issue with sqlite
-FROM openjdk:11.0.4-jre-slim
+# We currently use a ubuntu image for runtime because of some jni-related issue with sqlite
+FROM eclipse-temurin:17-jre-noble
 WORKDIR /app
 
 # install jq for eclair-cli
