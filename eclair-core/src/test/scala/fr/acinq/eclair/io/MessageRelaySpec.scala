@@ -112,7 +112,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val request = switchboard.expectMsgType[GetPeerInfo]
     assert(request.remoteNodeId == bobId)
-    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, None, Set.empty)
+    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, None, None, Set.empty)
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }
 
@@ -148,7 +148,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val getPeerInfo = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo.remoteNodeId == previousNodeId)
-    getPeerInfo.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, None, Set.empty)
+    getPeerInfo.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, None, None, Set.empty)
 
     probe.expectMessage(AgainstPolicy(messageId, RelayChannelsOnly))
     peer.expectNoMessage(100 millis)
@@ -164,7 +164,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId == previousNodeId)
-    getPeerInfo1.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, None, Set(TestProbe()(system.classicSystem).ref))
+    getPeerInfo1.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, None, None, Set(TestProbe()(system.classicSystem).ref))
 
     val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo2.remoteNodeId == bobId)
@@ -184,11 +184,11 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId == previousNodeId)
-    getPeerInfo1.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, None, Set(TestProbe()(system.classicSystem).ref))
+    getPeerInfo1.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, None, None, Set(TestProbe()(system.classicSystem).ref))
 
     val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo2.remoteNodeId == bobId)
-    getPeerInfo2.replyTo ! PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, None, Set(0, 1).map(_ => TestProbe()(system.classicSystem).ref))
+    getPeerInfo2.replyTo ! PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, None, None, Set(0, 1).map(_ => TestProbe()(system.classicSystem).ref))
 
     assert(peer.expectMessageType[Peer.RelayOnionMessage].msg == message)
   }

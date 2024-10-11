@@ -661,16 +661,16 @@ class Peer(val nodeParams: NodeParams,
       val replyTo = r.replyTo.getOrElse(sender().toTyped)
       d match {
         case c: ConnectedData =>
-          replyTo ! PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), c.remoteInit.fundingRates_opt, Some(c.address), c.channels.values.toSet)
           stay()
         case d: DisconnectedData =>
           // If we haven't reconnected since our last restart, we fetch the latest remote features from our DB.
           val remoteFeatures_opt = d.remoteFeatures_opt
             .orElse(nodeParams.db.peers.getPeer(remoteNodeId).map(nodeInfo => LastRemoteFeatures(nodeInfo.features, written = true)))
-          replyTo ! PeerInfo(self, remoteNodeId, stateName, remoteFeatures_opt.map(_.features), None, d.channels.values.toSet)
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, remoteFeatures_opt.map(_.features), None, None, d.channels.values.toSet)
           stay() using d.copy(remoteFeatures_opt = remoteFeatures_opt)
         case _ =>
-          replyTo ! PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, None, None, None, d.channels.values.toSet)
           stay()
       }
 
@@ -1138,7 +1138,7 @@ object Peer {
 
   case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse { def nodeId: PublicKey }
-  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, features: Option[Features[InitFeature]], address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, features: Option[Features[InitFeature]], fundingRates_opt: Option[LiquidityAds.WillFundRates], address: Option[NodeAddress], channels: Set[ActorRef]) extends PeerInfoResponse
   case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse with DisconnectResponse { override def toString: String = s"peer $nodeId not found" }
 
   /** Return the peer's current channels: note that the data may change concurrently, never assume it is fully up-to-date. */

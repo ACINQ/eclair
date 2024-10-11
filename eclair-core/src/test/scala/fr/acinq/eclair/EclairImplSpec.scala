@@ -25,12 +25,13 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong, TxId}
 import fr.acinq.eclair.ApiTypes.{ChannelIdentifier, ChannelNotFound}
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannel
+import fr.acinq.eclair.io.{Peer, Switchboard}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, RelayFees}
@@ -102,12 +103,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeerate_opt = Some(FeeratePerByte(5 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeerate_opt = Some(FeeratePerByte(5 sat)), fundingFeeBudget_opt = None, requestFunding_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeerate_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeerate_opt = Some(FeeratePerByte(1 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeerate_opt = Some(FeeratePerByte(1 sat)), fundingFeeBudget_opt = None, requestFunding_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeerate_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
     assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
@@ -253,16 +254,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     // option_scid_alias is not compatible with public channels
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     assert(sender.expectMsgType[Status.Failure].cause.getMessage.contains("option_scid_alias is not compatible with public channels"))
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)), None, None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, None, announceChannel_opt = Some(true), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
 
-    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
+    eclair.open(randomKey().publicKey, 123456 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true)), None, None, None, announceChannel_opt = Some(false), None).pipeTo(sender.ref)
     switchboard.expectMsgType[Peer.OpenChannel]
   }
 
@@ -343,7 +344,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
     val route = PredefinedNodeRoute(1000 msat, Seq(randomKey().publicKey))
     val parentId = UUID.randomUUID()
-    val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route)
     val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
@@ -630,6 +630,32 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(pendingPayment3.head.paymentHash == failedPayment.paymentHash)
     assert(pendingPayment3.head.status == OutgoingPaymentStatus.Pending)
     assert(pendingPayment3.last == failedPayment)
+  }
+
+  test("splice channels") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val nodeId = randomKey().publicKey
+    val channelId = randomBytes32()
+    eclair.spliceIn(channelId, 0 sat, requestFunding_opt = Some(250_000 sat), pushAmount_opt = None, channelType_opt = None).pipeTo(sender.ref)
+
+    val channelInfoRequest = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
+    assert(channelInfoRequest.channelId == channelId)
+    channelInfoRequest.message.replyTo ! RES_GET_CHANNEL_INFO(nodeId, channelId, null, null, null)
+
+    val peerInfoRequest = switchboard.expectMsgType[Switchboard.GetPeerInfo]
+    assert(peerInfoRequest.remoteNodeId == nodeId)
+    peerInfoRequest.replyTo ! Peer.PeerInfo(null, nodeId, null, None, Some(TestConstants.defaultLiquidityRates), None, Set.empty)
+
+    val spliceRequest = register.expectMsgType[Register.Forward[CMD_SPLICE]]
+    assert(spliceRequest.channelId == channelId)
+    assert(spliceRequest.message.requestFunding_opt.map(_.requestedAmount).contains(250_000 sat))
+    val spliceResult = RES_SPLICE(1, randomTxId(), 750_000 sat, 200_000_000 msat)
+    spliceRequest.message.replyTo ! spliceResult
+    sender.expectMsg(spliceResult)
+    register.expectNoMessage()
   }
 
   test("close channels") { f =>
