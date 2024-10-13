@@ -225,6 +225,7 @@ object LiquidityAds {
     def amount: Satoshi
     def fees: Fees
     def paymentDetails: PaymentDetails
+    def basicInfo(isBuyer: Boolean): PurchaseBasicInfo = PurchaseBasicInfo(isBuyer, amount, fees)
     // @formatter:on
   }
 
@@ -237,6 +238,9 @@ object LiquidityAds {
   }
 
   case class WillFundPurchase(willFund: WillFund, purchase: Purchase)
+
+  /** Minimal information about a liquidity purchase. */
+  case class PurchaseBasicInfo(isBuyer: Boolean, amount: Satoshi, fees: Fees)
 
   object Codecs {
     val fundingRate: Codec[FundingRate] = (

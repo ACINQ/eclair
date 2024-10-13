@@ -82,7 +82,7 @@ trait CommonFundingHandlers extends CommonHandlers {
         }
       case _ => () // in the dual-funding case, we have already verified the funding tx
     }
-    val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
+    val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
     // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
