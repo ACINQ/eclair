@@ -283,7 +283,7 @@ java_version_check() {
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
+    echo Please go to 'https://adoptium.net/temurin/releases/?package=jdk&version=21' and download
     echo
     exit 1
   else
@@ -296,7 +296,7 @@ java_version_check() {
       echo The java installation you have is not up to date, eclair-node requires
       echo at least version 1.8+ \(version 11 recommended\) but you have version $java_version
       echo
-      echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
+      echo Please go to 'https://adoptium.net/temurin/releases/?package=jdk&version=21' and download
       echo a valid Java Runtime and install before running eclair-node.
       echo
       exit 1
