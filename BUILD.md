@@ -14,13 +14,13 @@ that we release, you must use the build environment (OS, JDK, maven...) that we 
 To build the project and run the tests, simply run:
 
 ```shell
-mvn package
+./mvnw package
 ```
 
 Notes:
 
 - This command will build all modules (core, node, gui).
-- If the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
+- If the build fails, you may need to clean previously built artifacts with the `./mvnw clean` command.
 - Archives can be found in the `target` folder for each module.
 
 ### Skip tests
@@ -28,7 +28,7 @@ Notes:
 Running tests takes time. If you want to skip them, use `-DskipTests`:
 
 ```shell
-mvn package -DskipTests
+./mvnw package -DskipTests
 ```
 
 ### Run tests
@@ -36,25 +36,25 @@ mvn package -DskipTests
 To only run the tests, run:
 
 ```shell
-mvn test
+./mvnw test
 ```
 
 To run tests for a specific class, run:
 
 ```shell
-mvn test -Dsuites=*<TestClassName>
+./mvnw test -Dsuites=*<TestClassName>
 ```
 
 To run tests using a specific number of threads, run:
 
 ```shell
-mvn -T <thread_count> test
+./mvnw -T <thread_count> test
 ```
 
 To run tests with a specific version of `bitcoind`, run:
 
 ```shell
-BITCOIND_DIR=<absolute/path/to/directory> mvn test
+BITCOIND_DIR=<absolute/path/to/directory> ./mvnw test
 ```
 
 ### Build specific module
@@ -62,13 +62,13 @@ BITCOIND_DIR=<absolute/path/to/directory> mvn test
 To only build the `eclair-node` module, run:
 
 ```shell
-mvn package -pl eclair-node -am -Dmaven.test.skip=true
+./mvnw package -pl eclair-node -am -Dmaven.test.skip=true
 ```
 
 To install `eclair-core` into your local maven repository and use it in another project, run:
 
 ```shell
-mvn clean install -pl eclair-core -am -Dmaven.test.skip=true
+./mvnw clean install -pl eclair-core -am -Dmaven.test.skip=true
 ```
 
 ## Build the API documentation

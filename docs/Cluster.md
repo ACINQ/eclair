@@ -146,7 +146,7 @@ $ git clone git@github.com:ACINQ/eclair.git
 $ vi eclair-core/src/main/reference.conf # set akka.remote.artery.transport = "tls-tcp"
 $ cp akka-cluster-tls.jks eclair-front/modules/awseb/ # copy the file you generated
 $ vi eclair-front/modules/awseb.xml # uncomment the relevant parts
-$ mvn package -DskipTests
+$ ./mvnw package -DskipTests
 ```
 Alternatively, you can also edit the existing bundle and manually add the `akka-cluster-tls.jks` file to the root of the zip archive. You will also need to set `akka.remote.artery.transport=tls-tcp` at runtime. 
 
