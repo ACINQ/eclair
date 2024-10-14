@@ -121,7 +121,7 @@
             <groupId>io.kamon</groupId>
             <artifactId>kanela-agent</artifactId>
             <!-- if you change this make sure to also update the lib version in eclair-front.sh and eclair-node.sh -->
-            <version>1.0.17</version>
+            <version>${kanela-agent.version}</version>
         </dependency>
         <!-- tests -->
         <dependency>

@@ -74,7 +74,8 @@
         <sttp.version>3.8.16</sttp.version>
         <bitcoinlib.version>0.35</bitcoinlib.version>
         <guava.version>32.1.1-jre</guava.version>
-        <kamon.version>2.7.3</kamon.version>
+        <kamon.version>2.7.4</kamon.version>
+        <kanela-agent.version>1.0.18</kanela-agent.version>
     </properties>
 
     <build>
