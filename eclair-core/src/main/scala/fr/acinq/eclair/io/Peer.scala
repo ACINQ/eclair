@@ -44,7 +44,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
-import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, RoutingMessage, SpliceInit, TlvStream, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -199,12 +199,16 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
-          case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
-            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
-            stay()
-          case None =>
+          case None if !Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
             log.info("rejecting open_channel2: dual funding is not supported")
             self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
+            stay()
+          case None if open.usesOnTheFlyFunding && !d.fundingFeerateOk(open.fundingFeerate) =>
+            log.info("rejecting open_channel2: feerate too low ({} < {})", open.fundingFeerate, d.currentFeerates.fundingFeerate)
+            self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, FundingFeerateTooLow(open.temporaryChannelId, open.fundingFeerate, d.currentFeerates.fundingFeerate).getMessage), d.peerConnection)
+            stay()
+          case None =>
+            openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Right(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
           case Some(_) =>
             log.warning("ignoring open_channel2 with duplicate temporaryChannelId={}", open.temporaryChannelId)
@@ -379,6 +383,9 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(msg: SpliceInit, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
+          case Some(_) if msg.usesOnTheFlyFunding && !d.fundingFeerateOk(msg.feerate) =>
+            log.info("rejecting open_channel2: feerate too low ({} < {})", msg.feerate, d.currentFeerates.fundingFeerate)
+            self ! Peer.OutgoingMessage(TxAbort(msg.channelId, FundingFeerateTooLow(msg.channelId, msg.feerate, d.currentFeerates.fundingFeerate).getMessage), d.peerConnection)
           case Some(channel) =>
             OnTheFlyFunding.validateSplice(msg, nodeParams.channelConf.htlcMinimum, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
               case reject: OnTheFlyFunding.ValidationResult.Reject =>
@@ -546,9 +553,18 @@ class Peer(val nodeParams: NodeParams,
 
     case Event(_: CurrentFeerates, d) =>
       d match {
-        case d: ConnectedData => d.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, d.localFeatures, d.remoteFeatures)
-        case _ => ()
+        case d: ConnectedData =>
+          val feerates = nodeParams.recommendedFeerates(remoteNodeId, d.localFeatures, d.remoteFeatures)
+          d.peerConnection ! feerates
+          // We keep our previous recommended feerate: if our peer is concurrently sending a message based on the
+          // previous feerates, we should accept it.
+          stay() using d.copy(currentFeerates = feerates, previousFeerates_opt = Some(d.currentFeerates))
+        case _ =>
+          stay()
       }
+
+    case Event(msg: RecommendedFeerates, _) =>
+      log.info("our peer recommends the following feerates: funding={}, commitment={}", msg.fundingFeerate, msg.commitmentFeerate)
       stay()
 
     case Event(current: CurrentBlockHeight, d) =>
@@ -730,7 +746,8 @@ class Peer(val nodeParams: NodeParams,
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
 
     // We tell our peer what our current feerates are.
-    connectionReady.peerConnection ! nodeParams.recommendedFeerates(remoteNodeId, connectionReady.localInit.features, connectionReady.remoteInit.features)
+    val feerates = nodeParams.recommendedFeerates(remoteNodeId, connectionReady.localInit.features, connectionReady.remoteInit.features)
+    connectionReady.peerConnection ! feerates
 
     if (Features.canUseFeature(connectionReady.localInit.features, connectionReady.remoteInit.features, Features.FundingFeeCredit)) {
       if (feeCredit.isEmpty) {
@@ -742,7 +759,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, feerates, None)
   }
 
   /**
@@ -882,10 +899,12 @@ object Peer {
   }
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef]) extends Data {
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates]) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
+    /** Returns true if the proposed feerate matches one of our recent feerate recommendations. */
+    def fundingFeerateOk(proposedFeerate: FeeratePerKw): Boolean = currentFeerates.fundingFeerate <= proposedFeerate || previousFeerates_opt.exists(_.fundingFeerate <= proposedFeerate)
   }
 
   sealed trait State

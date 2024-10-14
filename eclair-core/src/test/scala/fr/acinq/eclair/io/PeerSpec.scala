@@ -348,6 +348,59 @@ class PeerSpec extends FixtureSpec {
     ))
   }
 
+  test("reject funding requests if funding feerate is too low for on-the-fly funding", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    val requestFunds = LiquidityAds.RequestFunding(50_000 sat, LiquidityAds.FundingRate(10_000 sat, 100_000 sat, 0, 0, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromFutureHtlc(randomBytes32() :: Nil))
+    val open = {
+      val open = createOpenDualFundedChannelMessage()
+      open.copy(fundingFeerate = FeeratePerKw(5000 sat), tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunds)))
+    }
+
+    // Our current and previous feerates are higher than what will be proposed.
+    Seq(FeeratePerKw(7500 sat), FeeratePerKw(6000 sat)).foreach(feerate => {
+      val feerates = FeeratesPerKw.single(feerate)
+      nodeParams.setBitcoinCoreFeerates(feerates)
+      peer ! CurrentFeerates.BitcoinCore(feerates)
+      assert(peerConnection.expectMsgType[RecommendedFeerates].fundingFeerate == feerate)
+    })
+
+    // The channel request is rejected.
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, FundingFeerateTooLow(open.temporaryChannelId, FeeratePerKw(5000 sat), FeeratePerKw(6000 sat)).getMessage))
+
+    // Our latest feerate matches the channel request.
+    val feerates3 = FeeratesPerKw.single(FeeratePerKw(5000 sat))
+    nodeParams.setBitcoinCoreFeerates(feerates3)
+    peer ! CurrentFeerates.BitcoinCore(feerates3)
+    assert(peerConnection.expectMsgType[RecommendedFeerates].fundingFeerate == FeeratePerKw(5000 sat))
+
+    // The channel request is accepted.
+    peerConnection.send(peer, open)
+    channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
+    channel.expectMsg(open)
+
+    val channelId = randomBytes32()
+    peer ! ChannelIdAssigned(channel.ref, remoteNodeId, open.temporaryChannelId, channelId)
+    peerConnection.expectMsgType[PeerConnection.DoSync]
+
+    // The feerate of the splice request is lower than our last two feerates.
+    val splice = SpliceInit(channelId, 100_000 sat, FeeratePerKw(4500 sat), 0, randomKey().publicKey, TlvStream(ChannelTlv.RequestFundingTlv(requestFunds)))
+    peerConnection.send(peer, splice)
+    peerConnection.expectMsg(TxAbort(channelId, FundingFeerateTooLow(channelId, FeeratePerKw(4500 sat), FeeratePerKw(5000 sat)).getMessage))
+
+    // Our latest feerate matches the splice request.
+    val feerates4 = FeeratesPerKw.single(FeeratePerKw(4000 sat))
+    nodeParams.setBitcoinCoreFeerates(feerates4)
+    peer ! CurrentFeerates.BitcoinCore(feerates4)
+    assert(peerConnection.expectMsgType[RecommendedFeerates].fundingFeerate == FeeratePerKw(4000 sat))
+
+    // The splice is accepted.
+    peerConnection.send(peer, splice)
+    channel.expectMsg(splice)
+  }
+
   test("don't spawn a channel with duplicate temporary channel id", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 

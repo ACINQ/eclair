@@ -37,6 +37,7 @@ class ChannelException(val channelId: ByteVector32, message: String) extends Run
 
 // @formatter:off
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: BlockHash, remote: BlockHash) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
+case class FundingFeerateTooLow                    (override val channelId: ByteVector32, proposed: FeeratePerKw, expected: FeeratePerKw) extends ChannelException(channelId, s"funding feerate is too low: expected at least $expected, but $proposed was proposed")
 case class FundingAmountTooLow                     (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (min=$min)")
 case class FundingAmountTooHigh                    (override val channelId: ByteVector32, fundingAmount: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (max=$max)")
 case class InvalidFundingBalances                  (override val channelId: ByteVector32, fundingAmount: Satoshi, localBalance: MilliSatoshi, remoteBalance: MilliSatoshi) extends ChannelException(channelId, s"invalid balances funding_amount=$fundingAmount local=$localBalance remote=$remoteBalance")
