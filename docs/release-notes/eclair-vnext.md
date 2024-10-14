@@ -52,7 +52,7 @@ Eclair builds are deterministic. To reproduce our builds, please use the followi
 Use the following command to generate the eclair-node package:
 
 ```sh
-mvn clean install -DskipTests
+./mvnw clean install -DskipTests
 ```
 
 That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`

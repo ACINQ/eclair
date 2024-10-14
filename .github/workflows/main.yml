@@ -34,7 +34,7 @@ jobs:
     # NB: we exclude external API tests from the CI, because we don't want our build to fail because a dependency is failing.
     # This means we won't automatically catch changes in external APIs, but developers should regularly run the test suite locally so in practice it shouldn't be a problem.
     - name: Build with Maven
-      run: mvn test-compile && mvn scoverage:report -DtagsToExclude=external-api
+      run: ./mvnw test-compile && ./mvnw scoverage:report -DtagsToExclude=external-api
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
