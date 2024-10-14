@@ -69,6 +69,8 @@ case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTl
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
 // @formatter:on
 
+case class EnableFromFutureHtlcResponse(enabled: Boolean, failureMessage: Option[String])
+
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
     Crypto.hash256(ByteVector("Lightning Signed Message:".getBytes(StandardCharsets.UTF_8)) ++ message)
@@ -185,6 +187,8 @@ trait Eclair {
   def getOnChainMasterPubKey(account: Long): String
 
   def getDescriptors(account: Long): Descriptors
+
+  def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
 
   def stop(): Future[Unit]
 }
@@ -779,6 +783,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
     case Some(keyManager) => keyManager.masterPubKey(account)
     case _ => throw new RuntimeException("on-chain seed is not configured")
+  }
+
+  override def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse] = {
+    appKit.nodeParams.willFundRates_opt match {
+      case Some(willFundRates) if willFundRates.paymentTypes.contains(LiquidityAds.PaymentType.FromFutureHtlc) =>
+        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
+        Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))
+      case _ =>
+        Future.successful(EnableFromFutureHtlcResponse(enabled = false, Some("could not enable from_future_htlc: you must add it to eclair.liquidity-ads.payment-types in your eclair.conf file first")))
+    }
   }
 
   override def stop(): Future[Unit] = {
