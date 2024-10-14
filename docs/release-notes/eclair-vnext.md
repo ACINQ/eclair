@@ -45,8 +45,8 @@ $ sha256sum -c SHA256SUMS.stripped
 
 Eclair builds are deterministic. To reproduce our builds, please use the following environment (*):
 
-- Ubuntu 22.04
-- AdoptOpenJDK 11.0.22
+- Ubuntu 24.04.1
+- Adoptium OpenJDK 21.0.4
 - Maven 3.9.2
 
 Use the following command to generate the eclair-node package:
