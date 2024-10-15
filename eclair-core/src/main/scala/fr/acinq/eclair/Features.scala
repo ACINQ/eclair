@@ -300,6 +300,11 @@ object Features {
     val mandatory = 54
   }
 
+  case object SimpleTaproot extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot"
+    val mandatory = 80
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -321,6 +326,11 @@ object Features {
   case object SplicePrototype extends Feature with InitFeature {
     val rfcName = "splice_prototype"
     val mandatory = 154
+  }
+
+  case object SimpleTaprootStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging"
+    val mandatory = 180
   }
 
   /**
@@ -363,6 +373,8 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    SimpleTaproot,
+    SimpleTaprootStaging,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
@@ -380,6 +392,8 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
+    SimpleTaproot -> (ChannelType :: AnchorOutputsZeroFeeHtlcTx :: StaticRemoteKey :: Nil),
+    SimpleTaprootStaging -> (ChannelType :: AnchorOutputsZeroFeeHtlcTx :: StaticRemoteKey :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

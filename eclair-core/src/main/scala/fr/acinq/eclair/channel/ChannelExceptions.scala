@@ -144,4 +144,5 @@ case class CommandUnavailableInThisState           (override val channelId: Byte
 case class ForbiddenDuringSplice                   (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while splicing")
 case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
 case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
+case class MissingNextLocalNonce                   (override val channelId: ByteVector32) extends ChannelException(channelId, "next local nonce tlv is missing")
 // @formatter:on
