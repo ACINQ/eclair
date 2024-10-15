@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
@@ -49,16 +50,25 @@ object OnTheFlyFunding {
     /** We allow using from_future_htlc if we don't have any pending payment that is abusing it. */
     def isFromFutureHtlcAllowed: Boolean = suspectFromFutureHtlcRelays.isEmpty
 
-    /** Disable from_future_htlc payments because the provided payment_hash seems malicious. */
-    def disableFromFutureHtlc(paymentHash: ByteVector32, remoteNodeId: PublicKey): Unit = suspectFromFutureHtlcRelays.addOne(paymentHash, remoteNodeId)
+    /** An on-the-fly payment using from_future_htlc was failed by the remote node: they may be malicious. */
+    def fromFutureHtlcFailed(paymentHash: ByteVector32, remoteNodeId: PublicKey): Unit = {
+      suspectFromFutureHtlcRelays.addOne(paymentHash, remoteNodeId)
+      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
+    }
 
     /** If a fishy payment is fulfilled, we remove it from the list, which may re-enabled from_future_htlc. */
-    def fromFutureHtlcFulfilled(paymentHash: ByteVector32): Unit = suspectFromFutureHtlcRelays.remove(paymentHash)
+    def fromFutureHtlcFulfilled(paymentHash: ByteVector32): Unit = {
+      suspectFromFutureHtlcRelays.remove(paymentHash).foreach { _ =>
+        // We only need to update the metric if an entry was actually removed.
+        Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
+      }
+    }
 
     /** Remove all suspect payments and re-enable from_future_htlc. */
     def enableFromFutureHtlc(): Unit = {
       val pending = suspectFromFutureHtlcRelays.toList.map(_._1)
       pending.foreach(paymentHash => suspectFromFutureHtlcRelays.remove(paymentHash))
+      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(0)
     }
   }
 

@@ -705,7 +705,7 @@ class Peer(val nodeParams: NodeParams,
               // They received the HTLCs but failed them, which means that they're likely malicious (but not always,
               // they may have other pending HTLCs that temporarily prevent relaying the whole HTLC set because of
               // channel limits). We disable funding from future HTLCs to limit our exposure to fee siphoning.
-              nodeParams.onTheFlyFundingConfig.disableFromFutureHtlc(paymentHash, remoteNodeId)
+              nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(paymentHash, remoteNodeId)
             case _ => ()
           }
           stay()

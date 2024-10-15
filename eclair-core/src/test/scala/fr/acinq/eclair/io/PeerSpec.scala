@@ -733,7 +733,7 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     // We make sure that from_future_htlc is disabled.
-    nodeParams.onTheFlyFundingConfig.disableFromFutureHtlc(randomBytes32(), randomKey().publicKey)
+    nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(randomBytes32(), randomKey().publicKey)
     assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
 
     // We reject requests using from_future_htlc.

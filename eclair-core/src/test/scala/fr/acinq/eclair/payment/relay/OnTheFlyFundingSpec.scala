@@ -1192,10 +1192,10 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We detect two payments that seem malicious.
     val paymentHash1 = randomBytes32()
     val paymentHash2 = randomBytes32()
-    cfg.disableFromFutureHtlc(paymentHash1, remoteNodeId)
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId)
     assert(!cfg.isFromFutureHtlcAllowed)
-    cfg.disableFromFutureHtlc(paymentHash1, remoteNodeId) // noop
-    cfg.disableFromFutureHtlc(paymentHash2, remoteNodeId)
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId) // noop
+    cfg.fromFutureHtlcFailed(paymentHash2, remoteNodeId)
     assert(!cfg.isFromFutureHtlcAllowed)
     // The first one wasn't malicious after all.
     cfg.fromFutureHtlcFulfilled(paymentHash1)
@@ -1205,8 +1205,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(cfg.isFromFutureHtlcAllowed)
 
     // We detect a bunch of potentially malicious payments but manually reactivate from_future_htlc.
-    cfg.disableFromFutureHtlc(randomBytes32(), remoteNodeId)
-    cfg.disableFromFutureHtlc(randomBytes32(), remoteNodeId)
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
     assert(!cfg.isFromFutureHtlcAllowed)
     cfg.enableFromFutureHtlc()
     assert(cfg.isFromFutureHtlcAllowed)

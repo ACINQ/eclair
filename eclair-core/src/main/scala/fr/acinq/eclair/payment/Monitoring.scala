@@ -34,6 +34,7 @@ object Monitoring {
     val SentPaymentDuration = Kamon.timer("payment.duration.sent", "Outgoing payment duration")
     val ReceivedPaymentDuration = Kamon.timer("payment.duration.received", "Incoming payment duration")
     val RelayedPaymentDuration = Kamon.timer("payment.duration.relayed", "Duration of pending downstream HTLCs during a relay")
+    val SuspiciousFromFutureHtlcRelays = Kamon.gauge("payment.on-the-fly-funding.suspicious-htlc-relays", "Number of pending on-the-fly HTLCs that are being rejected by seemingly malicious peers")
 
     // The goal of this metric is to measure whether retrying MPP payments on failing channels yields useful results.
     // Once enough data has been collected, we will update the MultiPartPaymentLifecycle logic accordingly.
