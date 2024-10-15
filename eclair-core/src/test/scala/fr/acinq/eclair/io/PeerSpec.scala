@@ -36,6 +36,7 @@ import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.localParams
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
+import org.scalatest.Inside.inside
 import org.scalatest.{Tag, TestData}
 import scodec.bits.ByteVector
 
@@ -726,6 +727,29 @@ class PeerSpec extends FixtureSpec {
     // this will be sent if PeerConnection dies for any reason during the handshake
     peer ! ConnectionDown(peerConnection.ref)
     probe.expectTerminated(peer)
+  }
+
+  test("reject on-the-fly funding requests when from_future_htlc is disabled", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    // We make sure that from_future_htlc is disabled.
+    nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(randomBytes32(), randomKey().publicKey)
+    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+
+    // We reject requests using from_future_htlc.
+    val paymentHash = randomBytes32()
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    val requestFunds = LiquidityAds.RequestFunding(50_000 sat, LiquidityAds.FundingRate(10_000 sat, 100_000 sat, 0, 0, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash :: Nil))
+    val open = inside(createOpenDualFundedChannelMessage()) { msg => msg.copy(tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunds))) }
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(CancelOnTheFlyFunding(open.temporaryChannelId, paymentHash :: Nil, "payments paid with future HTLCs are currently disabled"))
+    channel.expectNoMessage(100 millis)
+
+    // Once enabled, we accept requests using from_future_htlc.
+    nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
+    peerConnection.send(peer, open)
+    channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
+    channel.expectMsg(open)
   }
 
 }

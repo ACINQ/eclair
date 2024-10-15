@@ -34,6 +34,7 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, UInt64, randomBytes, randomBytes32, randomKey, randomLong}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -1013,6 +1014,33 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     awaitCond(nodeParams.db.liquidity.getFeeCredit(remoteNodeId) == 0.msat, interval = 100 millis)
   }
 
+  test("disable from_future_htlc when remote rejects HTLCs") { f =>
+    import f._
+
+    connect(peer)
+
+    val preimage = randomBytes32()
+    val paymentHash = Crypto.sha256(preimage)
+    val upstream = upstreamChannel(11_000_000 msat, expiryIn, paymentHash)
+    proposeFunding(10_000_000 msat, expiryOut, paymentHash, upstream)
+    val fees = LiquidityAds.Fees(10_000 sat, 5_000 sat)
+    val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(List(paymentHash)), fees = fees)
+
+    // Once the channel is ready to relay payments, we forward HTLCs matching the proposed will_add_htlc.
+    peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, fundingTxIndex = 0)
+    channel.expectMsgType[CMD_GET_CHANNEL_INFO]
+
+    // Our peer rejects the HTLC, so we automatically disable from_future_htlc.
+    assert(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+    val failure = HtlcResult.RemoteFail(UpdateFailHtlc(purchase.channelId, 2, ByteVector.empty))
+    peer ! OnTheFlyFunding.PaymentRelayer.RelayFailed(paymentHash, OnTheFlyFunding.PaymentRelayer.RemoteFailure(failure))
+    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+
+    // When we retry relaying the HTLC, our peer fulfills it: we re-enable from_future_htlc.
+    peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi)
+    awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+  }
+
   test("don't relay payments if added to fee credit while signing", Tag(withFeeCredit)) { f =>
     import f._
 
@@ -1154,6 +1182,34 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(fwd.message.commit)
     register.expectNoMessage(100 millis)
     probe.expectNoMessage(100 millis)
+  }
+
+  test("disable from_future_htlc when detecting abuse") { () =>
+    val cfg = OnTheFlyFunding.Config(90 seconds)
+    assert(cfg.isFromFutureHtlcAllowed)
+    val remoteNodeId = randomKey().publicKey
+
+    // We detect two payments that seem malicious.
+    val paymentHash1 = randomBytes32()
+    val paymentHash2 = randomBytes32()
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId)
+    assert(!cfg.isFromFutureHtlcAllowed)
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId) // noop
+    cfg.fromFutureHtlcFailed(paymentHash2, remoteNodeId)
+    assert(!cfg.isFromFutureHtlcAllowed)
+    // The first one wasn't malicious after all.
+    cfg.fromFutureHtlcFulfilled(paymentHash1)
+    assert(!cfg.isFromFutureHtlcAllowed)
+    // The second one wasn't malicious either: we reactivate from_future_htlc.
+    cfg.fromFutureHtlcFulfilled(paymentHash2)
+    assert(cfg.isFromFutureHtlcAllowed)
+
+    // We detect a bunch of potentially malicious payments but manually reactivate from_future_htlc.
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
+    assert(!cfg.isFromFutureHtlcAllowed)
+    cfg.enableFromFutureHtlc()
+    assert(cfg.isFromFutureHtlcAllowed)
   }
 
 }

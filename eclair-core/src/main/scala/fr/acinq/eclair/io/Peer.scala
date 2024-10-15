@@ -218,7 +218,7 @@ class Peer(val nodeParams: NodeParams,
       case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, addFunding_opt, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
-          OnTheFlyFunding.validateOpen(open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+          OnTheFlyFunding.validateOpen(nodeParams.onTheFlyFundingConfig, open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
             case reject: OnTheFlyFunding.ValidationResult.Reject =>
               log.warning("rejecting on-the-fly channel: {}", reject.cancel.toAscii)
               self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
@@ -387,7 +387,7 @@ class Peer(val nodeParams: NodeParams,
             log.info("rejecting open_channel2: feerate too low ({} < {})", msg.feerate, d.currentFeerates.fundingFeerate)
             self ! Peer.OutgoingMessage(TxAbort(msg.channelId, FundingFeerateTooLow(msg.channelId, msg.feerate, d.currentFeerates.fundingFeerate).getMessage), d.peerConnection)
           case Some(channel) =>
-            OnTheFlyFunding.validateSplice(msg, nodeParams.channelConf.htlcMinimum, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+            OnTheFlyFunding.validateSplice(nodeParams.onTheFlyFundingConfig, msg, nodeParams.channelConf.htlcMinimum, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
               case reject: OnTheFlyFunding.ValidationResult.Reject =>
                 log.warning("rejecting on-the-fly splice: {}", reject.cancel.toAscii)
                 self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
@@ -689,6 +689,8 @@ class Peer(val nodeParams: NodeParams,
               pendingOnTheFlyFunding -= success.paymentHash
             case None => ()
           }
+          // If this is a payment that was initially rejected, it wasn't a malicious node, but rather a temporary issue.
+          nodeParams.onTheFlyFundingConfig.fromFutureHtlcFulfilled(success.paymentHash)
           stay()
         case OnTheFlyFunding.PaymentRelayer.RelayFailed(paymentHash, failure) =>
           log.warning("on-the-fly HTLC failure for payment_hash={}: {}", paymentHash, failure.toString)
@@ -696,6 +698,16 @@ class Peer(val nodeParams: NodeParams,
           // We don't give up yet by relaying the failure upstream: we may have simply been disconnected, or the added
           // liquidity may have been consumed by concurrent HTLCs. We'll retry at the next reconnection with that peer
           // or after the next splice, and will only give up when the outgoing will_add_htlc timeout.
+          val fundingStatus = pendingOnTheFlyFunding.get(paymentHash).map(_.status)
+          failure match {
+            case OnTheFlyFunding.PaymentRelayer.RemoteFailure(_) if fundingStatus.collect { case s: OnTheFlyFunding.Status.Funded => s.remainingFees }.sum > 0.msat =>
+              // We are still owed some fees for the funding transaction we published: we need these HTLCs to succeed.
+              // They received the HTLCs but failed them, which means that they're likely malicious (but not always,
+              // they may have other pending HTLCs that temporarily prevent relaying the whole HTLC set because of
+              // channel limits). We disable funding from future HTLCs to limit our exposure to fee siphoning.
+              nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(paymentHash, remoteNodeId)
+            case _ => ()
+          }
           stay()
       }
 
