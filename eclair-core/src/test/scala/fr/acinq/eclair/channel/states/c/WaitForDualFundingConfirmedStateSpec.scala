@@ -517,8 +517,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob2alice.expectMsgType[TxAckRbf].fundingContribution == TestConstants.nonInitiatorFundingSatoshis)
     bob2alice.forward(alice)
 
-    // Alice and Bob build a new version of the funding transaction.
-    alice2bob.expectMsgType[TxAbort]
+    // Alice aborts the funding transaction, because it exceeds its fee budget.
+    assert(alice2bob.expectMsgType[TxAbort].toAscii == ChannelFundingError(channelId(alice)).getMessage)
     alice2bob.forward(bob)
     awaitAssert(assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.RbfAborted))
     bob2alice.expectMsgType[TxAbort] // bob acks alice's tx_abort

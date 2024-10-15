@@ -585,8 +585,34 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     setupHtlcs(f)
 
+    val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    assert(commitment.localCommit.spec.toLocal == 770_000_000.msat)
+    assert(commitment.localChannelReserve == 15_000.sat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    assert(commitFees < 15_000.sat)
+
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(760_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
+    alice ! cmd
+    exchangeStfu(f)
+    sender.expectMsgType[RES_FAILURE[_, _]]
+  }
+
+  test("recv CMD_SPLICE (splice-out, cannot pay commit fees)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
+    import f._
+
+    // We add enough HTLCs to make sure that the commit fees are higher than the reserve.
+    (0 until 10).foreach(_ => addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice))
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
+    assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
+    assert(commitment.localChannelReserve == 15_000.sat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    assert(commitFees > 20_000.sat)
+
+    val sender = TestProbe()
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
     alice ! cmd
     exchangeStfu(f)
     sender.expectMsgType[RES_FAILURE[_, _]]
