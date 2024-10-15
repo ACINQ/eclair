@@ -17,28 +17,29 @@
 package fr.acinq.eclair.io
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.protocol.{Color, IPv4, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement, RecommendedFeerates}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 
-import java.net.Inet4Address
 import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
   private val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   private val channels = Map(Peer.FinalChannelId(randomBytes32()) -> system.deadLetters)
+  private val recommendedFeerates = RecommendedFeerates(Block.RegtestGenesisBlock.hash, TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw)
 
   private val PeerNothingData = Peer.Nothing
   private val PeerDisconnectedData = Peer.DisconnectedData(channels)
-  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
+  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) }, recommendedFeerates, None)
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 

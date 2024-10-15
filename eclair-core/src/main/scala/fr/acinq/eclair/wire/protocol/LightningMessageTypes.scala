@@ -254,6 +254,7 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
@@ -308,6 +309,7 @@ case class SpliceInit(channelId: ByteVector32,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }

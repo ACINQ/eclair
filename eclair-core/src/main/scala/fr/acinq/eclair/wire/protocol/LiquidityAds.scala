@@ -93,16 +93,19 @@ object LiquidityAds {
     // @formatter:on
   }
 
+  /** Payment type used for on-the-fly funding for incoming HTLCs. */
+  sealed trait OnTheFlyFundingPaymentType extends PaymentType
+
   object PaymentType {
     // @formatter:off
     /** Fees are transferred from the buyer's channel balance to the seller's during the interactive-tx construction. */
     case object FromChannelBalance extends PaymentType { override val rfcName: String = "from_channel_balance" }
     /** Fees will be deducted from future HTLCs that will be relayed to the buyer. */
-    case object FromFutureHtlc extends PaymentType { override val rfcName: String = "from_future_htlc" }
+    case object FromFutureHtlc extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_future_htlc" }
     /** Fees will be deducted from future HTLCs that will be relayed to the buyer, but the preimage is revealed immediately. */
-    case object FromFutureHtlcWithPreimage extends PaymentType { override val rfcName: String = "from_future_htlc_with_preimage" }
+    case object FromFutureHtlcWithPreimage extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_future_htlc_with_preimage" }
     /** Similar to [[FromChannelBalance]] but expects HTLCs to be relayed after funding. */
-    case object FromChannelBalanceForFutureHtlc extends PaymentType { override val rfcName: String = "from_channel_balance_for_future_htlc" }
+    case object FromChannelBalanceForFutureHtlc extends OnTheFlyFundingPaymentType { override val rfcName: String = "from_channel_balance_for_future_htlc" }
     /** Sellers may support unknown payment types, which we must ignore. */
     case class Unknown(bitIndex: Int) extends PaymentType { override val rfcName: String = s"unknown_$bitIndex" }
     // @formatter:on
