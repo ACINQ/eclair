@@ -220,7 +220,7 @@ object OfferTypes {
     tlv.tag <= UInt64(79) || (tlv.tag >= UInt64(1000000000) && tlv.tag <= UInt64(1999999999))
 
   private def isInvoiceRequestTlv(tlv: GenericTlv): Boolean =
-    // Offer TLVs are in the range [0, 159] or [1000000000, 2999999999].
+    // Invoice request TLVs are in the range [0, 159] or [1000000000, 2999999999].
     tlv.tag <= UInt64(159) || (tlv.tag >= UInt64(1000000000) && tlv.tag <= UInt64(2999999999L))
 
   def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
