@@ -65,10 +65,17 @@ trait JdbcUtils {
    *
    * TODO: we should use an scala.Iterator instead
    */
-  def codecSequence[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
+  def codecSequence[T](rs: ResultSet, codec: Codec[T], onError: String => Unit = { _ => Unit }): Seq[T] = {
     var q: Queue[T] = Queue()
     while (rs.next()) {
-      q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
+      val data = BitVector(rs.getBytes("data"))
+      try {
+        q = q :+ codec.decode(data).require.value
+      } catch {
+        case t: Throwable =>
+          onError(s"unreadable data=${data.toHex}")
+          throw t
+      }
     }
     q
   }

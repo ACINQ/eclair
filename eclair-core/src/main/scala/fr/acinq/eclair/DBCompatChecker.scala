@@ -30,7 +30,7 @@ object DBCompatChecker extends Logging {
   def checkDBCompatibility(nodeParams: NodeParams): Unit =
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(_) => {}
-      case Failure(_) => throw IncompatibleDBException
+      case Failure(exception) => throw IncompatibleDBException(exception)
     }
 
   /**

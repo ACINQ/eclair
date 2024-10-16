@@ -98,7 +98,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels") {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-      codecSequence(rs, stateDataCodec)
+      codecSequence(rs, stateDataCodec, onError = { message => logger.error(message) })
     }
   }
 
