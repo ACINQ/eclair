@@ -765,7 +765,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
               // there are no pending signed changes, let's directly negotiate a closing transaction
               if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
-                startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, sendList)
+                startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, sendList, closingNonce, remoteShutdown.shutdownNonce_opt)
               } else if (d.commitments.params.localParams.paysClosingFees) {
                 // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
                 val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.closingFeerates, closingNonce, remoteShutdown.shutdownNonce_opt)
@@ -1573,7 +1573,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
               if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
                 if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
-                  startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, revocation :: Nil)
+                  startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, revocation :: Nil, closingNonce, remoteShutdown.shutdownNonce_opt)
                 } else if (d.commitments.params.localParams.paysClosingFees) {
                   // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
                   val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates, closingNonce, remoteShutdown.shutdownNonce_opt)
@@ -1617,7 +1617,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", commitments1.latest.specs2String)
             if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
-              startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, Nil)
+              startSimpleClose(d.commitments, localShutdown, remoteShutdown, d.closingFeerates, Nil, closingNonce, remoteShutdown.shutdownNonce_opt)
             } else if (d.commitments.params.localParams.paysClosingFees) {
               // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(keyManager, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closingFeerates, closingNonce, remoteShutdown.shutdownNonce_opt)
@@ -1852,7 +1852,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case status: ClosingNegotiation.SigningTransactions =>
           val localScript = status.localShutdown.scriptPubKey
           val remoteScript = status.remoteShutdown.scriptPubKey
-          MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, localScript, remoteScript, closingComplete) match {
+          MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, localScript, remoteScript, closingComplete, closingNonce) match {
             case Left(f) =>
               // This may happen if scripts were updated concurrently, so we simply ignore failures.
               log.warning("invalid closing_complete: {}", f.getMessage)

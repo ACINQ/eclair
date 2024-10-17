@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.FSM
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
@@ -132,11 +133,11 @@ trait CommonHandlers {
     finalScriptPubKey
   }
 
-  def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates], toSend: List[LightningMessage]) = {
+  def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates], toSend: List[LightningMessage], localClosingNonce_opt: Option[(SecretNonce, IndividualNonce)] = None, remoteClosingNonce_opt: Option[IndividualNonce] = None) = {
     val localScript = localShutdown.scriptPubKey
     val remoteScript = remoteShutdown.scriptPubKey
     val closingFeerate = closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
-    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, commitments.latest, localScript, remoteScript, closingFeerate) match {
+    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, commitments.latest, localScript, remoteScript, closingFeerate, localClosingNonce_opt, remoteClosingNonce_opt) match {
       case Left(f) =>
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
         val status = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, None, None, None)
