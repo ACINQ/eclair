@@ -409,12 +409,18 @@ case class ClosingComplete(channelId: ByteVector32, fees: Satoshi, lockTime: Lon
   val closerNoCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserNoClosee].map(_.sig)
   val noCloserCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.NoCloserClosee].map(_.sig)
   val closerAndCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndClosee].map(_.sig)
+  val closerNoCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.CloserNoCloseePartialSignature].map(_.partialSigWithNonce)
+  val noCloserCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.NoCloserCloseePartialSignature].map(_.partialSigWithNonce)
+  val closerAndCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.CloserAndCloseePartialSignature].map(_.partialSigWithNonce)
 }
 
 case class ClosingSig(channelId: ByteVector32, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val closerNoCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserNoClosee].map(_.sig)
   val noCloserCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.NoCloserClosee].map(_.sig)
   val closerAndCloseeSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndClosee].map(_.sig)
+  val closerNoCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.CloserNoCloseePartialSignature].map(_.partialSigWithNonce)
+  val noCloserCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.NoCloserCloseePartialSignature].map(_.partialSigWithNonce)
+  val closerAndCloseePartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[ClosingTlv.CloserAndCloseePartialSignature].map(_.partialSigWithNonce)
 }
 
 case class UpdateAddHtlc(channelId: ByteVector32,

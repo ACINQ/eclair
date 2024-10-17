@@ -773,7 +773,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               // there are no pending signed changes, let's directly negotiate a closing transaction
               if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
                 val closingFeerate = d.closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
-                MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, closingFeerate) match {
+                MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localShutdown.scriptPubKey, remoteShutdownScript, closingFeerate, closingNonce, remoteShutdown.shutdownNonce_opt) match {
                   case Left(f) =>
                     log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
                     goto(NEGOTIATING_SIMPLE) using DATA_NEGOTIATING_SIMPLE(d.commitments, localShutdown, remoteShutdown, Nil, Nil) storing() sending sendList
@@ -1659,7 +1659,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       stay() using d.copy(remoteShutdown = remoteShutdown) storing()
 
     case Event(closingComplete: ClosingComplete, d: DATA_NEGOTIATING_SIMPLE) =>
-      MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingComplete) match {
+      MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, closingComplete, closingNonce) match {
         case Left(f) =>
           // This may happen if scripts were updated concurrently, so we simply ignore failures.
           // Bolt 2:
