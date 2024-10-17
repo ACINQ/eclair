@@ -33,6 +33,10 @@ Existing `static_remote_key` channels will continue to work. You can override th
 
 Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
 
+### Eclair requires a  Java 21 runtime
+
+Eclair now targets Java 21 and requires a compatible Java Runtime Environment. It will no longer work on JRE 11 or JRE 17.
+
 ### API changes
 
 - `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
