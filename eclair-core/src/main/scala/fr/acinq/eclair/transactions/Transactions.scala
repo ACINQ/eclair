@@ -374,7 +374,11 @@ super.sign(privateKey, txOwner, commitmentFormat)
 }
   }
 
-  case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutput: Option[OutputInfo]) extends TransactionWithInputInfo { override def desc: String = "closing" }
+  case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutput: Option[OutputInfo]) extends TransactionWithInputInfo {
+    // these nonces are generated on the fly at during a "simple" closing session and can be forgotten once the session ends
+    @volatile var localNonce_opt: Option[(SecretNonce, IndividualNonce)] = None
+    override def desc: String = "closing"
+  }
 
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
