@@ -94,7 +94,7 @@ rpcclienttimeout=30
 
 Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
 
-To run Eclair, you first need to install Java. Eclair targets Java 11 and will run on any compatible Java runtime (including 11, 17 and 21), we recommend that you use [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21).
+To run Eclair, you first need to install Java. Eclair targets Java 21 and will run on any compatible Java runtime, we recommend that you use [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21).
 
 Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and run the following command:
 

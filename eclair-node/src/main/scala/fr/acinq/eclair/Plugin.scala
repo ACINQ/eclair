@@ -17,8 +17,7 @@
 package fr.acinq.eclair
 
 import java.io.File
-import java.net.{JarURLConnection, URL, URLClassLoader}
-
+import java.net.{JarURLConnection, URI, URL, URLClassLoader}
 import akka.http.scaladsl.server.Route
 import fr.acinq.eclair.api.directives.EclairDirectives
 import grizzled.slf4j.Logging
@@ -59,7 +58,7 @@ object Plugin extends Logging {
   }
 
   def openJar(jar: File): Option[JarURLConnection] =
-    Try(new URL(s"jar:file:${jar.getCanonicalPath}!/").openConnection().asInstanceOf[JarURLConnection]) match {
+    Try(URI.create(s"jar:file:${jar.getCanonicalPath}!/").toURL.openConnection().asInstanceOf[JarURLConnection]) match {
       case Success(url) => Some(url)
       case Failure(t) => logger.error(s"unable to load plugin file:${jar.getAbsolutePath} ", t); None
     }

@@ -13,6 +13,10 @@ When `option_provide_storage` is enabled, eclair will store a small encrypted ba
 This backup is limited to 65kB and node operators should customize the `eclair.peer-storage` configuration section to match their desired SLAs.
 This is mostly intended for LSPs that serve mobile wallets to allow users to restore their channels when they switch phones.
 
+### Eclair requires a  Java 21 runtime
+
+Eclair now targets Java 21 and requires a compatible Java Runtime Environment. It will no longer work on JRE 11 or JRE 17.
+
 ### API changes
 
 <insert changes>
