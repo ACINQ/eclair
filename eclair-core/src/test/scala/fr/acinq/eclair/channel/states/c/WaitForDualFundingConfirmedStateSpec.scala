@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.c
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
@@ -303,35 +303,44 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
+  def testUnusedInputsUnlocked(wallet: SingleKeyOnChainWallet, unusedTxs: Seq[FullySignedSharedTransaction]): Unit = {
+    val inputs = unusedTxs.flatMap(sharedTx => sharedTx.tx.localInputs ++ sharedTx.tx.sharedInput_opt.toSeq).distinctBy(_.outPoint.txid).map(i => i.outPoint)
+    awaitCond {
+      val rollback = wallet.rolledback.flatMap(_.txIn.map(_.outPoint))
+      inputs.toSet == rollback.toSet
+    }
+  }
+
   test("recv WatchFundingConfirmedTriggered after restart (previous tx)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
-    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
-    val fundingTx2 = testBumpFundingFees(f).signedTx
-    assert(fundingTx1.txid != fundingTx2.txid)
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    val fundingTx2 = testBumpFundingFees(f)
+    assert(fundingTx1.signedTx.txid != fundingTx2.signedTx.txid)
 
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     val (alice2, bob2) = restartNodes(f, aliceData, bobData)
     reconnectNodes(f, alice2, bob2)
 
-    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
-    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
-    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.signedTx)
+    assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1.signedTx)
+    assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.signedTx.txid)
     alice2bob.expectMsgType[ChannelReady]
     awaitCond(alice2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
     assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
     assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
-    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
+    assert(alice2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.signedTx.txid)
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2))
 
-    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
-    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
-    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.signedTx)
+    assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1.signedTx)
+    assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.signedTx.txid)
     bob2alice.expectMsgType[ChannelReady]
     awaitCond(bob2.stateName == WAIT_FOR_DUAL_FUNDING_READY)
     assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.active.size == 1)
     assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.inactive.isEmpty)
-    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.txid)
+    assert(bob2.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.fundingTxId == fundingTx1.signedTx.txid)
   }
 
   def testBumpFundingFees(f: FixtureParam, feerate_opt: Option[FeeratePerKw] = None, requestFunding_opt: Option[LiquidityAds.RequestFunding] = None): FullySignedSharedTransaction = {
@@ -400,6 +409,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(balanceBob1 == TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi)
 
     // Alice RBFs the funding transaction: Bob keeps contributing the same amount.
+    val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
     val feerate2 = FeeratePerKw(12_500 sat)
     testBumpFundingFees(f, Some(feerate2))
     val balanceBob2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
@@ -415,6 +425,10 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val fundingTx3 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
     assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_500 sat))
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 2)
+
+    // The initial funding transaction confirms
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.signedTx)
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2, fundingTx3))
   }
 
   test("recv CMD_BUMP_FUNDING_FEE (liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(liquidityPurchase)) { f =>
@@ -751,8 +765,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
     val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val fundingTx2 = testBumpFundingFees(f).signedTx
-    assert(fundingTx1.txid != fundingTx2.txid)
+    val fundingTx2 = testBumpFundingFees(f)
+    assert(fundingTx1.txid != fundingTx2.signedTx.txid)
     val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx1.txid != bobCommitTx2.txid)
 
@@ -767,6 +781,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectNoMessage(100 millis)
     awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
     assert(alice.stateName == OFFLINE)
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2))
 
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
@@ -817,8 +832,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val fundingTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx
     val aliceCommitTx1 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val fundingTx2 = testBumpFundingFees(f).signedTx
-    assert(fundingTx1.txid != fundingTx2.txid)
+    val fundingTx2 = testBumpFundingFees(f)
+    assert(fundingTx1.txid != fundingTx2.signedTx.txid)
     val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx1.txid != bobCommitTx2.txid)
 
@@ -836,6 +851,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMainAlice.tx.txid)
     awaitCond(alice2.stateName == CLOSING)
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2))
 
     bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
@@ -1024,10 +1040,10 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx
     assert(aliceCommitTx1.input.outPoint.txid == fundingTx1.txid)
     assert(bobCommitTx1.input.outPoint.txid == fundingTx1.txid)
-    val fundingTx2 = testBumpFundingFees(f).signedTx
-    assert(fundingTx1.txid != fundingTx2.txid)
+    val fundingTx2 = testBumpFundingFees(f)
+    assert(fundingTx1.txid != fundingTx2.signedTx.txid)
     val aliceCommitTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx
-    assert(aliceCommitTx2.input.outPoint.txid == fundingTx2.txid)
+    assert(aliceCommitTx2.input.outPoint.txid == fundingTx2.signedTx.txid)
 
     // Alice receives an error and force-closes using the latest funding transaction.
     alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
@@ -1051,6 +1067,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(claimMain1.input.txid == aliceCommitTx1.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain1.tx.txid)
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2))
 
     // Bob publishes his commit tx, Alice reacts by spending her remote main output.
     alice ! WatchFundingSpentTriggered(bobCommitTx1.tx)
