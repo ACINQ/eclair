@@ -17,7 +17,9 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.scalacompat.Transaction
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Transaction, TxId}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -63,6 +65,20 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ manualBumpRemote
+  val spendFromChannelAddressPrep: Route = postRequest("spendfromchanneladdressprep") { implicit t =>
+    formFields("t".as[ByteVector32], "o".as[Int], "kp", "fi".as[Int], "address", "f".as[FeeratePerByte]) {
+      (txId, outputIndex, keyPath, fundingTxIndex, address, feerate) =>
+        complete(eclairApi.spendFromChannelAddressPrep(OutPoint(TxId(txId), outputIndex), KeyPath(keyPath), fundingTxIndex, address, FeeratePerKw(feerate)))
+    }
+  }
+
+  val spendFromChannelAddress: Route = postRequest("spendfromchanneladdress") { implicit t =>
+    formFields("kp", "fi".as[Int], "p".as[PublicKey], "s".as[ByteVector64], "tx") {
+      (keyPath, fundingTxIndex, remoteFundingPubkey, remoteSig, unsignedTx) =>
+        complete(eclairApi.spendFromChannelAddress(KeyPath(keyPath), fundingTxIndex, remoteFundingPubkey, remoteSig, Transaction.read(unsignedTx)))
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ manualBumpRemote ~ spendFromChannelAddressPrep ~ spendFromChannelAddress
 
 }
