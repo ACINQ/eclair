@@ -13,6 +13,18 @@ Every node advertizes the rates at which they sell their liquidity, and buyers c
 The liquidity ads specification is still under review and will likely change.
 This feature isn't meant to be used on mainnet yet and is thus disabled by default.
 
+### Simplified mutual close
+
+This release includes support for the latest [mutual close protocol](https://github.com/lightning/bolts/pull/1096).
+This protocol allows both channel participants to decide exactly how much fees they're willing to pay to close the channel.
+Each participant obtains a channel closing transaction where they are paying the fees.
+
+Once closing transactions are broadcast, they can be RBF-ed by calling the `close` RPC again with a higher feerate:
+
+```sh
+./eclair-cli close --channelId=<channel_id> --preferredFeerateSatByte=<rbf_feerate>
+```
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 27.1.
