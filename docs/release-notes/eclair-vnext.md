@@ -33,6 +33,10 @@ Existing `static_remote_key` channels will continue to work. You can override th
 
 Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
 
+### Eclair requires a  Java 21 runtime
+
+Eclair now targets Java 21 and requires a compatible Java Runtime Environment. It will no longer work on JRE 11 or JRE 17.
+
 ### API changes
 
 - `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
@@ -68,14 +72,14 @@ $ sha256sum -c SHA256SUMS.stripped
 
 Eclair builds are deterministic. To reproduce our builds, please use the following environment (*):
 
-- Ubuntu 22.04
-- AdoptOpenJDK 11.0.22
+- Ubuntu 24.04.1
+- Adoptium OpenJDK 21.0.4
 - Maven 3.9.2
 
 Use the following command to generate the eclair-node package:
 
 ```sh
-mvn clean install -DskipTests
+./mvnw clean install -DskipTests
 ```
 
 That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
