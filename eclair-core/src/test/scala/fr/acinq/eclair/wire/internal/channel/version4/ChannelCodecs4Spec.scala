@@ -145,16 +145,16 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 100_000 sat, LiquidityAds.Fees(1000 sat, 500 sat))),
     )
     val testCases = Map(
-      RbfStatus.NoRbf -> RbfStatus.NoRbf,
-      RbfStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), fundingFeeBudget = 100_000.sat, 0, None)) -> RbfStatus.NoRbf,
-      RbfStatus.RbfInProgress(None, null, None) -> RbfStatus.NoRbf,
-      RbfStatus.RbfWaitingForSigs(waitingForSigs) -> RbfStatus.RbfWaitingForSigs(waitingForSigs),
-      RbfStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)) -> RbfStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)),
-      RbfStatus.RbfAborted -> RbfStatus.NoRbf,
+      DualFundingStatus.WaitingForConfirmations -> DualFundingStatus.WaitingForConfirmations,
+      DualFundingStatus.RbfRequested(CMD_BUMP_FUNDING_FEE(null, FeeratePerKw(750 sat), fundingFeeBudget = 100_000.sat, 0, None)) -> DualFundingStatus.WaitingForConfirmations,
+      DualFundingStatus.RbfInProgress(None, null, None) -> DualFundingStatus.WaitingForConfirmations,
+      DualFundingStatus.RbfWaitingForSigs(waitingForSigs) -> DualFundingStatus.RbfWaitingForSigs(waitingForSigs),
+      DualFundingStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)) -> DualFundingStatus.RbfWaitingForSigs(waitingForSigs.copy(liquidityPurchase_opt = None)),
+      DualFundingStatus.RbfAborted -> DualFundingStatus.WaitingForConfirmations,
     )
     testCases.foreach { case (status, expected) =>
-      val encoded = rbfStatusCodec.encode(status).require
-      val decoded = rbfStatusCodec.decode(encoded).require.value
+      val encoded = dualFundingStatusCodec.encode(status).require
+      val decoded = dualFundingStatusCodec.decode(encoded).require.value
       assert(decoded == expected)
     }
   }

@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -161,7 +161,7 @@ object Upstream {
     def apply(hot: Hot): Cold = hot match {
       case Local(id) => Local(id)
       case Hot.Channel(add, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
-      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)).toList)
+      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)))
     }
 
     /** Our node is forwarding a single incoming HTLC. */
@@ -199,8 +199,8 @@ sealed trait Command extends PossiblyHarmful
 sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
 sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option[ActorRef] }
 
-sealed trait ForbiddenCommandDuringSplice extends Command
-sealed trait ForbiddenCommandDuringQuiescence extends Command
+sealed trait ForbiddenCommandDuringQuiescenceNegotiation extends Command
+sealed trait ForbiddenCommandWhenQuiescent extends Command
 
 final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               amount: MilliSatoshi,
@@ -211,14 +211,14 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               confidence: Double,
                               fundingFee_opt: Option[LiquidityAds.FundingFee],
                               origin: Origin.Hot,
-                              commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+                              commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 
-sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence { def id: Long }
+sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
-final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringSplice
+final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
+final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandWhenQuiescent
 
 final case class ClosingFees(preferred: Satoshi, min: Satoshi, max: Satoshi)
 final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max: FeeratePerKw) {
@@ -226,19 +226,22 @@ final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max
 }
 
 sealed trait CloseCommand extends HasReplyToCommand
-final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringSplice with ForbiddenCommandDuringQuiescence
+final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
-final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FUNDING_FEE]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long, requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends Command
+sealed trait ChannelFundingCommand extends Command {
+  def replyTo: akka.actor.typed.ActorRef[CommandResponse[ChannelFundingCommand]]
+}
 case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount: MilliSatoshi = 0 msat)
 case class SpliceOut(amount: Satoshi, scriptPubKey: ByteVector)
-final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_SPLICE]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends Command {
+final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[ChannelFundingCommand]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends ChannelFundingCommand {
   require(spliceIn_opt.isDefined || spliceOut_opt.isDefined, "there must be a splice-in or a splice-out")
   val additionalLocalFunding: Satoshi = spliceIn_opt.map(_.additionalLocalFunding).getOrElse(0 sat)
   val pushAmount: MilliSatoshi = spliceIn_opt.map(_.pushAmount).getOrElse(0 msat)
   val spliceOutputs: List[TxOut] = spliceOut_opt.toList.map(s => TxOut(s.amount, s.scriptPubKey))
 }
+final case class CMD_BUMP_FUNDING_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[ChannelFundingCommand]], targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime: Long, requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends ChannelFundingCommand
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
@@ -475,42 +478,61 @@ object RemoteFundingStatus {
   case object Locked extends RemoteFundingStatus
 }
 
-sealed trait RbfStatus
-object RbfStatus {
-  case object NoRbf extends RbfStatus
-  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends RbfStatus
-  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends RbfStatus
-  case class RbfWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends RbfStatus
-  case object RbfAborted extends RbfStatus
+sealed trait DualFundingStatus
+object DualFundingStatus {
+  /** We're waiting for one of the funding transactions to confirm. */
+  case object WaitingForConfirmations extends DualFundingStatus
+  /** We told our peer we want to RBF the funding transaction. */
+  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE) extends DualFundingStatus
+  /** We both agreed to RBF and are building the new funding transaction. */
+  case class RbfInProgress(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], rbf: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends DualFundingStatus
+  /** A new funding transaction has been negotiated, we're exchanging signatures. */
+  case class RbfWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends DualFundingStatus
+  /** The RBF attempt was aborted by us, we're waiting for our peer to ack. */
+  case object RbfAborted extends DualFundingStatus
 }
 
-sealed trait SpliceStatus
 /** We're waiting for the channel to be quiescent. */
-sealed trait QuiescenceNegotiation extends SpliceStatus
+sealed trait QuiescenceNegotiation
 object QuiescenceNegotiation {
   sealed trait Initiator extends QuiescenceNegotiation
+  object Initiator {
+    /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    case object QuiescenceRequested extends Initiator
+    /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
+    case class SentStfu(stfu: Stfu) extends Initiator
+  }
+
   sealed trait NonInitiator extends QuiescenceNegotiation
+  object NonInitiator {
+    /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
+    case class ReceivedStfu(stfu: Stfu) extends NonInitiator
+  }
 }
-/** The channel is quiescent and a splice attempt was initiated. */
-sealed trait QuiescentSpliceStatus extends SpliceStatus
+
+sealed trait SpliceStatus {
+  def isNegotiatingQuiescence: Boolean = this.isInstanceOf[SpliceStatus.NegotiatingQuiescence]
+  def isQuiescent: Boolean = this match {
+    case SpliceStatus.NoSplice | _: SpliceStatus.NegotiatingQuiescence => false
+    case _ => true
+  }
+}
 object SpliceStatus {
   case object NoSplice extends SpliceStatus
-  /** We stop sending new updates and wait for our updates to be added to the local and remote commitments. */
-  case class QuiescenceRequested(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
-  /** Our updates have been added to the local and remote commitments, we wait for our peer to do the same. */
-  case class InitiatorQuiescent(splice: CMD_SPLICE) extends QuiescenceNegotiation.Initiator
-  /** Our peer has asked us to stop sending new updates and wait for our updates to be added to the local and remote commitments. */
-  case class ReceivedStfu(stfu: Stfu) extends QuiescenceNegotiation.NonInitiator
-  /** Our updates have been added to the local and remote commitments, we wait for our peer to use the now quiescent channel. */
-  case object NonInitiatorQuiescent extends QuiescentSpliceStatus
+  /** We're trying to quiesce the channel in order to negotiate a splice. */
+  case class NegotiatingQuiescence(cmd_opt: Option[ChannelFundingCommand], status: QuiescenceNegotiation) extends SpliceStatus
+  /** The channel is quiescent, we wait for our peer to send splice_init or tx_init_rbf. */
+  case object NonInitiatorQuiescent extends SpliceStatus
   /** We told our peer we want to splice funds in the channel. */
-  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends QuiescentSpliceStatus
-  /** We both agreed to splice and are building the splice transaction. */
-  case class SpliceInProgress(cmd_opt: Option[CMD_SPLICE], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends QuiescentSpliceStatus
+  case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit) extends SpliceStatus
+  /** We told our peer we want to RBF the latest splice transaction. */
+  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE, rbf: TxInitRbf) extends SpliceStatus
+  /** We both agreed to splice/rbf and are building the corresponding transaction. */
+  case class SpliceInProgress(cmd_opt: Option[ChannelFundingCommand], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends SpliceStatus
   /** The splice transaction has been negotiated, we're exchanging signatures. */
-  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends QuiescentSpliceStatus
+  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends SpliceStatus
   /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
-  case object SpliceAborted extends QuiescentSpliceStatus
+  case object SpliceAborted extends SpliceStatus
 }
 
 sealed trait ChannelData extends PossiblyHarmful {
@@ -604,7 +626,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       remotePushAmount: MilliSatoshi,
                                                       waitingSince: BlockHeight, // how long have we been waiting for a funding tx to confirm
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
-                                                      rbfStatus: RbfStatus,
+                                                      status: DualFundingStatus,
                                                       deferred: Option[ChannelReady]) extends ChannelDataWithCommitments {
   def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
   def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
@@ -619,7 +641,10 @@ final case class DATA_NORMAL(commitments: Commitments,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates],
-                             spliceStatus: SpliceStatus) extends ChannelDataWithCommitments
+                             spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+  val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
+  val isQuiescent: Boolean = spliceStatus.isQuiescent
+}
 final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,

@@ -388,7 +388,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(c: ForbiddenCommandDuringQuiescence, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescenceNegotiation] =>
+    case Event(c: ForbiddenCommandDuringQuiescenceNegotiation, d: DATA_NORMAL) if d.isNegotiatingQuiescence =>
       val error = ForbiddenDuringQuiescence(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
@@ -399,7 +399,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => handleCommandError(error, c)
       }
 
-    case Event(c: ForbiddenCommandDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
+    case Event(c: ForbiddenCommandWhenQuiescent, d: DATA_NORMAL) if d.isQuiescent =>
       val error = ForbiddenDuringSplice(d.channelId, c.getClass.getSimpleName)
       c match {
         case c: CMD_ADD_HTLC => handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
@@ -410,7 +410,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => handleCommandError(error, c)
       }
 
-    case Event(msg: ForbiddenMessageDuringSplice, d: DATA_NORMAL) if d.spliceStatus.isInstanceOf[QuiescentSpliceStatus] =>
+    case Event(msg: ForbiddenMessageWhenQuiescent, d: DATA_NORMAL) if d.isQuiescent =>
       log.warning("received forbidden message {} during splicing with status {}", msg.getClass.getSimpleName, d.spliceStatus.getClass.getSimpleName)
       val error = ForbiddenDuringSplice(d.channelId, msg.getClass.getSimpleName)
       // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
@@ -612,10 +612,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
                   // If we're now quiescent, we may send our stfu message.
                   val (d1, toSend) = d.spliceStatus match {
-                    case SpliceStatus.QuiescenceRequested(cmd) if commitments1.localIsQuiescent =>
+                    case SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.QuiescenceRequested) if commitments1.localIsQuiescent =>
                       val stfu = Stfu(d.channelId, initiator = true)
-                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)), Seq(revocation, stfu))
-                    case _: SpliceStatus.ReceivedStfu if commitments1.localIsQuiescent =>
+                      val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.SentStfu(stfu))
+                      (d.copy(commitments = commitments1, spliceStatus = spliceStatus1), Seq(revocation, stfu))
+                    case SpliceStatus.NegotiatingQuiescence(_, _: QuiescenceNegotiation.NonInitiator.ReceivedStfu) if commitments1.localIsQuiescent =>
                       val stfu = Stfu(d.channelId, initiator = false)
                       (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
                     case _ =>
@@ -852,24 +853,70 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+      if (!d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+        log.warning("cannot initiate splice, peer doesn't support splicing")
+        cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
+        stay()
+      } else if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
+        log.warning("cannot initiate splice, the previous splice has unconfirmed rbf attempts")
+        cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
+        stay()
+      } else {
         d.spliceStatus match {
           case SpliceStatus.NoSplice =>
             startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
             if (d.commitments.localIsQuiescent) {
-              stay() using d.copy(spliceStatus = SpliceStatus.InitiatorQuiescent(cmd)) sending Stfu(d.channelId, initiator = true)
+              val stfu = Stfu(d.channelId, initiator = true)
+              val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(Some(cmd), QuiescenceNegotiation.Initiator.SentStfu(stfu))
+              stay() using d.copy(spliceStatus = spliceStatus1) sending stfu
             } else {
-              stay() using d.copy(spliceStatus = SpliceStatus.QuiescenceRequested(cmd))
+              val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(Some(cmd), QuiescenceNegotiation.Initiator.QuiescenceRequested)
+              stay() using d.copy(spliceStatus = spliceStatus1)
             }
           case _ =>
             log.warning("cannot initiate splice, another one is already in progress")
             cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceAlreadyInProgress(d.channelId))
             stay()
         }
-      } else {
-        log.warning("cannot initiate splice, peer doesn't support splices")
-        cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
-        stay()
+      }
+
+    case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_NORMAL) =>
+      d.spliceStatus match {
+        case SpliceStatus.NoSplice =>
+          d.commitments.latest.localFundingStatus match {
+            case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+              if (cmd.targetFeerate < fundingTx.fundingParams.minNextFeerate) {
+                log.warning("cannot initiate rbf: feerate too low ({} < {})", cmd.targetFeerate, fundingTx.fundingParams.minNextFeerate)
+                cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, fundingTx.fundingParams.minNextFeerate))
+                stay()
+              } else if (cmd.requestFunding_opt.isEmpty && fundingTx.liquidityPurchase_opt.nonEmpty) {
+                log.warning("cannot initiate rbf: a liquidity purchase was included in the previous transaction but is not included in this one")
+                cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfMissingLiquidityPurchase(d.channelId, fundingTx.liquidityPurchase_opt.get.amount))
+                stay()
+              } else {
+                startSingleTimer(QuiescenceTimeout.toString, QuiescenceTimeout(peer), nodeParams.channelConf.quiescenceTimeout)
+                if (d.commitments.localIsQuiescent) {
+                  val stfu = Stfu(d.channelId, initiator = true)
+                  val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(Some(cmd), QuiescenceNegotiation.Initiator.SentStfu(stfu))
+                  stay() using d.copy(spliceStatus = spliceStatus1) sending stfu
+                } else {
+                  val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(Some(cmd), QuiescenceNegotiation.Initiator.QuiescenceRequested)
+                  stay() using d.copy(spliceStatus = spliceStatus1)
+                }
+              }
+            case _: LocalFundingStatus.ZeroconfPublishedFundingTx =>
+              log.warning("cannot initiate rbf: transaction is using 0-conf (txId={})", d.commitments.latest.fundingTxId)
+              cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfZeroConf(d.channelId))
+              stay()
+            case _ =>
+              log.warning("cannot initiate rbf: transaction already confirmed (txId={})", d.commitments.latest.fundingTxId)
+              cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfTxConfirmed(d.channelId))
+              stay()
+          }
+        case _ =>
+          log.warning("cannot initiate rbf, a concurrent splice attempt is already in progress")
+          cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceAlreadyInProgress(d.channelId))
+          stay()
       }
 
     case Event(_: Stfu, d: DATA_NORMAL) if d.localShutdown.isDefined =>
@@ -885,24 +932,34 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             if (d.commitments.localIsQuiescent) {
               stay() using d.copy(spliceStatus = SpliceStatus.NonInitiatorQuiescent) sending Stfu(d.channelId, initiator = false)
             } else {
-              stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
+              stay() using d.copy(spliceStatus = SpliceStatus.NegotiatingQuiescence(None, QuiescenceNegotiation.NonInitiator.ReceivedStfu(msg)))
             }
-          case SpliceStatus.QuiescenceRequested(cmd) =>
+          case SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.QuiescenceRequested) =>
             // We could keep track of our splice attempt and merge it with the remote splice instead of cancelling it.
             // But this is an edge case that should rarely occur, so it's probably not worth the additional complexity.
             log.warning("our peer initiated quiescence before us, cancelling our splice attempt")
-            cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId))
-            stay() using d.copy(spliceStatus = SpliceStatus.ReceivedStfu(msg))
-          case SpliceStatus.InitiatorQuiescent(cmd) =>
-            // if both sides send stfu at the same time, the quiescence initiator is the channel opener
+            cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, ConcurrentRemoteSplice(d.channelId)))
+            stay() using d.copy(spliceStatus = SpliceStatus.NegotiatingQuiescence(None, QuiescenceNegotiation.NonInitiator.ReceivedStfu(msg)))
+          case SpliceStatus.NegotiatingQuiescence(Some(cmd), QuiescenceNegotiation.Initiator.SentStfu(_)) =>
+            // If both sides send stfu at the same time, the quiescence initiator is the channel opener.
             if (!msg.initiator || d.commitments.params.localParams.isChannelOpener) {
-              initiateSplice(cmd, d) match {
-                case Left(f) =>
-                  cmd.replyTo ! RES_FAILURE(cmd, f)
-                  context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
-                  stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
-                case Right(spliceInit) =>
-                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+              cmd match {
+                case cmd: CMD_SPLICE => initiateSplice(cmd, d) match {
+                  case Left(f) =>
+                    cmd.replyTo ! RES_FAILURE(cmd, f)
+                    context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+                    stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
+                  case Right(spliceInit) =>
+                    stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit)) sending spliceInit
+                }
+                case cmd: CMD_BUMP_FUNDING_FEE => initiateSpliceRbf(cmd, d) match {
+                  case Left(f) =>
+                    cmd.replyTo ! RES_FAILURE(cmd, f)
+                    context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+                    stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending Warning(d.channelId, f.getMessage)
+                  case Right(txInitRbf) =>
+                    stay() using d.copy(spliceStatus = SpliceStatus.RbfRequested(cmd, txInitRbf)) sending txInitRbf
+                }
               }
             } else {
               log.warning("concurrent stfu received and our peer is the channel initiator, cancelling our splice attempt")
@@ -931,6 +988,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           } else if (msg.feerate < nodeParams.currentBitcoinCoreFeerates.minimum) {
             log.info("rejecting splice request: feerate too low")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceRequest(d.channelId).getMessage)
+          } else if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
+            val previousTxs = d.commitments.active.filter(_.fundingTxIndex == d.commitments.latest.fundingTxIndex).map(_.fundingTxId)
+            log.info("rejecting splice request: the previous splice has unconfirmed rbf attempts (txIds={})", previousTxs.mkString(", "))
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
+          } else if (d.commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]) {
+            log.info("rejecting splice request: the previous funding transaction is unconfirmed (txId={})", d.commitments.latest.fundingTxId)
+            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
           } else {
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
@@ -1040,6 +1104,121 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)
       }
 
+    case Event(msg: TxInitRbf, d: DATA_NORMAL) =>
+      d.spliceStatus match {
+        case SpliceStatus.NonInitiatorQuiescent =>
+          getSpliceRbfContext(None, d) match {
+            case Right(rbf) if msg.feerate < rbf.latestFundingTx.fundingParams.minNextFeerate =>
+              log.info("rejecting rbf request: the new feerate must be at least {} (proposed={})", rbf.latestFundingTx.fundingParams.minNextFeerate, msg.feerate)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfFeerate(d.channelId, msg.feerate, rbf.latestFundingTx.fundingParams.minNextFeerate).getMessage)
+            case Right(rbf) if msg.requestFunding_opt.isEmpty && rbf.latestFundingTx.liquidityPurchase_opt.nonEmpty =>
+              log.info("rejecting rbf attempt: a liquidity purchase was included in the previous transaction but is not included in this one")
+              // Our peer is trying to trick us into contributing the amount they were previously paying for, but
+              // without paying for it by leveraging the fact that we'll keep contributing the same amount.
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfMissingLiquidityPurchase(d.channelId, rbf.latestFundingTx.liquidityPurchase_opt.get.amount).getMessage)
+            case Right(rbf) if nodeParams.currentBlockHeight < rbf.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks =>
+              log.info("rejecting rbf attempt: last attempt was less than {} blocks ago", nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, rbf.latestFundingTx.createdAt, rbf.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
+            case Right(rbf) =>
+              val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+              LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.willFundRates_opt, feeCreditUsed_opt = None) match {
+                case Left(t) =>
+                  log.warning("rejecting rbf request with invalid liquidity ads: {}", t.getMessage)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
+                case Right(willFund_opt) =>
+                  // We contribute the amount of liquidity requested by our peer, if liquidity ads is active.
+                  // Otherwise we keep the same contribution we made to the previous funding transaction.
+                  val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
+                  log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
+                  val txAckRbf = TxAckRbf(d.channelId, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund))
+                  val fundingParams = InteractiveTxParams(
+                    channelId = d.channelId,
+                    isInitiator = false,
+                    localContribution = fundingContribution,
+                    remoteContribution = msg.fundingContribution,
+                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
+                    localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
+                    lockTime = msg.lockTime,
+                    dustLimit = rbf.latestFundingTx.fundingParams.dustLimit,
+                    targetFeerate = msg.feerate,
+                    requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = txAckRbf.requireConfirmedInputs)
+                  )
+                  val sessionId = randomBytes32()
+                  val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+                    sessionId,
+                    nodeParams, fundingParams,
+                    channelParams = d.commitments.params,
+                    purpose = rbf,
+                    localPushAmount = 0 msat, remotePushAmount = 0 msat,
+                    willFund_opt.map(_.purchase),
+                    wallet
+                  ))
+                  txBuilder ! InteractiveTxBuilder.Start(self)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, sessionId, txBuilder, remoteCommitSig = None)) sending txAckRbf
+              }
+            case Left(f) =>
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
+          }
+        case SpliceStatus.NoSplice =>
+          log.info("rejecting rbf attempt: quiescence not negotiated")
+          stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
+        case SpliceStatus.SpliceAborted =>
+          log.info("rejecting rbf attempt: our previous tx_abort was not acked")
+          stay() sending Warning(d.channelId, InvalidRbfTxAbortNotAcked(d.channelId).getMessage)
+        case _ =>
+          log.info("rejecting rbf attempt: the current attempt must be completed or aborted first")
+          stay() sending Warning(d.channelId, InvalidRbfAlreadyInProgress(d.channelId).getMessage)
+      }
+
+    case Event(msg: TxAckRbf, d: DATA_NORMAL) =>
+      d.spliceStatus match {
+        case SpliceStatus.RbfRequested(cmd, txInitRbf) =>
+          getSpliceRbfContext(Some(cmd), d) match {
+            case Right(rbf) =>
+              val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+              LiquidityAds.validateRemoteFunding(cmd.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, txInitRbf.feerate, isChannelCreation = false, msg.willFund_opt) match {
+                case Left(t) =>
+                  log.info("rejecting rbf attempt: invalid liquidity ads response ({})", t.getMessage)
+                  cmd.replyTo ! RES_FAILURE(cmd, t)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
+                case Right(liquidityPurchase_opt) =>
+                  log.info("our peer accepted our rbf request and will contribute {} to the funding transaction", msg.fundingContribution)
+                  val fundingParams = InteractiveTxParams(
+                    channelId = d.channelId,
+                    isInitiator = true,
+                    localContribution = txInitRbf.fundingContribution,
+                    remoteContribution = msg.fundingContribution,
+                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
+                    localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
+                    lockTime = txInitRbf.lockTime,
+                    dustLimit = rbf.latestFundingTx.fundingParams.dustLimit,
+                    targetFeerate = txInitRbf.feerate,
+                    requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = txInitRbf.requireConfirmedInputs)
+                  )
+                  val sessionId = randomBytes32()
+                  val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+                    sessionId,
+                    nodeParams, fundingParams,
+                    channelParams = d.commitments.params,
+                    purpose = rbf,
+                    localPushAmount = 0 msat, remotePushAmount = 0 msat,
+                    liquidityPurchase_opt = liquidityPurchase_opt,
+                    wallet
+                  ))
+                  txBuilder ! InteractiveTxBuilder.Start(self)
+                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = Some(cmd), sessionId, txBuilder, remoteCommitSig = None))
+              }
+            case Left(f) =>
+              cmd.replyTo ! RES_FAILURE(cmd, f)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
+          }
+        case _ =>
+          log.info("ignoring unexpected tx_ack_rbf (status={})", d.spliceStatus.getClass.getSimpleName)
+          stay()
+      }
+
     case Event(msg: TxAbort, d: DATA_NORMAL) =>
       d.spliceStatus match {
         case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
@@ -1055,6 +1234,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"splice attempt rejected by our peer: ${msg.toAscii}"))
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
+        case SpliceStatus.RbfRequested(cmd, _) =>
+          log.info("our peer rejected our rbf attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
+          cmd.replyTo ! RES_FAILURE(cmd, new RuntimeException(s"rbf attempt rejected by our peer: ${msg.toAscii}"))
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.NonInitiatorQuiescent =>
           log.info("our peer aborted their own splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
@@ -1065,7 +1248,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("our peer wants to abort the splice, but we've already negotiated a splice transaction: ascii='{}' bin={}", msg.toAscii, msg.data)
           // We ack their tx_abort but we keep monitoring the funding transaction until it's confirmed or double-spent.
           stay() sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
-        case _: QuiescenceNegotiation =>
+        case _: SpliceStatus.NegotiatingQuiescence =>
           log.info("our peer aborted the splice during quiescence negotiation, disconnecting: ascii='{}' bin={}", msg.toAscii, msg.data)
           // NB: we use a small delay to ensure we've sent our warning before disconnecting.
           context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
@@ -1900,8 +2083,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
       val rbfTlv: Set[ChannelReestablishTlv] = d match {
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.rbfStatus match {
-          case RbfStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
+          case DualFundingStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
           case _ => d.latestFundingTx.sharedTx match {
             case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId))
             case _: InteractiveTxBuilder.FullySignedSharedTransaction => Set.empty
@@ -1964,8 +2147,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       channelReestablish.nextFundingTxId_opt match {
         case Some(fundingTxId) =>
-          d.rbfStatus match {
-            case RbfStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
+          d.status match {
+            case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
               // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
               val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
               goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
@@ -1983,7 +2166,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case _ =>
               // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
               // their tx_complete): we tell them to abort that RBF attempt.
-              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(rbfStatus = RbfStatus.RbfAborted) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
+              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
           }
         case None => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
       }
@@ -2770,42 +2953,81 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def initiateSplice(cmd: CMD_SPLICE, d: DATA_NORMAL): Either[ChannelException, SpliceInit] = {
-    if (d.commitments.isQuiescent) {
-      val parentCommitment = d.commitments.latest.commitment
-      val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates)
-      val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
-        isInitiator = true,
-        sharedInput = Multisig2of2Input(parentCommitment),
-        spliceInAmount = cmd.additionalLocalFunding,
-        spliceOut = cmd.spliceOutputs,
-        targetFeerate = targetFeerate)
+    val parentCommitment = d.commitments.latest.commitment
+    val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates)
+    val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
+      isInitiator = true,
+      sharedInput = Multisig2of2Input(parentCommitment),
+      spliceInAmount = cmd.additionalLocalFunding,
+      spliceOut = cmd.spliceOutputs,
+      targetFeerate = targetFeerate)
+    val commitTxFees = if (d.commitments.params.localParams.paysCommitTxFees) {
+      Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+    } else {
+      0.sat
+    }
+    if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params).max(commitTxFees)) {
+      log.warning(s"cannot do splice: insufficient funds (commitTxFees=$commitTxFees reserve=${parentCommitment.localChannelReserve(d.commitments.params)})")
+      Left(InvalidSpliceRequest(d.channelId))
+    } else if (cmd.spliceOut_opt.map(_.scriptPubKey).exists(!MutualClose.isValidFinalScriptPubkey(_, allowAnySegwit = true))) {
+      log.warning("cannot do splice: invalid splice-out script")
+      Left(InvalidSpliceRequest(d.channelId))
+    } else {
+      log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
+      val spliceInit = SpliceInit(d.channelId,
+        fundingContribution = fundingContribution,
+        lockTime = nodeParams.currentBlockHeight.toLong,
+        feerate = targetFeerate,
+        fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
+        pushAmount = cmd.pushAmount,
+        requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+        requestFunding_opt = cmd.requestFunding_opt
+      )
+      Right(spliceInit)
+    }
+  }
+
+  private def initiateSpliceRbf(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_NORMAL): Either[ChannelException, TxInitRbf] = {
+    getSpliceRbfContext(Some(cmd), d).flatMap(rbf => {
+      // We use the same contribution as the previous splice attempt.
+      val fundingContribution = rbf.latestFundingTx.fundingParams.localContribution
       val commitTxFees = if (d.commitments.params.localParams.paysCommitTxFees) {
-        Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
+        Transactions.commitTxTotalCost(d.commitments.params.remoteParams.dustLimit, rbf.parentCommitment.remoteCommit.spec, d.commitments.params.commitmentFormat)
       } else {
         0.sat
       }
-      if (fundingContribution < 0.sat && parentCommitment.localCommit.spec.toLocal + fundingContribution < parentCommitment.localChannelReserve(d.commitments.params).max(commitTxFees)) {
-        log.warning(s"cannot do splice: insufficient funds (commitTxFees=$commitTxFees reserve=${parentCommitment.localChannelReserve(d.commitments.params)})")
-        Left(InvalidSpliceRequest(d.channelId))
-      } else if (cmd.spliceOut_opt.map(_.scriptPubKey).exists(!MutualClose.isValidFinalScriptPubkey(_, allowAnySegwit = true))) {
-        log.warning("cannot do splice: invalid splice-out script")
+      if (fundingContribution < 0.sat && rbf.parentCommitment.localCommit.spec.toLocal + fundingContribution < rbf.parentCommitment.localChannelReserve(d.commitments.params).max(commitTxFees)) {
+        log.warning(s"cannot do rbf: insufficient funds (commitTxFees=$commitTxFees reserve=${rbf.parentCommitment.localChannelReserve(d.commitments.params)})")
         Left(InvalidSpliceRequest(d.channelId))
       } else {
-        log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
-        val spliceInit = SpliceInit(d.channelId,
-          fundingContribution = fundingContribution,
-          lockTime = nodeParams.currentBlockHeight.toLong,
-          feerate = targetFeerate,
-          fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
-          pushAmount = cmd.pushAmount,
-          requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
-          requestFunding_opt = cmd.requestFunding_opt
-        )
-        Right(spliceInit)
+        val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt)
+        Right(txInitRbf)
       }
-    } else {
-      log.warning("cannot initiate splice, channel is not quiescent")
-      Left(InvalidSpliceNotQuiescent(d.channelId))
+    })
+  }
+
+  private def getSpliceRbfContext(cmd_opt: Option[CMD_BUMP_FUNDING_FEE], d: DATA_NORMAL): Either[ChannelException, InteractiveTxBuilder.SpliceTxRbf] = {
+    d.commitments.latest.localFundingStatus match {
+      case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+        val fundingTxIndex = d.commitments.latest.fundingTxIndex
+        d.commitments.active.find(_.fundingTxIndex == fundingTxIndex - 1) match {
+          case Some(parentCommitment) =>
+            val previousTxs = d.commitments.active
+              .filter(_.fundingTxIndex == fundingTxIndex)
+              .map(_.localFundingStatus)
+              // All transactions should be unconfirmed, otherwise we wouldn't be in an RBF context.
+              .collect { case tx: LocalFundingStatus.DualFundedUnconfirmedFundingTx => tx.sharedTx }
+            Right(InteractiveTxBuilder.SpliceTxRbf(parentCommitment, d.commitments.changes, fundingTx, previousTxs, cmd_opt.map(_.fundingFeeBudget)))
+          case None =>
+            log.warning("cannot initiate rbf: cannot find parent commitment")
+            Left(InvalidRbfAttempt(d.channelId))
+        }
+      case _: LocalFundingStatus.ZeroconfPublishedFundingTx =>
+        log.warning("cannot initiate rbf: transaction is using 0-conf (txId={})", d.commitments.latest.fundingTxId)
+        Left(InvalidRbfZeroConf(d.channelId))
+      case _ =>
+        log.warning("cannot initiate rbf: transaction already confirmed (txId={})", d.commitments.latest.fundingTxId)
+        Left(InvalidRbfTxConfirmed(d.channelId))
     }
   }
 
@@ -2831,9 +3053,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   private def reportSpliceFailure(spliceStatus: SpliceStatus, f: Throwable): Unit = {
     val cmd_opt = spliceStatus match {
-      case SpliceStatus.QuiescenceRequested(cmd) => Some(cmd)
-      case SpliceStatus.InitiatorQuiescent(cmd) => Some(cmd)
+      case SpliceStatus.NegotiatingQuiescence(cmd_opt, _) => cmd_opt
       case SpliceStatus.SpliceRequested(cmd, _) => Some(cmd)
+      case SpliceStatus.RbfRequested(cmd, _) => Some(cmd)
       case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt

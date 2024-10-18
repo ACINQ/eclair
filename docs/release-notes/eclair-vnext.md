@@ -38,6 +38,7 @@ Eclair will not allow remote peers to open new obsolete channels that do not sup
 - `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
 - `createinvoice` now takes an optional `--privateChannelIds` parameter that can be used to add routing hints through private channels. (#2909)
 - `nodes` allows filtering nodes that offer liquidity ads (#2848)
+- `rbfsplice` lets any channel participant RBF the current unconfirmed splice transaction (#2887)
 
 ### Miscellaneous improvements and bug fixes
 

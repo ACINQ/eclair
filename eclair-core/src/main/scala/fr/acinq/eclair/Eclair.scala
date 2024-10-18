@@ -96,6 +96,8 @@ trait Eclair {
 
   def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
+  def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
+
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
@@ -232,17 +234,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None)
+    )
   }
 
   override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))),
-        spliceOut_opt = None,
-        requestFunding_opt = None,
-      ))
+    val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
+    )
   }
 
   override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
@@ -253,12 +256,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(script) => Script.write(script)
       }
     }
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = None,
-        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script)),
-        requestFunding_opt = None,
-      ))
+    val spliceOut = SpliceOut(amount = amountOut, scriptPubKey = script)
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut), requestFunding_opt = None)
+    )
+  }
+
+  override def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None)
+    )
   }
 
   override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] = {
@@ -579,9 +588,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     case Left(channelId) => appKit.register ? Register.Forward(null, channelId, request)
     case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(null, shortChannelId, request)
   }).map {
-    case t: R@unchecked => t
-    case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-    case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+    case t: R @unchecked => t
+    case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+    case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
   }
 
   private def sendToChannelTyped[C <: Command, R <: CommandResponse[C]](channel: ApiTypes.ChannelIdentifier, cmdBuilder: akka.actor.typed.ActorRef[Any] => C)(implicit timeout: Timeout): Future[R] =
@@ -592,9 +601,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(shortChannelId) => Register.ForwardShortId(replyTo, shortChannelId, cmd)
       }
     }.map {
-      case t: R@unchecked => t
-      case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-      case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+      case t: R @unchecked => t
+      case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+      case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
     }
 
   /**
