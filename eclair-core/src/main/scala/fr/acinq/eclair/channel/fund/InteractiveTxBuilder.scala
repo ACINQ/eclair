@@ -795,7 +795,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val nextFeerate = Transactions.fee2rate(sharedTx.fees, tx.weight())
         if (nextFeerate <= previousFeerate) {
           log.warn("invalid interactive tx: next feerate isn't greater than previous feerate (previous={}, next={})", previousFeerate, nextFeerate)
-          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+          return Left(InvalidRbfFeerate(fundingParams.channelId, nextFeerate, previousFeerate))
         }
       case None =>
         val feeWithoutWitness = Transactions.weight2fee(fundingParams.targetFeerate, tx.weight())
@@ -811,7 +811,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         }
         if (sharedTx.fees < minimumFee) {
           log.warn("invalid interactive tx: below the target feerate (target={}, actual={})", fundingParams.targetFeerate, Transactions.fee2rate(sharedTx.fees, tx.weight()))
-          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+          return Left(InvalidSpliceFeerate(fundingParams.channelId, Transactions.fee2rate(sharedTx.fees, tx.weight()), fundingParams.targetFeerate))
         }
     }
 

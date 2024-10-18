@@ -2669,7 +2669,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidSpliceFeerate])
   }
 
   test("previous attempts not double-spent") {
