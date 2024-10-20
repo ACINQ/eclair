@@ -455,8 +455,8 @@ object PaymentLifecycle {
     override val amount = route.fold(_.amount, _.amount)
 
     def printRoute(): String = route match {
-      case Left(PredefinedChannelRoute(_, _, channels, _)) => channels.mkString("->")
-      case Left(PredefinedNodeRoute(_, nodes, _)) => nodes.mkString("->")
+      case Left(PredefinedChannelRoute(_, _, channels, _, _, _)) => channels.mkString("->")
+      case Left(PredefinedNodeRoute(_, nodes, _, _, _)) => nodes.mkString("->")
       case Right(route) => route.printNodes()
     }
   }

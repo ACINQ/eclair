@@ -461,8 +461,9 @@ object NodeParams extends Logging {
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
         config.getInt("mpp.max-parts")),
       experimentName = name,
-      experimentPercentage = config.getInt("percentage"))
-
+      experimentPercentage = config.getInt("percentage"),
+      blip18InboundFees = config.getBoolean("blip18-inbound-fees"),
+      excludePositiveInboundFees = config.getBoolean("exclude-channels-with-positive-inbound-fees"))
 
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
       val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))

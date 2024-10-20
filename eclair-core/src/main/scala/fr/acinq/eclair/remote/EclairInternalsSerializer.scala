@@ -80,7 +80,9 @@ object EclairInternalsSerializer {
       ("heuristicsParams" | either(bool(8), weightRatiosCodec, heuristicsConstantsCodec)) ::
       ("mpp" | multiPartParamsCodec) ::
       ("experimentName" | utf8_32) ::
-      ("experimentPercentage" | int32)).as[PathFindingConf]
+      ("experimentPercentage" | int32) ::
+      ("blip18InboundFees" | bool(8)) ::
+      ("excludePositiveInboundFees" | bool(8))).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
     "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)

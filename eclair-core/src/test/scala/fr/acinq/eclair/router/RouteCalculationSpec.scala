@@ -552,7 +552,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     )
 
     val publicChannels = channels.map { case (shortChannelId, announcement) =>
-      val HopRelayParams.FromAnnouncement(update) = edges.find(_.desc.shortChannelId == shortChannelId).get.params
+      val HopRelayParams.FromAnnouncement(update, _) = edges.find(_.desc.shortChannelId == shortChannelId).get.params
       val (update_1_opt, update_2_opt) = if (update.channelFlags.isNode1) (Some(update), None) else (None, Some(update))
       val pc = PublicChannel(announcement, TxId(ByteVector32.Zeroes), Satoshi(1000), update_1_opt, update_2_opt, None)
       (shortChannelId, pc)
