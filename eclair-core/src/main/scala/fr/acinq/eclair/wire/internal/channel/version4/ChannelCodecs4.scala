@@ -276,8 +276,15 @@ private[channel] object ChannelCodecs4 {
         ("fundingTxIndex" | uint32) ::
         ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
 
+    private val musig2of2InputCodec: Codec[InteractiveTxBuilder.Musig2Input] = (
+      ("info" | inputInfoCodec) ::
+        ("fundingTxIndex" | uint32) ::
+        ("remoteFundingPubkey" | publicKey) ::
+        ("commitIndex" | uint32)).as[InteractiveTxBuilder.Musig2Input]
+
     private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
       .typecase(0x01, multisig2of2InputCodec)
+      .typecase(0x02, musig2of2InputCodec)
 
     private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]
 
