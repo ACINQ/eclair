@@ -597,16 +597,16 @@ object Transactions {
     if (toLocalAmount >= localDustLimit) {
       commitmentFormat match {
         case SimpleTaprootChannelCommitmentFormat =>
-        val toLocalScriptTree = Scripts.Taproot.toLocalScriptTree(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
-        outputs.append(CommitmentOutputLink(
-          TxOut(toLocalAmount, pay2tr(XonlyPublicKey(NUMS_POINT), Some(toLocalScriptTree))),
-          NUMS_POINT.xOnly, toLocalScriptTree,
-          ToLocal))
+          val toLocalScriptTree = Scripts.Taproot.toLocalScriptTree(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
+          outputs.append(CommitmentOutputLink(
+            TxOut(toLocalAmount, pay2tr(XonlyPublicKey(NUMS_POINT), Some(toLocalScriptTree))),
+            NUMS_POINT.xOnly, toLocalScriptTree,
+            ToLocal))
         case _ =>
-        outputs.append(CommitmentOutputLink(
-          TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))),
-          toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey),
-          ToLocal))
+          outputs.append(CommitmentOutputLink(
+            TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))),
+            toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey),
+            ToLocal))
       }
     }
 
@@ -1182,7 +1182,7 @@ object Transactions {
 
   def makeHtlcPenaltyTx(commitTx: Transaction, htlcOutputIndex: Int, internalKey: XonlyPublicKey, scriptTree: ScriptTree, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
     import KotlinUtils._
-    
+
     val input = InputInfo.TaprootInput(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), internalKey, Some(scriptTree), scriptTree.hash())
     // unsigned transaction
     val tx = Transaction(
