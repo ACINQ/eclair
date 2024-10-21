@@ -780,7 +780,7 @@ private[channel] object ChannelCodecs4 {
     private val onRemoteShutdownCodec: Codec[OnRemoteShutdown] = discriminated[OnRemoteShutdown].by(uint8)
       .typecase(0x00, provide(OnRemoteShutdown.WaitForSigs))
       .typecase(0x01, feeratePerKw.as[OnRemoteShutdown.SignTransaction])
-    
+
     private val waitingForRemoteShutdownCodec: Codec[ClosingNegotiation.WaitingForRemoteShutdown] = (
       ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("onRemoteShutdown" | onRemoteShutdownCodec)
