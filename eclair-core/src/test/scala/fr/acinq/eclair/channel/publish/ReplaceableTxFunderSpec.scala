@@ -39,7 +39,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   private def createAnchorTx(): (CommitTx, ClaimLocalAnchorOutputTx) = {
     val anchorScript = Scripts.anchor(PlaceHolderPubKey)
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey, DefaultCommitmentFormat)
     val commitTx = Transaction(
       2,
       Seq(TxIn(commitInput.outPoint, commitInput.redeemScriptOrEmptyScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
