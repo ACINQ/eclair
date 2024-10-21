@@ -46,9 +46,11 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String, addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+
+  override def getPubkeyScript(renew: Boolean): ByteVector = Script.write(Script.pay2wpkh(dummyReceivePubkey))
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     funded += (tx.txid -> tx)
@@ -101,9 +103,11 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String, addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+
+  override def getPubkeyScript(renew: Boolean): ByteVector = Script.write(Script.pay2wpkh(dummyReceivePubkey))
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
 
@@ -148,9 +152,11 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
+  override def getReceiveAddress(label: String, addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
+
+  override def getPubkeyScript(renew: Boolean): ByteVector = Script.write(Script.pay2wpkh(pubkey))
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum
