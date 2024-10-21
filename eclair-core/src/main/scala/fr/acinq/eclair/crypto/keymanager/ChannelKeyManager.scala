@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol, Transaction, TxOut}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
@@ -40,6 +41,29 @@ trait ChannelKeyManager {
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
+
+  /**
+   * Create a deterministic verification nonce for a specific funding private key and commit tx index. The public nonce will be sent to our peer to create a partial signature
+   * of our commit tx, the private nonce is never shared (and never serialized or stored) and is used to create our local partial signature to be combined with our peer's.
+   *
+   * @param fundingKeyPath funding key path
+   * @param fundingTxIndex funding tx index
+   * @param channelKeyPath channel key path
+   * @param index          commit tx index
+   * @return a verification nonce that is used to create a partial musig2 signature for our commit tx.
+   */
+  def verificationNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, channelKeyPath: DeterministicWallet.KeyPath, index: Long): (SecretNonce, IndividualNonce)
+
+  /**
+   * Create a new, randomized singing nonce for a specific funding private key. These nonces are used to create a partial musig2 signature for our peer's commit tx and are sent
+   * alongside the partial signature. They are created on the fly, and never stored.
+   *
+   * @param fundingKeyPath funding key path
+   * @param fundingTxIndex funding tx index
+   * @return a signing nonce that can be used to create a musig2 signature with the funding private key that matches the provided key path and key index.
+   *         Each call to this methode will return a different, randomized signing nonce.
+   */
+  def signingNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce)
 
   def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
     if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
@@ -67,6 +91,12 @@ trait ChannelKeyManager {
    * @return a signature generated with the private key that matches the input extended public key
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+
+  def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
+    partialSign(tx.tx, tx.tx.txIn.indexWhere(_.outPoint == tx.input.outPoint), Seq(tx.input.txOut), localPublicKey, remotePublicKey, txOwner, localNonce, remoteNextLocalNonce)
+  }
+
+  def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32]
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys

@@ -228,7 +228,8 @@ object Scripts {
 
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
-    case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // standard channels
+    case ScriptWitness(Seq(remoteSig, localSig, paymentPreimage, _, _)) if remoteSig.size == 65 && localSig.size == 65 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // simple taproot channels
   }
 
   /**
@@ -311,6 +312,8 @@ object Scripts {
     import KotlinUtils._
 
     implicit def scala2kmpscript(input: Seq[fr.acinq.bitcoin.scalacompat.ScriptElt]): java.util.List[fr.acinq.bitcoin.ScriptElt] = input.map(e => scala2kmp(e)).asJava
+
+    def musig2FundingScript(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = Script.pay2tr(musig2Aggregate(pubkey1, pubkey2), None)
 
     /**
      * Sort and aggregate the public keys of a musig2 session

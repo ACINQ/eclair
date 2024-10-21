@@ -124,7 +124,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
 
   test("encode/decode rbf status") {
     val channelId = randomBytes32()
-    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
+    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), hex"deadbeef")
     val fundingTx = SharedTransaction(
       sharedInput_opt = None,
       sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat, 0 msat),
