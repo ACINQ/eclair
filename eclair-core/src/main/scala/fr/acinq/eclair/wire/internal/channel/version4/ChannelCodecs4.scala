@@ -1,5 +1,7 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
+import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -109,10 +111,26 @@ private[channel] object ChannelCodecs4 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    val inputInfoCodec: Codec[InputInfo] = (
+    val scriptTreeCodec: Codec[ScriptTree] = lengthDelimited(bytes.xmap(d => ScriptTree.read(new ByteArrayInput(d.toArray)), d => ByteVector.view(d.write())))
+
+    val scriptTreeAndInternalKey: Codec[ScriptTreeAndInternalKey] = (scriptTreeCodec :: xonlyPublicKey).as[ScriptTreeAndInternalKey]
+
+    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey], dummy: Boolean)
+
+    // To support the change from redeemScript to "either redeem script or script tree" while remaining backwards-compatible with the previous version 4 codec, we use
+    // the redeem script itself as a left/write indicator: empty -> right, not empty -> left
+    private val inputInfoExCodec: Codec[InputInfoEx] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript =>
+          ("redeemScriptOrScriptTree" | either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)) :: ("dummy" | provide(false))
+        })
+      ).as[InputInfoEx]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoExCodec.xmap(
+      iex => InputInfo(iex.outPoint, iex.txOut, iex.redeemScriptOrScriptTree),
+      i => InputInfoEx(i.outPoint, i.txOut, i.redeemScriptOrScriptTree.swap.toOption.getOrElse(ByteVector.empty), i.redeemScriptOrScriptTree, false)
+    )
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::
@@ -681,7 +699,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
-    
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localPushAmount" | millisatoshi) ::
@@ -754,6 +772,27 @@ private[channel] object ChannelCodecs4 {
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
 
+    private val closingTxsCodec: Codec[ClosingTxs] = (
+      ("localAndRemote_opt" | optional(bool8, closingTxCodec)) ::
+        ("localOnly_opt" | optional(bool8, closingTxCodec)) ::
+        ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
+
+    private val waitingForRemoteShutdownCodec: Codec[ClosingNegotiation.WaitingForRemoteShutdown] = (
+      ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerate_opt" | optional(bool8, feeratePerKw))
+      ).as[ClosingNegotiation.WaitingForRemoteShutdown]
+
+    val closingNegotiationCodec: Codec[ClosingNegotiation] = discriminated[ClosingNegotiation].by(uint8)
+      .\(0x01) { case status: ClosingNegotiation.WaitingForRemoteShutdown => status }(waitingForRemoteShutdownCodec)
+      .\(0x02) { case status: ClosingNegotiation.SigningTransactions => status.disconnect() }(waitingForRemoteShutdownCodec)
+      .\(0x03) { case status: ClosingNegotiation.WaitingForConfirmation => status.disconnect() }(waitingForRemoteShutdownCodec)
+
+    val DATA_NEGOTIATING_SIMPLE_14_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
+      ("commitments" | commitmentsCodec) ::
+        ("status" | closingNegotiationCodec) ::
+        ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
+        ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
+
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("waitingSince" | blockHeight) ::
@@ -789,6 +828,7 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x14, Codecs.DATA_NEGOTIATING_SIMPLE_14_Codec)
     .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec)
     .typecase(0x12, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_12_Codec)
     .typecase(0x11, Codecs.DATA_CLOSING_11_Codec)

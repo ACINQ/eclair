@@ -31,11 +31,12 @@ import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPub
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -91,8 +92,10 @@ object ChannelStateTestsTags {
   val RejectRbfAttempts = "reject_rbf_attempts"
   /** If set, the non-initiator will require a 1-block delay between RBF attempts. */
   val DelayRbfAttempts = "delay_rbf_attempts"
-  /** If set, channels will adapt their max HTLC amount to the available balance */
-  val AdaptMaxHtlcAmount = "adapt-max-htlc-amount"
+  /** If set, channels will adapt their max HTLC amount to the available balance. */
+  val AdaptMaxHtlcAmount = "adapt_max_htlc_amount"
+  /** If set, closing will use option_simple_close. */
+  val SimpleClose = "option_simple_close"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -188,6 +191,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .initFeatures()
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -200,6 +204,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .initFeatures()
 
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
@@ -508,23 +513,41 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s2r.forward(r)
     r2s.expectMsgType[Shutdown]
     r2s.forward(s)
-    // agreeing on a closing fee
-    var sCloseFee, rCloseFee = 0.sat
-    do {
-      sCloseFee = s2r.expectMsgType[ClosingSigned].feeSatoshis
+    if (s.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures.hasFeature(Features.SimpleClose)) {
+      s2r.expectMsgType[ClosingComplete]
       s2r.forward(r)
-      rCloseFee = r2s.expectMsgType[ClosingSigned].feeSatoshis
+      r2s.expectMsgType[ClosingComplete]
       r2s.forward(s)
-    } while (sCloseFee != rCloseFee)
-    s2blockchain.expectMsgType[TxPublisher.PublishTx]
-    s2blockchain.expectMsgType[WatchTxConfirmed]
-    r2blockchain.expectMsgType[TxPublisher.PublishTx]
-    r2blockchain.expectMsgType[WatchTxConfirmed]
-    eventually {
-      assert(s.stateName == CLOSING)
-      assert(r.stateName == CLOSING)
+      r2s.expectMsgType[ClosingSig]
+      r2s.forward(s)
+      val sTx = r2blockchain.expectMsgType[PublishFinalTx].tx
+      r2blockchain.expectWatchTxConfirmed(sTx.txid)
+      s2r.expectMsgType[ClosingSig]
+      s2r.forward(r)
+      val rTx = s2blockchain.expectMsgType[PublishFinalTx].tx
+      s2blockchain.expectWatchTxConfirmed(rTx.txid)
+      assert(s2blockchain.expectMsgType[PublishFinalTx].tx.txid == sTx.txid)
+      s2blockchain.expectWatchTxConfirmed(sTx.txid)
+      assert(r2blockchain.expectMsgType[PublishFinalTx].tx.txid == rTx.txid)
+      r2blockchain.expectWatchTxConfirmed(rTx.txid)
+    } else {
+      // agreeing on a closing fee
+      var sCloseFee, rCloseFee = 0.sat
+      do {
+        sCloseFee = s2r.expectMsgType[ClosingSigned].feeSatoshis
+        s2r.forward(r)
+        rCloseFee = r2s.expectMsgType[ClosingSigned].feeSatoshis
+        r2s.forward(s)
+      } while (sCloseFee != rCloseFee)
+      s2blockchain.expectMsgType[TxPublisher.PublishTx]
+      s2blockchain.expectMsgType[WatchTxConfirmed]
+      r2blockchain.expectMsgType[TxPublisher.PublishTx]
+      r2blockchain.expectMsgType[WatchTxConfirmed]
+      eventually {
+        assert(s.stateName == CLOSING)
+        assert(r.stateName == CLOSING)
+      }
     }
-    // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
   }
 
   def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
@@ -566,7 +589,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => {
-      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed] 
+      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed]
       assert(watchConfirmed.txId == claimMain.tx.txid)
       assert(watchConfirmed.delay_opt.map(_.parentTxId).contains(publishedLocalCommitTx.txid))
     })

@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector6
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import fr.acinq.eclair.{KamonExt, randomLong}
 import grizzled.slf4j.Logging
@@ -113,7 +112,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
-      Transactions.sign(tx, privateKey.privateKey, txOwner, commitmentFormat)
+      tx.sign(privateKey.privateKey, txOwner, commitmentFormat)
     }
   }
 
@@ -134,7 +133,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-      Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat)
     }
   }
 
@@ -154,7 +153,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-      Transactions.sign(tx, currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat)
     }
   }
 

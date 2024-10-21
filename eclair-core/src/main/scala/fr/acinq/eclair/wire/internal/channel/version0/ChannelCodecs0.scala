@@ -125,10 +125,14 @@ private[channel] object ChannelCodecs0 {
       closingTx => closingTx.tx
     )
 
-    val inputInfoCodec: Codec[InputInfo] = (
+    private case class InputInfoLegacy(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector)
+
+    private val inputInfoLegacyCodec: Codec[InputInfoLegacy] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | varsizebinarydata)).as[InputInfo].decodeOnly
+        ("redeemScript" | varsizebinarydata)).as[InputInfoLegacy]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoLegacyCodec.map(legacy => InputInfo(legacy.outPoint, legacy.txOut, Left(legacy.redeemScript))).decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
