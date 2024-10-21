@@ -17,14 +17,14 @@
 package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{CommitSig, FailureReason, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -600,8 +600,8 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
         case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
       }.copy(
         claimHtlcDelayedPenaltyTxs = List(
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0)),
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0))
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Script.write(Script.pay2wpkh(randomKey().publicKey))), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0)),
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Script.write(Script.pay2wpkh(randomKey().publicKey))), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0))
         )
       )
       assert(!rvk4b.isDone)

@@ -531,6 +531,54 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob.stateName == NEGOTIATING_SIMPLE)
   }
 
+  test("recv ClosingComplete (both outputs, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    aliceClose(f)
+    val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
+    assert(aliceClosingComplete.fees > 0.sat)
+    assert(aliceClosingComplete.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+    assert(aliceClosingComplete.closerOutputOnlyPartialSig_opt.nonEmpty)
+    assert(aliceClosingComplete.closeeOutputOnlyPartialSig_opt.isEmpty)
+    val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
+    assert(bobClosingComplete.fees > 0.sat)
+    assert(bobClosingComplete.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+    assert(bobClosingComplete.closerOutputOnlyPartialSig_opt.nonEmpty)
+    assert(bobClosingComplete.closeeOutputOnlyPartialSig_opt.isEmpty)
+
+    alice2bob.forward(bob, aliceClosingComplete)
+    val bobClosingSig = bob2alice.expectMsgType[ClosingSig]
+    assert(bobClosingSig.fees == aliceClosingComplete.fees)
+    assert(bobClosingSig.lockTime == aliceClosingComplete.lockTime)
+    bob2alice.forward(alice, bobClosingSig)
+    val aliceTx = alice2blockchain.expectMsgType[PublishFinalTx]
+    assert(aliceTx.desc == "closing")
+    assert(aliceTx.fee > 0.sat)
+    alice2blockchain.expectWatchTxConfirmed(aliceTx.tx.txid)
+    inside(bob2blockchain.expectMsgType[PublishFinalTx]) { p =>
+      assert(p.tx.txid == aliceTx.tx.txid)
+      assert(p.fee == 0.sat)
+    }
+    bob2blockchain.expectWatchTxConfirmed(aliceTx.tx.txid)
+    assert(alice.stateName == NEGOTIATING_SIMPLE)
+
+    bob2alice.forward(alice, bobClosingComplete)
+    val aliceClosingSig = alice2bob.expectMsgType[ClosingSig]
+    assert(aliceClosingSig.fees == bobClosingComplete.fees)
+    assert(aliceClosingSig.lockTime == bobClosingComplete.lockTime)
+    alice2bob.forward(bob, aliceClosingSig)
+    val bobTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    assert(bobTx.desc == "closing")
+    assert(bobTx.fee > 0.sat)
+    bob2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
+    inside(alice2blockchain.expectMsgType[PublishFinalTx]) { p =>
+      assert(p.tx.txid == bobTx.tx.txid)
+      assert(p.fee == 0.sat)
+    }
+    assert(aliceTx.tx.txid != bobTx.tx.txid)
+    alice2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
+    assert(bob.stateName == NEGOTIATING_SIMPLE)
+  }
+
   test("recv ClosingComplete (single output)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
     aliceClose(f)
