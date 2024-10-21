@@ -39,6 +39,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.SimpleTaprootChannelCommitmentFormat
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector

@@ -1182,7 +1182,7 @@ object Transactions {
 
   def makeHtlcPenaltyTx(commitTx: Transaction, htlcOutputIndex: Int, internalKey: XonlyPublicKey, scriptTree: ScriptTree, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
     import KotlinUtils._
-    
+
     val input = InputInfo.TaprootInput(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), internalKey, Some(scriptTree), scriptTree.hash())
     // unsigned transaction
     val tx = Transaction(
