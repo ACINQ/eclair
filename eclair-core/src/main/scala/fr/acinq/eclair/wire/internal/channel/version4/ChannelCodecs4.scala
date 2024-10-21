@@ -1,6 +1,7 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
 import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
@@ -276,8 +277,15 @@ private[channel] object ChannelCodecs4 {
         ("fundingTxIndex" | uint32) ::
         ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
 
+    private val musig2of2InputCodec: Codec[InteractiveTxBuilder.Musig2Input] = (
+      ("info" | inputInfoCodec) ::
+        ("fundingTxIndex" | uint32) ::
+        ("remoteFundingPubkey" | publicKey) ::
+        ("commitIndex" | uint32)).as[InteractiveTxBuilder.Musig2Input]
+
     private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
       .typecase(0x01, multisig2of2InputCodec)
+      .typecase(0x02, musig2of2InputCodec)
 
     private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]
 
@@ -292,7 +300,8 @@ private[channel] object ChannelCodecs4 {
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
-        ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
+        ("requireConfirmedInputs" | requireConfirmedInputsCodec) ::
+        ("remoteNonce" | provide[Option[IndividualNonce]](None))).as[InteractiveTxBuilder.InteractiveTxParams]
 
     // This codec was used by a first prototype version of splicing that only worked without HTLCs.
     private val sharedInteractiveTxInputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
@@ -506,7 +515,9 @@ private[channel] object ChannelCodecs4 {
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
         ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
-        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
+        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite))))) ::
+        ("remoteNonce" | provide[Option[IndividualNonce]](None))
+      ).as[Commitment]
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
       ("fundingTxIndex" | uint32) ::
@@ -516,7 +527,9 @@ private[channel] object ChannelCodecs4 {
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
         ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
         ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
-        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
+        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite))))) ::
+        ("remoteNonce" | provide[Option[IndividualNonce]](None))
+      ).as[Commitment]
 
     /**
      * When multiple commitments are active, htlcs are shared between all of these commitments.

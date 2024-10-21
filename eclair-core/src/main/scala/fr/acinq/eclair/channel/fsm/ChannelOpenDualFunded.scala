@@ -21,6 +21,7 @@ import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsStaging
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs}
@@ -28,6 +29,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
+import fr.acinq.eclair.transactions.Transactions.{SimpleTaprootChannelsStagingCommitmentFormat, SimpleTaprootChannelsStagingLegacyCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{RealShortChannelId, ToMilliSatoshiConversion, UInt64, randomBytes32}
 
@@ -114,6 +116,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         if (input.requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
         input.requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
         input.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
+        if (input.channelType.commitmentFormat.useTaproot) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath = channelKeyPath, index = 0)._2)) else None
       ).flatten
       val open = OpenDualFundedChannel(
         chainHash = nodeParams.chainHash,
@@ -136,6 +139,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         secondPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1),
         channelFlags = input.channelFlags,
         tlvStream = TlvStream(tlvs))
+      log.debug(s"sending $open")
       goto(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) using DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(input, open) sending open
   })
 
@@ -143,7 +147,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>
       import d.init.{localParams, remoteInit}
       val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
-      val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
+      val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey, d.init.channelType.commitmentFormat)
       Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, fundingScript, remoteNodeId, localParams.initFeatures, remoteInit.features, d.init.fundingContribution_opt) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript, willFund_opt)) =>
@@ -182,7 +186,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             willFund_opt.map(l => ChannelTlv.ProvideFundingTlv(l.willFund)),
             open.useFeeCredit_opt.map(c => ChannelTlv.FeeCreditUsedTlv(c)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
+            if (channelParams.commitmentFormat.useTaproot) Some(ChannelTlv.NextLocalNonceTlv(keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath = channelKeyPath, index = 0)._2)) else None
           ).flatten
+          log.debug("sending AcceptDualFundedChannel with {}", tlvs)
           val accept = AcceptDualFundedChannel(
             temporaryChannelId = open.temporaryChannelId,
             fundingAmount = localAmount,
@@ -215,7 +221,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = open.lockTime,
             dustLimit = open.dustLimit.max(accept.dustLimit),
             targetFeerate = open.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs),
+            remoteNonce = open.localNonce
           )
           val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint, feeBudget_opt = None)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -279,7 +286,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = d.lastSent.lockTime,
             dustLimit = d.lastSent.dustLimit.max(accept.dustLimit),
             targetFeerate = d.lastSent.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs),
+            remoteNonce = accept.localNonce
           )
           val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint, feeBudget_opt = d.init.fundingTxFeeBudget_opt)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -571,7 +579,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     remoteContribution = msg.fundingContribution,
                     lockTime = msg.lockTime,
                     targetFeerate = msg.feerate,
-                    requireConfirmedInputs = d.latestFundingTx.fundingParams.requireConfirmedInputs.copy(forLocal = msg.requireConfirmedInputs)
+                    requireConfirmedInputs = d.latestFundingTx.fundingParams.requireConfirmedInputs.copy(forLocal = msg.requireConfirmedInputs),
                   )
                   val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                     randomBytes32(),

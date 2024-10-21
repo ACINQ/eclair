@@ -1142,6 +1142,33 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcTxsAndRemoteSigs.size == 5)
   }
 
+  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(1100000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(999999 msat, bob, alice, bob2alice, alice2bob) // b->a (dust)
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(999999 msat, alice, bob, alice2bob, bob2alice) // a->b (dust)
+    addHtlc(1100000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+
+    alice ! CMD_SIGN()
+    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
+    assert(aliceCommitSig.htlcSignatures.length == 3)
+    alice2bob.forward(bob, aliceCommitSig)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // actual test begins
+    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
+    assert(bobCommitSig.htlcSignatures.length == 5)
+    bob2alice.forward(alice, bobCommitSig)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.index == 1)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcTxsAndRemoteSigs.size == 5)
+  }
+
   test("recv CommitSig (multiple htlcs in both directions) (without fundingTxId tlv)") { f =>
     import f._
 
