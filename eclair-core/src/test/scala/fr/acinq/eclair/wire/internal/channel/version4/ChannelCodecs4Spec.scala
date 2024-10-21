@@ -17,7 +17,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.channelDataCodec
-import fr.acinq.eclair.wire.protocol.{LiquidityAds, TxSignatures}
+import fr.acinq.eclair.wire.protocol.{ClosingComplete, ClosingSig, LiquidityAds, Shutdown, TxSignatures}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -228,6 +228,30 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val trampolineRelayed = Origin.Cold(Upstream.Cold.Trampoline(Upstream.Cold.Channel(ByteVector32(hex"19a3e2f5b1d747e6e59cec57d927c068c976eab0b914a1bf66aaacaa0917d49d"), 17, 0 msat) :: Upstream.Cold.Channel(ByteVector32(hex"4fbf1090bf27e4ef3af8b784f8e0e62dd2fc836775131d6e58400a68ec8fcf2c"), 21, 0 msat) :: Nil))
     val trampolineRelayedBin = hex"0004000219a3e2f5b1d747e6e59cec57d927c068c976eab0b914a1bf66aaacaa0917d49d00000000000000114fbf1090bf27e4ef3af8b784f8e0e62dd2fc836775131d6e58400a68ec8fcf2c0000000000000015"
     assert(originCodec.decode(trampolineRelayedBin.bits).require.value == trampolineRelayed)
+  }
+
+  test("encode/decode closing negotiation status") {
+    val channelId = randomBytes32()
+    val localShutdown = Shutdown(channelId, Script.write(Script.pay2wpkh(randomKey().publicKey)))
+    val remoteShutdown = Shutdown(channelId, Script.write(Script.pay2wpkh(randomKey().publicKey)))
+    val waitingForRemoteShutdown = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.WaitForSigs)
+    val closingFeerate = FeeratePerKw(5000 sat)
+    val waitingForRemoteShutdownWithFeerate = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.SignTransaction(closingFeerate))
+    val closingCompleteSent = ClosingCompleteSent(ClosingComplete(channelId, 1500 sat, 0), closingFeerate)
+    val closingSigReceived = ClosingSig(channelId)
+    val testCases = Map(
+      waitingForRemoteShutdown -> waitingForRemoteShutdown,
+      waitingForRemoteShutdownWithFeerate -> waitingForRemoteShutdownWithFeerate,
+      ClosingNegotiation.WaitingForConfirmation(localShutdown, remoteShutdown) -> waitingForRemoteShutdown,
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, None, None, None) -> waitingForRemoteShutdown,
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, Some(closingCompleteSent), None, None) -> waitingForRemoteShutdownWithFeerate,
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, Some(closingCompleteSent), None, Some(closingSigReceived)) -> waitingForRemoteShutdown,
+    )
+    testCases.foreach { case (status, expected) =>
+      val encoded = closingNegotiationCodec.encode(status).require
+      val decoded = closingNegotiationCodec.decode(encoded).require.value
+      assert(decoded == expected)
+    }
   }
 
 }
