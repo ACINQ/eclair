@@ -77,7 +77,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
       bob2alice.forward(alice)
       alice2bob.expectMsgType[TxComplete]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[CommitSig]
+      val sig1 = bob2alice.expectMsgType[CommitSig]
       bob2alice.forward(alice)
       alice2bob.expectMsgType[CommitSig]
       alice2bob.forward(bob)

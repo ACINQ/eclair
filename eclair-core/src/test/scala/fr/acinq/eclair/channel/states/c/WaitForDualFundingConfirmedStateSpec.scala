@@ -29,11 +29,12 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ProcessCurrentBlockHeight
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
+import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -480,7 +481,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val sender = TestProbe()
     alice ! CMD_BUMP_FUNDING_FEE(sender.ref, FeeratePerKw(20_000 sat), 100_000 sat, 0, requestFunding_opt = None)
     assert(sender.expectMsgType[RES_FAILURE[_, ChannelException]].t.isInstanceOf[InvalidRbfMissingLiquidityPurchase])
-    alice2bob.forward(bob, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(20_000 sat), TestConstants.fundingSatoshis, requireConfirmedInputs = false, requestFunding_opt = None))
+    alice2bob.forward(bob, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(20_000 sat), TestConstants.fundingSatoshis, requireConfirmedInputs = false, requestFunding_opt = None, nextLocalNonces = List.empty))
     assert(bob2alice.expectMsgType[TxAbort].toAscii.contains("the previous attempt contained a liquidity purchase"))
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAbort]
@@ -552,7 +553,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   test("recv TxInitRbf (exhausted RBF attempts)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.RejectRbfAttempts)) { f =>
     import f._
 
-    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat, requireConfirmedInputs = false, None)
+    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat, requireConfirmedInputs = false, None, List.empty)
     assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidRbfAttemptsExhausted(channelId(bob), 0).getMessage)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
@@ -561,7 +562,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     import f._
 
     val currentBlockHeight = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.createdAt
-    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat, requireConfirmedInputs = false, None)
+    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, 500_000 sat, requireConfirmedInputs = false, None, List.empty)
     assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidRbfAttemptTooSoon(channelId(bob), currentBlockHeight, currentBlockHeight + 1).getMessage)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
@@ -570,7 +571,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     import f._
 
     val fundingBelowPushAmount = 199_000.sat
-    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, fundingBelowPushAmount, requireConfirmedInputs = false, None)
+    bob ! TxInitRbf(channelId(bob), 0, TestConstants.feeratePerKw * 1.25, fundingBelowPushAmount, requireConfirmedInputs = false, None, List.empty)
     assert(bob2alice.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(bob), TestConstants.initiatorPushAmount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
     assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
@@ -581,7 +582,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.25, fundingFeeBudget = 100_000.sat, 0, None)
     alice2bob.expectMsgType[TxInitRbf]
     val fundingBelowPushAmount = 99_000.sat
-    alice ! TxAckRbf(channelId(alice), fundingBelowPushAmount, requireConfirmedInputs = false, None)
+    alice ! TxAckRbf(channelId(alice), fundingBelowPushAmount, requireConfirmedInputs = false, None, List.empty)
     assert(alice2bob.expectMsgType[TxAbort].toAscii == InvalidPushAmount(channelId(alice), TestConstants.nonInitiatorPushAmount, fundingBelowPushAmount.toMilliSatoshi).getMessage)
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
@@ -1063,14 +1064,26 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
   }
 
-  test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  def receiveError(f: FixtureParam): Unit = {
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "dual funding d34d")
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
+    alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
+      case Transactions.DefaultCommitmentFormat => ()
+    }
     alice2blockchain.expectMsgType[TxPublisher.PublishTx] // claim-main-delayed
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+  }
+
+  test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    receiveError(f)
+  }
+
+  test("recv Error (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    receiveError(f)
   }
 
   test("recv Error (remote commit published)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

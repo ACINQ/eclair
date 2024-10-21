@@ -273,7 +273,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == NORMAL)
   }
 
-  test("resume htlc settlement", Tag(IgnoreChannelUpdates)) { f =>
+  def resumeHTlcSettlement(f: FixtureParam): Unit = {
     import f._
 
     // Successfully send a first payment.
@@ -318,6 +318,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
+  }
+
+  test("resume htlc settlement", Tag(IgnoreChannelUpdates)) { f =>
+    resumeHTlcSettlement(f)
+  }
+
+  test("resume htlc settlement (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(IgnoreChannelUpdates)) { f =>
+    resumeHTlcSettlement(f)
   }
 
   test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
