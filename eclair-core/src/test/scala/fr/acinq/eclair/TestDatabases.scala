@@ -79,18 +79,25 @@ object TestDatabases {
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
           .modify(_.spliceStatus).using {
-          case s: SpliceStatus.SpliceWaitingForSigs => s
-          case _ => SpliceStatus.NoSplice
-        }
+            case s: SpliceStatus.SpliceWaitingForSigs => s
+            case _ => SpliceStatus.NoSplice
+          }
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 
+      // When negotiating closing transactions with the option_simple_close feature, we discard pending signatures on
+      // disconnection and will restart a signing round on reconnection.
+      def freeze4(input: PersistentChannelData): PersistentChannelData = input match {
+        case d: DATA_NEGOTIATING_SIMPLE => freeze3(d.copy(status = d.status.disconnect()))
+        case d => freeze3(d)
+      }
+
       super.addOrUpdateChannel(data)
       val check = super.getChannel(data.channelId)
-      val frozen = freeze3(data)
+      val frozen = freeze4(data)
       require(check.contains(frozen), s"serialization/deserialization check failed, $check != $frozen")
     }
   }
@@ -133,6 +140,7 @@ object TestDatabases {
   }
 
   object TestPgDatabases {
+
     import _root_.io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 
     /** single instance */

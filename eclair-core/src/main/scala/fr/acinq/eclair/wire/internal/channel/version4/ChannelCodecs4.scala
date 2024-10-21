@@ -681,7 +681,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
-    
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localPushAmount" | millisatoshi) ::
@@ -759,10 +759,23 @@ private[channel] object ChannelCodecs4 {
         ("localOnly_opt" | optional(bool8, closingTxCodec)) ::
         ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
 
+    private val onRemoteShutdownCodec: Codec[OnRemoteShutdown] = discriminated[OnRemoteShutdown].by(uint8)
+      .typecase(0x00, provide(OnRemoteShutdown.WaitForSigs))
+      .typecase(0x01, feeratePerKw.as[OnRemoteShutdown.SignTransaction])
+    
+    private val waitingForRemoteShutdownCodec: Codec[ClosingNegotiation.WaitingForRemoteShutdown] = (
+      ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("onRemoteShutdown" | onRemoteShutdownCodec)
+      ).as[ClosingNegotiation.WaitingForRemoteShutdown]
+
+    val closingNegotiationCodec: Codec[ClosingNegotiation] = discriminated[ClosingNegotiation].by(uint8)
+      .\(0x01) { case status: ClosingNegotiation.WaitingForRemoteShutdown => status }(waitingForRemoteShutdownCodec)
+      .\(0x02) { case status: ClosingNegotiation.SigningTransactions => status.disconnect() }(waitingForRemoteShutdownCodec)
+      .\(0x03) { case status: ClosingNegotiation.WaitingForConfirmation => status.disconnect() }(waitingForRemoteShutdownCodec)
+
     val DATA_NEGOTIATING_SIMPLE_14_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
       ("commitments" | commitmentsCodec) ::
-        ("localShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("status" | closingNegotiationCodec) ::
         ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
         ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
 
