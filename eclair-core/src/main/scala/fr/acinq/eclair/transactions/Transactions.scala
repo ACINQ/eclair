@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.RemoteSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts.Taproot.NUMS_POINT
 import fr.acinq.eclair.transactions.Scripts._
@@ -33,6 +34,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
+import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.reflect.ClassTag
 import scala.util.{Success, Try}
 
@@ -217,12 +219,12 @@ object Transactions {
           val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
           val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sighashType, txOut.amount, SIGVERSION_WITNESS_V0, key)
           Crypto.der2compact(sigDER)
-      case t: InputInfo.TaprootInput =>
-        val spentOutputs = tx.txIn.map(input => inputsMap(input.outPoint))
-        t.redeemPath match {
-          case k: RedeemPath.KeyPath => Transaction.signInputTaprootKeyPath(key, tx, 0, spentOutputs, sighashType, k.scriptTree_opt)
-          case s: RedeemPath.ScriptPath => Transaction.signInputTaprootScriptPath(key, tx, 0, spentOutputs, sighashType, s.leafHash)
-        }
+        case t: InputInfo.TaprootInput =>
+          val spentOutputs = tx.txIn.map(input => inputsMap(input.outPoint))
+          t.redeemPath match {
+            case k: RedeemPath.KeyPath => Transaction.signInputTaprootKeyPath(key, tx, 0, spentOutputs, sighashType, k.scriptTree_opt)
+            case s: RedeemPath.ScriptPath => Transaction.signInputTaprootScriptPath(key, tx, 0, spentOutputs, sighashType, s.leafHash)
+          }
       }
     }
 
@@ -254,6 +256,19 @@ object Transactions {
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
     override def desc: String = "commit-tx"
+
+    def checkPartialSignature(psig: PartialSignatureWithNonce, localPubKey: PublicKey, localNonce: IndividualNonce, remotePubKey: PublicKey): Boolean = {
+      import KotlinUtils._
+      val session = fr.acinq.bitcoin.crypto.musig2.Musig2.taprootSession(
+          this.tx,
+          0,
+          java.util.List.of(this.input.txOut),
+          Scripts.sort(Seq(localPubKey, remotePubKey)).map(scala2kmp).asJava,
+          java.util.List.of(localNonce, psig.nonce),
+          null
+        ).getRight
+      session.verify(psig.partialSig, psig.nonce, remotePubKey)
+    }
   }
 
   /**
@@ -1366,6 +1381,18 @@ object Transactions {
                   localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
     val publicKeys = Scripts.sort(Seq(localFundingPublicKey, remoteFundingPublicKey))
     Musig2.signTaprootInput(key, tx, inputIndex, spentOutputs, publicKeys, localNonce._1, Seq(localNonce._2, remoteNextLocalNonce), None)
+  }
+
+  def aggregatePartialSignatures(txinfo: TransactionWithInputInfo,
+                                 localSig: ByteVector32, remoteSig: ByteVector32,
+                                 localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey,
+                                 localNonce: IndividualNonce, remoteNonce: IndividualNonce): Either[Throwable, ByteVector64] = {
+    Musig2.aggregateTaprootSignatures(
+      Seq(localSig, remoteSig), txinfo.tx, txinfo.tx.txIn.indexWhere(_.outPoint == txinfo.input.outPoint),
+      Seq(txinfo.input.txOut),
+      Scripts.sort(Seq(localFundingPublicKey, remoteFundingPublicKey)),
+      Seq(localNonce, remoteNonce),
+      None)
   }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {

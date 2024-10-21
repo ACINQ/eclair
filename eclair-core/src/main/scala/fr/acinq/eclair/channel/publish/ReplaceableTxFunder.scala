@@ -20,14 +20,14 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.psbt.Psbt
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
@@ -231,7 +231,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private val log = context.log
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    log.info("funding {} tx (targetFeerate={})", txWithWitnessData.txInfo.desc, targetFeerate)
+    log.info("funding {} tx (targetFeerate={}) txId={}", txWithWitnessData.txInfo.desc, targetFeerate, txWithWitnessData.txInfo.tx.txid)
     txWithWitnessData match {
       case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
         val commitFeerate = cmd.commitment.localCommit.spec.commitTxFeerate
@@ -313,7 +313,20 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
       case claimAnchorTx: ClaimLocalAnchorWithWitnessData =>
-        val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+        log.info(s"signing ${claimAnchorTx.txInfo.tx} with walletUtxos $walletUtxos")
+        val localSig = fundedTx.txInfo.input match {
+          case _: InputInfo.SegwitInput =>
+            keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+          case _: InputInfo.TaprootInput =>
+            // for simple taproot channels, our anchor output in our commit tx and our remote peer's commit tx used different keys
+            val spendFromRemote = claimAnchorTx.txInfo.input.txOut.publicKeyScript == Script.write(Script.pay2tr(keyManager.paymentPoint(channelKeyPath).publicKey.xOnly, Some(Scripts.Taproot.anchorScriptTree)))
+            if (spendFromRemote) {
+              keyManager.sign(claimAnchorTx.txInfo, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+            } else {
+              val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
+              keyManager.sign(claimAnchorTx.txInfo, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+            }
+        }
         val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case htlcTx: HtlcWithWitnessData =>

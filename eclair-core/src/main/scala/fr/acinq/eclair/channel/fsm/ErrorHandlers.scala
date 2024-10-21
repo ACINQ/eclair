@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.ClosingTx
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, Warning}
 
 import java.sql.SQLException

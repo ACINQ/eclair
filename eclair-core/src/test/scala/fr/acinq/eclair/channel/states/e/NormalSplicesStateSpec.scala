@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
+import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFeeHtlcTxs, OptionSimpleTaprootStaging, ZeroConf}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
 import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
@@ -41,6 +42,7 @@ import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, ClaimLocalAnchorOutputTx, InputInfo, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -57,9 +59,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   type FixtureParam = SetupFixture
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
+  val useTaproot = false
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding
+    val tags = if (useTaproot) {
+      test.tags + ChannelStateTestsTags.DualFunding + ChannelStateTestsTags.OptionSimpleTaprootStaging + ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs
+    } else {
+      test.tags + ChannelStateTestsTags.DualFunding
+    }
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -616,7 +623,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
-    assert(commitFees > 20_000.sat)
+    commitment.commitInput match {
+      case _: InputInfo.TaprootInput =>
+        assert(commitFees > 7_000.sat)
+      case _ =>
+        assert(commitFees > 20_000.sat)
+    }
 
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
@@ -1043,6 +1055,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   }
 
   test("recv TxAbort (after CommitSig)") { f =>
+    assume(!useTaproot)
     import f._
 
     val sender = TestProbe()
@@ -1538,6 +1551,38 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   }
 
   test("recv CMD_ADD_HTLC with multiple commitments and reconnect") { f =>
+    import f._
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val sender = TestProbe()
+    alice ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    alice ! CMD_SIGN()
+    assert(alice2bob.expectMsgType[CommitSig].batchSize == 2)
+    assert(alice2bob.expectMsgType[CommitSig].batchSize == 2)
+    // Bob disconnects before receiving Alice's commit_sig.
+    disconnect(f)
+    reconnect(f)
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    assert(alice2bob.expectMsgType[CommitSig].batchSize == 2)
+    alice2bob.forward(bob)
+    assert(alice2bob.expectMsgType[CommitSig].batchSize == 2)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    assert(bob2alice.expectMsgType[CommitSig].batchSize == 2)
+    bob2alice.forward(alice)
+    assert(bob2alice.expectMsgType[CommitSig].batchSize == 2)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
+  }
+
+  test("recv CMD_ADD_HTLC with multiple commitments and reconnect (simple taproot channels", Tag(OptionSimpleTaprootStaging), Tag(AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
@@ -2702,6 +2747,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[Error]
     val commitTx2 = assertPublished(alice2blockchain, "commit-tx")
     Transaction.correctlySpends(commitTx2, Seq(fundingTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val isAnchorOutputs = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
+      case _ => false
+    }
+    if (isAnchorOutputs) {
+      assertPublished(alice2blockchain, "local-anchor")
+    }
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
     // Alice publishes her htlc timeout transactions.
     val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
@@ -2709,6 +2762,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val watchConfirmedCommit2 = alice2blockchain.expectWatchTxConfirmed(commitTx2.txid)
     val watchConfirmedClaimMainDelayed2 = alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    // watch for all htlc outputs from local commit-tx to be spent
+    if (isAnchorOutputs) {
+      alice2blockchain.expectMsgType[WatchOutputSpent]
+    }
     val watchHtlcsOut = htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
@@ -2738,6 +2795,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob's htlc-timeout txs confirm.
     bob ! WatchFundingSpentTriggered(commitTx2)
+    if (isAnchorOutputs) {
+      assertPublished(bob2blockchain, "local-anchor")
+      assertPublished(bob2blockchain, "remote-main-delayed")
+    }
     val bobHtlcsTxsOut = htlcs.bobToAlice.map(_ => assertPublished(bob2blockchain, "claim-htlc-timeout"))
     val remoteOutpoints = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(rcp => rcp.htlcTxs.filter(_._2.isEmpty).keys).toSeq.flatten
     assert(remoteOutpoints.size == htlcs.bobToAlice.size)
@@ -3456,5 +3517,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 805_000_000.msat)
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 695_000_000.msat)
   }
+}
 
+class NormalSplicesStateWithTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val useTaproot: Boolean = true
 }

@@ -310,6 +310,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object SimpleTaproot extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot"
+    val mandatory = 80
+  }
+
   /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
   case object WakeUpNotificationClient extends Feature with InitFeature {
     val rfcName = "wake_up_notification_client"
@@ -337,6 +342,11 @@ object Features {
   case object SplicePrototype extends Feature with InitFeature {
     val rfcName = "splice_prototype"
     val mandatory = 154
+  }
+
+  case object SimpleTaprootStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging"
+    val mandatory = 182
   }
 
   /**
@@ -381,6 +391,8 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    SimpleTaproot,
+    SimpleTaprootStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -400,6 +412,8 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
+    SimpleTaproot -> (ChannelType :: SimpleClose :: Nil),
+    SimpleTaprootStaging -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

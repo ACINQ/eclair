@@ -16,10 +16,12 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
+import fr.acinq.eclair.channel.RemoteSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import org.apache.commons.codec.binary.Base32
@@ -155,6 +157,13 @@ object CommonCodecs {
   val privateKey: Codec[PrivateKey] = bytes(32).xmap(bin => PrivateKey(bin), priv => priv.value)
 
   val publicKey: Codec[PublicKey] = catchAllCodec(bytes(33).xmap(bin => PublicKey(bin), pub => pub.value))
+
+  val publicNonce: Codec[IndividualNonce] = Codec[IndividualNonce](
+    (pub: IndividualNonce) => bytes(66).encode(ByteVector.view(pub.toByteArray)),
+    (wire: BitVector) => bytes(66).decode(wire).map(_.map(b => new IndividualNonce(b.toArray)))
+  )
+
+  val partialSignatureWithNonce: Codec[PartialSignatureWithNonce] = (bytes32 :: publicNonce).as[PartialSignatureWithNonce]
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 

@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
@@ -135,6 +136,7 @@ object Helpers {
     }
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
+    if ((channelFeatures.hasFeature(Features.SimpleTaproot) || channelFeatures.hasFeature(Features.SimpleTaprootStaging)) && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelFeatures.commitmentFormat, open.fundingSatoshis)
@@ -242,6 +244,7 @@ object Helpers {
     if (reserveToFundingRatio > nodeParams.channelConf.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.channelConf.maxReserveToFundingRatio))
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
+    if ((channelFeatures.hasFeature(Features.SimpleTaproot) || channelFeatures.hasFeature(Features.SimpleTaprootStaging)) && accept.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
@@ -539,10 +542,20 @@ object Helpers {
         val channelKeyPath = keyManager.keyPath(commitments.params.localParams, commitments.params.channelConfig)
         val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
+        val nonces = commitments.active.filter(_.commitInput.isInstanceOf[InputInfo.TaprootInput]).map { c =>
+          val fundingPubkey = keyManager.fundingPublicKey(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
+          keyManager.verificationNonce(c.fundingTxId, fundingPubkey, commitments.localCommitIndex + 1)
+        }
+        val tlvStream: TlvStream[RevokeAndAckTlv] = if (nonces.isEmpty) {
+          TlvStream.empty
+        } else {
+          TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
+        }
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
-          nextPerCommitmentPoint = localNextPerCommitmentPoint
+          nextPerCommitmentPoint = localNextPerCommitmentPoint,
+          tlvStream
         )
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
       } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
@@ -730,13 +743,18 @@ object Helpers {
       }
 
       /** We are the closer: we sign closing transactions for which we pay the fees. */
-      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
+      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw, localClosingNonce_opt: Option[(SecretNonce, IndividualNonce)] = None, remoteClosingNonce_opt: Option[IndividualNonce] = None): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
         // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
         val closingFee = {
           val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
-              val dummySignedTx = Transactions.addSigs(dummyTx, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig)
+              val dummySignedTx = commitment.commitInput match {
+                case _: InputInfo.TaprootInput =>
+                  Transactions.addAggregatedSignature(dummyTx, Transactions.PlaceHolderSig)
+                case _: InputInfo.SegwitInput =>
+                  Transactions.addSigs(dummyTx, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig)
+              }
               SimpleClosingTxFee.PaidByUs(Transactions.weight2fee(feerate, dummySignedTx.tx.weight()))
             case None => return Left(CannotGenerateClosingTx(commitment.channelId))
           }
@@ -748,11 +766,27 @@ object Helpers {
           case _ => return Left(CannotGenerateClosingTx(commitment.channelId))
         }
         val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-        val closingComplete = ClosingComplete(commitment.channelId, localScriptPubkey, remoteScriptPubkey, closingFee.fee, currentBlockHeight.toLong, TlvStream(Set(
-          closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
-          closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
-          closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
-        ).flatten[ClosingTlv]))
+        val tlvs = commitment.commitInput match {
+          case _: InputInfo.TaprootInput =>
+            def partialSign(tx: ClosingTx) = {
+              val Right(psig) = keyManager.partialSign(tx, localFundingPubKey, commitment.remoteFundingPubKey, TxOwner.Local, localClosingNonce_opt.get, remoteClosingNonce_opt.get)
+              psig
+            }
+
+            TlvStream(Set(
+              closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputsPartialSignature(partialSign(tx))),
+              closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnlyPartialSignature(partialSign(tx))),
+              closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnlyPartialSignature(partialSign(tx))),
+            ).flatten[ClosingTlv])
+          case _: InputInfo.SegwitInput =>
+            TlvStream(Set(
+              closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+              closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+              closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(keyManager.sign(tx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+            ).flatten[ClosingTlv])
+        }
+
+        val closingComplete = ClosingComplete(commitment.channelId, localScriptPubkey, remoteScriptPubkey, closingFee.fee, currentBlockHeight.toLong, tlvs)
         Right(closingTxs, closingComplete)
       }
 
@@ -762,33 +796,67 @@ object Helpers {
        * Callers should ignore failures: since the protocol is fully asynchronous, failures here simply mean that they
        * are not using our latest script (race condition between our closing_complete and theirs).
        */
-      def signSimpleClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete): Either[ChannelException, (ClosingTx, ClosingSig)] = {
+      def signSimpleClosingTx(keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete, localClosingNonce_opt: Option[(SecretNonce, IndividualNonce)] = None, remoteClosingNonce_opt: Option[IndividualNonce] = None): Either[ChannelException, (ClosingTx, ClosingSig)] = {
         val closingFee = SimpleClosingTxFee.PaidByThem(closingComplete.fees)
         val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
         // Note that we're the closee, so we look for signatures including the closee output.
-        (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
-          case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty && closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
-          case (Some(_), None) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
-          case (None, Some(_)) if closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
-          case _ => ()
-        }
-        // We choose the closing signature that matches our preferred closing transaction.
-        val closingTxsWithSigs = Seq(
-          closingComplete.closerAndCloseeOutputsSig_opt.flatMap(remoteSig => closingTxs.localAndRemote_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserAndCloseeOutputs(localSig)))),
-          closingComplete.closeeOutputOnlySig_opt.flatMap(remoteSig => closingTxs.localOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloseeOutputOnly(localSig)))),
-          closingComplete.closerOutputOnlySig_opt.flatMap(remoteSig => closingTxs.remoteOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserOutputOnly(localSig)))),
-        ).flatten
-        closingTxsWithSigs.headOption match {
-          case Some((closingTx, remoteSig, sigToTlv)) =>
-            val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-            val localSig = keyManager.sign(closingTx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-            val signedClosingTx = Transactions.addSigs(closingTx, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-              case Success(_) => Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
+        commitment.commitInput match {
+          case _: InputInfo.TaprootInput =>
+            (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
+              case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty && closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case (Some(_), None) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case (None, Some(_)) if closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case _ => ()
             }
-          case None => Left(MissingCloseSignature(commitment.channelId))
+          case _: InputInfo.SegwitInput =>
+            (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
+              case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty && closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case (Some(_), None) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case (None, Some(_)) if closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+              case _ => ()
+            }
+        }
+
+        commitment.commitInput match {
+          case _: InputInfo.TaprootInput =>
+            // We choose the closing signature that matches our preferred closing transaction.
+            val closingTxsWithSigs = Seq(
+              closingComplete.closerAndCloseeOutputsPartialSig_opt.flatMap(remoteSig => closingTxs.localAndRemote_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserAndCloseeOutputsPartialSignature(localSig)))),
+              closingComplete.closeeOutputOnlyPartialSig_opt.flatMap(remoteSig => closingTxs.localOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloseeOutputOnlyPartialSignature(localSig)))),
+              closingComplete.closerOutputOnlyPartialSig_opt.flatMap(remoteSig => closingTxs.remoteOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserOutputOnlyPartialSignature(localSig)))),
+            ).flatten
+            closingTxsWithSigs.headOption match {
+              case Some((closingTx, remoteSig, sigToTlv)) =>
+                val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
+                (for {
+                  localSig <- keyManager.partialSign(closingTx, localFundingPubKey, commitment.remoteFundingPubKey, TxOwner.Local, localClosingNonce_opt.get, remoteClosingNonce_opt.get)
+                  aggregatedSignature <- Transactions.aggregatePartialSignatures(closingTx, localSig, remoteSig, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localClosingNonce_opt.get._2, remoteClosingNonce_opt.get)
+                  signedClosingTx = Transactions.addAggregatedSignature(closingTx, aggregatedSignature)
+                } yield (signedClosingTx, localSig)) match {
+                  case Right((signedClosingTx, localSig)) if Transactions.checkSpendable(signedClosingTx).isSuccess => Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
+                  case _ => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+                }
+              case None => Left(MissingCloseSignature(commitment.channelId))
+            }
+          case _: InputInfo.SegwitInput =>
+            // We choose the closing signature that matches our preferred closing transaction.
+            val closingTxsWithSigs = Seq(
+              closingComplete.closerAndCloseeOutputsSig_opt.flatMap(remoteSig => closingTxs.localAndRemote_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserAndCloseeOutputs(localSig)))),
+              closingComplete.closeeOutputOnlySig_opt.flatMap(remoteSig => closingTxs.localOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloseeOutputOnly(localSig)))),
+              closingComplete.closerOutputOnlySig_opt.flatMap(remoteSig => closingTxs.remoteOnly_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserOutputOnly(localSig)))),
+            ).flatten
+            closingTxsWithSigs.headOption match {
+              case Some((closingTx, remoteSig, sigToTlv)) =>
+                val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
+                val localSig = keyManager.sign(closingTx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
+                val signedClosingTx = Transactions.addSigs(closingTx, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
+                Transactions.checkSpendable(signedClosingTx) match {
+                  case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
+                  case Success(_) => Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
+                }
+              case None => Left(MissingCloseSignature(commitment.channelId))
+            }
         }
       }
 
@@ -799,22 +867,44 @@ object Helpers {
        * sent another closing_complete before receiving their closing_sig, which is now obsolete: we ignore it and wait
        * for their next closing_sig that will match our latest closing_complete.
        */
-      def receiveSimpleClosingSig(keyManager: ChannelKeyManager, commitment: FullCommitment, closingTxs: ClosingTxs, closingSig: ClosingSig): Either[ChannelException, ClosingTx] = {
-        val closingTxsWithSig = Seq(
-          closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, sig))),
-          closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, sig))),
-          closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, sig))),
-        ).flatten
-        closingTxsWithSig.headOption match {
-          case Some((closingTx, remoteSig)) =>
-            val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-            val localSig = keyManager.sign(closingTx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-            val signedClosingTx = Transactions.addSigs(closingTx, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-              case Success(_) => Right(signedClosingTx)
+      def receiveSimpleClosingSig(keyManager: ChannelKeyManager, commitment: FullCommitment, closingTxs: ClosingTxs, closingSig: ClosingSig, localNonce: Option[(SecretNonce, IndividualNonce)] = None, remoteNonce: Option[IndividualNonce] = None): Either[ChannelException, ClosingTx] = {
+        commitment.commitInput match {
+          case _: InputInfo.TaprootInput =>
+            val closingTxsWithSig = Seq(
+              closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, sig))),
+              closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, sig))),
+              closingSig.closeeOutputOnlyPartialSig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, sig))),
+            ).flatten
+            closingTxsWithSig.headOption match {
+              case Some((closingTx, remoteSig)) =>
+                val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
+                (for {
+                  localSig <- keyManager.partialSign(closingTx, localFundingPubKey, commitment.remoteFundingPubKey, TxOwner.Local, localNonce.get, remoteNonce.get)
+                  aggregatedSig <- Transactions.aggregatePartialSignatures(closingTx, localSig, remoteSig, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localNonce.get._2, remoteNonce.get)
+                  signedClosingTx = Transactions.addAggregatedSignature(closingTx, aggregatedSig)
+                } yield signedClosingTx) match {
+                  case Right(signedClosingTx) if Transactions.checkSpendable(signedClosingTx).isSuccess => Right(signedClosingTx)
+                  case _ => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+                }
+              case None => Left(MissingCloseSignature(commitment.channelId))
             }
-          case None => Left(MissingCloseSignature(commitment.channelId))
+          case _: InputInfo.SegwitInput =>
+            val closingTxsWithSig = Seq(
+              closingSig.closerAndCloseeOutputsSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, sig))),
+              closingSig.closerOutputOnlySig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, sig))),
+              closingSig.closeeOutputOnlySig_opt.flatMap(sig => closingTxs.remoteOnly_opt.map(tx => (tx, sig))),
+            ).flatten
+            closingTxsWithSig.headOption match {
+              case Some((closingTx, remoteSig)) =>
+                val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
+                val localSig = keyManager.sign(closingTx, localFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
+                val signedClosingTx = Transactions.addSigs(closingTx, localFundingPubKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
+                Transactions.checkSpendable(signedClosingTx) match {
+                  case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
+                  case Success(_) => Right(signedClosingTx)
+                }
+              case None => Left(MissingCloseSignature(commitment.channelId))
+            }
         }
       }
 
@@ -1070,10 +1160,10 @@ object Helpers {
               (localPaymentPubkey, remoteDelayedPaymentPubkey)
           }
           val claimAnchorTxs = List(
-            withTxGenerationLog("local-anchor") {
+            withTxGenerationLog("local-anchor-from-remote-commit-tx") {
               Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localAnchorKey, confirmationTarget)
             },
-            withTxGenerationLog("remote-anchor") {
+            withTxGenerationLog("remote-anchor-from-remote-commit-tx") {
               Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, remoteAnchorKey)
             }
           ).flatten
@@ -1274,23 +1364,43 @@ object Helpers {
         // we retrieve the information needed to rebuild htlc scripts
         val htlcInfos = db.listHtlcInfos(channelId, commitmentNumber)
         log.info("got {} htlcs for commitmentNumber={}", htlcInfos.size, commitmentNumber)
-        val htlcsRedeemScripts = (
-          htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
-            htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
-          )
-          .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
-          .toMap
 
-        // and finally we steal the htlc outputs
-        val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-          val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-          withTxGenerationLog("htlc-penalty") {
-            Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
-              val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat, Map.empty)
-              Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
-            })
-          }
-        }.toList.flatten
+        val htlcPenaltyTxs = commitmentFormat match {
+          case SimpleTaprootChannelCommitmentFormat =>
+            val scriptTrees = (
+              htlcInfos.map { case (paymentHash, cltvExpiry) => Taproot.receivedHtlcScriptTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash, cltvExpiry) } ++
+                htlcInfos.map { case (paymentHash, _) => Taproot.offeredHtlcScriptTree(remoteHtlcPubkey, localHtlcPubkey, paymentHash) })
+              .map(scriptTree => Script.write(Script.pay2tr(remoteRevocationPubkey.xOnly, Some(scriptTree))) -> scriptTree)
+              .toMap
+
+            commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if scriptTrees.contains(txOut.publicKeyScript) =>
+              val scriptTree = scriptTrees(txOut.publicKeyScript)
+              withTxGenerationLog("htlc-penalty") {
+                Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, remoteRevocationPubkey.xOnly, scriptTree, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
+                  val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat, Map.empty)
+                  Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+                })
+              }
+            }.toList.flatten
+          case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+            val htlcsRedeemScripts = (
+              htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
+                htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), commitmentFormat) }
+              )
+              .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
+              .toMap
+
+            // and finally we steal the htlc outputs
+            commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+              val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+              withTxGenerationLog("htlc-penalty") {
+                Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
+                  val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat, Map.empty)
+                  Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
+                })
+              }
+            }.toList.flatten
+        }
 
         RevokedCommitPublished(
           commitTx = commitTx,
