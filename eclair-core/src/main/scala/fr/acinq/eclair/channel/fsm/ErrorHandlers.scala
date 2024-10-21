@@ -89,7 +89,7 @@ trait ErrorHandlers extends CommonHandlers {
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
       case negotiating: DATA_NEGOTIATING_SIMPLE if negotiating.publishedClosingTxs.nonEmpty =>
         // We have published at least one mutual close transaction, it's better to use it instead of our local commit.
-        val closing = DATA_CLOSING(negotiating.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = negotiating.localShutdown.scriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs)
+        val closing = DATA_CLOSING(negotiating.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = negotiating.localScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs)
         goto(CLOSING) using closing storing()
       case dd: ChannelDataWithCommitments =>
         // We publish our commitment even if we have nothing at stake: it's a nice thing to do because it lets our peer
@@ -139,7 +139,7 @@ trait ErrorHandlers extends CommonHandlers {
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
       case negotiating: DATA_NEGOTIATING_SIMPLE if negotiating.publishedClosingTxs.nonEmpty =>
         // We have published at least one mutual close transaction, it's better to use it instead of our local commit.
-        val closing = DATA_CLOSING(negotiating.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = negotiating.localShutdown.scriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs)
+        val closing = DATA_CLOSING(negotiating.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = negotiating.localScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs)
         goto(CLOSING) using closing storing()
       // NB: we publish the commitment even if we have nothing at stake (in a dataloss situation our peer will send us an error just for that)
       case hasCommitments: ChannelDataWithCommitments =>

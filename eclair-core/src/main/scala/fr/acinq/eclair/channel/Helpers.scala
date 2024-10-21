@@ -712,8 +712,6 @@ object Helpers {
 
       /** We are the closer: we sign closing transactions for which we pay the fees. */
       def makeSimpleClosingTx(currentBlockHeight: BlockHeight, keyManager: ChannelKeyManager, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
-        require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit = true, allowOpReturn = true), "invalid localScriptPubkey")
-        require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit = true, allowOpReturn = true), "invalid remoteScriptPubkey")
         // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
         val closingFee = {
           val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
