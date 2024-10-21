@@ -1,8 +1,10 @@
-package fr.acinq.eclair.wire.internal.channel.version4
+package fr.acinq.eclair.wire.internal.channel.version5
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.io.ByteArrayInput
+import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
@@ -20,9 +22,9 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
-private[channel] object ChannelCodecs4 {
+private[channel] object ChannelCodecs5 {
 
-  private[version4] object Codecs {
+  private[version5] object Codecs {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
@@ -109,11 +111,36 @@ private[channel] object ChannelCodecs4 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    // all v4-encoded channels use segwit inputs, support for taproot inputs will be added later in v5 codecs
-    val inputInfoCodec: Codec[InputInfo] = (
+    val scriptTreeCodec: Codec[ScriptTree] = lengthDelimited(bytes.xmap(d => ScriptTree.read(new ByteArrayInput(d.toArray)), d => ByteVector.view(d.write())))
+
+    case class ScriptTreeAndInternalKey(scriptTree: Option[ScriptTree], internalKey: XonlyPublicKey)
+
+    val xonlyPublicKey: Codec[XonlyPublicKey] = publicKey.xmap(p => p.xOnly, x => x.publicKey)
+
+    val scriptTreeAndInternalKey: Codec[ScriptTreeAndInternalKey] = (optional(bool8, scriptTreeCodec) :: xonlyPublicKey).as[ScriptTreeAndInternalKey]
+
+    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey])
+
+    // To support the change from redeemScript to "either redeem script or script tree" while remaining backwards-compatible with the previous version 4 codec, we use
+    // the redeem script itself as a left/write indicator: empty -> right, not empty -> left
+    private def scriptOrTreeCodec(redeemScript: ByteVector): Codec[Either[ByteVector, ScriptTreeAndInternalKey]] = either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)
+
+    private val inputInfoExCodec: Codec[InputInfoEx] = {
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo]
+        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript => scriptOrTreeCodec(redeemScript).hlist })
+    }.as[InputInfoEx]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoExCodec.xmap(
+      iex => iex.redeemScriptOrScriptTree match {
+        case Left(redeemScript) => InputInfo.SegwitInput(iex.outPoint, iex.txOut, redeemScript)
+        case Right(scriptTreeAndInternalKey) => InputInfo.TaprootInput(iex.outPoint, iex.txOut, scriptTreeAndInternalKey.internalKey, scriptTreeAndInternalKey.scriptTree)
+      },
+      i => i match {
+        case InputInfo.SegwitInput(_, _, redeemScript) => InputInfoEx(i.outPoint, i.txOut, redeemScript, Left(redeemScript))
+        case InputInfo.TaprootInput(_, _, internalKey, scriptTree_opt) => InputInfoEx(i.outPoint, i.txOut, ByteVector.empty, Right(ScriptTreeAndInternalKey(scriptTree_opt, internalKey)))
+      }
+    )
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::
@@ -183,10 +210,20 @@ private[channel] object ChannelCodecs4 {
     val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::
         ("remoteSig" | bytes64)).as[HtlcTxAndRemoteSig]
-
-    val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
-      ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64.as[RemoteSignature.FullSignature].upcast[RemoteSignature])).as[CommitTxAndRemoteSig]
+    
+    // remoteSig is now either a signature or a partial signature with nonce. To retain compatibility with the previous codec, we use remoteSig as a left/right indicator,
+    // a value of all zeroes meaning right (a valid signature cannot be all zeroes)
+     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
+      commitTxCodec :: bytes64.consume {
+        sig => if (sig == ByteVector64.Zeroes)
+          partialSignatureWithNonce.as[RemoteSignature.PartialSignatureWithNonce].upcast[RemoteSignature]
+        else
+          provide(RemoteSignature.FullSignature(sig)).upcast[RemoteSignature]
+      } {
+        case RemoteSignature.FullSignature(sig) => sig
+        case _: RemoteSignature.PartialSignatureWithNonce => ByteVector64.Zeroes
+      }
+      ).as[CommitTxAndRemoteSig]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
@@ -249,8 +286,15 @@ private[channel] object ChannelCodecs4 {
         ("fundingTxIndex" | uint32) ::
         ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
 
+    private val musig2of2InputCodec: Codec[InteractiveTxBuilder.Musig2Input] = (
+      ("info" | inputInfoCodec) ::
+        ("fundingTxIndex" | uint32) ::
+        ("remoteFundingPubkey" | publicKey) ::
+        ("commitIndex" | uint32)).as[InteractiveTxBuilder.Musig2Input]
+
     private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
       .typecase(0x01, multisig2of2InputCodec)
+      .typecase(0x02, musig2of2InputCodec)
 
     private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]
 
@@ -467,7 +511,7 @@ private[channel] object ChannelCodecs4 {
         ("spec" | commitmentSpecCodec) ::
         ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey) ::
-        ("localCommitSig_opt" | provide[Option[CommitSig]](None))).as[RemoteCommit]
+        ("localCommitSig_opt" | optional(bool8, lengthDelimited(commitSigCodec)))).as[RemoteCommit]
 
     private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = (
       ("sig" | lengthDelimited(commitSigCodec)) ::
@@ -649,11 +693,11 @@ private[channel] object ChannelCodecs4 {
       .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
       .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
 
-    private val shortids: Codec[ChannelTypes4.ShortIds] = (
+    private val shortids: Codec[ChannelTypes5.ShortIds] = (
       ("real_opt" | optional(bool8, realshortchannelid)) ::
         ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) ::
         ("remoteAlias_opt" | optional(bool8, alias))
-      ).as[ChannelTypes4.ShortIds].decodeOnly
+      ).as[ChannelTypes5.ShortIds].decodeOnly
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
@@ -669,11 +713,11 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
+        ("shortIds" | shortids)).as[ChannelTypes5.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_0b_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
+        ("shortIds" | shortids)).as[ChannelTypes5.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_15_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -715,11 +759,11 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_03_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
+        ("shortIds" | shortids)).as[ChannelTypes5.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0d_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
+        ("shortIds" | shortids)).as[ChannelTypes5.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_16_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -733,7 +777,7 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes5.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
 
     val DATA_NORMAL_0e_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -743,7 +787,7 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes5.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
 
     val DATA_NORMAL_14_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
