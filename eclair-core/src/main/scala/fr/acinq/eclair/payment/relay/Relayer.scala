@@ -134,6 +134,14 @@ object Relayer extends Logging {
     require(feeProportionalMillionths >= 0.0, "feeProportionalMillionths must be nonnegative")
   }
 
+  case class InboundFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long)
+
+  object InboundFees {
+    def apply(feeBaseInt32: Int, feeProportionalMillionthsInt32: Int): InboundFees = {
+      InboundFees(MilliSatoshi(feeBaseInt32), feeProportionalMillionthsInt32)
+    }
+  }
+
   case class AsyncPaymentsParams(holdTimeoutBlocks: Int, cancelSafetyBeforeTimeout: CltvExpiryDelta)
 
   case class RelayParams(publicChannelFees: RelayFees,
