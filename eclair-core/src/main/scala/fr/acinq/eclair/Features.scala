@@ -275,6 +275,11 @@ object Features {
     val mandatory = 38
   }
 
+  case object ProvideStorage extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_provide_storage"
+    val mandatory = 42
+  }
+
   case object ChannelType extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_channel_type"
     val mandatory = 44
@@ -358,6 +363,7 @@ object Features {
     DualFunding,
     Quiescence,
     OnionMessages,
+    ProvideStorage,
     ChannelType,
     ScidAlias,
     PaymentMetadata,
