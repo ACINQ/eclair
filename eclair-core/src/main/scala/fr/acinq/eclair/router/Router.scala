@@ -491,13 +491,11 @@ object Router {
 
   object HopRelayParams {
     /** We learnt about this channel from a channel_update. */
-    case class FromAnnouncement(channelUpdate: ChannelUpdate, updatedInboundFees_opt: Option[Relayer.InboundFees] = None) extends HopRelayParams {
+    case class FromAnnouncement(channelUpdate: ChannelUpdate, inboundFees_opt: Option[Relayer.InboundFees] = None) extends HopRelayParams {
       override val cltvExpiryDelta = channelUpdate.cltvExpiryDelta
       override val relayFees = channelUpdate.relayFees
-      override val inboundFees_opt = updatedInboundFees_opt orElse channelUpdate.inboundFees_opt
       override val htlcMinimum = channelUpdate.htlcMinimumMsat
       override val htlcMaximum_opt = Some(channelUpdate.htlcMaximumMsat)
-
     }
 
     /** We learnt about this hop from hints in an invoice. */

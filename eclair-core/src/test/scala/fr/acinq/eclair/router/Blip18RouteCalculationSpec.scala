@@ -27,6 +27,16 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
+  test("find a direct route") {
+    val g = DirectedGraph(Seq(
+      makeEdge(10L, a, b, minHtlc = 2 msat, feeBase = 0 msat, feeProportionalMillionth = 120, inboundFeeBase_opt = Some(0.msat), inboundFeeProportionalMillionth_opt = Some(-71)),
+    ))
+
+    val Success(route :: Nil) = findRoute(g, a, b, 10_000_000 msat, 10_000_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
+
+    assert(route.channelFee(true) == 1200.msat)
+  }
+
   test("test findRoute with Blip18 enabled") {
     // extracted from the LND code base
     val g = DirectedGraph(Seq(

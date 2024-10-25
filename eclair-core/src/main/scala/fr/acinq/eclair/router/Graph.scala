@@ -21,7 +21,8 @@ import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Router.HopRelayParams
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
@@ -254,7 +255,7 @@ object Graph {
             current.weight.amount >= edge.params.htlcMinimum &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
-            (!excludePositiveInboundFees || g.getBackEdge(edge).forall(e => e.params.inboundFees_opt.forall(i => i.feeBase.toLong <= 0 && i.feeProportionalMillionths <= 0)))) {
+            (!excludePositiveInboundFees || g.getBackEdge(edge).flatMap(_.getChannelUpdate).flatMap(_.blip18InboundFees_opt).forall(i => i.feeBase.toLong <= 0 && i.feeProportionalMillionths <= 0))) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
             // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
@@ -598,6 +599,11 @@ object Graph {
       ).flatten.min.max(0 msat)
 
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
+
+      def getChannelUpdate: Option[ChannelUpdate] = params match {
+        case HopRelayParams.FromAnnouncement(update, _) => Some(update)
+        case _ => None
+      }
     }
 
     object GraphEdge {

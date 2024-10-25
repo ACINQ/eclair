@@ -22,14 +22,12 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.ChannelUpdateTlv.Blip18InboundFee
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -350,13 +348,13 @@ object RouteCalculation {
       val hops = routeHops.reverse
       val updatedHops = routeHops.head :: hops.zip(hops.tail).foldLeft(List.empty[ChannelHop]) { (hops, x) =>
         val (curr, prev) = x
-        val maybeEdge = g.getBackEdge(ChannelDesc(prev.shortChannelId, prev.nodeId, prev.nextNodeId))
+        val backEdge_opt = g.getBackEdge(ChannelDesc(prev.shortChannelId, prev.nodeId, prev.nextNodeId))
         val hop = curr.copy(params = curr.params match {
           case hopParams: HopRelayParams.FromAnnouncement =>
-            maybeEdge match {
-              case Some(backEdge) => hopParams.copy(updatedInboundFees_opt = backEdge.params.inboundFees_opt)
-              case _ => hopParams
-            }
+            backEdge_opt
+              .flatMap(_.getChannelUpdate)
+              .map(u => hopParams.copy(inboundFees_opt = u.blip18InboundFees_opt))
+              .getOrElse(hopParams)
           case hopParams => hopParams
         })
 
