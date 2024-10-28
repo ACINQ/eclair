@@ -679,6 +679,26 @@ object Graph {
       }
 
       /**
+       * Update the shortChannelId and capacity of edges corresponding to the given channel-desc,
+       * both edges (corresponding to both directions) are updated.
+       *
+       * @param desc the channel description for the channel to update
+       * @param newShortChannelId the new shortChannelId for this channel
+       * @param newCapacity the new capacity of the channel
+       * @return a new graph with updated vertexes
+       */
+      def updateChannel(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): DirectedGraph = {
+        val newDesc = desc.copy(shortChannelId = newShortChannelId)
+        val updatedVertices =
+          vertices
+            .updatedWith(desc.b)(_.map(vertexB => vertexB.copy(incomingEdges = vertexB.incomingEdges - desc +
+              (newDesc -> vertexB.incomingEdges(desc).copy(desc = newDesc, capacity = newCapacity)))))
+            .updatedWith(desc.a)(_.map(vertexA => vertexA.copy(incomingEdges = vertexA.incomingEdges - desc.reversed +
+              (newDesc.reversed -> vertexA.incomingEdges(desc.reversed).copy(desc = newDesc.reversed, capacity = newCapacity)))))
+        DirectedGraph(updatedVertices)
+      }
+
+      /**
        * @return For edges to be considered equal they must have the same in/out vertices AND same shortChannelId
        */
       def getEdge(edge: GraphEdge): Option[GraphEdge] = getEdge(edge.desc)

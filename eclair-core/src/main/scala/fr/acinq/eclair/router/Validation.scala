@@ -31,6 +31,7 @@ import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.Validation.{addPublicChannel, splicePublicChannel}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates}
@@ -113,7 +114,10 @@ object Validation {
             log.debug("validation successful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+            d0.spentChannels.get(tx.txid) match {
+              case Some(parentScid) => Some(splicePublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, d0.channels(parentScid)))
+              case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+            }
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -154,6 +158,38 @@ object Validation {
           d0.copy(stash = stash1, awaiting = awaiting1)
       }
     }
+  }
+
+  private def splicePublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, spliceTxId: TxId, capacity: Satoshi, parentChannel: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    val fundingOutputIndex = outputIndex(ann.shortChannelId)
+    watcher ! WatchExternalChannelSpent(ctx.self, spliceTxId, fundingOutputIndex, ann.shortChannelId)
+    ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
+    nodeParams.db.network.addChannel(ann, spliceTxId, capacity)
+    nodeParams.db.network.removeChannel(parentChannel.shortChannelId)
+    val pubChan = PublicChannel(
+      ann = ann,
+      fundingTxId = spliceTxId,
+      capacity = capacity,
+      update_1_opt = None,
+      update_2_opt = None,
+      meta_opt = parentChannel.meta_opt
+    )
+    log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, pubChan)
+    // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
+    log.debug("updating the graph for shortChannelId={}", pubChan.shortChannelId)
+    val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
+    d.copy(
+      // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
+      channels = d.channels + (pubChan.shortChannelId -> pubChan) - parentChannel.shortChannelId,
+      // we also add the newly validated channels to the rebroadcast queue
+      rebroadcast = d.rebroadcast.copy(
+        // we rebroadcast the splice channel to our peers
+        channels = d.rebroadcast.channels + (pubChan.ann -> d.awaiting.getOrElse(pubChan.ann, if (pubChan.nodeId1 == nodeParams.nodeId || pubChan.nodeId2 == nodeParams.nodeId) Seq(LocalGossip) else Nil).toSet),
+      ),
+      graphWithBalances = graph1,
+      spentChannels = d.spentChannels.filter(_._2 != parentChannel.shortChannelId)
+    )
   }
 
   private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
@@ -217,7 +253,7 @@ object Validation {
   def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.ann
-    log.info("funding tx of channelId={} has been spent", shortChannelId)
+    log.info("funding tx for channelId={} was spent", shortChannelId)
     // we need to remove nodes that aren't tied to any channels anymore
     val channels1 = d.channels - shortChannelId
     val prunedChannels1 = d.prunedChannels - shortChannelId
@@ -236,7 +272,7 @@ object Validation {
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1)
+    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = d.spentChannels.filter(_._2 != shortChannelId))
   }
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
@@ -545,7 +581,7 @@ object Validation {
     val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.shortIds.localAlias.toLong -- lcd.shortIds.real.toOption.map(_.toLong)
     // a local channel has permanently gone down
     if (lcd.shortIds.real.toOption.exists(d.channels.contains)) {
-      // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
+      // the channel was public, we will receive (or have already received) a WatchSpent event, that will trigger a clean up of the channel
       // so let's not do anything here
       d.copy(scid2PrivateChannels = scid2PrivateChannels1)
     } else if (d.privateChannels.contains(lcd.channelId)) {
