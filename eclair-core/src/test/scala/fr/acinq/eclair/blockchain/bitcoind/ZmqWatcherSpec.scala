@@ -227,7 +227,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! ListWatches(probe.ref)
       assert(probe.expectMsgType[Set[Watch[_]]].isEmpty)
 
-      // If we try to watch a transaction that has already been confirmed, we should immediately receive a WatchEventConfirmed.
+      // If we try to watch a transaction that has already been confirmed, we should immediately receive a WatchConfirmedTriggered event.
       watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 1)
       assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx1.txid)
       watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 2)
@@ -270,7 +270,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       generateBlocks(3)
       assert(probe.expectMsgType[WatchTxConfirmedTriggered].tx.txid == tx.txid)
 
-      // If we watch the transaction when it's already confirmed, we immediately receive the WatchEventConfirmed.
+      // If we watch the transaction when it's already confirmed, we immediately receive the WatchConfirmedTriggered event.
       watcher ! WatchTxConfirmed(probe.ref, tx.txid, 3, Some(delay.copy(delay = 720)))
       assert(probe.expectMsgType[WatchTxConfirmedTriggered].tx.txid == tx.txid)
     })
@@ -293,23 +293,25 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       assert(probe.expectMsgType[Set[Watch[_]]].size == 2)
 
       bitcoinClient.publishTransaction(tx1)
-      // tx and tx1 aren't confirmed yet, but we trigger the WatchEventSpent when we see tx1 in the mempool.
+      // tx and tx1 aren't confirmed yet, but we trigger the WatchSpentTriggered event when we see tx1 in the mempool.
       probe.expectMsgAllOf(
-        WatchExternalChannelSpentTriggered(RealShortChannelId(5)),
+        WatchExternalChannelSpentTriggered(RealShortChannelId(5), tx1),
         WatchFundingSpentTriggered(tx1)
       )
-      // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again, but not WatchEventSpentBasic
-      // (which only triggers once).
+      // Let's confirm tx and tx1: seeing tx1 in a block should trigger both WatchSpentTriggered events again.
       bitcoinClient.getBlockHeight().pipeTo(probe.ref)
       val initialBlockHeight = probe.expectMsgType[BlockHeight]
       generateBlocks(1)
-      probe.expectMsg(WatchFundingSpentTriggered(tx1))
+      probe.expectMsgAllOf(
+        WatchExternalChannelSpentTriggered(RealShortChannelId(5), tx1),
+        WatchFundingSpentTriggered(tx1)
+      )
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
       val watches1 = probe.expectMsgType[Set[Watch[_]]]
-      assert(watches1.size == 1)
-      assert(watches1.forall(_.isInstanceOf[WatchFundingSpent]))
+      assert(watches1.size == 2)
+      assert(watches1.forall(_.isInstanceOf[WatchSpent[_]]))
 
       // Let's submit tx2, and set a watch after it has been confirmed this time.
       bitcoinClient.publishTransaction(tx2)
@@ -321,8 +323,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
       watcher ! ListWatches(probe.ref)
       val watches2 = probe.expectMsgType[Set[Watch[_]]]
-      assert(watches2.size == 1)
-      assert(watches2.forall(_.isInstanceOf[WatchFundingSpent]))
+      assert(watches2.size == 2)
+      assert(watches2.forall(_.isInstanceOf[WatchSpent[_]]))
       watcher ! StopWatching(probe.ref)
 
       // We use hints and see if we can find tx2
@@ -341,7 +343,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! StopWatching(probe.ref)
 
       watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, 0, RealShortChannelId(1))
-      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(1)))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(1), tx2))
+      watcher ! StopWatching(probe.ref)
       watcher ! WatchFundingSpent(probe.ref, tx1.txid, 0, Set.empty)
       probe.expectMsg(WatchFundingSpentTriggered(tx2))
     })
@@ -373,7 +376,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsgAllOf(tx2.txid, WatchFundingSpentTriggered(tx2))
       probe.expectNoMessage(100 millis)
       generateBlocks(1)
-      probe.expectMsg(WatchFundingSpentTriggered(tx2)) // tx2 is confirmed which triggers WatchEventSpent again
+      probe.expectMsg(WatchFundingSpentTriggered(tx2)) // tx2 is confirmed which triggers a WatchSpentTriggered event again
       generateBlocks(1)
       assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx == tx1) // tx1 now has 3 confirmations
     })
@@ -393,7 +396,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     // It may happen that transactions get included in a block without getting into our mempool first (e.g. a miner could
     // try to hide a revoked commit tx from the network until it gets confirmed, in an attempt to steal funds).
     // When we receive that block, we must send an event for every transaction inside it to analyze them and potentially
-    // trigger `WatchSpent` / `WatchSpentBasic`.
+    // trigger `WatchSpent`.
     generateBlocks(1)
     val txs = Seq(
       listener.fishForMessage() { case m: NewTransaction => Set(tx1.txid, tx2.txid).contains(m.tx.txid) },

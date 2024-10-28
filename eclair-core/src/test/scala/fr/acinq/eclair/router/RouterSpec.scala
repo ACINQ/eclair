@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -318,12 +318,19 @@ class RouterSpec extends BaseRouterSpec {
     probe.expectMsg(PublicNode(node_b, 2, publicChannelCapacity * 2))
   }
 
+  def spendingTx(node1: PublicKey, node2: PublicKey): Transaction = {
+    val originalFundingTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(node1, node2)))) :: Nil, lockTime = 0)
+    Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(originalFundingTx,0), signatureScript = write(pay2wsh(Scripts.multiSig2of2(node1, node2))), sequence = 0) :: Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(node1, node1)))) :: Nil, lockTime = 0)
+  }
+
   test("properly announce lost channels and nodes") { fixture =>
     import fixture._
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
-    router ! WatchExternalChannelSpentTriggered(scid_ab)
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spendingTx(funding_a, funding_b))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
     eventListener.expectMsg(ChannelLost(scid_ab))
     assert(nodeParams.db.network.getChannel(scid_ab).isEmpty)
     // a doesn't have any channels, b still has one with c
@@ -332,7 +339,9 @@ class RouterSpec extends BaseRouterSpec {
     assert(nodeParams.db.network.getNode(b).nonEmpty)
     eventListener.expectNoMessage(200 milliseconds)
 
-    router ! WatchExternalChannelSpentTriggered(scid_cd)
+    router ! WatchExternalChannelSpentTriggered(scid_cd, spendingTx(funding_c, funding_d))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_c, funding_d))
     eventListener.expectMsg(ChannelLost(scid_cd))
     assert(nodeParams.db.network.getChannel(scid_cd).isEmpty)
     // d doesn't have any channels, c still has one with b
@@ -341,7 +350,9 @@ class RouterSpec extends BaseRouterSpec {
     assert(nodeParams.db.network.getNode(c).nonEmpty)
     eventListener.expectNoMessage(200 milliseconds)
 
-    router ! WatchExternalChannelSpentTriggered(scid_bc)
+    router ! WatchExternalChannelSpentTriggered(scid_bc, spendingTx(funding_b, funding_c))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_b, funding_c))
     eventListener.expectMsg(ChannelLost(scid_bc))
     assert(nodeParams.db.network.getChannel(scid_bc).isEmpty)
     // now b and c do not have any channels
@@ -364,6 +375,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(TestProbe().ref, remoteNodeId, ann)
     watcher.expectMsgType[ValidateRequest]
     watcher.send(router, ValidateResult(ann, Right((fundingTx, UtxoStatus.Unspent))))
+    watcher.expectMsgType[WatchExternalChannelSpent]
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(ann, 500_000 sat, None, None) :: Nil))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).nonEmpty))
 
@@ -374,7 +386,9 @@ class RouterSpec extends BaseRouterSpec {
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).nonEmpty))
 
     // The channel is closed, now we can remove it from the DB.
-    router ! WatchExternalChannelSpentTriggered(scid_au)
+    router ! WatchExternalChannelSpentTriggered(scid_au, spendingTx(funding_a, priv_funding_u.publicKey))
+    assert(watcher.expectMsgType[WatchTxConfirmed].txId == spendingTx(funding_a, priv_funding_u.publicKey).txid)
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, priv_funding_u.publicKey))
     eventListener.expectMsg(ChannelLost(scid_au))
     eventListener.expectMsg(NodeLost(priv_u.publicKey))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).isEmpty))
@@ -1083,5 +1097,67 @@ class RouterSpec extends BaseRouterSpec {
       case _ => false
     }
   }
+
+  def spliceTx(node1: PublicKey, node2: PublicKey, newCapacity: Satoshi): Transaction = {
+    val originalFundingTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(node1, node2)))) :: Nil, lockTime = 0)
+    Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(originalFundingTx,0), signatureScript = write(pay2wsh(Scripts.multiSig2of2(node1, node2))), sequence = 0) :: Nil, txOut = TxOut(newCapacity, write(pay2wsh(Scripts.multiSig2of2(node1, node2)))) :: Nil, lockTime = 0)
+  }
+
+  test("update an existing channel after a splice") { fixture =>
+    import fixture._
+
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
+    val peerConnection = TestProbe()
+
+    // Channel ab is spent by a splice tx.
+    val newCapacity = publicChannelCapacity - 100_000.sat
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx(funding_a, funding_b, newCapacity))
+    assert(watcher.expectMsgType[WatchTxConfirmed].minDepth == 12)
+    eventListener.expectNoMessage(100 millis)
+
+    // Channel ab is spent and confirmed by an RBF of splice tx.
+    val newCapacity1 = publicChannelCapacity - 100_000.sat - 1000.sat
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx(funding_a, funding_b, newCapacity1))
+    assert(watcher.expectMsgType[WatchTxConfirmed].minDepth == 12)
+    eventListener.expectNoMessage(100 millis)
+
+    // The splice of channel ab is announced.
+    val spliceScid = RealShortChannelId(BlockHeight(450000), 1, 0)
+    val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, spliceAnn))
+    peerConnection.expectNoMessage(100 millis)
+    assert(watcher.expectMsgType[ValidateRequest].ann == spliceAnn)
+    watcher.send(router, ValidateResult(spliceAnn, Right(spliceTx(funding_a, funding_b, newCapacity1), UtxoStatus.Unspent)))
+    peerConnection.expectMsg(TransportHandler.ReadAck(spliceAnn))
+    peerConnection.expectMsg(GossipDecision.Accepted(spliceAnn))
+    assert(peerConnection.sender() == router)
+
+    // And the graph should be updated too.
+    val sender = TestProbe()
+    sender.send(router, Router.GetRouterData)
+    val g = sender.expectMsgType[Data].graphWithBalances.graph
+    val edge_ab = g.getEdge(ChannelDesc(spliceScid, a, b)).get
+    val edge_ba = g.getEdge(ChannelDesc(spliceScid, b, a)).get
+    assert(g.getEdge(ChannelDesc(scid_ab, a, b)).isEmpty)
+    assert(g.getEdge(ChannelDesc(scid_ab, b, a)).isEmpty)
+    assert(edge_ab.capacity == newCapacity1 && edge_ba.capacity == newCapacity1)
+
+    // The channel update for the splice is confirmed and the channel is not removed.
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn, newCapacity1, None, None) :: Nil))
+    peerConnection.expectNoMessage(100 millis)
+    eventListener.expectNoMessage(100 millis)
+
+    // The router no longer tracks the parent scid
+    val probe = TestProbe()
+    awaitAssert({
+      probe.send(router, GetRouterData)
+      val routerData = probe.expectMsgType[Data]
+      assert(routerData.spentChannels.isEmpty)
+    })
+
+  }
+
 
 }
