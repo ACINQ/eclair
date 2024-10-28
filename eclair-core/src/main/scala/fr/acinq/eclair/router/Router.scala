@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
@@ -64,6 +65,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
+  context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
   context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
   startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
@@ -74,7 +76,10 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   {
     log.info("loading network announcements from db...")
     val (pruned, channels) = db.listChannels().partition { case (_, pc) => pc.isStale(nodeParams.currentBlockHeight) }
-    val nodes = db.listNodes()
+    val nodeIds = (pruned.values ++ channels.values).flatMap(pc => pc.ann.nodeId1 :: pc.ann.nodeId2 :: Nil).toSet
+    val (isolatedNodes, nodes) = db.listNodes().partition(n => !nodeIds.contains(n.nodeId))
+    log.info("removed {} isolated nodes from db", isolatedNodes.size)
+    isolatedNodes.foreach(n => db.removeNode(n.nodeId))
     Metrics.Nodes.withoutTags().update(nodes.size)
     Metrics.Channels.withoutTags().update(channels.size)
     log.info("loaded from db: channels={} nodes={}", channels.size, nodes.size)
@@ -113,7 +118,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       scid2PrivateChannels = Map.empty,
       excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
-      sync = Map.empty)
+      sync = Map.empty,
+      spentChannels = Map.empty)
     startWith(NORMAL, data)
   }
 
@@ -260,6 +266,20 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
     case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
+      log.info("funding tx of channelId={} has been spent - delay removing it from the graph for 12 blocks", shortChannelId)
+      // remove the channel from the db so it will not be added to the graph if a restart occurs before 12 blocks elapse
+      db.removeChannel(shortChannelId)
+      stay() using d.copy(spentChannels = d.spentChannels + (shortChannelId -> nodeParams.currentBlockHeight))
+
+    case Event(c: CurrentBlockHeight, d) =>
+      val spentChannels1 = d.spentChannels.filter {
+        // spent channels may be confirmed as a splice; wait 12 blocks before removing them from the graph
+        case (_, blockHeight) if blockHeight >= c.blockHeight + 12 => true
+        case (shortChannelId, _) => self ! HandleChannelSpent(shortChannelId); false
+      }
+      stay() using d.copy(spentChannels = spentChannels1)
+
+    case Event(HandleChannelSpent(shortChannelId), d: Data) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
       stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
 
     case Event(n: NodeAnnouncement, d: Data) =>
@@ -757,7 +777,8 @@ object Router {
                   scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Map[ChannelDesc, ExcludedChannelStatus], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
-                  sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  spentChannels: Map[RealShortChannelId, BlockHeight], // channels with funding txs spent less than 12 blocks ago
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
@@ -797,4 +818,8 @@ object Router {
 
   /** We have tried to relay this amount from this channel and it failed. */
   case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
+
+  /** Funding Tx of the channel id has been spent and not updated with a splice within 12 blocks. */
+  private case class HandleChannelSpent(shortChannelId: RealShortChannelId)
+
 }

@@ -111,9 +111,18 @@ object Validation {
             None
           } else {
             log.debug("validation successful for shortChannelId={}", c.shortChannelId)
+            val sharedInputTxId_opt = tx.txIn.find(_.signatureScript == fundingOutputScript).map(_.outPoint.txid)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+            // if a channel spends the shared output of a recently spent channel, then it is a splice
+            sharedInputTxId_opt match {
+              case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+              case Some(sharedInputTxId) =>
+                d0.spentChannels.find(spent => d0.channels.get(spent._1).exists(_.fundingTxId == sharedInputTxId)) match {
+                  case Some((parentScid, _)) => Some(splicePublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, d0.channels(parentScid)))
+                  case None => log.error("channel shortChannelId={} is a splice, but not matching channel found!", c.shortChannelId); None
+                }
+            }
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -154,6 +163,37 @@ object Validation {
           d0.copy(stash = stash1, awaiting = awaiting1)
       }
     }
+  }
+
+  private def splicePublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, parentChannel: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    val fundingOutputIndex = outputIndex(ann.shortChannelId)
+    watcher ! WatchExternalChannelSpent(ctx.self, fundingTxId, fundingOutputIndex, ann.shortChannelId)
+    ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
+    nodeParams.db.network.addChannel(ann, fundingTxId, capacity)
+    nodeParams.db.network.removeChannel(parentChannel.shortChannelId)
+    val pubChan = PublicChannel(
+      ann = ann,
+      fundingTxId = fundingTxId,
+      capacity = capacity,
+      update_1_opt = parentChannel.update_1_opt,
+      update_2_opt = parentChannel.update_2_opt,
+      meta_opt = parentChannel.meta_opt
+    )
+    log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, pubChan)
+    // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
+    log.debug("updating the graph for shortChannelId={}", pubChan.shortChannelId)
+    val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
+    d.copy(
+      // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
+      channels = d.channels + (pubChan.shortChannelId -> pubChan) - parentChannel.shortChannelId,
+      // we also add the newly validated channels to the rebroadcast queue
+      rebroadcast = d.rebroadcast.copy(
+        // we rebroadcast the splice channel to our peers
+        channels = d.rebroadcast.channels + (pubChan.ann -> d.awaiting.getOrElse(pubChan.ann, if (pubChan.nodeId1 == nodeParams.nodeId || pubChan.nodeId2 == nodeParams.nodeId) Seq(LocalGossip) else Nil).toSet),
+      ),
+      graphWithBalances = graph1
+    )
   }
 
   private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {

@@ -22,14 +22,15 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.send.{ClearRecipient, TrampolineRecipient, SpontaneousRecipient}
+import fr.acinq.eclair.payment.send.{ClearRecipient, SpontaneousRecipient, TrampolineRecipient}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRoutesFromPaths, channelAnnouncement}
@@ -324,6 +325,8 @@ class RouterSpec extends BaseRouterSpec {
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
     router ! WatchExternalChannelSpentTriggered(scid_ab)
+    eventListener.expectNoMessage(100 millis)
+    system.eventStream.publish(CurrentBlockHeight(fixture.nodeParams.currentBlockHeight + 12))
     eventListener.expectMsg(ChannelLost(scid_ab))
     assert(nodeParams.db.network.getChannel(scid_ab).isEmpty)
     // a doesn't have any channels, b still has one with c
@@ -333,6 +336,8 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchExternalChannelSpentTriggered(scid_cd)
+    eventListener.expectNoMessage(100 millis)
+    system.eventStream.publish(CurrentBlockHeight(fixture.nodeParams.currentBlockHeight + 12))
     eventListener.expectMsg(ChannelLost(scid_cd))
     assert(nodeParams.db.network.getChannel(scid_cd).isEmpty)
     // d doesn't have any channels, c still has one with b
@@ -342,6 +347,8 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchExternalChannelSpentTriggered(scid_bc)
+    eventListener.expectNoMessage(100 millis)
+    system.eventStream.publish(CurrentBlockHeight(fixture.nodeParams.currentBlockHeight + 12))
     eventListener.expectMsg(ChannelLost(scid_bc))
     assert(nodeParams.db.network.getChannel(scid_bc).isEmpty)
     // now b and c do not have any channels
@@ -375,6 +382,8 @@ class RouterSpec extends BaseRouterSpec {
 
     // The channel is closed, now we can remove it from the DB.
     router ! WatchExternalChannelSpentTriggered(scid_au)
+    eventListener.expectNoMessage(100 millis)
+    system.eventStream.publish(CurrentBlockHeight(fixture.nodeParams.currentBlockHeight + 12))
     eventListener.expectMsg(ChannelLost(scid_au))
     eventListener.expectMsg(NodeLost(priv_u.publicKey))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).isEmpty))
@@ -1112,4 +1121,45 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  test("update an existing channel after a splice") { fixture =>
+    import fixture._
+
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
+    val peerConnection = TestProbe()
+
+    // Channel ab is spent by a splice tx.
+    router ! WatchExternalChannelSpentTriggered(scid_ab)
+    eventListener.expectNoMessage(100 millis)
+
+    // The splice of channel ab is announced.
+    val spliceScid = RealShortChannelId(BlockHeight(450000), 1, 0)
+    val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, spliceAnn))
+    peerConnection.expectNoMessage(100 millis)
+    assert(watcher.expectMsgType[ValidateRequest].ann == spliceAnn)
+    val postSpliceCapacity = publicChannelCapacity - 100_000.sat
+    val originalFundingTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)
+    val spliceFundingTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint(originalFundingTx,0), signatureScript = write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b))), sequence = 0) :: Nil, txOut = TxOut(postSpliceCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)
+    watcher.send(router, ValidateResult(spliceAnn, Right(spliceFundingTx, UtxoStatus.Unspent)))
+    peerConnection.expectMsg(TransportHandler.ReadAck(spliceAnn))
+    peerConnection.expectMsg(GossipDecision.Accepted(spliceAnn))
+    assert(peerConnection.sender() == router)
+    assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == spliceAnn.shortChannelId)
+
+    // And the graph should be updated too.
+    val sender = TestProbe()
+    sender.send(router, Router.GetRouterData)
+    val g = sender.expectMsgType[Data].graphWithBalances.graph
+    val edge_ab = g.getEdge(ChannelDesc(spliceScid, a, b)).get
+    val edge_ba = g.getEdge(ChannelDesc(spliceScid, b, a)).get
+    assert(g.getEdge(ChannelDesc(scid_ab, a, b)).isEmpty)
+    assert(g.getEdge(ChannelDesc(scid_ab, b, a)).isEmpty)
+    assert(edge_ab.capacity == postSpliceCapacity && edge_ba.capacity == postSpliceCapacity)
+  }
+
+  test("after a reload, any node without channels should be removed from the database") { fixture =>
+    import fixture._
+    assert(nodeParams.db.network.listNodes().size == 8)
+  }
 }
