@@ -850,7 +850,6 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We receive the last payment *after* signing the funding transaction.
     proposeExtraFunding(50_000_000 msat, expiryOut, paymentHash, upstream(2))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
-    
 
     // Once the splice with the right funding index is locked, we forward HTLCs matching the proposed will_add_htlc.
     val channelData = makeChannelData(htlcMinimum)
