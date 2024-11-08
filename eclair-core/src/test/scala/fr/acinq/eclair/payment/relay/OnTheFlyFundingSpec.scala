@@ -381,6 +381,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     proposeFunding(40_000_000 msat, CltvExpiry(515), paymentHash2, upstream2.head)
     signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash2 :: Nil))
     proposeExtraFunding(50_000_000 msat, CltvExpiry(525), paymentHash2, upstream2.last)
+    register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
     // A third funding is signed coming from a trampoline payment.
     val paymentHash3 = randomBytes32()
@@ -396,16 +397,16 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val upstream4 = Upstream.Hot.Trampoline(List(upstreamChannel(60_000_000 msat, CltvExpiry(560), paymentHash4)))
     proposeFunding(50_000_000 msat, CltvExpiry(516), paymentHash4, upstream4)
 
-    // The first three proposals reach their CLTV expiry.
+    // The first three proposals reach their CLTV expiry (the extra htlc was already failed).
     peer ! CurrentBlockHeight(BlockHeight(515))
-    val fwds = (0 until 6).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
+    val fwds = (0 until 5).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
     register.expectNoMessage(100 millis)
     fwds.foreach(fwd => {
       assert(fwd.message.reason == Right(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
-    assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2 ++ upstream3.received).map(_.add.channelId).toSet)
-    assert(fwds.map(_.message.id).toSet == (upstream1 ++ upstream2 ++ upstream3.received).map(_.add.id).toSet)
+    assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.channelId).toSet)
+    assert(fwds.map(_.message.id).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.id).toSet)
     awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
   }
 
@@ -848,6 +849,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(preimage :: Nil), channelId, fees, fundingTxIndex = 5, htlcMinimum)
     // We receive the last payment *after* signing the funding transaction.
     proposeExtraFunding(50_000_000 msat, expiryOut, paymentHash, upstream(2))
+    register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
     // Once the splice with the right funding index is locked, we forward HTLCs matching the proposed will_add_htlc.
     val channelData = makeChannelData(htlcMinimum)
@@ -858,17 +860,15 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val adds1 = Seq(
       channel.expectMsgType[CMD_ADD_HTLC],
       channel.expectMsgType[CMD_ADD_HTLC],
-      channel.expectMsgType[CMD_ADD_HTLC],
     )
     adds1.foreach(add => {
       assert(add.paymentHash == paymentHash)
       assert(add.fundingFee_opt.nonEmpty)
       assert(add.fundingFee_opt.get.fundingTxId == purchase.txId)
     })
-    adds1.take(2).foreach(add => assert(!add.commit))
-    assert(adds1.last.commit)
+    adds1.foreach(add => assert(add.commit))
     assert(adds1.map(_.fundingFee_opt.get.amount).sum == fees.total.toMilliSatoshi)
-    assert(adds1.map(add => add.amount + add.fundingFee_opt.get.amount).sum == 160_000_000.msat)
+    assert(adds1.map(add => add.amount + add.fundingFee_opt.get.amount).sum == 110_000_000.msat)
     channel.expectNoMessage(100 millis)
 
     // The recipient fails the payments: we don't relay the failure upstream and will retry.
@@ -887,7 +887,6 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val adds2 = Seq(
       channel.expectMsgType[CMD_ADD_HTLC],
       channel.expectMsgType[CMD_ADD_HTLC],
-      channel.expectMsgType[CMD_ADD_HTLC],
     )
     adds2.foreach(add => add.replyTo ! RES_SUCCESS(add, purchase.channelId))
     channel.expectNoMessage(100 millis)
@@ -900,9 +899,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwds = Seq(
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
-      register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
     )
-    val (channelsIn, htlcsIn) = upstream.flatMap {
+    val (channelsIn, htlcsIn) = upstream.take(2).flatMap {
       case u: Hot.Channel => Seq(u)
       case u: Hot.Trampoline => u.received
       case _: Upstream.Local => Nil
