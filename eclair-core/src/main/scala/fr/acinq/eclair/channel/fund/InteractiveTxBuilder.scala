@@ -476,6 +476,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   import InteractiveTxBuilder._
 
+  if (channelParams.commitmentFormat.useTaproot) {
+    require(nextRemoteNonce_opt.isDefined, "next remote nonce is missing")
+  }
   private val log = context.log
   private val keyManager = nodeParams.channelKeyManager
   private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey

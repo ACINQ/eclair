@@ -83,11 +83,12 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
       val localShutdownScript = input.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
       val tlvStream: TlvStream[OpenChannelTlv] = if (input.channelType.commitmentFormat.useTaproot) {
-        val localNonce = keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
+        // include our verification nonce at funding_index = 0, commit_index = 0
+        val (_, localNonce) = keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
         TlvStream(
           ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
           ChannelTlv.ChannelTypeTlv(input.channelType),
-          ChannelTlv.NextLocalNonceTlv(localNonce._2)
+          ChannelTlv.NextLocalNonceTlv(localNonce)
         )
       } else {
         TlvStream(
@@ -148,6 +149,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = d.initFundee.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType.commitmentFormat.useTaproot) {
+            // include our verification nonce at funding_index = 0, commit_index = 0
             val localNonce = keyManager.verificationNonce(d.initFundee.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)
             TlvStream(
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),

@@ -267,9 +267,16 @@ object ChannelReestablishTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
 
+  case class SpliceNoncesTlv(nonces: List[IndividualNonce]) extends ChannelReestablishTlv
+
+  object SpliceNoncesTlv {
+    val codec: Codec[SpliceNoncesTlv] = tlvField(list(publicNonce))
+  }
+
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
     .typecase(UInt64(4), nexLocalNoncesTlvCodec)
+    .typecase(UInt64(6), SpliceNoncesTlv.codec)
   )
 }
 

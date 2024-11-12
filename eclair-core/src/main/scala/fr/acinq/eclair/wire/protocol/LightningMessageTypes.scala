@@ -213,6 +213,9 @@ case class ChannelReestablish(channelId: ByteVector32,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
   val nextLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val spliceNonces: List[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.SpliceNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val firstSpliceNonce: Option[IndividualNonce] = if (spliceNonces.isEmpty) None else Some(spliceNonces(0))
+  val secondSpliceNonce: Option[IndividualNonce] = if (spliceNonces.isEmpty) None else Some(spliceNonces(1))
 }
 
 case class OpenChannel(chainHash: BlockHash,
