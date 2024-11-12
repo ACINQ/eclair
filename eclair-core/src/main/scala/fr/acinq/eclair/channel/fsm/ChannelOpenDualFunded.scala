@@ -116,6 +116,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         if (input.requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
         input.requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
         input.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
+        // include our verification nonces at funding_index = 0, commit_index = 0 and funding_index = 0, commit_index = 1
         if (input.channelType.commitmentFormat.useTaproot) Some(ChannelTlv.NextLocalNoncesTlv(
           List(
             keyManager.verificationNonce(input.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2,
@@ -190,6 +191,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             willFund_opt.map(l => ChannelTlv.ProvideFundingTlv(l.willFund)),
             open.useFeeCredit_opt.map(c => ChannelTlv.FeeCreditUsedTlv(c)),
             d.init.pushAmount_opt.map(amount => ChannelTlv.PushAmountTlv(amount)),
+            // include our verification nonces at funding_index = 0, commit_index = 0 and funding_index = 0, commit_index = 1
             if (channelParams.commitmentFormat.useTaproot) Some(ChannelTlv.NextLocalNoncesTlv(
               List(
                 keyManager.verificationNonce(localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 0)._2,
@@ -531,7 +533,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt, d.commitments.generateLocalNonces(keyManager))
+              val localNonces = d.commitments.generateLocalNonces(keyManager, d.commitments.latest.fundingTxIndex, d.commitments.localCommitIndex, d.commitments.localCommitIndex + 1)
+              val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt, localNonces)
               stay() using d.copy(status = DualFundingStatus.RbfRequested(cmd)) sending txInitRbf
             }
           case _ =>
@@ -601,7 +604,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     wallet,
                     msg.firstRemoteNonce))
                   txBuilder ! InteractiveTxBuilder.Start(self)
-                  val nextLocalNonces = d.commitments.generateLocalNonces(keyManager)
+                  val nextLocalNonces = d.commitments.generateLocalNonces(keyManager, d.commitments.latest.fundingTxIndex, d.commitments.localCommitIndex, d.commitments.localCommitIndex + 1)
                   setRemoteNextLocalNonces("received TxInitRbf", msg.secondRemoteNonce.toList)
                   val toSend = Seq(
                     Some(TxAckRbf(d.channelId, fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund), nextLocalNonces)),
