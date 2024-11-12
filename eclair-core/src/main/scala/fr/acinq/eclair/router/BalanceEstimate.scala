@@ -23,7 +23,7 @@ import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Estimates the balance between a pair of nodes
@@ -235,6 +235,8 @@ object BalanceEstimate {
 case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstimate], defaultHalfLife: FiniteDuration) {
   private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] = balances.get((a, b))
 
+  def get(edge: GraphEdge): BalanceEstimate = get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.empty(defaultHalfLife).addEdge(edge))
+
   def addEdge(edge: GraphEdge): BalancesEstimates = BalancesEstimates(
     balances.updatedWith((edge.desc.a, edge.desc.b))(balance =>
       Some(balance.getOrElse(BalanceEstimate.empty(defaultHalfLife)).addEdge(edge))
@@ -284,7 +286,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 
 }
 
-case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
+case class GraphWithBalanceEstimates(graph: DirectedGraph, balances: BalancesEstimates) {
   def addOrUpdateVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addOrUpdateVertex(ann), balances)
 
   def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
@@ -316,13 +318,6 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
 
   def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi): GraphWithBalanceEstimates = {
     GraphWithBalanceEstimates(graph, balances.channelCouldNotSend(hop, amount))
-  }
-
-  def canSend(amount: MilliSatoshi, edge: GraphEdge): Double = {
-    balances.balances.get((edge.desc.a, edge.desc.b)) match {
-      case Some(estimate) => estimate.canSend(amount)
-      case None => BalanceEstimate.empty(1 hour).addEdge(edge).canSend(amount)
-    }
   }
 }
 

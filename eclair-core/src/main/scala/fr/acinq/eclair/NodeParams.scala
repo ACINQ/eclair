@@ -455,6 +455,7 @@ object NodeParams extends Logging {
           failureCost = getRelayFees(config.getConfig("failure-cost")),
           hopCost = getRelayFees(config.getConfig("hop-cost")),
           useLogProbability = config.getBoolean("use-log-probability"),
+          usePastRelaysData = config.getBoolean("use-past-relay-data"),
         ))
       },
       mpp = MultiPartParams(
