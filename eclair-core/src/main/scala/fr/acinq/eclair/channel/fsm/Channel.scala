@@ -1334,36 +1334,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
-        case Right((commitments1, _)) =>
+        case Right((commitments1, commitment)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
-          maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
-          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
+          log.info(s"zero conf splice funding tx is published with txid=${w.tx.txid}")
+          checkSpliceLocked(d, w.tx.txid, commitments1, commitment)
         case Left(_) => stay()
       }
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, commitment)) =>
-          val toSend = if (d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])) {
-            // this commitment just moved from NotLocked to Locked
-            Some(SpliceLocked(d.channelId, w.tx.txid))
-          } else {
-            // this was a zero-conf splice and we already sent our splice_locked
-            None
-          }
-          maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
-          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          stay() using d.copy(commitments = commitments1) storing() sending toSend.toSeq
+            log.info(s"splice funding tx is confirmed with txid=${w.tx.txid}")
+            checkSpliceLocked(d, w.tx.txid, commitments1, commitment)
         case Left(_) => stay()
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
       d.commitments.updateRemoteFundingStatus(msg.fundingTxId) match {
-        case Right((commitments1, _)) =>
-          maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
-          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          stay() using d.copy(commitments = commitments1) storing()
+        case Right((commitments1, commitment)) =>
+          checkSpliceLocked(d, msg.fundingTxId, commitments1, commitment)
         case Left(_) => stay()
       }
 
@@ -2483,7 +2472,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
       // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
       // trigger and rewrite the funding status again.
-      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx, _, _) => tx }.exists(_.txid == w.tx.txid)
+      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx, _, _, _, _) => tx }.exists(_.txid == w.tx.txid)
       if (alreadyConfirmed) {
         stay()
       } else {
@@ -2902,6 +2891,58 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val newMaxHtlcAmount = Helpers.maxHtlcAmount(nodeParams, newCommitments)
     if (currentMaxHtlcAmount != newMaxHtlcAmount) {
       self ! BroadcastChannelUpdate(BalanceThresholdCrossed)
+    }
+  }
+
+  private def maybeUpdateScid(d: DATA_NORMAL, fundingStatus: LocalFundingStatus.ConfirmedFundingTx, commitments1: Commitments): (DATA_NORMAL, Option[AnnouncementSignatures]) = {
+    // Update short id and announce channel if needed.
+    val realScid = RealShortChannelId(fundingStatus.blockHeight, fundingStatus.txIndex, commitments1.latest.commitInput.outPoint.index.toInt)
+    val shortIds1 = d.shortIds.copy(real = RealScidStatus.Final(realScid))
+    context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortIds1, remoteNodeId))
+    val scidForChannelUpdate = Helpers.scidForChannelUpdate(d.channelAnnouncement, shortIds1.localAlias)
+    // if the shortChannelId is different from the one we had before, we need to re-announce it
+    val channelUpdate1 = if (d.channelUpdate.shortChannelId != scidForChannelUpdate) {
+      log.info(s"using new scid in channel_update: old=${d.channelUpdate.shortChannelId} new=$scidForChannelUpdate")
+      // we re-announce the channelUpdate for the same reason
+      Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
+    } else {
+      d.channelUpdate
+    }
+    val announceSigs_opt = if (d.commitments.announceChannel) {
+      // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
+      Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
+    } else None
+    (d.copy(shortIds = shortIds1, channelUpdate = channelUpdate1), announceSigs_opt)
+  }
+
+  private def spliceLocked(d: DATA_NORMAL, fundingStatus: LocalFundingStatus.Locked, commitments1: Commitments, spliceLocked_opt: Option[SpliceLocked], announceSigs_opt: Option[AnnouncementSignatures]): State = {
+    maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+    maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
+    // we use goto() instead of stay() because we want to fire transitions
+    goto(NORMAL) using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ announceSigs_opt.toSeq
+  }
+
+  private def checkSpliceLocked(d: DATA_NORMAL, fundingTxId: TxId, commitments1: Commitments, commitment: Commitment): State = {
+    val previousCommitment = d.commitments.all.find(_.fundingTxId == fundingTxId)
+    // only send an SpliceLocked message to the peer when the local funding tx status transitions from not locked to locked
+    val spliceLocked_opt: Option[SpliceLocked] =
+      (previousCommitment.map(_.localFundingStatus), commitment.localFundingStatus) match {
+        case (Some(_: LocalFundingStatus.NotLocked), _: LocalFundingStatus.Locked) =>
+          Some(SpliceLocked(d.channelId, fundingTxId))
+        case (_, _) => None
+      }
+    // only send an AnnouncementSignatures message to the peer when the local funding tx transitions from unconfirmed to confirmed on-chain
+    val (d1, announceSigs_opt) =
+      (previousCommitment.map(_.localFundingStatus), commitment.localFundingStatus) match {
+        case (Some(_: LocalFundingStatus.UnconfirmedFundingTx), confirmedFundingTx: LocalFundingStatus.ConfirmedFundingTx) =>
+          maybeUpdateScid(d, confirmedFundingTx, commitments1)
+      case (_, _) => (d, None)
+    }
+    (commitment.localFundingStatus, commitment.remoteFundingStatus) match {
+      case (fundingStatus: LocalFundingStatus.Locked, RemoteFundingStatus.Locked) =>
+        spliceLocked(d, fundingStatus, commitments1, spliceLocked_opt, announceSigs_opt)
+      case (_, _) =>
+        stay() using d1.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ announceSigs_opt.toSeq
     }
   }
 
