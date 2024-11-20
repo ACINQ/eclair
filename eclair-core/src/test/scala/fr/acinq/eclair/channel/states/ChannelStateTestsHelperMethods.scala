@@ -27,8 +27,8 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.blockchain.{ChangelessFundingWallet, DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWalletWithConfirmedInputs}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
@@ -93,6 +93,8 @@ object ChannelStateTestsTags {
   val DelayRbfAttempts = "delay_rbf_attempts"
   /** If set, channels will adapt their max HTLC amount to the available balance */
   val AdaptMaxHtlcAmount = "adapt-max-htlc-amount"
+  /** If set, wallet will return changeless funding txs. */
+  val ChangelessFunding = "changeless_funding"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -161,7 +163,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
     val wallet = wallet_opt match {
       case Some(wallet) => wallet
-      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
+      case None if tags.contains(ChannelStateTestsTags.ChangelessFunding) => new ChangelessFundingWallet()
+      case None if tags.contains(ChannelStateTestsTags.DualFunding) => new SingleKeyOnChainWalletWithConfirmedInputs()
+      case None => new DummyOnChainWallet()
     }
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
@@ -314,10 +318,12 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       bob2alice.forward(alice)
       alice2bob.expectMsgType[TxAddOutput]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxAddOutput]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[TxAddOutput]
-      alice2bob.forward(bob)
+      if (!tags.contains(ChannelStateTestsTags.ChangelessFunding)) {
+        bob2alice.expectMsgType[TxAddOutput]
+        bob2alice.forward(alice)
+        alice2bob.expectMsgType[TxAddOutput]
+        alice2bob.forward(bob)
+      }
       bob2alice.expectMsgType[TxComplete]
       bob2alice.forward(alice)
       alice2bob.expectMsgType[TxComplete]
@@ -566,7 +572,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => {
-      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed] 
+      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed]
       assert(watchConfirmed.txId == claimMain.tx.txid)
       assert(watchConfirmed.delay_opt.map(_.parentTxId).contains(publishedLocalCommitTx.txid))
     })
