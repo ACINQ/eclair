@@ -215,6 +215,7 @@ object TestConstants {
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
+            splittingStrategy = MultiPartParams.FullCapacity
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
@@ -391,6 +392,7 @@ object TestConstants {
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
+            splittingStrategy = MultiPartParams.FullCapacity
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
