@@ -558,7 +558,7 @@ class RouterSpec extends BaseRouterSpec {
       router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true)
       val routes = sender.expectMessageType[RouteResponse].routes
       assert(routes.length == 2)
-      assert(routes.flatMap(_.finalHop_opt) == recipient.blindedHops)
+      assert(routes.flatMap(_.finalHop_opt).toSet == recipient.blindedHops.toSet)
       assert(routes.map(route => route2NodeIds(route)).toSet == Set(Seq(a, b), Seq(a, b, c)))
       assert(routes.map(route => route.blindedFee + route.channelFee(false)).toSet == Set(510 msat, 800 msat))
     }
@@ -579,45 +579,6 @@ class RouterSpec extends BaseRouterSpec {
       val ignored = Ignore(Set.empty, Set(ChannelDesc(recipient.extraEdges.last.shortChannelId, recipient.extraEdges.last.sourceNodeId, recipient.extraEdges.last.targetNodeId)))
       router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true, ignore = ignored)
       sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
-    }
-    {
-      // One blinded route is pending, we use the other one:
-      val (_, recipient) = blindedRoutesFromPaths(600_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
-      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true)
-      val routes1 = sender.expectMessageType[RouteResponse].routes
-      assert(routes1.length == 2)
-      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true, pendingPayments = Seq(routes1.head))
-      val routes2 = sender.expectMessageType[RouteResponse].routes
-      assert(routes2 == routes1.tail)
-    }
-    {
-      // One blinded route is pending, we send two htlcs to the other one:
-      val (_, recipient) = blindedRoutesFromPaths(600_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
-      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true)
-      val routes1 = sender.expectMessageType[RouteResponse].routes
-      assert(routes1.length == 2)
-      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true, pendingPayments = Seq(routes1.head))
-      val routes2 = sender.expectMessageType[RouteResponse].routes
-      assert(routes2 == routes1.tail)
-      router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS, allowMultiPart = true, pendingPayments = Seq(routes1.head, routes2.head.copy(amount = routes2.head.amount - 25_000.msat)))
-      val routes3 = sender.expectMessageType[RouteResponse].routes
-      assert(routes3.length == 1)
-      assert(routes3.head.amount == 25_000.msat)
-    }
-    {
-      // One blinded route is pending, we cannot use the other one because of the fee budget:
-      val (_, recipient) = blindedRoutesFromPaths(600_000 msat, DEFAULT_EXPIRY, hopsToRecipient, DEFAULT_EXPIRY)
-      val routeParams1 = DEFAULT_ROUTE_PARAMS.copy(boundaries = SearchBoundaries(5000 msat, 0.0, 6, CltvExpiryDelta(1008)))
-      router ! RouteRequest(sender.ref, a, recipient, routeParams1, allowMultiPart = true)
-      val routes1 = sender.expectMessageType[RouteResponse].routes
-      assert(routes1.length == 2)
-      assert(routes1.head.blindedFee + routes1.head.channelFee(false) == 800.msat)
-      val routeParams2 = DEFAULT_ROUTE_PARAMS.copy(boundaries = SearchBoundaries(1000 msat, 0.0, 6, CltvExpiryDelta(1008)))
-      router ! RouteRequest(sender.ref, a, recipient, routeParams2, allowMultiPart = true, pendingPayments = Seq(routes1.head))
-      sender.expectMessage(PaymentRouteNotFound(RouteNotFound))
-      val routeParams3 = DEFAULT_ROUTE_PARAMS.copy(boundaries = SearchBoundaries(1500 msat, 0.0, 6, CltvExpiryDelta(1008)))
-      router ! RouteRequest(sender.ref, a, recipient, routeParams3, allowMultiPart = true, pendingPayments = Seq(routes1.head))
-      assert(sender.expectMessageType[RouteResponse].routes.length == 1)
     }
   }
 

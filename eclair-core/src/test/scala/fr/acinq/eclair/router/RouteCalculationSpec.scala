@@ -26,6 +26,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight}
 import fr.acinq.eclair.router.RouteCalculation._
+import fr.acinq.eclair.router.Router.MultiPartParams.{FullCapacity, MaxExpectedAmount, Randomize}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
@@ -766,6 +767,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       .modify(_.boundaries.maxFeeFlat).setTo(7 msat)
       .modify(_.boundaries.maxFeeProportional).setTo(0)
       .modify(_.randomize).setTo(true)
+      .modify(_.mpp.splittingStrategy).setTo(Randomize)
     val strictFee = strictFeeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
     assert(strictFee == 7.msat)
 
@@ -914,7 +916,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       checkRouteAmounts(routes, amount, 0 msat)
     }
     {
-      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      assert(routes.length >= 4, routes)
+      assert(routes.forall(_.hops.length == 1), routes)
+      checkRouteAmounts(routes, amount, 0 msat)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       assert(routes.length >= 4, routes)
       assert(routes.forall(_.hops.length == 1), routes)
       checkRouteAmounts(routes, amount, 0 msat)
@@ -977,7 +985,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       checkRouteAmounts(routes, amount, 0 msat)
     }
     {
-      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      assert(routes.length >= 3, routes)
+      assert(routes.forall(_.hops.length == 1), routes)
+      checkIgnoredChannels(routes, 2L)
+      checkRouteAmounts(routes, amount, 0 msat)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       assert(routes.length >= 3, routes)
       assert(routes.forall(_.hops.length == 1), routes)
       checkIgnoredChannels(routes, 2L)
@@ -1087,7 +1102,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       assert(result == Failure(RouteNotFound))
     }
     {
-      val result = findMultiPartRoute(g, a, b, 40000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val result = findMultiPartRoute(g, a, b, 40000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      assert(result == Failure(RouteNotFound))
+    }
+    {
+      val result = findMultiPartRoute(g, a, b, 40000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       assert(result == Failure(RouteNotFound))
     }
   }
@@ -1116,7 +1135,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       assert(result == Failure(RouteNotFound))
     }
     {
-      val result = findMultiPartRoute(g, a, b, 10000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val result = findMultiPartRoute(g, a, b, 10000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      assert(result == Failure(RouteNotFound))
+    }
+    {
+      val result = findMultiPartRoute(g, a, b, 10000 msat, 1 msat, routeParams = DEFAULT_ROUTE_PARAMS.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       assert(result == Failure(RouteNotFound))
     }
   }
@@ -1152,7 +1175,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Randomize routes.
-      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
     }
     {
@@ -1242,7 +1269,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Randomize routes.
-      val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+    }
+    {
+      val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
     }
     {
@@ -1300,7 +1331,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     {
       val amount = 15_000_000 msat
       val maxFee = 50_000 msat // this fee is enough to go through the preferred route
-      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, DEFAULT_ROUTE_PARAMS.mpp.splittingStrategy))
+      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, FullCapacity))
       val Success(routes) = findMultiPartRoute(g, a, d, amount, maxFee, routeParams = routeParams, currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
       assert(routes2Ids(routes) == Set(Seq(100L, 101L)))
@@ -1308,14 +1339,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     {
       val amount = 15_000_000 msat
       val maxFee = 10_000 msat // this fee is too low to go through the preferred route
-      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, DEFAULT_ROUTE_PARAMS.mpp.splittingStrategy))
+      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, FullCapacity))
       val failure = findMultiPartRoute(g, a, d, amount, maxFee, routeParams = routeParams, currentBlockHeight = BlockHeight(400000))
       assert(failure == Failure(RouteNotFound))
     }
     {
       val amount = 5_000_000 msat
       val maxFee = 10_000 msat // this fee is enough to go through the preferred route, but the cheaper ones can handle it
-      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, DEFAULT_ROUTE_PARAMS.mpp.splittingStrategy))
+      val routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = false, mpp = MultiPartParams(50_000 msat, 5, FullCapacity))
       val Success(routes) = findMultiPartRoute(g, a, d, amount, maxFee, routeParams = routeParams, currentBlockHeight = BlockHeight(400000))
       assert(routes.length == 5)
       routes.foreach(route => {
@@ -1429,7 +1460,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       val (amount, maxFee) = (40000 msat, 100 msat)
-      val Success(routes) = findMultiPartRoute(g, d, f, amount, maxFee, routeParams = routeParams.copy(randomize = true), currentBlockHeight = BlockHeight(400000))
+      val Success(routes) = findMultiPartRoute(g, d, f, amount, maxFee, routeParams = routeParams.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000))
+      checkRouteAmounts(routes, amount, maxFee)
+    }
+    {
+      val (amount, maxFee) = (40000 msat, 100 msat)
+      val Success(routes) = findMultiPartRoute(g, d, f, amount, maxFee, routeParams = routeParams.modify(_.mpp.splittingStrategy).setTo(MaxExpectedAmount), currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
     }
     {
@@ -1528,7 +1564,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
         makeEdge(9L, c, f, Random.nextLong(250).msat, Random.nextInt(10000), minHtlc = Random.nextLong(100).msat, maxHtlc = Some((20000 + Random.nextLong(80000)).msat), CltvExpiryDelta(Random.nextInt(288)), capacity = (10 + Random.nextLong(100)).sat)
       )), 1 day)
 
-      findMultiPartRoute(g, d, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true), currentBlockHeight = BlockHeight(400000)) match {
+      findMultiPartRoute(g, d, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS.copy(randomize = true).modify(_.mpp.splittingStrategy).setTo(Randomize), currentBlockHeight = BlockHeight(400000)) match {
         case Success(routes) => checkRouteAmounts(routes, amount, maxFee)
         case Failure(ex) => assert(ex == RouteNotFound)
       }
@@ -1949,7 +1985,7 @@ object RouteCalculationSpec {
     randomize = false,
     boundaries = SearchBoundaries(21000 msat, 0.03, 6, CltvExpiryDelta(2016)),
     NO_WEIGHT_RATIOS,
-    MultiPartParams(1000 msat, 10, MultiPartParams.FullCapacity),
+    MultiPartParams(1000 msat, 10, FullCapacity),
     experimentName = "my-test-experiment",
     experimentPercentage = 100).getDefaultRouteParams
 

@@ -390,14 +390,7 @@ object RouteCalculation {
                          pendingHtlcs: Seq[Route] = Nil,
                          routeParams: RouteParams,
                          currentBlockHeight: BlockHeight): Try[Seq[Route]] = Try {
-    val result = findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight) match {
-      case Right(routes) => Right(routes)
-      case Left(RouteNotFound) if routeParams.randomize =>
-        // If we couldn't find a randomized solution, fallback to a deterministic one.
-        findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams.copy(randomize = false), currentBlockHeight)
-      case Left(ex) => Left(ex)
-    }
-    result match {
+    findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight) match {
       case Right(routes) => routes
       case Left(ex) => return Failure(ex)
     }
@@ -413,7 +406,8 @@ object RouteCalculation {
                                          ignoredVertices: Set[PublicKey] = Set.empty,
                                          pendingHtlcs: Seq[Route] = Nil,
                                          routeParams: RouteParams,
-                                         currentBlockHeight: BlockHeight): Either[RouterException, Seq[Route]] = {
+                                         currentBlockHeight: BlockHeight,
+                                         now: TimestampSecond = TimestampSecond.now()): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
@@ -432,62 +426,95 @@ object RouteCalculation {
       routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes, routeParams.mpp.splittingStrategy))
     }
     findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight) match {
-      case Right(routes) =>
+      case Right(paths) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
-        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams1) match {
+        split(amount, mutable.Queue(paths: _*), initializeUsedCapacity(pendingHtlcs), routeParams1, g.balances, now) match {
           case Right(routes) if validateMultiPartRoute(amount, maxFee, routes, routeParams.includeLocalChannelCost) => Right(routes)
+          case Right(_) if routeParams.randomize =>
+            // We've found a multipart route, but it's too expensive. We try again without randomization to prioritize cheaper paths.
+            val sortedPaths = paths.sortBy(_.weight.weight)
+            split(amount, mutable.Queue(sortedPaths: _*), initializeUsedCapacity(pendingHtlcs), routeParams1, g.balances, now) match {
+              case Right(routes) if validateMultiPartRoute(amount, maxFee, routes, routeParams.includeLocalChannelCost) => Right(routes)
+              case _ => Left(RouteNotFound)
+            }
           case _ => Left(RouteNotFound)
         }
       case Left(ex) => Left(ex)
     }
   }
 
-  @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
-    if (amount == 0.msat) {
-      Right(selectedRoutes)
-    } else if (paths.isEmpty) {
-      Left(RouteNotFound)
-    } else {
+  private case class CandidateRoute(routeWithMaximumAmount: Route, chosenAmount: MilliSatoshi)
+
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, balances: BalancesEstimates, now: TimestampSecond): Either[RouterException, Seq[Route]] = {
+    var amountLeft = amount
+    var candidates: List[CandidateRoute] = Nil
+    while(paths.nonEmpty && amountLeft > 0.msat) {
       val current = paths.dequeue()
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
-      if (candidate.amount < routeParams.mpp.minPartAmount.min(amount)) {
-        // this route doesn't have enough capacity left: we remove it and continue.
-        split(amount, paths, usedCapacity, routeParams, selectedRoutes)
-      } else {
-        val route = routeParams.mpp.splittingStrategy match {
+      if (candidate.amount >= routeParams.mpp.minPartAmount.min(amountLeft)) {
+        val routeFullCapacity = candidate.copy(amount = candidate.amount.min(amountLeft))
+        val chosenAmount = routeParams.mpp.splittingStrategy match {
           case MultiPartParams.Randomize =>
             // randomly choose the amount to be between 20% and 100% of the available capacity.
             val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
-            candidate.copy(amount = randomizedAmount.max(routeParams.mpp.minPartAmount).min(amount))
+            if (randomizedAmount < routeParams.mpp.minPartAmount) {
+              routeParams.mpp.minPartAmount.min(amountLeft)
+            } else {
+              randomizedAmount.min(amountLeft)
+            }
           case MultiPartParams.MaxExpectedAmount =>
-            val bestAmount = optimizeExpectedValue(current.path, candidate.amount, usedCapacity)
-            candidate.copy(amount = bestAmount.max(routeParams.mpp.minPartAmount).min(amount))
+            val bestAmount = optimizeExpectedValue(current.path, candidate.amount, usedCapacity, routeParams.heuristics.usePastRelaysData, balances, now)
+            bestAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
           case MultiPartParams.FullCapacity =>
-            candidate.copy(amount = candidate.amount.min(amount))
+            routeFullCapacity.amount
         }
-        updateUsedCapacity(route, usedCapacity)
-        // NB: we re-enqueue the current path, it may still have capacity for a second HTLC.
-        split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams, route +: selectedRoutes)
+        updateUsedCapacity(routeFullCapacity, usedCapacity)
+        candidates = CandidateRoute(routeFullCapacity, chosenAmount) :: candidates
+        amountLeft = amountLeft - chosenAmount
+        paths.enqueue(current)
       }
+    }
+    val totalChosen = candidates.map(_.chosenAmount).sum
+    val totalMaximum = candidates.map(_.routeWithMaximumAmount.amount).sum
+    if (totalMaximum < amount) {
+      Left(RouteNotFound)
+    } else {
+      val additionalFraction = if (totalMaximum > totalChosen) (amount - totalChosen).toLong.toDouble / (totalMaximum - totalChosen).toLong.toDouble else 0.0
+      var routes: List[Route] = Nil
+      var amountLeft = amount
+      candidates.foreach { case CandidateRoute(route, chosenAmount) =>
+        if (amountLeft > 0.msat) {
+          val additionalAmount = MilliSatoshi(((route.amount - chosenAmount).toLong * additionalFraction).ceil.toLong)
+          val amountToSend = (chosenAmount + additionalAmount).min(amountLeft)
+          routes = route.copy(amount = amountToSend) :: routes
+          amountLeft = amountLeft - amountToSend
+        }
+      }
+      Right(routes)
     }
   }
 
-  private def optimizeExpectedValue(route: Seq[GraphEdge], capacity: MilliSatoshi, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): MilliSatoshi = {
+  private def optimizeExpectedValue(route: Seq[GraphEdge], capacity: MilliSatoshi, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], usePastRelaysData: Boolean, balances: BalancesEstimates, now: TimestampSecond): MilliSatoshi = {
     // We search the maximum value of a polynomial between its two smallest roots (0 and the minimum channel capacity on the path).
     // We use binary search to find where the derivative changes sign.
     var low = 1L
     var high = capacity.toLong
     while (high - low > 1L) {
-      val mid = (high + low) / 2
-      val d = route.drop(1).foldLeft(1.0 / mid) { case (x, edge) =>
-        val availableCapacity = edge.capacity - usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat)
-        x - 1.0 / (availableCapacity.toLong - mid)
+      val x = (high + low) / 2
+      val d = route.drop(1).foldLeft(1.0 / x.toDouble) { case (total, edge) =>
+        // We compute the success probability `p` for this edge, and its derivative `dp`.
+        val (p, dp) = if (usePastRelaysData) {
+          balances.get(edge).canSendAndDerivative(MilliSatoshi(x), now)
+        } else {
+          val c = (edge.capacity - usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat)).toLong.toDouble
+          (1.0 - x.toDouble / c, -1.0 / c)
+        }
+        total + dp / p
       }
       if (d > 0.0) {
-        low = mid
+        low = x
       } else {
-        high = mid
+        high = x
       }
     }
     MilliSatoshi(high)

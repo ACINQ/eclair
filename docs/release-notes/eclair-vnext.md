@@ -4,7 +4,11 @@
 
 ## Major changes
 
-<insert changes>
+### New MPP splitting strategy
+
+Eclair can send large payments using multiple low-capacity routes by sending as much as it can through each route (if `randomize-route-selection = false`) or some random fraction (if `randomize-route-selection = true`).
+These splitting strategies are now specified using `mpp.splitting-strategy = "full-capacity"` or `mpp.splitting-strategy = "randomize"`.
+In addition, a new strategy is available: `mpp.splitting-strategy = "max-expected-amount"` will send through each route the amount that maximizes the expected delivered amount (amount sent times success probability).
 
 ### Remove support for legacy channel codecs
 

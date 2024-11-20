@@ -64,8 +64,8 @@ object EclairInternalsSerializer {
       ("useLogProbability" | bool(8)) ::
       ("usePastRelaysData" | bool(8))).as[HeuristicsConstants]
 
-  val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
-    discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
+  val weightRatiosCodec: Codec[HeuristicsConstants] =
+    discriminated[HeuristicsConstants].by(uint8)
       .typecase(0xff, heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
