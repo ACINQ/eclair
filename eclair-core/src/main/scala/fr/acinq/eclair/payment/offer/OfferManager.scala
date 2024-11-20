@@ -84,12 +84,11 @@ object OfferManager {
    * When a payment is received for an offer invoice, a `HandlePayment` is sent to the handler registered for this offer.
    * The handler may receive several `HandlePayment` for the same payment, usually because of multi-part payments.
    *
-   * @param replyTo        The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
-   * @param offerId        The id of the offer in case a single handler handles multiple offers.
-   * @param pluginData_opt If the plugin handler needs to associate data with a payment, it shouldn't store it to avoid
-   *                       DoS and should instead use that field to include that data in the blinded path.
+   * @param replyTo     The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
+   * @param offer       The offer in case a single handler handles multiple offers.
+   * @param invoiceData Data from the invoice this payment is for (quantity, amount, creation time, etc.).
    */
-  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, pluginData_opt: Option[ByteVector] = None) extends HandlerCommand
+  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offer: Offer, invoiceData: MinimalInvoiceData) extends HandlerCommand
 
   private case class RegisteredOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
@@ -125,7 +124,7 @@ object OfferManager {
                   MinimalInvoiceData.verify(nodeParams.nodeId, signed) match {
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, amountReceived, paymentTimeout))
-                      handler ! HandlePayment(child, signed.offerId, metadata.pluginData_opt)
+                      handler ! HandlePayment(child, offer, metadata)
                     case Some(_) => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"preimage does not match payment hash for offer ${signed.offerId.toHex}")
                     case None => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"invalid signature for metadata for offer ${signed.offerId.toHex}")
                   }
@@ -162,19 +161,14 @@ object OfferManager {
     /**
      * @param recipientPaysFees If true, fees for the blinded route will be hidden to the payer and paid by the recipient.
      */
-    case class Route(hops: Seq[Router.ChannelHop], recipientPaysFees: Boolean, maxFinalExpiryDelta: CltvExpiryDelta, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None) {
+    case class Route(hops: Seq[Router.ChannelHop], maxFinalExpiryDelta: CltvExpiryDelta, feeOverride: Option[RelayFees] = None, cltvOverride: Option[CltvExpiryDelta] = None, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None) {
       def finalize(nodePriv: PrivateKey, preimage: ByteVector32, amount: MilliSatoshi, invoiceRequest: InvoiceRequest, minFinalExpiryDelta: CltvExpiryDelta, pluginData_opt: Option[ByteVector]): ReceivingRoute = {
-        val (paymentInfo, metadata) = if (recipientPaysFees) {
-          val realPaymentInfo = aggregatePaymentInfo(amount, hops, minFinalExpiryDelta)
-          val recipientFees = RelayFees(realPaymentInfo.feeBase, realPaymentInfo.feeProportionalMillionths)
-          val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, recipientFees, pluginData_opt)
-          val paymentInfo = realPaymentInfo.copy(feeBase = 0 msat, feeProportionalMillionths = 0)
-          (paymentInfo, metadata)
-        } else {
-          val paymentInfo = aggregatePaymentInfo(amount, hops, minFinalExpiryDelta)
-          val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, RelayFees.zero, pluginData_opt)
-          (paymentInfo, metadata)
-        }
+        val aggregatedPaymentInfo = aggregatePaymentInfo(amount, hops, minFinalExpiryDelta)
+        val fees = feeOverride.getOrElse(RelayFees(aggregatedPaymentInfo.feeBase, aggregatedPaymentInfo.feeProportionalMillionths))
+        val cltvExpiryDelta = cltvOverride.getOrElse(aggregatedPaymentInfo.cltvExpiryDelta)
+        val paymentInfo = aggregatedPaymentInfo.copy(feeBase = fees.feeBase, feeProportionalMillionths = fees.feeProportionalMillionths, cltvExpiryDelta = cltvExpiryDelta)
+        val recipientFees = RelayFees(aggregatedPaymentInfo.feeBase - paymentInfo.feeBase, aggregatedPaymentInfo.feeProportionalMillionths - paymentInfo.feeProportionalMillionths)
+        val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, recipientFees, pluginData_opt)
         val pathId = MinimalInvoiceData.encode(nodePriv, invoiceRequest.offer.offerId, metadata)
         ReceivingRoute(hops, pathId, maxFinalExpiryDelta, paymentInfo, shortChannelIdDir_opt)
       }

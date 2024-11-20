@@ -39,15 +39,17 @@ import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io._
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferAbsoluteExpiry, OfferIssuer, OfferQuantityMax, OfferTlv}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -125,6 +127,12 @@ trait Eclair {
   def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
   def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice]
+
+  def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expiry_opt: Option[TimestampSecond], issuer_opt: Option[String], firstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer]
+
+  def disableOffer(offer: Offer)(implicit timeout: Timeout): Unit
+
+  def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]]
 
   def newAddress(): Future[String]
 
@@ -386,6 +394,24 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         }
       case None => Future.successful(Nil)
     }
+  }
+
+  override def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expiry_opt: Option[TimestampSecond], issuer_opt: Option[String], firstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer] = {
+    val offerCreator = appKit.system.spawnAnonymous(OfferCreator(appKit.nodeParams, appKit.router, appKit.offerManager, appKit.defaultOfferHandler))
+    offerCreator.ask[Either[String, Offer]](replyTo => OfferCreator.Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, firstNodeId_opt))
+      .flatMap {
+        case Left(errorMessage) => Future.failed(new Exception(errorMessage))
+        case Right(offer) => Future.successful(offer)
+      }
+  }
+
+  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Unit = {
+    appKit.offerManager ! OfferManager.DisableOffer(offer)
+    appKit.nodeParams.db.managedOffers.disableOffer(offer)
+  }
+
+  override def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]] = Future {
+    appKit.nodeParams.db.managedOffers.listOffers(onlyActive).map(_.offer)
   }
 
   override def newAddress(): Future[String] = {

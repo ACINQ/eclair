@@ -24,13 +24,13 @@ import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Swi
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.offer.OfferManager
+import fr.acinq.eclair.payment.offer.{DefaultHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
+import fr.acinq.eclair.{BlockHeight, EclairImpl, Kit, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, nodeFee}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -54,12 +54,15 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       paymentInitiator: ActorRef,
                                       paymentHandler: ActorRef,
                                       offerManager: typed.ActorRef[OfferManager.Command],
+                                      defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand],
                                       postman: typed.ActorRef[Postman.Command],
                                       watcher: TestProbe,
                                       wallet: SingleKeyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
   val nodeId = nodeParams.nodeId
   val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
+
+  val eclairImpl = new EclairImpl(Kit(nodeParams, system, watcher.ref.toTyped, paymentHandler, register, relayer, router, switchboard, paymentInitiator, TestProbe()(system).ref, TestProbe()(system).ref.toTyped, TestProbe()(system).ref.toTyped, postman, offerManager, defaultOfferHandler, wallet))
 }
 
 object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
@@ -94,6 +97,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
     val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
+    val defaultOfferHandler = system.spawn(DefaultHandler(nodeParams, router), "default-offer-handler")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)
@@ -122,6 +126,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
       paymentInitiator = paymentInitiator,
       paymentHandler = paymentHandler,
       offerManager = offerManager,
+      defaultOfferHandler = defaultOfferHandler,
       postman = postman,
       watcher = watcher,
       wallet = wallet,
