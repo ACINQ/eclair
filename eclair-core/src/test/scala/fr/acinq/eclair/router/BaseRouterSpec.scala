@@ -63,8 +63,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val testNodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
   val testChannelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (testNodeKeyManager.nodeKey.privateKey, randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
-  val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h, priv_isolated) = (testNodeKeyManager.nodeKey.privateKey, randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
+  val (a, b, c, d, e, f, g, h, isolated) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey, priv_isolated.publicKey)
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f, priv_funding_g, priv_funding_h) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f, funding_g, funding_h) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey, priv_funding_g.publicKey, priv_funding_h.publicKey)
@@ -140,6 +140,10 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       import com.softwaremill.quicklens._
       val nodeParams = Alice.nodeParams
         .modify(_.nodeKeyManager).setTo(testNodeKeyManager)
+
+      // an isolated node may exist in our db after a restart if 12-blocks had not elapsed after its last channel was removed
+      nodeParams.db.network.addNode(makeNodeAnnouncement(randomKey(), "node-I", Color(30, 10, -50), Nil, Features.empty))
+
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
