@@ -15,7 +15,7 @@ This feature isn't meant to be used on mainnet yet and is thus disabled by defau
 
 ### Update minimal version of Bitcoin Core
 
-With this release, eclair requires using Bitcoin Core 27.1.
+With this release, eclair requires using Bitcoin Core 27.2.
 Newer versions of Bitcoin Core may be used, but have not been extensively tested.
 
 This version introduces a new coin selection algorithm called  [CoinGrinder](https://github.com/bitcoin/bitcoin/blob/master/doc/release-notes/release-notes-27.0.md#wallet) that will reduce on-chain transaction costs when feerates are high.
