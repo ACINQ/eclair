@@ -122,8 +122,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val paymentPayload = createPaymentPayload(f, invoice)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amount)
     val handlePayment = handler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"deadbeef"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"deadbeef"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
     val ProcessPayment(incomingPayment, hiddenRelayFees) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
@@ -314,7 +314,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amountAfterFee(1000 msat, 200, amount))
 
     val handlePayment = handler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.offer == offer)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
     val ProcessPayment(incomingPayment, hiddenRelayFees) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)

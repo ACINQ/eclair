@@ -641,8 +641,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false, pluginData_opt = Some(hex"abcd"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"abcd"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"abcd"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -674,8 +674,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false, pluginData_opt = Some(hex"0123"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"0123"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"0123"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -708,8 +708,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.isEmpty)
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.isEmpty)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -745,8 +745,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false, pluginData_opt = Some(hex"eff0"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"eff0"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"eff0"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -777,8 +777,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false, pluginData_opt = Some(hex"0123"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"0123"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"0123"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -826,7 +826,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, hideFees = false)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.offer == offer)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]

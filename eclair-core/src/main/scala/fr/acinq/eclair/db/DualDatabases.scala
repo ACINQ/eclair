@@ -12,7 +12,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, OfferTypes}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -36,6 +36,7 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
+  override val managedOffers: OffersDb = DualOffersDb(primary.managedOffers, secondary.managedOffers)
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
   override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
 
@@ -397,6 +398,26 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
   override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = {
     runAsync(secondary.listOutgoingPaymentsToOffer(offerId))
     primary.listOutgoingPaymentsToOffer(offerId)
+  }
+}
+
+case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
+
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32]): Unit = {
+    runAsync(secondary.addOffer(offer, pathId_opt))
+    primary.addOffer(offer, pathId_opt)
+  }
+
+  override def disableOffer(offer: OfferTypes.Offer): Unit = {
+    runAsync(secondary.disableOffer(offer))
+    primary.disableOffer(offer)
+  }
+
+  override def listOffers(onlyActive: Boolean): Seq[OfferData] = {
+    runAsync(secondary.listOffers(onlyActive))
+    primary.listOffers(onlyActive)
   }
 }
 

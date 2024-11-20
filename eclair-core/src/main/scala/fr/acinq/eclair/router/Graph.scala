@@ -448,8 +448,8 @@ object Graph {
                          pathsToFind: Int,
                          wr: WeightRatios[PaymentPathWeight],
                          currentBlockHeight: BlockHeight,
-                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath] = {
-    val paths = new mutable.ArrayBuffer[WeightedPath](pathsToFind)
+                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+    val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
     val verticesToIgnore = new mutable.HashSet[PublicKey]()
     verticesToIgnore.addAll(ignoredVertices)
     for (_ <- 1 to pathsToFind) {
@@ -746,6 +746,16 @@ object Graph {
             case Some(_) => true
           }
         }
+      }
+
+      /**
+       * @return a node that's very central in the graph, to be used as the first node in blinded routes.
+       */
+      def centralNode: PublicKey = {
+        vertices.view.mapValues(v => {
+          // We only consider channels larger than 0.1 BTC and count the number of connected nodes.
+          v.incomingEdges.values.filter(_.capacity > Satoshi(10_000_000)).map(_.desc.a).toSet.size
+        }).maxBy(_._2)._1
       }
     }
 

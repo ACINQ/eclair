@@ -84,12 +84,11 @@ object OfferManager {
    * When a payment is received for an offer invoice, a `HandlePayment` is sent to the handler registered for this offer.
    * The handler may receive several `HandlePayment` for the same payment, usually because of multi-part payments.
    *
-   * @param replyTo        The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
-   * @param offerId        The id of the offer in case a single handler handles multiple offers.
-   * @param pluginData_opt If the plugin handler needs to associate data with a payment, it shouldn't store it to avoid
-   *                       DoS and should instead use that field to include that data in the blinded path.
+   * @param replyTo     The handler must reply with either `PaymentActor.ApprovePayment` or `PaymentActor.RejectPayment`.
+   * @param offer       The offer in case a single handler handles multiple offers.
+   * @param invoiceData Data from the invoice this payment is for (quantity, amount, creation time, etc.).
    */
-  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offerId: ByteVector32, pluginData_opt: Option[ByteVector] = None) extends HandlerCommand
+  case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offer: Offer, invoiceData: MinimalInvoiceData) extends HandlerCommand
 
   private case class RegisteredOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
@@ -127,7 +126,7 @@ object OfferManager {
                       replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"incorrect amount received for offer ${signed.offerId.toHex}: realAmount=$realAmount, hiddenFees=${metadata.hiddenFees}, virtualAmount=${payload.amount}")
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, paymentTimeout))
-                      handler ! HandlePayment(child, signed.offerId, metadata.pluginData_opt)
+                      handler ! HandlePayment(child, offer, metadata)
                     case Some(_) => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"preimage does not match payment hash for offer ${signed.offerId.toHex}")
                     case None => replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"invalid signature for metadata for offer ${signed.offerId.toHex}")
                   }
