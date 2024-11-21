@@ -380,3 +380,5 @@ case object UnsetFCMToken extends LightningMessage
 //
 case class PhoenixAndroidLegacyMigrate(newNodeId: PublicKey) extends LightningMessage
 case class PhoenixAndroidLegacyMigrateResponse(newNodeId: PublicKey) extends LightningMessage
+
+case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

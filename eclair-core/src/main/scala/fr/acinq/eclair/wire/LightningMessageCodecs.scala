@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Features, KamonExt, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult, SizeBound}
 import scodec.bits._
 
 /**
@@ -370,6 +370,11 @@ object LightningMessageCodecs {
   val phoenixAndroidLegacyMigrateResponseCodec: Codec[PhoenixAndroidLegacyMigrateResponse] =
     ("newNodeId" | publicKey).as[PhoenixAndroidLegacyMigrateResponse]
 
+  val unknownMessageCodec: Codec[UnknownMessage] = (
+    ("tag" | uint16) ::
+      ("message" | bytes)
+    ).as[UnknownMessage]
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -421,12 +426,15 @@ object LightningMessageCodecs {
     .typecase(35025, phoenixAndroidLegacyMigrateCodec)
     .typecase(35027, phoenixAndroidLegacyMigrateResponseCodec)
 
+  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
+    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
+
   val meteredLightningMessageCodec = Codec[LightningMessage](
-    (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodec.encode(msg)),
+    (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),
     (bits: BitVector) => {
       // this is a bit more involved, because we don't know beforehand what the type of the message will be
       val begin = System.nanoTime()
-      val res = lightningMessageCodec.decode(bits)
+      val res = lightningMessageCodecWithFallback.decode(bits)
       val end = System.nanoTime()
       val messageType = res match {
         case Attempt.Successful(decoded) => decoded.value.getClass.getSimpleName
