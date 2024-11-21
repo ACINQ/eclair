@@ -389,15 +389,12 @@ object LightningMessageCodecs {
       ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
       ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
 
-  private def isAcceptableBlobLength(length: Int) =
-    if (length <= 65531) Attempt.Successful(length) else Attempt.failure(Err(s"length $length is larger than 65531"))
-
   val peerStorageStore: Codec[PeerStorageStore] = (
-    ("blob" | variableSizeBytes(uint16.exmap(isAcceptableBlobLength, isAcceptableBlobLength), bytes)) ::
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageStore]
 
   val peerStorageRetrieval: Codec[PeerStorageRetrieval] = (
-    ("blob" | variableSizeBytes(uint16.exmap(isAcceptableBlobLength, isAcceptableBlobLength), bytes)) ::
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
       ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageRetrieval]
 
   // NB: blank lines to minimize merge conflicts

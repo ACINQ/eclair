@@ -33,6 +33,11 @@ Existing `static_remote_key` channels will continue to work. You can override th
 
 Eclair will not allow remote peers to open new obsolete channels that do not support `option_static_remotekey`.
 
+### Peer storage
+
+When `option_provide_storage` is enabled, eclair will store a small for our peers.
+This is mostly intended for LSPs that serve mobile wallets to allow the users to restore their channel when they switch phones.
+
 ### API changes
 
 - `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
