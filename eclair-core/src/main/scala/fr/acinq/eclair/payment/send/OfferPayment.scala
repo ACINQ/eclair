@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoicePayload}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, EncodedNodeId, Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
+import fr.acinq.eclair.{EncodedNodeId, Features, InvoiceFeature, MilliSatoshi, NodeParams, RealShortChannelId, TimestampSecond, randomKey}
 
 object OfferPayment {
   // @formatter:off
@@ -62,9 +62,7 @@ object OfferPayment {
                                maxAttempts: Int,
                                routeParams: RouteParams,
                                blocking: Boolean,
-                               trampoline: Option[TrampolineConfig] = None)
-
-  case class TrampolineConfig(nodeId: PublicKey, attempts: Seq[(MilliSatoshi, CltvExpiryDelta)])
+                               trampolineNodeId_opt: Option[PublicKey] = None)
 
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
@@ -123,9 +121,9 @@ private class OfferPayment(replyTo: ActorRef,
   private def waitForInvoice(attemptNumber: Int, pathNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedMessageResponse(Postman.Response(payload: InvoicePayload)) if payload.invoice.validateFor(invoiceRequest, pathNodeId).isRight =>
-        sendPaymentConfig.trampoline match {
-          case Some(trampoline) =>
-            paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice.amount, payload.invoice, trampoline.nodeId, trampoline.attempts, sendPaymentConfig.routeParams)
+        sendPaymentConfig.trampolineNodeId_opt match {
+          case Some(trampolineNodeId) =>
+            paymentInitiator ! SendTrampolinePayment(replyTo, payload.invoice, trampolineNodeId, sendPaymentConfig.routeParams, sendPaymentConfig.blocking)
             Behaviors.stopped
           case None =>
             context.spawnAnonymous(BlindedPathsResolver(nodeParams, payload.invoice.paymentHash, router, register)) ! Resolve(context.messageAdapter[Seq[ResolvedPath]](WrappedResolvedPaths), payload.invoice.blindedPaths)

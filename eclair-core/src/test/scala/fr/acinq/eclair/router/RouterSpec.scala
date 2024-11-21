@@ -29,7 +29,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.send.{ClearRecipient, TrampolineRecipient, SpontaneousRecipient}
+import fr.acinq.eclair.payment.send.{ClearRecipient, SpontaneousRecipient}
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRoutesFromPaths, channelAnnouncement}
@@ -506,34 +506,6 @@ class RouterSpec extends BaseRouterSpec {
     assert(route2.amount == 300_000.msat)
     assert(route2NodeIds(route2) == Seq(a, b, c))
     assert(route2.channelFee(false) == 10.msat)
-  }
-
-  test("routes found (with trampoline hop)") { fixture =>
-    import fixture._
-    val sender = TestProbe()
-    val routeParams = DEFAULT_ROUTE_PARAMS.copy(boundaries = SearchBoundaries(25_015 msat, 0.0, 6, CltvExpiryDelta(1008)))
-    val recipientKey = randomKey()
-    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, randomBytes32(), recipientKey, Left("invoice"), CltvExpiryDelta(6))
-    val trampolineHop = NodeHop(c, recipientKey.publicKey, CltvExpiryDelta(100), 25_000 msat)
-    val recipient = TrampolineRecipient(invoice, 725_000 msat, DEFAULT_EXPIRY, trampolineHop, randomBytes32())
-    sender.send(router, RouteRequest(a, recipient, routeParams))
-    val route1 = sender.expectMsgType[RouteResponse].routes.head
-    assert(route1.amount == 750_000.msat)
-    assert(route2NodeIds(route1) == Seq(a, b, c))
-    assert(route1.channelFee(false) == 10.msat)
-    assert(route1.trampolineFee == 25_000.msat)
-    assert(route1.finalHop_opt.contains(trampolineHop))
-    // We can't find another route to complete the payment amount because it exceeds the fee budget.
-    sender.send(router, RouteRequest(a, recipient, routeParams, pendingPayments = Seq(route1.copy(500_000 msat))))
-    sender.expectMsg(Failure(RouteNotFound))
-    // But if we increase the fee budget, we're able to find a second route.
-    sender.send(router, RouteRequest(a, recipient, routeParams.copy(boundaries = routeParams.boundaries.copy(maxFeeFlat = 25_020 msat)), pendingPayments = Seq(route1.copy(500_000 msat))))
-    val route2 = sender.expectMsgType[RouteResponse].routes.head
-    assert(route2.amount == 250_000.msat)
-    assert(route2NodeIds(route2) == Seq(a, b, c))
-    assert(route2.channelFee(false) == 10.msat)
-    assert(route2.trampolineFee == 25_000.msat)
-    assert(route2.finalHop_opt.contains(trampolineHop))
   }
 
   test("routes found (with blinded hops)") { fixture =>

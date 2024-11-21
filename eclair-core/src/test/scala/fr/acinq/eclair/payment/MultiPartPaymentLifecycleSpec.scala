@@ -95,8 +95,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 1, e, finalAmount)
     assert(result.amountWithFees == finalAmount + 100.msat)
-    assert(result.trampolineFees == 0.msat)
-    assert(result.nonTrampolineFees == 100.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "SUCCESS")
@@ -130,50 +128,12 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 2, e, 1_200_000 msat)
     assert(result.amountWithFees == 1_200_200.msat)
-    assert(result.nonTrampolineFees == 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == 1_200_000.msat)
     assert(metrics.fees == 200.msat)
-    metricsListener.expectNoMessage()
-  }
-
-  test("successful first attempt (trampoline)") { f =>
-    import f._
-
-    assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
-    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), randomBytes32(), randomKey(), Left("invoice"), CltvExpiryDelta(12))
-    val trampolineHop = NodeHop(e, invoice.nodeId, CltvExpiryDelta(50), 1000 msat)
-    val recipient = TrampolineRecipient(invoice, finalAmount, expiry, trampolineHop, randomBytes32())
-    val payment = SendMultiPartPayment(sender.ref, recipient, 1, routeParams)
-    sender.send(payFsm, payment)
-
-    router.expectMsg(RouteRequest(nodeParams.nodeId, recipient, routeParams.copy(randomize = false), allowMultiPart = true, paymentContext = Some(cfg.paymentContext)))
-    assert(payFsm.stateName == WAIT_FOR_ROUTES)
-
-    val routes = Seq(
-      Route(500_000 msat, hop_ab_1 :: hop_be :: Nil, Some(trampolineHop)),
-      Route(501_000 msat, hop_ac_1 :: hop_ce :: Nil, Some(trampolineHop))
-    )
-    router.send(payFsm, RouteResponse(routes))
-    val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
-    assert(childPayments.map(_.route).toSet == routes.map(r => Right(r)).toSet)
-    childPayments.foreach(childPayment => assert(childPayment.recipient == recipient))
-    assert(childPayments.map(_.amount).toSet == Set(500_000 msat, 501_000 msat))
-    assert(payFsm.stateName == PAYMENT_IN_PROGRESS)
-
-    val result = fulfillPendingPayments(f, 2, invoice.nodeId, finalAmount)
-    assert(result.amountWithFees == 1_001_200.msat)
-    assert(result.trampolineFees == 1000.msat)
-    assert(result.nonTrampolineFees == 200.msat)
-
-    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.status == "SUCCESS")
-    assert(metrics.experimentName == "my-test-experiment")
-    assert(metrics.amount == finalAmount)
-    assert(metrics.fees == 1200.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -201,7 +161,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 2, recipient.nodeId, finalAmount)
     assert(result.amountWithFees == 1_000_200.msat)
-    assert(result.nonTrampolineFees == 200.msat)
   }
 
   test("successful retry") { f =>
@@ -226,8 +185,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 2, e, finalAmount)
     assert(result.amountWithFees == 1_000_200.msat)
-    assert(result.trampolineFees == 0.msat)
-    assert(result.nonTrampolineFees == 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "SUCCESS")
@@ -269,7 +226,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 2, e, finalAmount)
     assert(result.amountWithFees == 1_000_200.msat)
-    assert(result.nonTrampolineFees == 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "SUCCESS")
@@ -584,7 +540,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 1, e, finalAmount)
     assert(result.amountWithFees < finalAmount) // we got the preimage without paying the full amount
-    assert(result.nonTrampolineFees == successRoute.channelFee(false)) // we paid the fee for only one of the partial payments
     assert(result.parts.length == 1 && result.parts.head.id == successId)
   }
 
@@ -613,7 +568,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.recipientAmount == finalAmount)
     assert(result.recipientNodeId == e)
     assert(result.amountWithFees < finalAmount) // we got the preimage without paying the full amount
-    assert(result.nonTrampolineFees == successRoute.channelFee(false)) // we paid the fee for only one of the partial payments
 
     sender.expectTerminated(payFsm)
     sender.expectNoMessage(100 millis)
@@ -641,7 +595,6 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val result = sender.expectMsgType[PaymentSent]
     assert(result.parts.length == 1 && result.parts.head.id == childId)
     assert(result.amountWithFees < finalAmount) // we got the preimage without paying the full amount
-    assert(result.nonTrampolineFees == route.channelFee(false)) // we paid the fee for only one of the partial payments
 
     sender.expectTerminated(payFsm)
     sender.expectNoMessage(100 millis)

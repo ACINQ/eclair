@@ -29,16 +29,6 @@ object PaymentError {
   // @formatter:on
 
   // @formatter:off
-  sealed trait InvalidTrampolineArguments extends PaymentError
-  /** Trampoline fees or cltv expiry delta is missing. */
-  case object TrampolineFeesMissing extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: trampoline fees missing" }
-  /** 0-value invoice should not be paid via trampoline-to-legacy (trampoline may steal funds). */
-  case object TrampolineLegacyAmountLessInvoice extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: unsafe trampoline-to-legacy amount-less invoice" }
-  /** Only a single trampoline node is currently supported. */
-  case object TrampolineMultiNodeNotSupported extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: multiple trampoline hops not supported" }
-  // @formatter:on
-
-  // @formatter:off
   /** Payment attempts exhausted without success. */
   case object RetryExhausted extends PaymentError { override def getMessage: String = "payment attempts exhausted without success" }
   // @formatter:on

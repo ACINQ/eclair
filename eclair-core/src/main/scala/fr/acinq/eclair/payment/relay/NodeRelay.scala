@@ -138,9 +138,8 @@ object NodeRelay {
   /** This function identifies whether the next node is a wallet node directly connected to us, and returns its node_id. */
   private def nextWalletNodeId(nodeParams: NodeParams, recipient: Recipient): Option[PublicKey] = {
     recipient match {
-      // These two recipients are only used when we're the payment initiator.
+      // This recipient is only used when we're the payment initiator.
       case _: SpontaneousRecipient => None
-      case _: TrampolineRecipient => None
       // When relaying to a trampoline node, the next node may be a wallet node directly connected to us, but we don't
       // want to have false positives. Feature branches should check an internal DB/cache to confirm.
       case r: ClearRecipient if r.nextTrampolineOnion_opt.nonEmpty => None
@@ -406,7 +405,6 @@ class NodeRelay private(nodeParams: NodeParams,
     val finalHop_opt = recipient match {
       case _: ClearRecipient => None
       case _: SpontaneousRecipient => None
-      case _: TrampolineRecipient => None
       case r: BlindedRecipient => r.blindedHops.headOption
     }
     val dummyRoute = Route(nextPayload.amountToForward, Seq(dummyHop), finalHop_opt)

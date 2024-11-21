@@ -18,15 +18,14 @@ package fr.acinq.eclair.payment.send
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.{PartialBlindedRoute, ResolvedPath}
-import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice, Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.payment.{Bolt11Invoice, Bolt12Invoice}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, OnionRoutingPacket}
-import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiry, Features, InvoiceFeature, MilliSatoshi, ShortChannelId}
 import scodec.bits.ByteVector
 
 /**
@@ -193,71 +192,5 @@ object BlindedRecipient {
       })
     })
     BlindedRecipient(nodeId, features, totalAmount, expiry, blindedHops, customTlvs)
-  }
-}
-
-/**
- * A payment recipient that can be reached through a trampoline node (such recipients usually cannot be found in the
- * public graph). Splitting a payment across multiple trampoline nodes is not supported yet, but can easily be added
- * with a new field containing a bigger recipient total amount.
- *
- * Note that we don't need to support the case where we'd use multiple trampoline hops in the same route: since we have
- * access to the network graph, it's always more efficient to find a channel route to the last trampoline node.
- */
-case class TrampolineRecipient(invoice: Invoice,
-                               totalAmount: MilliSatoshi,
-                               expiry: CltvExpiry,
-                               trampolineHop: NodeHop,
-                               trampolinePaymentSecret: ByteVector32,
-                               customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
-  require(trampolineHop.nextNodeId == invoice.nodeId, "trampoline hop must end at the recipient")
-
-  val trampolineNodeId = trampolineHop.nodeId
-  val trampolineFee = trampolineHop.fee(totalAmount)
-  val trampolineAmount = totalAmount + trampolineFee
-  val trampolineExpiry = expiry + trampolineHop.cltvExpiryDelta
-
-  override val nodeId = invoice.nodeId
-  override val features = invoice.features
-  override val extraEdges = Seq(ExtraEdge(trampolineNodeId, nodeId, ShortChannelId.generateLocalAlias(), trampolineFee, 0, trampolineHop.cltvExpiryDelta, 1 msat, None))
-
-  private def validateRoute(route: Route): Either[OutgoingPaymentError, NodeHop] = {
-    route.finalHop_opt match {
-      case Some(trampolineHop: NodeHop) => Right(trampolineHop)
-      case _ => Left(MissingTrampolineHop(trampolineNodeId))
-    }
-  }
-
-  override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
-    for {
-      trampolineHop <- validateRoute(route)
-      trampolineOnion <- createTrampolinePacket(paymentHash, trampolineHop)
-    } yield {
-      val trampolinePayload = NodePayload(trampolineHop.nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, trampolineAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet))
-      Recipient.buildPayloads(PaymentPayloads(route.amount, trampolineExpiry, Seq(trampolinePayload), None), route.hops)
-    }
-  }
-
-  private def createTrampolinePacket(paymentHash: ByteVector32, trampolineHop: NodeHop): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
-    invoice match {
-      case invoice: Bolt11Invoice =>
-        if (invoice.features.hasFeature(Features.TrampolinePaymentPrototype)) {
-          // This is the payload the final recipient will receive, so we use the invoice's payment secret.
-          val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createPayload(totalAmount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, customTlvs))
-          val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, nodeId))
-          val payloads = Seq(trampolinePayload, finalPayload)
-          OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
-        } else {
-          // The recipient doesn't support trampoline: the trampoline node will convert the payment to a non-trampoline payment.
-          // The final payload will thus never reach the recipient, so we create the smallest payload possible to avoid overflowing the trampoline onion size.
-          val dummyFinalPayload = NodePayload(nodeId, IntermediatePayload.ChannelRelay.Standard(ShortChannelId(0), 0 msat, CltvExpiry(0)))
-          val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.Standard.createNodeRelayToNonTrampolinePayload(totalAmount, totalAmount, expiry, nodeId, invoice))
-          val payloads = Seq(trampolinePayload, dummyFinalPayload)
-          OutgoingPaymentPacket.buildOnion(payloads, paymentHash, packetPayloadLength_opt = None)
-        }
-      case invoice: Bolt12Invoice =>
-        val trampolinePayload = NodePayload(trampolineHop.nodeId, IntermediatePayload.NodeRelay.ToBlindedPaths(totalAmount, expiry, invoice))
-        OutgoingPaymentPacket.buildOnion(Seq(trampolinePayload), paymentHash, packetPayloadLength_opt = None)
-    }
   }
 }
