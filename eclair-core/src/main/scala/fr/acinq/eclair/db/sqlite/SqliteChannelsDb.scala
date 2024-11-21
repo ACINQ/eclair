@@ -17,7 +17,6 @@
 package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
-
 import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
@@ -25,6 +24,7 @@ import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
+import scodec.bits.BitVector
 
 import scala.collection.immutable.Queue
 
@@ -98,7 +98,10 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels") {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-      codecSequence(rs, stateDataCodec, onError = { message => logger.error(message) })
+      codecSequence(rs, stateDataCodec, onError = { message =>
+        logger.error(s"cannot read local channels data: data=${BitVector(rs.getBytes("data")).toHex}")
+        logger.error(message)
+      })
     }
   }
 
