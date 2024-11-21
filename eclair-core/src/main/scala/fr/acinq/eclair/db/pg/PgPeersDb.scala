@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.{MilliSatoshi, TimestampSecond}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
@@ -55,16 +55,16 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
 
     def migration34(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+      statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
     }
 
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
-          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, storage BYTEA)")
+          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
-          statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+          statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
         case Some(v@(1 | 2 | 3)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 2) {
@@ -172,13 +172,14 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     withLock { pg =>
       using(pg.prepareStatement(
         """
-        INSERT INTO local.peer_storage (node_id, data)
-        VALUES (?, ?)
+        INSERT INTO local.peer_storage (node_id, data, last_updated_at)
+        VALUES (?, ?, ?)
         ON CONFLICT (node_id)
         DO UPDATE SET data = EXCLUDED.data
         """)) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.setBytes(2, data.toArray)
+        statement.setTimestamp(3, TimestampSecond.now().toSqlTimestamp)
         statement.executeUpdate()
       }
     }

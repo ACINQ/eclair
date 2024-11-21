@@ -35,8 +35,10 @@ trait PeersDb {
 
   def getRelayFees(nodeId: PublicKey): Option[RelayFees]
 
+  // Used only when option_provide_storage is enabled.
   def updateStorage(nodeId: PublicKey, data: ByteVector): Unit
 
+  // Used only when option_provide_storage is enabled.
   def getStorage(nodeId: PublicKey): Option[ByteVector]
 
 }

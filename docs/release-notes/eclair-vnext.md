@@ -6,6 +6,11 @@
 
 <insert changes>
 
+### Peer storage
+
+When `option_provide_storage` is enabled, eclair will store a small for our peers.
+This is mostly intended for LSPs that serve mobile wallets to allow the users to restore their channel when they switch phones.
+
 ### API changes
 
 <insert changes>
