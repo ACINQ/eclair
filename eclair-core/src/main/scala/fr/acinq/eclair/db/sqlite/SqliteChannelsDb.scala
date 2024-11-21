@@ -99,7 +99,6 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
       codecSequence(rs, stateDataCodec, onError = { message =>
-        logger.error(s"cannot read local channels data: data=${BitVector(rs.getBytes("data")).toHex}")
         logger.error(message)
       })
     }
