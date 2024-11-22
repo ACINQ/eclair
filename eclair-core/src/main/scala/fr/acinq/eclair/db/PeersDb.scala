@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import scodec.bits.ByteVector
@@ -41,4 +42,6 @@ trait PeersDb {
   // Used only when option_provide_storage is enabled.
   def getStorage(nodeId: PublicKey): Option[ByteVector]
 
+  // Reclaim storage from peers that have had no active channel with us for a while.
+  def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit
 }

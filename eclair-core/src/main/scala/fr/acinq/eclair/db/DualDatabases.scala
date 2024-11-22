@@ -13,7 +13,7 @@ import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -302,6 +302,11 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
   override def getStorage(nodeId: PublicKey): Option[ByteVector] = {
     runAsync(secondary.getStorage(nodeId))
     primary.getStorage(nodeId)
+  }
+
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = {
+    runAsync(secondary.removePeerStorage(peerRemovedBefore))
+    primary.removePeerStorage(peerRemovedBefore)
   }
 }
 
