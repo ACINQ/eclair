@@ -108,9 +108,9 @@ class PeerSpec extends FixtureSpec {
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), sendInit: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), initializePeer: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
-    if (sendInit) {
+    if (initializePeer) {
       switchboard.send(peer, Peer.Init(channels, Map.empty))
     }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
@@ -764,14 +764,15 @@ class PeerSpec extends FixtureSpec {
 
     nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
     connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(ChannelCodecsSpec.normal), peerStorage = Some(hex"abcdef"))
+    peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
     peer ! Peer.Disconnect(f.remoteNodeId)
-    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"0123456789"))
+    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
     peerConnection2.send(peer, PeerStorageStore(hex"1111"))
-    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"1111"))
-    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"abcdef")) // Because of the delayed writes, the original value hasn't been updated yet.
+    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"1111"))
+    // Because of the delayed writes, we may not have stored the latest value immediately, but we will eventually store it.
     eventually {
-      assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111")) // Now it is updated.
+      assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
     }
   }
 

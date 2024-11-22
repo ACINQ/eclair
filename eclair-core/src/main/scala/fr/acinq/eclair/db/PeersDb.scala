@@ -36,12 +36,13 @@ trait PeersDb {
 
   def getRelayFees(nodeId: PublicKey): Option[RelayFees]
 
-  // Used only when option_provide_storage is enabled.
+  /** Update our peer's blob data when [[fr.acinq.eclair.Features.ProvideStorage]] is enabled. */
   def updateStorage(nodeId: PublicKey, data: ByteVector): Unit
 
-  // Used only when option_provide_storage is enabled.
+  /** Get the last blob of data we stored for that peer, if [[fr.acinq.eclair.Features.ProvideStorage]] is enabled. */
   def getStorage(nodeId: PublicKey): Option[ByteVector]
 
-  // Reclaim storage from peers that have had no active channel with us for a while.
+  /** Remove storage from peers that have had no active channel with us for a while. */
   def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit
+
 }
