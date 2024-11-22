@@ -765,14 +765,14 @@ class PeerSpec extends FixtureSpec {
     nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
     connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(ChannelCodecsSpec.normal), peerStorage = Some(hex"abcdef"))
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
-    Thread.sleep(1000)
     peer ! Peer.Disconnect(f.remoteNodeId)
     connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"0123456789"))
     peerConnection2.send(peer, PeerStorageStore(hex"1111"))
     connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), sendInit = false, peerStorage = Some(hex"1111"))
     assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"abcdef")) // Because of the delayed writes, the original value hasn't been updated yet.
-    Thread.sleep(5000)
-    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111")) // Now it is updated.
+    eventually {
+      assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111")) // Now it is updated.
+    }
   }
 
 }
