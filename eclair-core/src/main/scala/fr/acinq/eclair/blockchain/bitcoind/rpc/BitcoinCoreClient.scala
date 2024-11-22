@@ -125,7 +125,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
    * Return true if this output has already been spent by a confirmed transaction.
    * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
    */
-  private def isTransactionOutputSpent(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
+  def isTransactionOutputSpent(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
     getTxConfirmations(txid).flatMap {
       case Some(confirmations) if confirmations > 0 =>
         // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a

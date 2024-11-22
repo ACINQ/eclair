@@ -52,6 +52,7 @@ object ReplaceableTxPrePublisher {
   private case object LocalCommitTxConfirmed extends Command
   private case object RemoteCommitTxConfirmed extends Command
   private case object RemoteCommitTxPublished extends Command
+  private case object HtlcOutputAlreadySpent extends Command
   private case class UnknownFailure(reason: Throwable) extends Command
   // @formatter:on
 
@@ -203,17 +204,29 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
+  /**
+   * We verify that:
+   *  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
+   *  - the HTLC output isn't already spent by a confirmed transaction (race between HTLC-timeout and HTLC-success)
+   */
+  private def checkHtlcOutput(commitment: FullCommitment, htlcTx: HtlcTx): Future[Command] = {
+    getRemoteCommitConfirmations(commitment).flatMap {
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthBlocks => Future.successful(RemoteCommitTxConfirmed)
+      case _ => bitcoinClient.isTransactionOutputSpent(htlcTx.input.outPoint.txid, htlcTx.input.outPoint.index.toInt).map {
+        case true => HtlcOutputAlreadySpent
+        case false => ParentTxOk
+      }
+    }
+  }
+
   private def checkHtlcPreconditions(htlcTx: HtlcTx): Behavior[Command] = {
-    // We verify that:
-    //  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
-    //  - if this is an htlc-success transaction, we have the preimage
-    context.pipeToSelf(getRemoteCommitConfirmations(cmd.commitment)) {
-      case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => RemoteCommitTxConfirmed
-      case Success(_) => ParentTxOk
+    context.pipeToSelf(checkHtlcOutput(cmd.commitment, htlcTx)) {
+      case Success(result) => result
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
+        // We make sure that if this is an htlc-success transaction, we have the preimage.
         extractHtlcWitnessData(htlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
@@ -221,6 +234,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         Behaviors.stopped
       case RemoteCommitTxConfirmed =>
         log.warn("cannot publish {}: remote commit has been confirmed", cmd.desc)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+        Behaviors.stopped
+      case HtlcOutputAlreadySpent =>
+        log.warn("cannot publish {}: htlc output has already been spent", cmd.desc)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case UnknownFailure(reason) =>
@@ -265,17 +282,29 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
   }
 
+  /**
+   * We verify that:
+   *  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
+   *  - the HTLC output isn't already spent by a confirmed transaction (race between HTLC-timeout and HTLC-success)
+   */
+  private def checkClaimHtlcOutput(commitment: FullCommitment, claimHtlcTx: ClaimHtlcTx): Future[Command] = {
+    bitcoinClient.getTxConfirmations(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid).flatMap {
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthBlocks => Future.successful(LocalCommitTxConfirmed)
+      case _ => bitcoinClient.isTransactionOutputSpent(claimHtlcTx.input.outPoint.txid, claimHtlcTx.input.outPoint.index.toInt).map {
+        case true => HtlcOutputAlreadySpent
+        case false => ParentTxOk
+      }
+    }
+  }
+
   private def checkClaimHtlcPreconditions(claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
-    // We verify that:
-    //  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
-    //  - if this is a claim-htlc-success transaction, we have the preimage
-    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
-      case Success(Some(depth)) if depth >= nodeParams.channelConf.minDepthBlocks => LocalCommitTxConfirmed
-      case Success(_) => ParentTxOk
+    context.pipeToSelf(checkClaimHtlcOutput(cmd.commitment, claimHtlcTx)) {
+      case Success(result) => result
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
+        // We verify that if this is a claim-htlc-success transaction, we have the preimage.
         extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitment) match {
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
@@ -283,6 +312,10 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         Behaviors.stopped
       case LocalCommitTxConfirmed =>
         log.warn("cannot publish {}: local commit has been confirmed", cmd.desc)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+        Behaviors.stopped
+      case HtlcOutputAlreadySpent =>
+        log.warn("cannot publish {}: htlc output has already been spent", cmd.desc)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case UnknownFailure(reason) =>
