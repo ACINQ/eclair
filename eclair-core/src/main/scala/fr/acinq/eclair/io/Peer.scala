@@ -529,7 +529,13 @@ class Peer(val nodeParams: NodeParams,
         stay()
 
       case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.channels.nonEmpty =>
-        startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageWriteDelay)
+        // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
+        // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
+        // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
+        // writing to the DB and may never store our peer's backup.
+        if (d.peerStorage.written) {
+          startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+        }
         stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
 
       case Event(WritePeerStorage, d: ConnectedData) =>

@@ -8,8 +8,10 @@
 
 ### Peer storage
 
-When `option_provide_storage` is enabled, eclair will store a small for our peers.
-This is mostly intended for LSPs that serve mobile wallets to allow the users to restore their channel when they switch phones.
+With this release, eclair supports the `option_provide_storage` feature introduced in <https://github.com/lightning/bolts/pull/1110>.
+When `option_provide_storage` is enabled, eclair will store a small encrypted backup for peers that request it.
+This backup is limited to 65kB and node operators should customize the `eclair.peer-storage` configuration section to match their desired SLAs.
+This is mostly intended for LSPs that serve mobile wallets to allow users to restore their channels when they switch phones.
 
 ### API changes
 
