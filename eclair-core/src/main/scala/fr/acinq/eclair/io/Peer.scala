@@ -111,7 +111,7 @@ class Peer(val nodeParams: NodeParams,
         log.info("that was the last open channel")
         context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
         // We have no existing channels or pending signed transaction, we can forget about this peer.
-        stopPeer()
+        stopPeer(d.peerStorage)
       } else {
         stay() using d.copy(channels = channels1)
       }
@@ -122,7 +122,7 @@ class Peer(val nodeParams: NodeParams,
       }
       if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
         // We have no existing channels or pending signed transaction, we can forget about this peer.
-        stopPeer()
+        stopPeer(d.peerStorage)
       } else {
         stay()
       }
@@ -473,7 +473,7 @@ class Peer(val nodeParams: NodeParams,
         }
         if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
           // We have no existing channels or pending signed transaction, we can forget about this peer.
-          stopPeer()
+          stopPeer(d.peerStorage)
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
           goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.peerStorage)
@@ -616,7 +616,7 @@ class Peer(val nodeParams: NodeParams,
       }
       pendingOnTheFlyFunding = pendingOnTheFlyFunding.removedAll(expired.keys)
       d match {
-        case d: DisconnectedData if d.channels.isEmpty && pendingOnTheFlyFunding.isEmpty => stopPeer()
+        case d: DisconnectedData if d.channels.isEmpty && pendingOnTheFlyFunding.isEmpty => stopPeer(d.peerStorage)
         case _ => stay()
       }
 
@@ -870,7 +870,10 @@ class Peer(val nodeParams: NodeParams,
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
-  private def stopPeer(): State = {
+  private def stopPeer(peerStorage: PeerStorage): State = {
+    if (!peerStorage.written) {
+      peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
+    }
     log.info("removing peer from db")
     cancelUnsignedOnTheFlyFunding()
     nodeParams.db.peers.removePeer(remoteNodeId)

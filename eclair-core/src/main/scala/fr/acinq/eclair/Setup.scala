@@ -37,7 +37,7 @@ import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager, LocalOnChainKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
-import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
+import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler, PeerStorageCleaner}
 import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.offer.OfferManager
@@ -355,6 +355,9 @@ class Setup(val datadir: File,
       } else {
         logger.warn("database backup is disabled")
         system.deadLetters
+      }
+      _ = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
+        system.spawn(Behaviors.supervise(PeerStorageCleaner(nodeParams.db.peers, nodeParams.peerStorageRemovalDelay)).onFailure(typed.SupervisorStrategy.restart), name = "peer-storage-cleaner")
       }
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))

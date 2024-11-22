@@ -93,7 +93,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       willFundRates_opt: Option[LiquidityAds.WillFundRates],
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
-                      peerStorageWriteDelay: FiniteDuration) {
+                      peerStorageWriteDelay: FiniteDuration,
+                      peerStorageRemovalDelay: FiniteDuration) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -681,7 +682,8 @@ object NodeParams extends Logging {
       onTheFlyFundingConfig = OnTheFlyFunding.Config(
         proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
       ),
-      peerStorageWriteDelay = FiniteDuration(config.getDuration("peer-storage-write-delay").getSeconds, TimeUnit.SECONDS),
+      peerStorageWriteDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
+      peerStorageRemovalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
     )
   }
 }

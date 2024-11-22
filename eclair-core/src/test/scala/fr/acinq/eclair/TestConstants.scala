@@ -242,6 +242,7 @@ object TestConstants {
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageWriteDelay = 5 seconds,
+      peerStorageRemovalDelay = 10 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -419,6 +420,7 @@ object TestConstants {
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageWriteDelay = 5 seconds,
+      peerStorageRemovalDelay = 10 seconds,
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

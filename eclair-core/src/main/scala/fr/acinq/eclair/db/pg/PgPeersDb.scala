@@ -55,7 +55,8 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
 
     def migration34(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+      statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL, removed_peer_at TIMESTAMP WITH TIME ZONE)")
+      statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON local.peer_storage(removed_peer_at)")
     }
 
     using(pg.createStatement()) { statement =>
@@ -64,7 +65,9 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
           statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
-          statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL, removed_peer_at TIMESTAMP WITH TIME ZONE)")
+
+          statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON local.peer_storage(removed_peer_at)")
         case Some(v@(1 | 2 | 3)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 2) {
@@ -106,8 +109,18 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
         statement.setString(1, nodeId.value.toHex)
         statement.executeUpdate()
       }
-      using(pg.prepareStatement("DELETE FROM local.peer_storage WHERE node_id = ?")) { statement =>
-        statement.setString(1, nodeId.value.toHex)
+      using(pg.prepareStatement("UPDATE local.peer_storage SET removed_peer_at = ? WHERE node_id = ?")) { statement =>
+        statement.setTimestamp(1, TimestampSecond.now().toSqlTimestamp)
+        statement.setString(2, nodeId.value.toHex)
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = withMetrics("peers/remove-storage", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("DELETE FROM local.peer_storage WHERE removed_peer_at < ?")) { statement =>
+        statement.setTimestamp(1, peerRemovedBefore.toSqlTimestamp)
         statement.executeUpdate()
       }
     }
@@ -172,10 +185,10 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     withLock { pg =>
       using(pg.prepareStatement(
         """
-        INSERT INTO local.peer_storage (node_id, data, last_updated_at)
-        VALUES (?, ?, ?)
+        INSERT INTO local.peer_storage (node_id, data, last_updated_at, removed_peer_at)
+        VALUES (?, ?, ?, NULL)
         ON CONFLICT (node_id)
-        DO UPDATE SET data = EXCLUDED.data
+        DO UPDATE SET data = EXCLUDED.data, last_updated_at = EXCLUDED.last_updated_at, removed_peer_at = NULL
         """)) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.setBytes(2, data.toArray)

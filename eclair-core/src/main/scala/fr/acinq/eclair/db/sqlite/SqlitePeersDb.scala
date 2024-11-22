@@ -47,14 +47,17 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
     }
 
     def migration23(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+      statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
     }
 
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+
+        statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
       case Some(v@(1 | 2)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
@@ -89,6 +92,18 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
+    using(sqlite.prepareStatement("UPDATE peer_storage SET removed_peer_at = ? WHERE node_id = ?")) { statement =>
+      statement.setLong(1, TimestampSecond.now().toLong)
+      statement.setBytes(2, nodeId.value.toArray)
+      statement.executeUpdate()
+    }
+  }
+
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = withMetrics("peers/remove-storage", DbBackends.Sqlite) {
+      using(sqlite.prepareStatement("DELETE FROM peer_storage WHERE removed_peer_at < ?")) { statement =>
+        statement.setTimestamp(1, peerRemovedBefore.toSqlTimestamp)
+        statement.executeUpdate()
+      }
   }
 
   override def getPeer(nodeId: PublicKey): Option[NodeAddress] = withMetrics("peers/get", DbBackends.Sqlite) {
@@ -140,12 +155,12 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
   }
 
   override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = withMetrics("peers/update-storage", DbBackends.Sqlite) {
-      using(sqlite.prepareStatement("UPDATE peer_storage SET data = ?, last_updated_at = ? WHERE node_id = ?")) { update =>
+      using(sqlite.prepareStatement("UPDATE peer_storage SET data = ?, last_updated_at = ?, removed_peer_at = NULL WHERE node_id = ?")) { update =>
         update.setBytes(1, data.toArray)
         update.setLong(2, TimestampSecond.now().toLong)
         update.setBytes(3, nodeId.value.toArray)
         if (update.executeUpdate() == 0) {
-          using(sqlite.prepareStatement("INSERT INTO peer_storage VALUES (?, ?, ?)")) { statement =>
+          using(sqlite.prepareStatement("INSERT INTO peer_storage VALUES (?, ?, ?, NULL)")) { statement =>
             statement.setBytes(1, nodeId.value.toArray)
             statement.setBytes(2, data.toArray)
             statement.setLong(3, TimestampSecond.now().toLong)
