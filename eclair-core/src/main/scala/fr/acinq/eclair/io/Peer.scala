@@ -91,7 +91,7 @@ class Peer(val nodeParams: NodeParams,
       } else {
         None
       }
-      goto(DISCONNECTED) using DisconnectedData(channels, PeerStorage(peerStorageData, written = true)) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = 0, PeerStorage(peerStorageData, written = true)) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -100,7 +100,7 @@ class Peer(val nodeParams: NodeParams,
       stay()
 
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
-      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) }, d.peerStorage)
+      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
       // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -144,6 +144,12 @@ class Peer(val nodeParams: NodeParams,
     case Event(WritePeerStorage, d: DisconnectedData) =>
       d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
       stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
+
+    case Event(ChannelActivated, d: DisconnectedData) =>
+      stay() using d.copy(activeChannels = d.activeChannels + 1)
+
+    case Event(ChannelDeactivated, d: DisconnectedData) =>
+      stay() using d.copy(activeChannels = d.activeChannels - 1)
   }
 
   when(CONNECTED) {
@@ -476,7 +482,7 @@ class Peer(val nodeParams: NodeParams,
           stopPeer(d.peerStorage)
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.peerStorage)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
         }
 
       case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
@@ -495,7 +501,7 @@ class Peer(val nodeParams: NodeParams,
         log.debug(s"got new connection, killing current one and switching")
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        gotoConnected(connectionReady, d.channels, d.peerStorage)
+        gotoConnected(connectionReady, d.channels, d.activeChannels, d.peerStorage)
 
       case Event(msg: OnionMessage, _: ConnectedData) =>
         OnionMessages.process(nodeParams.privateKey, msg) match {
@@ -528,7 +534,7 @@ class Peer(val nodeParams: NodeParams,
         d.peerConnection forward unknownMsg
         stay()
 
-      case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.channels.nonEmpty =>
+      case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.activeChannels > 0 =>
         // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
         // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
         // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
@@ -541,6 +547,12 @@ class Peer(val nodeParams: NodeParams,
       case Event(WritePeerStorage, d: ConnectedData) =>
         d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
         stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
+
+      case Event(ChannelActivated, d: ConnectedData) =>
+        stay() using d.copy(activeChannels = d.activeChannels + 1)
+
+      case Event(ChannelDeactivated, d: ConnectedData) =>
+        stay() using d.copy(activeChannels = d.activeChannels - 1)
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -773,7 +785,7 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
-  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], peerStorage: PeerStorage): State = {
+  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], activeChannels: Int, peerStorage: PeerStorage): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeId: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
@@ -803,7 +815,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, feerates, None, peerStorage)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage)
   }
 
   /**
@@ -945,14 +957,16 @@ object Peer {
 
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def activeChannels: Int
     def peerStorage: PeerStorage
   }
   case object Nothing extends Data {
     override def channels = Map.empty
+    override def activeChannels: Int = 0
     override def peerStorage: PeerStorage = PeerStorage(None, written = true)
   }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], peerStorage: PeerStorage) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage) extends Data {
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Int, peerStorage: PeerStorage) extends Data
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Int, currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
@@ -1067,5 +1081,9 @@ object Peer {
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
 
   case object WritePeerStorage
+
+  case object ChannelActivated
+
+  case object ChannelDeactivated
   // @formatter:on
 }
