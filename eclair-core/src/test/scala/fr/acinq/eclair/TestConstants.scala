@@ -241,7 +241,7 @@ object TestConstants {
       willFundRates_opt = Some(defaultLiquidityRates),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
-      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds)
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -418,7 +418,7 @@ object TestConstants {
       willFundRates_opt = Some(defaultLiquidityRates),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
-      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds)
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
