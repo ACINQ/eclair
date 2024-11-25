@@ -2588,6 +2588,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case _: TransientChannelData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
+
+        if (state == NORMAL) {
+          peer ! Peer.ChannelDeactivated
+        }
+        if (nextState == NORMAL) {
+          peer ! Peer.ChannelActivated
+        }
       }
 
       if (nextState == CLOSED) {
