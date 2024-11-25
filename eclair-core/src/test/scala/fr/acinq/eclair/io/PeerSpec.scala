@@ -112,6 +112,7 @@ class PeerSpec extends FixtureSpec {
     // let's simulate a connection
     if (initializePeer) {
       switchboard.send(peer, Peer.Init(channels, Map.empty))
+      channels.foreach(c => if (c.isInstanceOf[DATA_NORMAL]) peer ! ChannelActivated)
     }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
