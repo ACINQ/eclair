@@ -112,7 +112,6 @@ class PeerSpec extends FixtureSpec {
     // let's simulate a connection
     if (initializePeer) {
       switchboard.send(peer, Peer.Init(channels, Map.empty))
-      channels.foreach(c => if (c.isInstanceOf[DATA_NORMAL]) peer ! ChannelActivated)
     }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
@@ -759,22 +758,34 @@ class PeerSpec extends FixtureSpec {
   test("peer storage") { f =>
     import f._
 
+    // We connect with a previous backup.
+    val channel = ChannelCodecsSpec.normal
     val peerConnection1 = peerConnection
-    val peerConnection2 = TestProbe()
-    val peerConnection3 = TestProbe()
-
     nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
-    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(ChannelCodecsSpec.normal), peerStorage = Some(hex"abcdef"))
+    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel), peerStorage = Some(hex"abcdef"))
+    peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxIndex)
     peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
+
+    // We disconnect and reconnect, sending the last backup we received.
     peer ! Peer.Disconnect(f.remoteNodeId)
+    val peerConnection2 = TestProbe()
     connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
     peerConnection2.send(peer, PeerStorageStore(hex"1111"))
+
+    // We reconnect again.
+    val peerConnection3 = TestProbe()
     connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"1111"))
     // Because of the delayed writes, we may not have stored the latest value immediately, but we will eventually store it.
     eventually {
       assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
     }
+
+    // Our channel closes, so we stop storing backups for that peer.
+    peer ! LocalChannelDown(ActorRef.noSender, channel.channelId, channel.shortIds, channel.remoteNodeId)
+    peerConnection3.send(peer, PeerStorageStore(hex"2222"))
+    peer ! WritePeerStorage
+    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
   }
 
 }

@@ -74,6 +74,7 @@ class Peer(val nodeParams: NodeParams,
 
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
   context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
+  context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
   startWith(INSTANTIATING, Nothing)
 
@@ -91,7 +92,7 @@ class Peer(val nodeParams: NodeParams,
       } else {
         None
       }
-      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = 0, PeerStorage(peerStorageData, written = true)) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(peerStorageData, written = true)) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -145,11 +146,11 @@ class Peer(val nodeParams: NodeParams,
       d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
       stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
 
-    case Event(ChannelActivated, d: DisconnectedData) =>
-      stay() using d.copy(activeChannels = d.activeChannels + 1)
+    case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
+      stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
 
-    case Event(ChannelDeactivated, d: DisconnectedData) =>
-      stay() using d.copy(activeChannels = d.activeChannels - 1)
+    case Event(e: LocalChannelDown, d: DisconnectedData) =>
+      stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
   }
 
   when(CONNECTED) {
@@ -424,7 +425,7 @@ class Peer(val nodeParams: NodeParams,
         }
         stay()
 
-      case Event(e: ChannelReadyForPayments, _: ConnectedData) =>
+      case Event(e: ChannelReadyForPayments, d: ConnectedData) =>
         pendingOnTheFlyFunding.foreach {
           case (paymentHash, pending) =>
             pending.status match {
@@ -440,7 +441,10 @@ class Peer(val nodeParams: NodeParams,
                 }
             }
         }
-        stay()
+        stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
+
+      case Event(e: LocalChannelDown, d: ConnectedData) =>
+        stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
@@ -534,25 +538,24 @@ class Peer(val nodeParams: NodeParams,
         d.peerConnection forward unknownMsg
         stay()
 
-      case Event(store: PeerStorageStore, d: ConnectedData) if nodeParams.features.hasFeature(Features.ProvideStorage) && d.activeChannels > 0 =>
-        // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
-        // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
-        // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
-        // writing to the DB and may never store our peer's backup.
-        if (d.peerStorage.written) {
-          startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+      case Event(store: PeerStorageStore, d: ConnectedData) =>
+        if (nodeParams.features.hasFeature(Features.ProvideStorage) && d.activeChannels.nonEmpty) {
+          // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
+          // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
+          // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
+          // writing to the DB and may never store our peer's backup.
+          if (d.peerStorage.written) {
+            startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+          }
+          stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
+        } else {
+          log.debug("ignoring peer storage (feature={}, channels={})", nodeParams.features.hasFeature(Features.ProvideStorage), d.activeChannels.mkString(","))
+          stay()
         }
-        stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
 
       case Event(WritePeerStorage, d: ConnectedData) =>
         d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
         stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
-
-      case Event(ChannelActivated, d: ConnectedData) =>
-        stay() using d.copy(activeChannels = d.activeChannels + 1)
-
-      case Event(ChannelDeactivated, d: ConnectedData) =>
-        stay() using d.copy(activeChannels = d.activeChannels - 1)
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -785,7 +788,7 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
-  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], activeChannels: Int, peerStorage: PeerStorage): State = {
+  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeId: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
@@ -957,16 +960,16 @@ object Peer {
 
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
-    def activeChannels: Int
+    def activeChannels: Set[ByteVector32] // channels that are available to process payments
     def peerStorage: PeerStorage
   }
   case object Nothing extends Data {
     override def channels = Map.empty
-    override def activeChannels: Int = 0
+    override def activeChannels: Set[ByteVector32] = Set.empty
     override def peerStorage: PeerStorage = PeerStorage(None, written = true)
   }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Int, peerStorage: PeerStorage) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Int, currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage) extends Data {
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage) extends Data
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
@@ -1081,9 +1084,5 @@ object Peer {
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
 
   case object WritePeerStorage
-
-  case object ChannelActivated
-
-  case object ChannelDeactivated
   // @formatter:on
 }
