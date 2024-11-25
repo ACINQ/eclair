@@ -158,10 +158,11 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
 }
 
 /**
- * @param writeDelay   delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
- * @param removalDelay we keep our peer's data in our DB even after closing all of our channels with them, up to this duration. 
+ * @param writeDelay       delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
+ * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
+ * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.                    
  */
-case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration)
+case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration)
 
 object NodeParams extends Logging {
 
@@ -690,6 +691,7 @@ object NodeParams extends Logging {
       peerStorageConfig = PeerStorageConfig(
         writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
         removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
+        cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
       )
     )
   }

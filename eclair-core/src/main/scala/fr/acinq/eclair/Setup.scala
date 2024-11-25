@@ -357,7 +357,7 @@ class Setup(val datadir: File,
         system.deadLetters
       }
       _ = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
-        system.spawn(Behaviors.supervise(PeerStorageCleaner(nodeParams.db.peers, nodeParams.peerStorageConfig.removalDelay)).onFailure(typed.SupervisorStrategy.restart), name = "peer-storage-cleaner")
+        system.spawn(Behaviors.supervise(PeerStorageCleaner(nodeParams.db.peers, nodeParams.peerStorageConfig)).onFailure(typed.SupervisorStrategy.restart), name = "peer-storage-cleaner")
       }
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))

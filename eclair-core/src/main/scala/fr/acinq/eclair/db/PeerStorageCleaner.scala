@@ -18,23 +18,27 @@ package fr.acinq.eclair.db
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import fr.acinq.eclair.TimestampSecond
+import fr.acinq.eclair.{PeerStorageConfig, TimestampSecond}
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
-
+/**
+ * This actor frequently deletes from our DB peer storage from nodes with whom we don't have channels anymore, after a
+ * grace period.
+ */
 object PeerStorageCleaner {
+  // @formatter:off
   sealed trait Command
   private case object CleanPeerStorage extends Command
+  // @formatter:on
 
-  def apply(db: PeersDb, removalDelay: FiniteDuration): Behavior[Command] = {
-      Behaviors.withTimers { timers =>
-        timers.startTimerWithFixedDelay(CleanPeerStorage, 1 day)
-        Behaviors.receiveMessage {
-          case CleanPeerStorage =>
-            db.removePeerStorage(TimestampSecond.now() - removalDelay)
-            Behaviors.same
-        }
+  def apply(db: PeersDb, config: PeerStorageConfig): Behavior[Command] = {
+    Behaviors.withTimers { timers =>
+      timers.startTimerWithFixedDelay(CleanPeerStorage, config.cleanUpFrequency)
+      Behaviors.receiveMessage {
+        case CleanPeerStorage =>
+          db.removePeerStorage(TimestampSecond.now() - config.removalDelay)
+          Behaviors.same
       }
     }
+  }
 
 }
