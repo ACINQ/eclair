@@ -47,7 +47,7 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
     }
 
     def migration23(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
       statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
     }
 
@@ -55,7 +55,7 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       case None =>
         statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
 
         statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
       case Some(v@(1 | 2)) =>
@@ -101,7 +101,7 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
 
   override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = withMetrics("peers/remove-storage", DbBackends.Sqlite) {
       using(sqlite.prepareStatement("DELETE FROM peer_storage WHERE removed_peer_at < ?")) { statement =>
-        statement.setTimestamp(1, peerRemovedBefore.toSqlTimestamp)
+        statement.setLong(1, peerRemovedBefore.toLong)
         statement.executeUpdate()
       }
   }
