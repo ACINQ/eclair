@@ -75,9 +75,12 @@ case class ClearRecipient(nodeId: PublicKey,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
                           customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
+  private val isLegacyTrampoline = features.hasFeature(Features.TrampolinePaymentPrototype)
+
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = nextTrampolineOnion_opt match {
+        case Some(trampolinePacket) if isLegacyTrampoline => NodePayload(nodeId, FinalPayload.Standard.createLegacyTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket, upgradeAccountability))
         case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket, upgradeAccountability))
         case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, trampolineOnion_opt = None, customTlvs = customTlvs, upgradeAccountability))
       }

@@ -120,7 +120,12 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           val fullRoute = cfg.upstream match {
             case _: Upstream.Local => true
             case _: Upstream.Hot.Channel => false
-            case _: Upstream.Hot.Trampoline => false
+            // If we're relaying a trampoline payment to a non-trampoline recipient, we must unwrap the full route.
+            case _: Upstream.Hot.Trampoline => d.recipient match {
+              case r: ClearRecipient => r.nextTrampolineOnion_opt.isEmpty
+              case _: SpontaneousRecipient => true
+              case _: BlindedRecipient => true
+            }
           }
           Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, fullRoute))
         case _: HtlcResult.OnChainFulfill => None

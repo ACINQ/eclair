@@ -43,7 +43,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route, RoutePa
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, InitFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, InitFeature, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -251,7 +251,9 @@ class NodeRelay private(nodeParams: NodeParams,
     nextPayload match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard =>
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt, upgradeAccountability = payloadOut.upgradeAccountability)
+        // If the recipient is using the legacy trampoline feature, we will use the legacy trampoline onion format.
+        val features = if (payloadOut.isLegacy) Features[InvoiceFeature](Features.TrampolinePaymentPrototype -> FeatureSupport.Optional) else Features.empty[InvoiceFeature]
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt, upgradeAccountability = payloadOut.upgradeAccountability)
         context.log.debug("forwarding payment to the next trampoline node {}", recipient.nodeId)
         attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt, upgradeAccountability)
       case payloadOut: IntermediatePayload.NodeRelay.ToNonTrampoline =>
