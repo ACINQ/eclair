@@ -158,8 +158,9 @@ object IncomingPaymentPacket {
           case None if add.pathKey_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
-            payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
-              case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) =>
+            val trampolinePacket_opt = payload.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet).orElse(payload.get[OnionPaymentPayloadTlv.LegacyTrampolineOnion].map(_.packet))
+            trampolinePacket_opt match {
+              case Some(trampolinePacket) =>
                 // NB: when we enable blinded trampoline routes, we will need to check if the outer onion contains a
                 // path key and use it to derive the decryption key for the blinded trampoline onion.
                 decryptOnion(add.paymentHash, privateKey, trampolinePacket).flatMap {
@@ -309,7 +310,10 @@ object OutgoingPaymentPacket {
    * In that case, packetPayloadLength_opt must be greater than the actual onion's content.
    */
   def buildOnion(payloads: Seq[NodePayload], associatedData: ByteVector32, packetPayloadLength_opt: Option[Int]): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
-    val sessionKey = randomKey()
+    buildOnion(randomKey(), payloads, associatedData, packetPayloadLength_opt)
+  }
+
+  def buildOnion(sessionKey: PrivateKey, payloads: Seq[NodePayload], associatedData: ByteVector32, packetPayloadLength_opt: Option[Int]): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
     val nodeIds = payloads.map(_.nodeId)
     val payloadsBin = payloads
       .map(p => PaymentOnionCodecs.perHopPayloadCodec.encode(p.payload.records))
