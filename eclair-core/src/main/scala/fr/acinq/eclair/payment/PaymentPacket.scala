@@ -164,8 +164,9 @@ object IncomingPaymentPacket {
           case None if add.accountable && payload.get[UpgradeAccountability].isEmpty => Left(InvalidOnionPayload(UInt64(19), 0))
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
-            payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
-              case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) =>
+            val trampolinePacket_opt = payload.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet).orElse(payload.get[OnionPaymentPayloadTlv.LegacyTrampolineOnion].map(_.packet))
+            trampolinePacket_opt match {
+              case Some(trampolinePacket) =>
                 val outerPayload = payload.get[OnionPaymentPayloadTlv.PaymentData] match {
                   case Some(_) => payload
                   // The spec allows omitting the payment_secret field when not using MPP to reach the trampoline node.
@@ -256,7 +257,7 @@ object IncomingPaymentPacket {
         case innerPayload =>
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-          val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
+          val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet).orElse(outerPayload.records.get[OnionPaymentPayloadTlv.LegacyTrampolineOnion].map(_.packet))
           Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket, upgradeAccountability = outerPayload.upgradeAccountability), TimestampMilli.now()))
       }
     }

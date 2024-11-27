@@ -323,11 +323,6 @@ object MultiPartHandler {
             val paymentHash = Crypto.sha256(paymentPreimage)
             val expirySeconds = r.expirySeconds_opt.getOrElse(nodeParams.invoiceExpiry.toSeconds)
             val paymentMetadata = hex"2a"
-            val featuresTrampolineOpt = if (nodeParams.enableTrampolinePayment) {
-              nodeParams.features.bolt11Features().add(Features.TrampolinePaymentPrototype, FeatureSupport.Optional)
-            } else {
-              nodeParams.features.bolt11Features()
-            }
             val invoice = Bolt11Invoice(
               nodeParams.chainHash,
               r.amount_opt,
@@ -339,7 +334,7 @@ object MultiPartHandler {
               expirySeconds = Some(expirySeconds),
               extraHops = r.extraHops,
               paymentMetadata = Some(paymentMetadata),
-              features = featuresTrampolineOpt
+              features = nodeParams.features.bolt11Features()
             )
             context.log.debug("generated invoice={} from amount={}", invoice.toString, r.amount_opt)
             nodeParams.db.payments.addIncomingPayment(invoice, paymentPreimage, r.paymentType)
@@ -354,7 +349,10 @@ object MultiPartHandler {
               }
               PaymentBlindedRoute(contactInfo, route.paymentInfo)
             })
-            val invoiceFeatures = nodeParams.features.bolt12Features()
+            // We don't advertize trampoline in our Bolt12 invoices and let the trampoline node pay to our blinded path.
+            // Otherwise, we would need a more complex DefaultOfferHandler that creates trampoline-compatible blinded
+            // paths, which is more complex and unnecessary.
+            val invoiceFeatures = nodeParams.features.bolt12Features().remove(Features.TrampolinePayment)
             val invoice = Bolt12Invoice(r.invoiceRequest, r.paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths, r.additionalTlvs, r.customTlvs)
             context.log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
             r.replyTo ! invoice
