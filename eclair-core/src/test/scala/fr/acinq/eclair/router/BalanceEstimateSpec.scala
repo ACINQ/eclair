@@ -98,8 +98,7 @@ class BalanceEstimateSpec extends AnyFunSuite {
       .couldSend(60_000 msat, TimestampSecond.now())
 
     // a splice-in that increases channel capacity increases high but not low bounds
-    val balance1 = balance
-      .updateEdge(a.desc, RealShortChannelId(5), 250 sat)
+    val balance1 = balance.updateEdge(a.desc, RealShortChannelId(5), 250 sat)
     assert(balance1.maxCapacity == 250.sat)
     assert(balance1.low == 60_000.msat)
     assert(balance1.high == 190_000.msat)
