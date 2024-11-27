@@ -279,7 +279,7 @@ object TrampolinePayment {
   def buildOutgoingPayment(trampolineNodeId: PublicKey, invoice: Invoice, amount: MilliSatoshi, expiry: CltvExpiry, trampolinePaymentSecret_opt: Option[ByteVector32], attemptNumber: Int): OutgoingPayment = {
     val totalAmount = invoice.amount_opt.get
     val trampolineOnion = invoice match {
-      case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePaymentPrototype) =>
+      case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePayment) =>
         val finalPayload = PaymentOnion.FinalPayload.Standard.createPayload(amount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata)
         val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, invoice.nodeId)
         buildOnion(NodePayload(trampolineNodeId, trampolinePayload) :: NodePayload(invoice.nodeId, finalPayload) :: Nil, invoice.paymentHash, None).toOption.get
