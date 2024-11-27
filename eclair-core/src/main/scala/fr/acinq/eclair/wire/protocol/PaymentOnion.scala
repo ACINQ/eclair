@@ -296,16 +296,6 @@ object PaymentOnion {
     object NodeRelay {
       case class Standard(records: TlvStream[OnionPaymentPayloadTlv]) extends NodeRelay {
         val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
-        // The following fields are only included in the trampoline-to-legacy case.
-        val totalAmount = records.get[PaymentData].map(_.totalAmount match {
-          case MilliSatoshi(0) => amountToForward
-          case totalAmount => totalAmount
-        }).getOrElse(amountToForward)
-        val paymentSecret = records.get[PaymentData].map(_.secret)
-        val paymentMetadata = records.get[PaymentMetadata].map(_.data)
-        val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
-        val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
-        // The following fields are only included in the async payment case.
         val isAsyncPayment: Boolean = records.get[AsyncPayment].isDefined
       }
 
@@ -323,8 +313,27 @@ object PaymentOnion {
           Right(Standard(records))
         }
 
-        /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
-        def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): Standard = {
+        /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
+        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
+          Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId), AsyncPayment()))
+        }
+      }
+
+      /** We relay to a payment recipient that doesn't support trampoline, which exposes its identity. */
+      case class ToNonTrampoline(records: TlvStream[OnionPaymentPayloadTlv]) extends NodeRelay {
+        val outgoingNodeId = records.get[OutgoingNodeId].get.nodeId
+        val totalAmount = records.get[PaymentData].map(_.totalAmount match {
+          case MilliSatoshi(0) => amountToForward
+          case totalAmount => totalAmount
+        }).get
+        val paymentSecret = records.get[PaymentData].map(_.secret).get
+        val paymentMetadata = records.get[PaymentMetadata].map(_.data)
+        val invoiceFeatures = records.get[InvoiceFeatures].map(_.features).getOrElse(ByteVector.empty)
+        val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops).get
+      }
+
+      object ToNonTrampoline {
+        def apply(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice): ToNonTrampoline = {
           val tlvs: Set[OnionPaymentPayloadTlv] = Set(
             Some(AmountToForward(amount)),
             Some(OutgoingCltv(expiry)),
@@ -334,15 +343,22 @@ object PaymentOnion {
             Some(InvoiceFeatures(invoice.features.toByteVector)),
             Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
           ).flatten
-          Standard(TlvStream(tlvs))
+          ToNonTrampoline(TlvStream(tlvs))
         }
 
-        /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
-        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
-          Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId), AsyncPayment()))
+        def validate(records: TlvStream[OnionPaymentPayloadTlv]): Either[InvalidTlvPayload, ToNonTrampoline] = {
+          if (records.get[AmountToForward].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
+          if (records.get[OutgoingCltv].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
+          if (records.get[PaymentData].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
+          if (records.get[OutgoingNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(66098)))
+          if (records.get[InvoiceRoutingInfo].isEmpty) return Left(MissingRequiredTlv(UInt64(66099)))
+          if (records.get[EncryptedRecipientData].nonEmpty) return Left(ForbiddenTlv(UInt64(10)))
+          if (records.get[BlindingPoint].nonEmpty) return Left(ForbiddenTlv(UInt64(12)))
+          Right(ToNonTrampoline(records))
         }
       }
 
+      /** We relay to a payment recipient that doesn't support trampoline, but hides its identity using blinded paths. */
       case class ToBlindedPaths(records: TlvStream[OnionPaymentPayloadTlv]) extends NodeRelay {
         val outgoingBlindedPaths = records.get[OutgoingBlindedPaths].get.paths
         val invoiceFeatures = records.get[InvoiceFeatures].get.features

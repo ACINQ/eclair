@@ -25,7 +25,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
-import fr.acinq.eclair.payment.IncomingPaymentPacket.{ChannelRelayPacket, FinalPacket, RelayToTrampolinePacket, decrypt}
+import fr.acinq.eclair.payment.IncomingPaymentPacket._
 import fr.acinq.eclair.payment.OutgoingPaymentPacket._
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.{FullBlindedRoute, ResolvedPath}
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient, TrampolinePayment}
@@ -297,10 +297,6 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.amountToForward == finalAmount)
     assert(inner_c.outgoingCltv == finalExpiry)
     assert(inner_c.outgoingNodeId == e)
-    assert(inner_c.invoiceRoutingInfo.isEmpty)
-    assert(inner_c.invoiceFeatures.isEmpty)
-    assert(inner_c.paymentSecret.isEmpty)
-    assert(inner_c.paymentMetadata.isEmpty)
 
     // c forwards the trampoline payment to e through d.
     val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, randomBytes32(), nextTrampolineOnion_opt = Some(trampolinePacket_e))
@@ -330,7 +326,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
 
     val add_c = UpdateAddHtlc(randomBytes32(), 2, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, 1.0, None)
-    val Right(RelayToTrampolinePacket(_, outer_c, inner_c, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val Right(RelayToNonTrampolinePacket(_, outer_c, inner_c)) = decrypt(add_c, priv_c.privateKey, Features.empty)
     assert(outer_c.amount == payment.trampolineAmount)
     assert(outer_c.totalAmount == payment.trampolineAmount)
     assert(outer_c.expiry == payment.trampolineExpiry)
@@ -340,13 +336,70 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.totalAmount == finalAmount)
     assert(inner_c.outgoingCltv == finalExpiry)
     assert(inner_c.outgoingNodeId == e)
-    assert(inner_c.paymentSecret.contains(invoice.paymentSecret))
+    assert(inner_c.paymentSecret == invoice.paymentSecret)
     assert(inner_c.paymentMetadata.contains(hex"010203"))
-    assert(inner_c.invoiceFeatures.contains(invoiceFeatures.toByteVector))
-    assert(inner_c.invoiceRoutingInfo.contains(routingHints))
+    assert(inner_c.invoiceFeatures == invoiceFeatures.toByteVector)
+    assert(inner_c.invoiceRoutingInfo == routingHints)
 
     // c forwards the trampoline payment to e through d.
-    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret.get, invoice.extraEdges, inner_c.paymentMetadata)
+    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, invoice.extraEdges, inner_c.paymentMetadata)
+    val Right(payment_e) = buildOutgoingPayment(Origin.Hot(ActorRef.noSender, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_c, TimestampMilli(1687345927000L), b)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e, 1.0)
+    assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
+    assert(payment_e.cmd.amount == amount_cd)
+    assert(payment_e.cmd.cltvExpiry == expiry_cd)
+    val add_d = UpdateAddHtlc(randomBytes32(), 3, payment_e.cmd.amount, paymentHash, payment_e.cmd.cltvExpiry, payment_e.cmd.onion, None, 1.0, None)
+    val Right(ChannelRelayPacket(add_d2, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    assert(add_d2 == add_d)
+    assert(payload_d == IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, amount_de, expiry_de))
+
+    val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
+    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(add_e2 == add_e)
+    assert(payload_e == FinalPayload.Standard(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(invoice.paymentSecret, finalAmount), OnionPaymentPayloadTlv.PaymentMetadata(hex"010203"))))
+  }
+
+  test("build outgoing trampoline payment with non-trampoline recipient and dummy trampoline packet") {
+    // simple trampoline route to e where e doesn't support trampoline:
+    //        .----.
+    //       /      \
+    // b -> c        e
+    val routingHints = List(List(Bolt11Invoice.ExtraHop(randomKey().publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("#reckless"), CltvExpiryDelta(18), extraHops = routingHints, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
+    val trampolineOnion = {
+      // The payer is a wallet using the legacy trampoline feature, which includes a dummy trampoline payload that never
+      // reaches the recipient. It relies on the trampoline node to detect that some invoice data is provided to convert
+      // the payment to a non-trampoline payment.
+      val dummyPayload = PaymentOnion.IntermediatePayload.ChannelRelay.Standard(ShortChannelId(0), 0 msat, CltvExpiry(0))
+      val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.ToNonTrampoline(finalAmount, finalAmount, finalExpiry, invoice.nodeId, invoice)
+      buildOnion(NodePayload(c, trampolinePayload) :: NodePayload(invoice.nodeId, dummyPayload) :: Nil, invoice.paymentHash, None).toOption.get
+    }
+    val payment = {
+      val trampolineAmount = finalAmount * 1.001 // 0.1% fees
+      val trampolineExpiry = finalExpiry + CltvExpiryDelta(144)
+      val payload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet)
+      val paymentOnion = buildOnion(NodePayload(c, payload) :: Nil, invoice.paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      TrampolinePayment.OutgoingPayment(trampolineAmount, trampolineExpiry, paymentOnion, trampolineOnion)
+    }
+
+    val add_c = UpdateAddHtlc(randomBytes32(), 2, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, 1.0, None)
+    val Right(RelayToNonTrampolinePacket(_, outer_c, inner_c)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    assert(outer_c.amount == payment.trampolineAmount)
+    assert(outer_c.totalAmount == payment.trampolineAmount)
+    assert(outer_c.expiry == payment.trampolineExpiry)
+    assert(outer_c.paymentSecret != invoice.paymentSecret)
+    assert(outer_c.records.get[OnionPaymentPayloadTlv.TrampolineOnion].get.packet.payload.size < 400)
+    assert(inner_c.amountToForward == finalAmount)
+    assert(inner_c.totalAmount == finalAmount)
+    assert(inner_c.outgoingCltv == finalExpiry)
+    assert(inner_c.outgoingNodeId == e)
+    assert(inner_c.paymentSecret == invoice.paymentSecret)
+    assert(inner_c.paymentMetadata.contains(hex"010203"))
+    assert(inner_c.invoiceFeatures == invoiceFeatures.toByteVector)
+    assert(inner_c.invoiceRoutingInfo == routingHints)
+
+    // c forwards the trampoline payment to e through d.
+    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, invoice.extraEdges, inner_c.paymentMetadata)
     val Right(payment_e) = buildOutgoingPayment(Origin.Hot(ActorRef.noSender, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_c, TimestampMilli(1687345927000L), b)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e, 1.0)
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     assert(payment_e.cmd.amount == amount_cd)
