@@ -461,4 +461,25 @@ class GraphSpec extends AnyFunSuite {
       assert(MessagePath.dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
     }
   }
+
+  test("a channel update only changes the scid and capacity of one edge") {
+    // A --> B has two edges with different short channel ids.
+    val edge = makeEdge(7, a, b, 1 msat, 1)
+    val g = makeTestGraph().addEdge(edge)
+
+    val g1 = g.updateChannel(ChannelDesc(ShortChannelId(7), a, b), RealShortChannelId(10), 99 sat)
+    val edge1 = g1.getEdge(ChannelDesc(ShortChannelId(10), a, b)).get
+    assert(edge1.capacity == 99.sat)
+    assert(g1.getEdge(ChannelDesc(ShortChannelId(7), a, b)).isEmpty)
+
+    // Only the scid and capacity of one edge changes.
+    assert(g1 == makeTestGraph().addEdge(edge1))
+
+    // Updates are symmetric.
+    assert(g1 == g.updateChannel(ChannelDesc(ShortChannelId(7), b, a), RealShortChannelId(10), 99 sat))
+
+    // Updates to an unknown channel do not change the graph.
+    assert(g == g.updateChannel(ChannelDesc(ShortChannelId(1), randomKey().publicKey, b), RealShortChannelId(10), 99 sat))
+  }
+
 }

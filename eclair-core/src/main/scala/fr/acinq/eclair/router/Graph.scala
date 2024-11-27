@@ -624,7 +624,15 @@ object Graph {
       }
     }
 
-    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge])
+    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge]) {
+      def update(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): Vertex =
+        incomingEdges.get(desc) match {
+          case None => this
+          case Some(edge) =>
+            val updatedEdge = edge.copy(desc = desc.copy(shortChannelId = newShortChannelId), capacity = newCapacity)
+            copy(incomingEdges = incomingEdges - desc + (desc.copy(shortChannelId = newShortChannelId) -> updatedEdge))
+        }
+    }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
     case class DirectedGraph(private val vertices: Map[PublicKey, Vertex]) {
@@ -688,14 +696,10 @@ object Graph {
        * @return a new graph with updated vertexes
        */
       def updateChannel(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): DirectedGraph = {
-        val newDesc = desc.copy(shortChannelId = newShortChannelId)
-        val updatedVertices =
-          vertices
-            .updatedWith(desc.b)(_.map(vertexB => vertexB.copy(incomingEdges = vertexB.incomingEdges - desc +
-              (newDesc -> vertexB.incomingEdges(desc).copy(desc = newDesc, capacity = newCapacity)))))
-            .updatedWith(desc.a)(_.map(vertexA => vertexA.copy(incomingEdges = vertexA.incomingEdges - desc.reversed +
-              (newDesc.reversed -> vertexA.incomingEdges(desc.reversed).copy(desc = newDesc.reversed, capacity = newCapacity)))))
-        DirectedGraph(updatedVertices)
+        DirectedGraph(vertices
+          .updatedWith(desc.b)(_.map(_.update(desc, newShortChannelId, newCapacity)))
+          .updatedWith(desc.a)(_.map(_.update(desc.reversed, newShortChannelId, newCapacity)))
+        )
       }
 
       /**
