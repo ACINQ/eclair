@@ -394,6 +394,11 @@ object Features {
     val mandatory = 54
   }
 
+  case object TrampolinePayment extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
+    val rfcName = "trampoline_routing"
+    val mandatory = 56
+  }
+
   case object SimpleClose extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_simple_close"
     val mandatory = 60
@@ -420,12 +425,7 @@ object Features {
     val mandatory = 132
   }
 
-  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-  // We're not advertising these bits yet in our announcements, clients have to assume support.
-  // This is why we haven't added them yet to `areSupported`.
-  // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
-  // we will introduce a new version of trampoline that will work in parallel to this legacy one, until we can safely
-  // deprecate it.
+  // TODO: we can remove this feature once we've migrated existing Phoenix users
   case object TrampolinePaymentPrototype extends Feature with InitFeature with NodeFeature with Bolt11Feature {
     val rfcName = "trampoline_payment_prototype"
     val mandatory = 148
@@ -496,6 +496,7 @@ object Features {
     SimpleTaprootChannels,
     SimpleTaprootChannelsPhoenix,
     WakeUpNotificationClient,
+    TrampolinePayment,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
@@ -512,12 +513,11 @@ object Features {
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
     RouteBlinding -> (VariableLengthOnion :: Nil),
-    TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
     SimpleTaprootChannels -> (ChannelType :: SimpleClose :: Nil),
     SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
-    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
+    AsyncPaymentPrototype -> (TrampolinePayment :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
 
