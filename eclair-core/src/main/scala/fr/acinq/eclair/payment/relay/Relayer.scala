@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, RealShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -71,7 +71,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
           channelRelayer ! ChannelRelayer.Relay(r, originNode)
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
-          if (!nodeParams.enableTrampolinePayment) {
+          if (!nodeParams.features.hasFeature(Features.TrampolinePayment)) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=trampoline disabled")
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), Some(r.receivedAt), commit = true))
           } else {

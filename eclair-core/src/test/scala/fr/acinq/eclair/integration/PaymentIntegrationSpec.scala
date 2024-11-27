@@ -64,13 +64,13 @@ import scala.jdk.CollectionConverters._
 class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel.channel-flags.announce-channel" -> false).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)) // A's channels are private
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.channel.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true, "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withDualFunding).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.channel.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel.channel-flags.announce-channel" -> false, "eclair.features.trampoline_routing" -> "disabled").asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)) // A's channels are private
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.channel.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082).asJava).withFallback(withDualFunding).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.channel.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.channel.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(withDualFunding).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.channel.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.relay.fees.public-channels.fee-base-msat" -> 1010, "eclair.relay.fees.public-channels.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085).asJava).withFallback(commonConfig))
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.channel.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.relay.fees.public-channels.fee-base-msat" -> 1010, "eclair.relay.fees.public-channels.fee-proportional-millionths" -> 102).asJava).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -468,7 +468,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("like trampoline much?")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(invoice.features.hasFeature(Features.TrampolinePayment))
 
     // The best route from G is G -> C -> F.
     val payment = SendTrampolinePayment(sender.ref, invoice, nodes("G").nodeParams.nodeId, routeParams = integrationTestRouteParams)
@@ -502,7 +502,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("trampoline-MPP is so #reckless")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(invoice.features.hasFeature(Features.TrampolinePayment))
     assert(invoice.paymentMetadata.nonEmpty)
 
     // The direct route C -> B does not have enough capacity, the payment will be split between C -> B and C -> G -> B
@@ -541,7 +541,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("trampoline to non-trampoline is so #vintage"), extraHops = routingHints))
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(!invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(!invoice.features.hasFeature(Features.TrampolinePayment))
     assert(invoice.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(sender.ref, invoice, nodes("C").nodeParams.nodeId, routeParams = integrationTestRouteParams)
@@ -581,7 +581,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("I iz Satoshi")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(invoice.features.hasFeature(Features.TrampolinePayment))
 
     val payment = SendTrampolinePayment(sender.ref, invoice, nodes("C").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
@@ -597,7 +597,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("I iz not Satoshi")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
-    assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
+    assert(invoice.features.hasFeature(Features.TrampolinePayment))
 
     val payment = SendTrampolinePayment(sender.ref, invoice, nodes("B").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("A").paymentInitiator, payment)
