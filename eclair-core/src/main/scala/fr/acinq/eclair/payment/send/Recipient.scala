@@ -142,24 +142,24 @@ case class BlindedRecipient(nodeId: PublicKey,
     val introductionExpiry = expiry + blindedHop.cltvExpiryDelta
     blindedHop.resolved.route match {
       case route: BlindedPathsResolver.FullBlindedRoute =>
-        val payloads = if (route.blindedNodes.length == 1) {
+        val payloads = if (route.blindedHops.length == 1) {
           // The recipient is also the introduction node.
-          val payload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createFinalIntroductionPayload(amount, totalAmount, expiry, route.firstBlinding, route.encryptedPayloads.head, customTlvs))
+          val payload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createFinalIntroductionPayload(amount, totalAmount, expiry, route.firstpathKey, route.encryptedPayloads.head, customTlvs))
           Seq(payload)
         } else {
-          val introductionPayload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createIntroductionPayload(route.encryptedPayloads.head, route.firstBlinding))
-          val intermediatePayloads = route.blindedNodes.tail.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
+          val introductionPayload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createIntroductionPayload(route.encryptedPayloads.head, route.firstpathKey))
+          val intermediatePayloads = route.blindedHops.tail.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
           val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs))
           introductionPayload +: intermediatePayloads :+ finalPayload
         }
-        // The route starts at a remote introduction node: we include the blinding point in the onion, not in the HTLC.
-        PaymentPayloads(introductionAmount, introductionExpiry, payloads, outerBlinding_opt = None)
+        // The route starts at a remote introduction node: we include the path key in the onion, not in the HTLC.
+        PaymentPayloads(introductionAmount, introductionExpiry, payloads, outerPathKey_opt = None)
       case route: BlindedPathsResolver.PartialBlindedRoute =>
         // The route started at our node: we already peeled the introduction part.
-        val intermediatePayloads = route.blindedNodes.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
+        val intermediatePayloads = route.blindedHops.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
         val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs))
-        // The next node is not the introduction node, so we must provide the blinding point in the HTLC.
-        PaymentPayloads(introductionAmount, introductionExpiry, intermediatePayloads :+ finalPayload, outerBlinding_opt = Some(route.nextBlinding))
+        // The next node is not the introduction node, so we must provide the path key in the HTLC.
+        PaymentPayloads(introductionAmount, introductionExpiry, intermediatePayloads :+ finalPayload, outerPathKey_opt = Some(route.nextPathKey))
     }
   }
 

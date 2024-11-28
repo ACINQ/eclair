@@ -385,7 +385,7 @@ object LightningMessageCodecs {
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
 
   val onionMessageCodec: Codec[OnionMessage] = (
-    ("blindingKey" | publicKey) ::
+    ("pathKey" | publicKey) ::
       ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
       ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
 

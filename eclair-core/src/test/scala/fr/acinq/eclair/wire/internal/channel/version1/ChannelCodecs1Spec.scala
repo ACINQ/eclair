@@ -75,7 +75,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket,
-      blinding_opt = None,
+      pathKey_opt = None,
       confidence = 1.0,
       fundingFee_opt = None)
     val htlc1 = IncomingHtlc(add)
@@ -92,7 +92,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket,
-      blinding_opt = None,
+      pathKey_opt = None,
       confidence = 1.0,
       fundingFee_opt = None)
     val add2 = UpdateAddHtlc(
@@ -102,7 +102,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
       paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket,
-      blinding_opt = None,
+      pathKey_opt = None,
       confidence = 1.0,
       fundingFee_opt = None)
     val htlc1 = IncomingHtlc(add1)

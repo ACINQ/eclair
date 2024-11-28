@@ -150,7 +150,7 @@ private class SendingMessage(nodeParams: NodeParams,
       case SendMessage =>
         contactInfo match {
           case blindedPath: OfferTypes.BlindedPath =>
-            blindedPath.route.introductionNodeId match {
+            blindedPath.route.firstNodeId match {
               case EncodedNodeId.ShortChannelIdDir(isNode1, scid) =>
                 router ! Router.GetNodeId(context.messageAdapter(WrappedNodeIdResponse), scid, isNode1)
                 waitForNodeId(blindedPath.route)
@@ -165,7 +165,7 @@ private class SendingMessage(nodeParams: NodeParams,
   private def waitForNodeId(compactBlindedPath: BlindedRoute): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedNodeIdResponse(None) =>
-        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path: ${compactBlindedPath.introductionNode.nodeId}")
+        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path: ${compactBlindedPath.firstNode.nodeId}")
         Behaviors.stopped
       case WrappedNodeIdResponse(Some(nodeId)) =>
         sendToDestination(OnionMessages.BlindedPath(compactBlindedPath), nodeId)

@@ -411,7 +411,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case Right(nextPacket) =>
         val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.ProposeOnTheFlyFunding]](_ => WrappedOnTheFlyFundingResponse(Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer not found")))
         val onTheFlyFundingResponseAdapter = context.messageAdapter[Peer.ProposeOnTheFlyFundingResponse](WrappedOnTheFlyFundingResponse)
-        val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, nextPayload.amountToForward, paymentHash, nextPayload.outgoingCltv, nextPacket.cmd.onion, nextPacket.cmd.nextBlindingKey_opt, upstream)
+        val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, nextPayload.amountToForward, paymentHash, nextPayload.outgoingCltv, nextPacket.cmd.onion, nextPacket.cmd.nextPathKey_opt, upstream)
         register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, walletNodeId, cmd)
         Behaviors.receiveMessagePartial {
           rejectExtraHtlcPartialFunction orElse {
