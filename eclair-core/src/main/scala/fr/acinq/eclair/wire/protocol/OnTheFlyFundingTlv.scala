@@ -31,12 +31,12 @@ import scodec.codecs._
 sealed trait WillAddHtlcTlv extends Tlv
 
 object WillAddHtlcTlv {
-  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-  case class BlindingPoint(publicKey: PublicKey) extends WillAddHtlcTlv
+  /** Path key that should be used to derive shared secrets when using route blinding. */
+  case class PathKey(publicKey: PublicKey) extends WillAddHtlcTlv
 
-  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
+  private val pathKey: Codec[PathKey] = (("length" | constant(hex"21")) :: ("pathKey" | publicKey)).as[PathKey]
 
   val willAddHtlcTlvCodec: Codec[TlvStream[WillAddHtlcTlv]] = tlvStream(discriminated[WillAddHtlcTlv].by(varint)
-    .typecase(UInt64(0), blindingPoint)
+    .typecase(UInt64(0), pathKey)
   )
 }

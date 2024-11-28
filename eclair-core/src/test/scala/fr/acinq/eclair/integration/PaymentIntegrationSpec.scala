@@ -790,7 +790,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ShortChannelIdDir(channelBE.nodeId1 == nodes("B").nodeParams.nodeId, channelBE.shortChannelId)
     }
     val offerBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId))).route
-    val offerPath = BlindedRoute(scidDirEB, offerBlindedRoute.blindingKey, offerBlindedRoute.blindedNodes)
+    val offerPath = BlindedRoute(scidDirEB, offerBlindedRoute.firstPathKey, offerBlindedRoute.blindedHops)
     val offer = Offer(Some(amount), Some("test offer"), recipientKey.publicKey, nodes("C").nodeParams.features.bolt12Features(), chain, additionalTlvs = Set(OfferPaths(Seq(offerPath))))
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("C").system.toTyped)
     nodes("C").offerManager ! RegisterOffer(offer, Some(recipientKey), Some(pathId), offerHandler.ref)
@@ -818,7 +818,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.recipientAmount == amount, paymentSent)
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
     val Some(invoice: Bolt12Invoice) = nodes("A").nodeParams.db.payments.listOutgoingPaymentsToOffer(offer.offerId).head.invoice
-    assert(invoice.blindedPaths.forall(_.route.introductionNodeId.isInstanceOf[EncodedNodeId.ShortChannelIdDir]))
+    assert(invoice.blindedPaths.forall(_.route.firstNodeId.isInstanceOf[EncodedNodeId.ShortChannelIdDir]))
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)

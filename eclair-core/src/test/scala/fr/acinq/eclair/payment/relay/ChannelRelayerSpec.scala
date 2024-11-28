@@ -241,7 +241,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwdNodeId.nodeId == outgoingNodeId)
-    assert(fwdNodeId.message.nextBlindingKey_opt.nonEmpty)
+    assert(fwdNodeId.message.nextPathKey_opt.nonEmpty)
     assert(fwdNodeId.message.amount == outgoingAmount)
     assert(fwdNodeId.message.expiry == outgoingExpiry)
   }
@@ -832,7 +832,7 @@ object ChannelRelayerSpec {
   def createBlindedPayload(outgoing: Either[PublicKey, ShortChannelId], update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
     val tlvs = TlvStream[OnionPaymentPayloadTlv](Set(
       Some(OnionPaymentPayloadTlv.EncryptedRecipientData(hex"2a")),
-      if (isIntroduction) Some(OnionPaymentPayloadTlv.BlindingPoint(randomKey().publicKey)) else None,
+      if (isIntroduction) Some(OnionPaymentPayloadTlv.PathKey(randomKey().publicKey)) else None,
     ).flatten[OnionPaymentPayloadTlv])
     val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
       outgoing match {
@@ -846,11 +846,11 @@ object ChannelRelayerSpec {
   }
 
   def createValidIncomingPacket(payload: IntermediatePayload.ChannelRelay, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100), endorsementIn: Int = 7): IncomingPaymentPacket.ChannelRelayPacket = {
-    val nextBlinding_opt = payload match {
-      case p: ChannelRelay.Blinded => Some(UpdateAddHtlcTlv.BlindingPoint(p.nextBlinding))
+    val nextPathKey_opt = payload match {
+      case p: ChannelRelay.Blinded => Some(UpdateAddHtlcTlv.PathKey(p.nextPathKey))
       case _: ChannelRelay.Standard => None
     }
-    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextBlinding_opt, Some(UpdateAddHtlcTlv.Endorsement(endorsementIn))).flatten)
+    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, Some(UpdateAddHtlcTlv.Endorsement(endorsementIn))).flatten)
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }

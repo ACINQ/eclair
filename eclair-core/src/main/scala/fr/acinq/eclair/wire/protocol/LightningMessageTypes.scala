@@ -369,7 +369,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
-  val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
+  val pathKey_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.PathKey].map(_.publicKey)
   val fundingFee_opt: Option[LiquidityAds.FundingFee] = tlvStream.get[UpdateAddHtlcTlv.FundingFeeTlv].map(_.fee)
 
   val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)
@@ -385,11 +385,11 @@ object UpdateAddHtlc {
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding_opt: Option[PublicKey],
+            pathKey_opt: Option[PublicKey],
             confidence: Double,
             fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
     val tlvs = Set(
-      blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint),
+      pathKey_opt.map(UpdateAddHtlcTlv.PathKey),
       fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
       Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt)),
     ).flatten[UpdateAddHtlcTlv]
@@ -600,7 +600,7 @@ object ReplyChannelRange {
 
 case class GossipTimestampFilter(chainHash: BlockHash, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
-case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
+case class OnionMessage(pathKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
 
 // NB: blank lines to minimize merge conflicts
 
@@ -644,7 +644,7 @@ case class WillAddHtlc(chainHash: BlockHash,
                        expiry: CltvExpiry,
                        finalPacket: OnionRoutingPacket,
                        tlvStream: TlvStream[WillAddHtlcTlv] = TlvStream.empty) extends OnTheFlyFundingMessage {
-  val blinding_opt: Option[PublicKey] = tlvStream.get[WillAddHtlcTlv.BlindingPoint].map(_.publicKey)
+  val pathKey_opt: Option[PublicKey] = tlvStream.get[WillAddHtlcTlv.PathKey].map(_.publicKey)
 }
 
 object WillAddHtlc {
@@ -654,8 +654,8 @@ object WillAddHtlc {
             paymentHash: ByteVector32,
             expiry: CltvExpiry,
             finalPacket: OnionRoutingPacket,
-            blinding_opt: Option[PublicKey]): WillAddHtlc = {
-    val tlvs = blinding_opt.map(WillAddHtlcTlv.BlindingPoint).toSet[WillAddHtlcTlv]
+            pathKey_opt: Option[PublicKey]): WillAddHtlc = {
+    val tlvs = pathKey_opt.map(WillAddHtlcTlv.PathKey).toSet[WillAddHtlcTlv]
     WillAddHtlc(chainHash, id, amount, paymentHash, expiry, finalPacket, TlvStream(tlvs))
   }
 }

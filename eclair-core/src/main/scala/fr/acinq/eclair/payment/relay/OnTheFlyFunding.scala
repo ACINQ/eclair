@@ -96,7 +96,7 @@ object OnTheFlyFunding {
     def createFailureCommands(failure_opt: Option[Either[ByteVector, FailureMessage]]): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
       case u: Upstream.Hot.Channel =>
-        val failure = htlc.blinding_opt match {
+        val failure = htlc.pathKey_opt match {
           case Some(_) => Right(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket)))
           case None => failure_opt.getOrElse(Right(UnknownNextPeer()))
         }
@@ -292,7 +292,7 @@ object OnTheFlyFunding {
           // This lets us detect that this HTLC is an on-the-fly funded HTLC.
           val htlcFees = LiquidityAds.FundingFee(remainingFees.min(p.maxFees(htlcMinimum)), cmd.status.txId)
           val origin = Origin.Hot(htlcSettledAdapter.toClassic, p.upstream)
-          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.blinding_opt, 1.0, Some(htlcFees), origin, commit = true)
+          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, 1.0, Some(htlcFees), origin, commit = true)
           cmd.channel ! add
           remainingFees - htlcFees.amount
       }

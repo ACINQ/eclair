@@ -72,14 +72,14 @@ object MessageOnion {
   }
 
   /** Per-hop payload for an intermediate node. */
-  case class IntermediatePayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey) extends PerHopPayload {
+  case class IntermediatePayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey) extends PerHopPayload {
     val nextNode: Either[ShortChannelId, EncodedNodeId] =
       blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(outgoingNodeId => Right(outgoingNodeId.nodeId))
         .getOrElse(Left(blindedRecords.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].get.shortChannelId))
   }
 
   object IntermediatePayload {
-    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey): Either[InvalidTlvPayload, IntermediatePayload] = {
+    def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey): Either[InvalidTlvPayload, IntermediatePayload] = {
       // Only EncryptedData is allowed (and required), unknown TLVs are forbidden too as they could allow probing the identity of the nodes.
       if (records.get[ReplyPath].nonEmpty) return Left(ForbiddenTlv(UInt64(2)))
       if (records.get[EncryptedData].isEmpty) return Left(MissingRequiredTlv(UInt64(4)))
@@ -87,7 +87,7 @@ object MessageOnion {
       if (records.get[Invoice].nonEmpty) return Left(ForbiddenTlv(UInt64(66)))
       if (records.get[InvoiceError].nonEmpty) return Left(ForbiddenTlv(UInt64(68)))
       if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
-      BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords => IntermediatePayload(records, blindedRecords, nextBlinding))
+      BlindedRouteData.validateMessageRelayData(blindedRecords).map(blindedRecords => IntermediatePayload(records, blindedRecords, nextPathKey))
     }
   }
 

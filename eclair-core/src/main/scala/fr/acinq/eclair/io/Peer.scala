@@ -255,7 +255,7 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(cmd: ProposeOnTheFlyFunding, d: ConnectedData) =>
         // We send the funding proposal to our peer, and report it to the sender.
-        val htlc = WillAddHtlc(nodeParams.chainHash, randomBytes32(), cmd.amount, cmd.paymentHash, cmd.expiry, cmd.onion, cmd.nextBlindingKey_opt)
+        val htlc = WillAddHtlc(nodeParams.chainHash, randomBytes32(), cmd.amount, cmd.paymentHash, cmd.expiry, cmd.onion, cmd.nextPathKey_opt)
         cmd.replyTo ! ProposeOnTheFlyFundingResponse.Proposed
         // We update our list of pending proposals for that payment.
         val pending = pendingOnTheFlyFunding.get(htlc.paymentHash) match {
@@ -983,7 +983,7 @@ object Peer {
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalParams, peerConnection: ActorRef)
 
   /** If [[Features.OnTheFlyFunding]] is supported and we're connected, relay a funding proposal to our peer. */
-  case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, nextBlindingKey_opt: Option[PublicKey], upstream: Upstream.Hot)
+  case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, nextPathKey_opt: Option[PublicKey], upstream: Upstream.Hot)
 
   sealed trait ProposeOnTheFlyFundingResponse
   object ProposeOnTheFlyFundingResponse {

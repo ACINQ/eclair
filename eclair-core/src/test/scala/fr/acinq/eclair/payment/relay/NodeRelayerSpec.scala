@@ -660,7 +660,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
     val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwd.nodeId == outgoingNodeId)
-    assert(fwd.message.nextBlindingKey_opt.isEmpty)
+    assert(fwd.message.nextPathKey_opt.isEmpty)
     assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
     // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
     val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, None, 1.0, None)
@@ -950,10 +950,10 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
     val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwd.nodeId == outgoingNodeId)
-    assert(fwd.message.nextBlindingKey_opt.nonEmpty)
+    assert(fwd.message.nextPathKey_opt.nonEmpty)
     assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
     // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
-    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, fwd.message.nextBlindingKey_opt, 1.0, None)
+    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, fwd.message.nextPathKey_opt, 1.0, None)
     val Right(incoming) = IncomingPaymentPacket.decrypt(dummyAdd, outgoingNodeKey, nodeParams.features)
     assert(incoming.isInstanceOf[IncomingPaymentPacket.FinalPacket])
     val finalPayload = incoming.asInstanceOf[IncomingPaymentPacket.FinalPacket].payload.asInstanceOf[FinalPayload.Blinded]
@@ -1162,7 +1162,7 @@ object NodeRelayerSpec {
     val paymentBlindedRoute = scidDir_opt match {
       case Some(scidDir) =>
         val nonCompact = createPaymentBlindedRoute(outgoingNodeId)
-        nonCompact.copy(route = nonCompact.route.copy(introductionNodeId = scidDir))
+        nonCompact.copy(route = nonCompact.route.copy(firstNodeId = scidDir))
       case None =>
         createPaymentBlindedRoute(outgoingNodeId)
     }

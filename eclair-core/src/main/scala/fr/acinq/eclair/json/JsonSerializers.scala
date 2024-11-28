@@ -468,8 +468,8 @@ object InvoiceSerializer extends MinimalSerializer({
           UnknownFeatureSerializer
       ))),
       Some(JField("blindedPaths", JArray(p.blindedPaths.map(path => {
-        val introductionNode = path.route.introductionNodeId.toString
-        val blindedNodes = path.route.blindedNodes
+        val introductionNode = path.route.firstNodeId.toString
+        val blindedNodes = path.route.blindedHops
         JObject(List(
           JField("introductionNodeId", JString(introductionNode)),
           JField("blindedNodeIds", JArray(blindedNodes.map(n => JString(n.blindedPublicKey.toString)).toList))
