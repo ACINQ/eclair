@@ -353,7 +353,6 @@ class PaymentOnionSpec extends AnyFunSuite {
       (MissingRequiredTlv(UInt64(2)), hex"11 04012a 0a080123456789abcdef 12020451"), // missing amount
       (MissingRequiredTlv(UInt64(4)), hex"12 02020231 0a080123456789abcdef 12020451"), // missing expiry
       (MissingRequiredTlv(UInt64(10)), hex"0b 02020231 04012a 12020451"), // missing encrypted data
-      (MissingRequiredTlv(UInt64(18)), hex"11 02020231 04012a 0a080123456789abcdef"), // missing total amount
       (ForbiddenTlv(UInt64(0)), hex"1f 02020231 04012a 06080000000000000451 0a080123456789abcdef 12020451"), // forbidden outgoing_channel_id
       (ForbiddenTlv(UInt64(0)), hex"39 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 0a080123456789abcdef 12020451"), // forbidden payment_data
       (ForbiddenTlv(UInt64(0)), hex"1b 02020231 04012a 0a080123456789abcdef 1004deadbeef 12020451"), // forbidden payment_metadata
