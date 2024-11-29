@@ -116,15 +116,21 @@ object NodeRelay {
       }
     }
 
+  private def outgoingAmount(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay): MilliSatoshi = payloadOut.outgoingAmount(upstream.amountIn)
+
+  private def outgoingExpiry(upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay): CltvExpiry = payloadOut.outgoingExpiry(upstream.expiryIn)
+
   private def validateRelay(nodeParams: NodeParams, upstream: Upstream.Hot.Trampoline, payloadOut: IntermediatePayload.NodeRelay): Option[FailureMessage] = {
-    val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, payloadOut.amountToForward)
-    if (upstream.amountIn - payloadOut.amountToForward < fee) {
+    val amountOut = outgoingAmount(upstream, payloadOut)
+    val expiryOut = outgoingExpiry(upstream, payloadOut)
+    val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, amountOut)
+    if (upstream.amountIn - amountOut < fee) {
       Some(TrampolineFeeInsufficient())
-    } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.channelConf.expiryDelta) {
+    } else if (upstream.expiryIn - expiryOut < nodeParams.channelConf.expiryDelta) {
       Some(TrampolineExpiryTooSoon())
-    } else if (payloadOut.outgoingCltv <= CltvExpiry(nodeParams.currentBlockHeight)) {
+    } else if (expiryOut <= CltvExpiry(nodeParams.currentBlockHeight)) {
       Some(TrampolineExpiryTooSoon())
-    } else if (payloadOut.amountToForward <= MilliSatoshi(0)) {
+    } else if (amountOut <= MilliSatoshi(0)) {
       Some(InvalidOnionPayload(UInt64(2), 0))
     } else {
       None
@@ -174,8 +180,9 @@ object NodeRelay {
    * should return upstream.
    */
   private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay): Option[FailureMessage] = {
+    val amountOut = outgoingAmount(upstream, nextPayload)
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
-    val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees, nextPayload.amountToForward) * 5
+    val routingFeeHigh = upstream.amountIn - amountOut >= nodeFee(nodeParams.relayParams.minTrampolineFees, amountOut) * 5
     failures match {
       case Nil => None
       case LocalFailure(_, _, BalanceTooLow) :: Nil if routingFeeHigh =>
@@ -320,12 +327,14 @@ class NodeRelay private(nodeParams: NodeParams,
 
   /** Relay the payment to the next identified node: this is similar to sending an outgoing payment. */
   private def relay(upstream: Upstream.Hot.Trampoline, recipient: Recipient, walletNodeId_opt: Option[PublicKey], recipientFeatures_opt: Option[Features[InitFeature]], payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
-    context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv, walletNodeId_opt.isDefined)
+    val amountOut = outgoingAmount(upstream, payloadOut)
+    val expiryOut = outgoingExpiry(upstream, payloadOut)
+    context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, walletNodeId_opt.isDefined)
     val confidence = (upstream.received.map(_.add.endorsement).min + 0.5) / 8
     // We only make one try when it's a direct payment to a wallet.
     val maxPaymentAttempts = if (walletNodeId_opt.isDefined) 1 else nodeParams.maxPaymentAttempts
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, confidence)
-    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
+    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
     // If the next node is using trampoline, we assume that they support MPP.
     val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
     val payFsmAdapters = {
@@ -393,6 +402,8 @@ class NodeRelay private(nodeParams: NodeParams,
 
   /** We couldn't forward the payment, but the next node may accept on-the-fly funding. */
   private def attemptOnTheFlyFunding(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, failures: Seq[PaymentFailure], startedAt: TimestampMilli): Behavior[Command] = {
+    val amountOut = outgoingAmount(upstream, nextPayload)
+    val expiryOut = outgoingExpiry(upstream, nextPayload)
     // We create a payment onion, using a dummy channel hop between our node and the wallet node.
     val dummyEdge = Invoice.ExtraEdge(nodeParams.nodeId, walletNodeId, Alias(0), 0 msat, 0, CltvExpiryDelta(0), 1 msat, None)
     val dummyHop = ChannelHop(Alias(0), nodeParams.nodeId, walletNodeId, HopRelayParams.FromHint(dummyEdge))
@@ -401,7 +412,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case _: SpontaneousRecipient => None
       case r: BlindedRecipient => r.blindedHops.headOption
     }
-    val dummyRoute = Route(nextPayload.amountToForward, Seq(dummyHop), finalHop_opt)
+    val dummyRoute = Route(amountOut, Seq(dummyHop), finalHop_opt)
     OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, 1.0) match {
       case Left(f) =>
         context.log.warn("could not create payment onion for on-the-fly funding: {}", f.getMessage)
@@ -411,7 +422,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case Right(nextPacket) =>
         val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.ProposeOnTheFlyFunding]](_ => WrappedOnTheFlyFundingResponse(Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer not found")))
         val onTheFlyFundingResponseAdapter = context.messageAdapter[Peer.ProposeOnTheFlyFundingResponse](WrappedOnTheFlyFundingResponse)
-        val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, nextPayload.amountToForward, paymentHash, nextPayload.outgoingCltv, nextPacket.cmd.onion, nextPacket.cmd.nextPathKey_opt, upstream)
+        val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, amountOut, paymentHash, expiryOut, nextPacket.cmd.onion, nextPacket.cmd.nextPathKey_opt, upstream)
         register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, walletNodeId, cmd)
         Behaviors.receiveMessagePartial {
           rejectExtraHtlcPartialFunction orElse {
