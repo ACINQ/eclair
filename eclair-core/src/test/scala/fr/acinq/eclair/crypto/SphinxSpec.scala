@@ -577,14 +577,14 @@ class SphinxSpec extends AnyFunSuite {
   }
 
   test("invalid blinded route") {
-    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route.encryptedPayloads
+    val path = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route
+    assert(RouteBlinding.decryptPayload(privKeys(0), path.firstPathKey, path.encryptedPayloads(0)).isSuccess)
     // Invalid node private key:
-    val ephKey0 = sessionKey.publicKey
-    assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)
-    // Invalid unblinding ephemeral key:
-    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, encryptedPayloads(0)).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(1), path.firstPathKey, path.encryptedPayloads(0)).isFailure)
+    // Invalid path key:
+    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, path.encryptedPayloads(0)).isFailure)
     // Invalid encrypted payload:
-    assert(RouteBlinding.decryptPayload(privKeys(0), ephKey0, encryptedPayloads(1)).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(0), path.firstPathKey, path.encryptedPayloads(1)).isFailure)
   }
 
 }
