@@ -155,6 +155,26 @@ class PaymentOnionSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode node relay blinded per-hop payload") {
+    val nextNodeId = PublicKey(hex"0221cd519eba9c8b840a5e40b65dc2c040e159a766979723ed770efceb97260ec8")
+    val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+    )
+    val testCases = Seq(
+      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"deadbeef")),
+      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"deadbeef"), PathKey(randomKey().publicKey)),
+    )
+    testCases.foreach(tlvs => {
+      val Right(payload) = IntermediatePayload.NodeRelay.Blinded.validate(tlvs, blindedTlvs, randomKey().publicKey)
+      assert(payload.outgoing == Left(EncodedNodeId.WithPublicKey.Plain(nextNodeId)))
+      assert(payload.outgoingAmount(10_000 msat) == 9990.msat)
+      assert(payload.outgoingExpiry(CltvExpiry(1000)) == CltvExpiry(856))
+      assert(payload.paymentRelayData.allowedFeatures.isEmpty)
+    })
+  }
+
   test("encode/decode node relay to legacy per-hop payload") {
     val nodeId = PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")
     val features = hex"0a"
@@ -344,6 +364,43 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     for ((expectedErr, bin) <- testCases) {
       assert(IntermediatePayload.NodeRelay.Standard.validate(perHopPayloadCodec.decode(bin.bits).require.value) == Left(expectedErr))
+    }
+  }
+
+  test("decode invalid node relay blinded per-hop payload") {
+    val outgoingNodeId = PublicKey(hex"0221cd519eba9c8b840a5e40b65dc2c040e159a766979723ed770efceb97260ec8")
+    val validBlindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+      RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId),
+      RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat),
+      RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+    )
+
+    case class TestCase(err: InvalidTlvPayload, bin: ByteVector, blindedTlvs: TlvStream[RouteBlindingEncryptedDataTlv])
+
+    val testCases = Seq(
+      // Forbidden non-encrypted amount.
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0e 02020231 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden non-encrypted expiry.
+      TestCase(ForbiddenTlv(UInt64(0)), hex"0d 04012a 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden outgoing channel id.
+      TestCase(ForbiddenTlv(UInt64(0)), hex"14 06080000000000000451 0a080123456789abcdef", validBlindedTlvs),
+      // Forbidden unknown tlv.
+      TestCase(ForbiddenTlv(UInt64(51)), hex"0e 0a080123456789abcdef 33020102", validBlindedTlvs),
+      // Missing encrypted data.
+      TestCase(MissingRequiredTlv(UInt64(10)), hex"23 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2", validBlindedTlvs),
+      // Missing encrypted outgoing node or outgoing channel.
+      TestCase(MissingRequiredTlv(UInt64(2)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat))),
+      // Missing encrypted payment relay data.
+      TestCase(MissingRequiredTlv(UInt64(10)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat))),
+      // Missing encrypted payment constraint.
+      TestCase(MissingRequiredTlv(UInt64(12)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat))),
+      // Forbidden encrypted path id.
+      TestCase(ForbiddenTlv(UInt64(6)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat), RouteBlindingEncryptedDataTlv.PathId(hex"deadbeef"))),
+    )
+
+    for (testCase <- testCases) {
+      val decoded = perHopPayloadCodec.decode(testCase.bin.bits).require.value
+      assert(IntermediatePayload.NodeRelay.Blinded.validate(decoded, testCase.blindedTlvs, randomKey().publicKey) == Left(testCase.err))
     }
   }
 
