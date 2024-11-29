@@ -223,7 +223,7 @@ object OfferTypes {
     // Invoice request TLVs are in the range [0, 159] or [1000000000, 2999999999].
     tlv.tag <= UInt64(159) || (tlv.tag >= UInt64(1000000000) && tlv.tag <= UInt64(2999999999L))
 
-  def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
+  private def filterOfferFields(tlvs: TlvStream[InvoiceRequestTlv]): TlvStream[OfferTlv] =
     TlvStream[OfferTlv](tlvs.records.collect { case tlv: OfferTlv => tlv }, tlvs.unknown.filter(isOfferTlv))
 
   def filterInvoiceRequestFields(tlvs: TlvStream[InvoiceTlv]): TlvStream[InvoiceRequestTlv] =
@@ -238,11 +238,7 @@ object OfferTypes {
   case class Offer(records: TlvStream[OfferTlv]) {
     val chains: Seq[BlockHash] = records.get[OfferChains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
     val metadata: Option[ByteVector] = records.get[OfferMetadata].map(_.data)
-    val currency: Option[String] = records.get[OfferCurrency].map(_.iso4217)
-    val amount: Option[MilliSatoshi] = currency match {
-      case Some(_) => None // TODO: add exchange rates
-      case None => records.get[OfferAmount].map(_.amount)
-    }
+    val amount: Option[MilliSatoshi] = records.get[OfferAmount].map(_.amount)
     val description: Option[String] = records.get[OfferDescription].map(_.description)
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
@@ -267,11 +263,11 @@ object OfferTypes {
     val hrp = "lno"
 
     /**
-     * @param amount_opt  amount if it can be determined at offer creation time.
-     * @param description description of the offer.
-     * @param nodeId      the nodeId to use for this offer, which should be different from our public nodeId if we're hiding behind a blinded route.
-     * @param features    invoice features.
-     * @param chain       chain on which the offer is valid.
+     * @param amount_opt      amount if it can be determined at offer creation time.
+     * @param description_opt description of the offer (optional if the offer doesn't include an amount).
+     * @param nodeId          the nodeId to use for this offer, which should be different from our public nodeId if we're hiding behind a blinded route.
+     * @param features        invoice features.
+     * @param chain           chain on which the offer is valid.
      */
     def apply(amount_opt: Option[MilliSatoshi],
               description_opt: Option[String],
