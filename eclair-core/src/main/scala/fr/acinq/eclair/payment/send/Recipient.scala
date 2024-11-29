@@ -73,6 +73,8 @@ case class ClearRecipient(nodeId: PublicKey,
                           extraEdges: Seq[ExtraEdge] = Nil,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
+                          // Must be provided if the payer is using a blinded trampoline path.
+                          trampolinePathKey_opt: Option[PublicKey] = None,
                           customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
   // Feature bit used by the legacy trampoline feature.
   private val isLegacyTrampoline = features.unknown.contains(UnknownFeature(149))
@@ -81,8 +83,8 @@ case class ClearRecipient(nodeId: PublicKey,
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = nextTrampolineOnion_opt match {
         case Some(trampolinePacket) if isLegacyTrampoline => NodePayload(nodeId, FinalPayload.Standard.createLegacyTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
-        case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
-        case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, trampolineOnion_opt = None, customTlvs = customTlvs))
+        case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket, trampolinePathKey_opt))
+        case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, trampolineOnion_opt = None, customTlvs))
       }
       Recipient.buildPayloads(PaymentPayloads(route.amount, expiry, Seq(finalPayload), None), route.hops)
     })
@@ -91,7 +93,7 @@ case class ClearRecipient(nodeId: PublicKey,
 
 object ClearRecipient {
   def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): ClearRecipient = {
-    ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
+    ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, None, customTlvs)
   }
 
   def validateRoute(nodeId: PublicKey, route: Route): Either[OutgoingPaymentError, Route] = {

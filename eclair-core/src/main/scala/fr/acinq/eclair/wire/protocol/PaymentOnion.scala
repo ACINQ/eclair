@@ -336,6 +336,36 @@ object PaymentOnion {
         }
       }
 
+      /**
+       * @param paymentRelayData decrypted relaying data from the encrypted_recipient_data tlv.
+       * @param nextPathKey      path key that must be forwarded to the next hop in the outer onion.
+       */
+      case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], paymentRelayData: PaymentRelayData, nextPathKey: PublicKey) extends NodeRelay {
+        // @formatter:off
+        val isLegacy: Boolean = false
+        val outgoing: Either[EncodedNodeId.WithPublicKey, ShortChannelId] = paymentRelayData.outgoing
+        override def outgoingAmount(incomingAmount: MilliSatoshi): MilliSatoshi = paymentRelayData.amountToForward(incomingAmount)
+        override def outgoingExpiry(incomingCltv: CltvExpiry): CltvExpiry = paymentRelayData.outgoingCltv(incomingCltv)
+        // @formatter:on
+      }
+
+      object Blinded {
+        def validate(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey): Either[InvalidTlvPayload, Blinded] = {
+          if (records.get[EncryptedRecipientData].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+          // Bolt 4: MUST return an error if the payload contains other tlv fields than `encrypted_recipient_data` and `current_path_key`.
+          if (records.unknown.nonEmpty) return Left(ForbiddenTlv(records.unknown.head.tag))
+          records.records.find {
+            case _: EncryptedRecipientData => false
+            case _: PathKey => false
+            case _ => true
+          } match {
+            case Some(_) => return Left(ForbiddenTlv(UInt64(0)))
+            case None => // no forbidden tlv found
+          }
+          BlindedRouteData.validatePaymentRelayData(blindedRecords).map(paymentRelayData => Blinded(records, paymentRelayData, nextPathKey))
+        }
+      }
+
       /** We relay to a payment recipient that doesn't support trampoline, which exposes its identity. */
       case class ToNonTrampoline(records: TlvStream[OnionPaymentPayloadTlv]) extends NodeRelay {
         val amountToForward = records.get[AmountToForward].get.amount
@@ -474,8 +504,15 @@ object PaymentOnion {
       }
 
       /** Create a trampoline outer payload. */
-      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Standard = {
-        Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
+      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket, trampolinePathKey_opt: Option[PublicKey]): Standard = {
+        val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+          Some(AmountToForward(amount)),
+          Some(OutgoingCltv(expiry)),
+          Some(PaymentData(paymentSecret, totalAmount)),
+          trampolinePathKey_opt.map(k => PathKey(k)),
+          Some(TrampolineOnion(trampolinePacket))
+        ).flatten
+        Standard(TlvStream(tlvs))
       }
 
       /** Create a trampoline outer payload for legacy trampoline payments. */
@@ -558,8 +595,14 @@ object PaymentOnion {
   }
 
   object TrampolineWithoutMppPayload {
-    def create(amount: MilliSatoshi, expiry: CltvExpiry, trampolinePacket: OnionRoutingPacket): TrampolineWithoutMppPayload = {
-      TrampolineWithoutMppPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), TrampolineOnion(trampolinePacket)))
+    def create(amount: MilliSatoshi, expiry: CltvExpiry, trampolinePacket: OnionRoutingPacket, trampolinePathKey_opt: Option[PublicKey] = None): TrampolineWithoutMppPayload = {
+      val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+        Some(AmountToForward(amount)),
+        Some(OutgoingCltv(expiry)),
+        trampolinePathKey_opt.map(k => PathKey(k)),
+        Some(TrampolineOnion(trampolinePacket))
+      ).flatten
+      TrampolineWithoutMppPayload(TlvStream(tlvs))
     }
   }
 
