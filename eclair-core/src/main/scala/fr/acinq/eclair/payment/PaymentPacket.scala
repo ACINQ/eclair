@@ -85,20 +85,25 @@ object IncomingPaymentPacket {
     if (add.pathKey_opt.isDefined && payload.get[OnionPaymentPayloadTlv.PathKey].isDefined) {
       Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
     } else {
-      add.pathKey_opt.orElse(payload.get[OnionPaymentPayloadTlv.PathKey].map(_.publicKey)) match {
-        case Some(pathKey) => RouteBlindingEncryptedDataCodecs.decode(privateKey, pathKey, encryptedRecipientData) match {
-          case Left(_) =>
-            // There are two possibilities in this case:
-            //  - the path key is invalid: the sender or the previous node is buggy or malicious
-            //  - the encrypted data is invalid: the sender, the previous node or the recipient must be buggy or malicious
-            Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
-          case Right(decoded) => Right(DecodedEncryptedRecipientData(decoded.tlvs, decoded.nextPathKey))
-        }
-        case None =>
-          // The sender is trying to use route blinding, but we didn't receive the path key used to derive
-          // the decryption key. The sender or the previous peer is buggy or malicious.
+      val pathKey_opt = add.pathKey_opt.orElse(payload.get[OnionPaymentPayloadTlv.PathKey].map(_.publicKey))
+      decryptEncryptedRecipientData(add, privateKey, pathKey_opt, encryptedRecipientData)
+    }
+  }
+
+  private def decryptEncryptedRecipientData(add: UpdateAddHtlc, privateKey: PrivateKey, pathKey_opt: Option[PublicKey], encryptedRecipientData: ByteVector): Either[FailureMessage, DecodedEncryptedRecipientData] = {
+    pathKey_opt match {
+      case Some(pathKey) => RouteBlindingEncryptedDataCodecs.decode(privateKey, pathKey, encryptedRecipientData) match {
+        case Left(_) =>
+          // There are two possibilities in this case:
+          //  - the path key is invalid: the sender or the previous node is buggy or malicious
+          //  - the encrypted data is invalid: the sender, the previous node or the recipient must be buggy or malicious
           Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+        case Right(decoded) => Right(DecodedEncryptedRecipientData(decoded.tlvs, decoded.nextPathKey))
       }
+      case None =>
+        // The sender is trying to use route blinding, but we didn't receive the path key used to derive
+        // the decryption key. The sender or the previous peer is buggy or malicious.
+        Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
     }
   }
 
@@ -213,8 +218,8 @@ object IncomingPaymentPacket {
 
   private def validateBlindedFinalPayload(add: UpdateAddHtlc, payload: TlvStream[OnionPaymentPayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv]): Either[FailureMessage, FinalPacket] = {
     FinalPayload.Blinded.validate(payload, blindedPayload).left.map(_.failureMessage).flatMap {
-      case payload if add.amountMsat < payload.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
-      case payload if add.cltvExpiry > payload.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if payload.paymentConstraints_opt.exists(c => add.amountMsat < c.minAmount) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if payload.paymentConstraints_opt.exists(c => c.maxCltvExpiry < add.cltvExpiry) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.amountMsat < payload.amount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry < payload.expiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))

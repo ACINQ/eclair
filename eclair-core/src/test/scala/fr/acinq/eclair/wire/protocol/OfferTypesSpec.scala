@@ -303,15 +303,20 @@ class OfferTypesSpec extends AnyFunSuite {
 
   case class TestVector(description: String, valid: Boolean, bolt12: String)
 
-  implicit val formats: DefaultFormats.type = DefaultFormats
-
   test("spec test vectors") {
+    implicit val formats: DefaultFormats.type = DefaultFormats
+
     val src = Source.fromFile(new File(getClass.getResource(s"/offers-test.json").getFile))
     val testVectors = JsonMethods.parse(src.mkString).extract[Seq[TestVector]]
     src.close()
     for (vector <- testVectors) {
-      val offer = Offer.decode(vector.bolt12)
-      assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
+      if (vector.description == "with currency") {
+        // We don't support currency conversion yet.
+        assert(Offer.decode(vector.bolt12).isFailure)
+      } else {
+        val offer = Offer.decode(vector.bolt12)
+        assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
+      }
     }
   }
 }
