@@ -113,8 +113,8 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val offer = Offer.withPaths(None, None, Seq(path1.route, path2.route), Features.empty, chain)
     val request = InvoiceRequest(offer, 11000 msat, 1, Features.empty, payerKey, chain)
     // Invoice is requested using path1.
-    assert(RouteBlinding.derivePrivateKey(nodeKey, path1.lastBlinding).publicKey == path1.route.blindedNodeIds.last)
-    val invoice = Bolt12Invoice(request, randomBytes32(), RouteBlinding.derivePrivateKey(nodeKey, path1.lastBlinding), 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
+    assert(RouteBlinding.derivePrivateKey(nodeKey, path1.lastPathKey).publicKey == path1.route.blindedNodeIds.last)
+    val invoice = Bolt12Invoice(request, randomBytes32(), RouteBlinding.derivePrivateKey(nodeKey, path1.lastPathKey), 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.validateFor(request, nodeKey.publicKey).isLeft)
     assert(invoice.validateFor(request, path1.route.blindedNodeIds.last).isRight)
     assert(invoice.validateFor(request, path2.route.blindedNodeIds.last).isLeft)
@@ -290,7 +290,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(decodedRequest, preimage, nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.validateFor(decodedRequest, nodeKey.publicKey).isRight)
-    // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
+    // Invoice generation is not reproducible as the timestamp and path key will change but all other fields should be the same.
     val encodedInvoice = "lni1qqswluyyp7j9aamd8l2ma23jyvvuvujqu5wq73jp38t02yr72s23evskyypylaf30uz3clmw4spxd3wvat4kc4m449q04wv9ferml6lkh3aqgp6syph79rq2kmcmxukp563ydtnr7a8ex85rvhs45zyudrtpjqqqqqqqq5srkudsqkppqv00gsulvwy3fhneygzg8hdr9hah5sc70xd9eed8vslm6u9jzx8yag9qqf8l2vtlq5w87m4vqfnvtn82adk9wadfgratnp2wg7l7ha4u0gzqwqahgwxsycqwtqlvu32j8mqxln456sxzh50k6avmgsndugtcp6wqcvqsxft50dexrade3n9us6tegq60tjjuc5f50jg8h43jr02r263wjfnwqqapd2vrfrwj2es7ne0wla08xnndgg655spddpn0zlru8fvqk6776fff60jphldzuw6wxgtxlne7ttvlp4tpmsghfh54atau5gwqqqqqqyqqqqqzqqpsqqqqqqqqqqqyqqqqqqqqqqqq2qqq5szxvtagn6nqyqfv4qsgtlj8vuulq6aca20u59mx5xzdg84pksgxgnahfamrsnnup8ck4l92qwm3kq9syypylaf30uz3clmw4spxd3wvat4kc4m449q04wv9ferml6lkh3aqgplsgrznfv8aysjyphv0usapr06mc4svfj9hlg4k9s263xd50dp0qdttrffypamzdxz84ftcvd52afx0je8adu4ppxq9z7yse0zh9qjmdwgz"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
@@ -320,7 +320,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(decodedRequest, preimage, nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.validateFor(decodedRequest, nodeKey.publicKey).isRight)
-    // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
+    // Invoice generation is not reproducible as the timestamp and path key will change but all other fields should be the same.
     val encodedInvoice = "lni1qqswg5pzt6anzaxaypy8y46zknl8zn2a2jqyzrp74gtfm4lp6utpkzcgqsdjuqsqpgvk66twd9kkzmpqdanxvetjypmkjargypsk6mm4de6pvggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet64qgr0u2xq4dh3kdevrf4zg6hx8a60jv0gxe0ptgyfc6xkryqqqqqqqpfqgxewqmf9sggr86209t74drgj3upwe6zy449q58wl9f8r5z97ktd6zxelzy6tq5t6pgqrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6s9x0wj2xtjxkql2urqn70fsyyhy8pcervfcaxdygsu74qe9jcss8uqypwa9rd3q0jh7tpruvr7xq7e4uzrk8z3mn68n5vzhxu4ds6d83qr4cq8f0mp833xq58twvuwlpm4gqkv5uwv07gl665ye2a33mk0tdkkzls04h25z3943cv5nq6e64dharmudq37remmgdvdv2vpt4zrsqqqqqpqqqqqqsqqvqqqqqqqqqqqpqqqqqqqqqqqqzsqq9yq3nzl2gl5cpqzt9gyqktpeas2gmx0p69psea4akj7tpukcfjygfjdcwpkjdvjl7a06mjp2syrvhqd54syypufzkf0cyl8ja6av6mq242d5rjk4mjdpq6xnf9j5s40jk2vzsu4a0sgq5pde5afeshaze029mqk5r48v07ph0uykc3ks034czmw58khfcw9gpv6d9l3nea06ajl4dqjr7ryrv9alx0eff9rklp7gnrkra0vuj3"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)
@@ -356,7 +356,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(decodedRequest, preimage, nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(Bolt12Invoice.fromString(invoice.toString).get.records == invoice.records)
     assert(invoice.validateFor(decodedRequest, nodeKey.publicKey).isRight)
-    // Invoice generation is not reproducible as the timestamp and blinding point will change but all other fields should be the same.
+    // Invoice generation is not reproducible as the timestamp and path key will change but all other fields should be the same.
     val encodedInvoice = "lni1qqs8lqvnh3kg9uj003lxlxyj8hthymgq4p9ms0ag0ryx5uw8gsuus4gzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrqxr2qzsndanxvetjypmkjargypch2ctww35hg7gjz9skc6trv4qxy6t8wd5x7upwvdhk69qzq05pvggry7hatxw6xgn0gcytj64sgtl9tzl4tqs360z7vlkv305evv3qgd84qgzrf9la07pxj4cs3a9rplvuasawhfuewgyyay826q02xvysqqqqqpfqxmwaqptqzjzcyyp8cmgrl28nvm3wlqqheha0t570rgaszg7mzvvzvwmx9s92nmyujkdq5qpj0t74n8dryfh5vz9ed2cy9lj43064sgga830x0mxgh6vkxgsyxnczgew6pkkhja3cl3dfxthumcmp6gkp446ha4tcj884eqch6g57newqzquqmar5nynwtg9lknq98yzslwla3vdxefulhq2jkwnqnsf7umpl5cqr58qkj63hkpl7ffyd6f3qgn3m5kuegehhakvxw7fuw29tf3r5wgj37uecjdw2th4t5fp7f99xvk4f3gwl0wyf2a558wqa9w3pcqqqqqqsqqqqqgqqxqqqqqqqqqqqqsqqqqqqqqqqqpgqqzjqgcuctck2vqsp9j5zqlsxsv7uy23npygenelt4q5sdh8ftc3x7rpd0hqlachjnj9z834s4gpkmhgqkqssxfa06kva5v3x73sgh94tqsh72k9l2kppr579uelvezlfjcezqs607pqxa3afljxyf2ua9dlqs33wrfzakt5tpraklpzfpn63uxa7el475x4sc0w4hs75e3nhe689slfz4ldqlwja3zaq0w3mnz79f4ne0c3r3c"
     val decodedInvoice = Bolt12Invoice.fromString(encodedInvoice).get
     assert(decodedInvoice.amount == invoice.amount)

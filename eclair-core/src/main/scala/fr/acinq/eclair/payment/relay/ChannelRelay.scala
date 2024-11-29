@@ -127,8 +127,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.ProposeOnTheFlyFunding]](_ => WrappedOnTheFlyFundingResponse(Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer not found")))
   private val onTheFlyFundingResponseAdapter = context.messageAdapter[Peer.ProposeOnTheFlyFundingResponse](WrappedOnTheFlyFundingResponse)
 
-  private val nextBlindingKey_opt = r.payload match {
-    case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextBlinding)
+  private val nextPathKey_opt = r.payload match {
+    case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextPathKey)
     case _: IntermediatePayload.ChannelRelay.Standard => None
   }
 
@@ -186,7 +186,7 @@ class ChannelRelay private(nodeParams: NodeParams,
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelayNeedsFunding(nextNodeId, cmdFail) =>
-            val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, upstream)
+            val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextPathKey_opt, upstream)
             register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, nextNodeId, cmd)
             waitForOnTheFlyFundingResponse(cmdFail)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
@@ -256,7 +256,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         case payload: IntermediatePayload.ChannelRelay.Blinded =>
           // We are inside a blinded route, so we must carefully choose the error we return to avoid leaking information.
           val failure = InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))
-          payload.records.get[OnionPaymentPayloadTlv.BlindingPoint] match {
+          payload.records.get[OnionPaymentPayloadTlv.PathKey] match {
             case Some(_) =>
               // We are the introduction node: we add a delay to make it look like it could come from further downstream.
               val delay = Some(Random.nextLong(1000).millis)
@@ -376,7 +376,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         RelayFailure(CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(update.messageFlags, update.channelFlags, Some(update))), commit = true))
       case None =>
         val origin = Origin.Hot(addResponseAdapter.toClassic, upstream)
-        RelaySuccess(outgoingChannel.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextBlindingKey_opt, confidence, fundingFee_opt = None, origin, commit = true))
+        RelaySuccess(outgoingChannel.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextPathKey_opt, confidence, fundingFee_opt = None, origin, commit = true))
     }
   }
 

@@ -88,12 +88,12 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
 
     def createProposal(amount: MilliSatoshi, expiry: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID())): ProposeOnTheFlyFunding = {
-      val blindingKey = upstream match {
-        case u: Upstream.Hot.Channel if u.add.blinding_opt.nonEmpty => Some(randomKey().publicKey)
-        case u: Upstream.Hot.Trampoline if u.received.exists(_.add.blinding_opt.nonEmpty) => Some(randomKey().publicKey)
+      val pathKey = upstream match {
+        case u: Upstream.Hot.Channel if u.add.pathKey_opt.nonEmpty => Some(randomKey().publicKey)
+        case u: Upstream.Hot.Trampoline if u.received.exists(_.add.pathKey_opt.nonEmpty) => Some(randomKey().publicKey)
         case _ => None
       }
-      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, blindingKey, upstream)
+      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, pathKey, upstream)
     }
 
     def proposeFunding(amount: MilliSatoshi, expiry: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID())): WillAddHtlc = {
@@ -381,6 +381,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     proposeFunding(40_000_000 msat, CltvExpiry(515), paymentHash2, upstream2.head)
     signLiquidityPurchase(100_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(paymentHash2 :: Nil))
     proposeExtraFunding(50_000_000 msat, CltvExpiry(525), paymentHash2, upstream2.last)
+    register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
     // A third funding is signed coming from a trampoline payment.
     val paymentHash3 = randomBytes32()
@@ -396,16 +397,16 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val upstream4 = Upstream.Hot.Trampoline(List(upstreamChannel(60_000_000 msat, CltvExpiry(560), paymentHash4)))
     proposeFunding(50_000_000 msat, CltvExpiry(516), paymentHash4, upstream4)
 
-    // The first three proposals reach their CLTV expiry.
+    // The first three proposals reach their CLTV expiry (the extra htlc was already failed).
     peer ! CurrentBlockHeight(BlockHeight(515))
-    val fwds = (0 until 6).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
+    val fwds = (0 until 5).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
     register.expectNoMessage(100 millis)
     fwds.foreach(fwd => {
       assert(fwd.message.reason == Right(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
-    assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2 ++ upstream3.received).map(_.add.channelId).toSet)
-    assert(fwds.map(_.message.id).toSet == (upstream1 ++ upstream2 ++ upstream3.received).map(_.add.id).toSet)
+    assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.channelId).toSet)
+    assert(fwds.map(_.message.id).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.id).toSet)
     awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
   }
 
@@ -820,7 +821,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // The payments are fulfilled.
     val (add1, add2) = if (cmd1.paymentHash == paymentHash1) (cmd1, cmd2) else (cmd2, cmd1)
-    val outgoing = Seq(add1, add2).map(add => UpdateAddHtlc(purchase.channelId, randomHtlcId(), add.amount, add.paymentHash, add.cltvExpiry, add.onion, add.nextBlindingKey_opt, add.confidence, add.fundingFee_opt))
+    val outgoing = Seq(add1, add2).map(add => UpdateAddHtlc(purchase.channelId, randomHtlcId(), add.amount, add.paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.confidence, add.fundingFee_opt))
     add1.replyTo ! RES_ADD_SETTLED(add1.origin, outgoing.head, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, outgoing.head.id, preimage1)))
     verifyFulfilledUpstream(upstream1, preimage1)
     add2.replyTo ! RES_ADD_SETTLED(add2.origin, outgoing.last, HtlcResult.OnChainFulfill(preimage2))
@@ -848,6 +849,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val purchase = signLiquidityPurchase(200_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlcWithPreimage(preimage :: Nil), channelId, fees, fundingTxIndex = 5, htlcMinimum)
     // We receive the last payment *after* signing the funding transaction.
     proposeExtraFunding(50_000_000 msat, expiryOut, paymentHash, upstream(2))
+    register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
     // Once the splice with the right funding index is locked, we forward HTLCs matching the proposed will_add_htlc.
     val channelData = makeChannelData(htlcMinimum)
@@ -858,22 +860,20 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val adds1 = Seq(
       channel.expectMsgType[CMD_ADD_HTLC],
       channel.expectMsgType[CMD_ADD_HTLC],
-      channel.expectMsgType[CMD_ADD_HTLC],
     )
     adds1.foreach(add => {
       assert(add.paymentHash == paymentHash)
       assert(add.fundingFee_opt.nonEmpty)
       assert(add.fundingFee_opt.get.fundingTxId == purchase.txId)
     })
-    adds1.take(2).foreach(add => assert(!add.commit))
-    assert(adds1.last.commit)
+    adds1.foreach(add => assert(add.commit))
     assert(adds1.map(_.fundingFee_opt.get.amount).sum == fees.total.toMilliSatoshi)
-    assert(adds1.map(add => add.amount + add.fundingFee_opt.get.amount).sum == 160_000_000.msat)
+    assert(adds1.map(add => add.amount + add.fundingFee_opt.get.amount).sum == 110_000_000.msat)
     channel.expectNoMessage(100 millis)
 
     // The recipient fails the payments: we don't relay the failure upstream and will retry.
     adds1.take(2).foreach(add => {
-      val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextBlindingKey_opt, add.confidence, add.fundingFee_opt)
+      val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.confidence, add.fundingFee_opt)
       val fail = UpdateFailHtlc(channelId, htlc.id, randomBytes(50))
       add.replyTo ! RES_SUCCESS(add, purchase.channelId)
       add.replyTo ! RES_ADD_SETTLED(add.origin, htlc, HtlcResult.RemoteFail(fail))
@@ -887,22 +887,20 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val adds2 = Seq(
       channel.expectMsgType[CMD_ADD_HTLC],
       channel.expectMsgType[CMD_ADD_HTLC],
-      channel.expectMsgType[CMD_ADD_HTLC],
     )
     adds2.foreach(add => add.replyTo ! RES_SUCCESS(add, purchase.channelId))
     channel.expectNoMessage(100 millis)
 
     // The payment succeeds.
     adds2.foreach(add => {
-      val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextBlindingKey_opt, add.confidence, add.fundingFee_opt)
+      val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.confidence, add.fundingFee_opt)
       add.replyTo ! RES_ADD_SETTLED(add.origin, htlc, HtlcResult.OnChainFulfill(preimage))
     })
     val fwds = Seq(
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
-      register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
     )
-    val (channelsIn, htlcsIn) = upstream.flatMap {
+    val (channelsIn, htlcsIn) = upstream.take(2).flatMap {
       case u: Hot.Channel => Seq(u)
       case u: Hot.Trampoline => u.received
       case _: Upstream.Local => Nil
@@ -935,7 +933,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We don't collect additional fees if they were paid from our peer's channel balance already.
     val cmd1 = channel.expectMsgType[CMD_ADD_HTLC]
     cmd1.replyTo ! RES_SUCCESS(cmd1, purchase.channelId)
-    val htlc = UpdateAddHtlc(channelId, 0, cmd1.amount, paymentHash, cmd1.cltvExpiry, cmd1.onion, cmd1.nextBlindingKey_opt, cmd1.confidence, cmd1.fundingFee_opt)
+    val htlc = UpdateAddHtlc(channelId, 0, cmd1.amount, paymentHash, cmd1.cltvExpiry, cmd1.onion, cmd1.nextPathKey_opt, cmd1.confidence, cmd1.fundingFee_opt)
     assert(cmd1.fundingFee_opt.contains(LiquidityAds.FundingFee(0 msat, purchase.txId)))
     channel.expectNoMessage(100 millis)
 
@@ -1007,7 +1005,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     cmd.replyTo ! RES_SUCCESS(cmd, purchase.channelId)
     channel.expectNoMessage(100 millis)
 
-    val add = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextBlindingKey_opt, cmd.confidence, cmd.fundingFee_opt)
+    val add = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.confidence, cmd.fundingFee_opt)
     cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, add.id, preimage2)))
     verifyFulfilledUpstream(upstream2, preimage2)
     register.expectNoMessage(100 millis)
@@ -1227,13 +1225,13 @@ object OnTheFlyFundingSpec {
   def randomHtlcId(): Long = Math.abs(randomLong()) % 50_000
 
   def upstreamChannel(amountIn: MilliSatoshi, expiryIn: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), blinded: Boolean = false): Upstream.Hot.Channel = {
-    val blindingKey = if (blinded) Some(randomKey().publicKey) else None
-    val add = UpdateAddHtlc(randomBytes32(), randomHtlcId(), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, blindingKey, 1.0, None)
+    val pathKey = if (blinded) Some(randomKey().publicKey) else None
+    val add = UpdateAddHtlc(randomBytes32(), randomHtlcId(), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, pathKey, 1.0, None)
     Upstream.Hot.Channel(add, TimestampMilli.now(), randomKey().publicKey)
   }
 
-  def createWillAdd(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, blinding_opt: Option[PublicKey] = None): WillAddHtlc = {
-    WillAddHtlc(Block.RegtestGenesisBlock.hash, randomBytes32(), amount, paymentHash, expiry, randomOnion(), blinding_opt)
+  def createWillAdd(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathKey_opt: Option[PublicKey] = None): WillAddHtlc = {
+    WillAddHtlc(Block.RegtestGenesisBlock.hash, randomBytes32(), amount, paymentHash, expiry, randomOnion(), pathKey_opt)
   }
 
   def createStatus(): OnTheFlyFunding.Status = OnTheFlyFunding.Status.Funded(randomBytes32(), TxId(randomBytes32()), 0, 2500 msat)

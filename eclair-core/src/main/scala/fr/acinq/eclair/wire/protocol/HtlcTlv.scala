@@ -31,10 +31,10 @@ import scodec.codecs._
 sealed trait UpdateAddHtlcTlv extends Tlv
 
 object UpdateAddHtlcTlv {
-  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-  case class BlindingPoint(publicKey: PublicKey) extends UpdateAddHtlcTlv
+  /** Path key that should be used to derive shared secrets when using route blinding. */
+  case class PathKey(publicKey: PublicKey) extends UpdateAddHtlcTlv
 
-  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
+  private val pathKey: Codec[PathKey] = (("length" | constant(hex"21")) :: ("pathKey" | publicKey)).as[PathKey]
 
   case class Endorsement(level: Int) extends UpdateAddHtlcTlv
 
@@ -46,7 +46,7 @@ object UpdateAddHtlcTlv {
   private val fundingFee: Codec[FundingFeeTlv] = tlvField((("amount" | millisatoshi) :: ("txId" | txIdAsHash)).as[LiquidityAds.FundingFee])
 
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
-    .typecase(UInt64(0), blindingPoint)
+    .typecase(UInt64(0), pathKey)
     .typecase(UInt64(41041), fundingFee)
     .typecase(UInt64(106823), endorsement)
   )

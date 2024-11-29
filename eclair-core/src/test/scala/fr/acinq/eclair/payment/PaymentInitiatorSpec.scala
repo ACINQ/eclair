@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.typed.scaladsl.adapter._
+import akka.actor.{ActorContext, ActorRef, typed}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
@@ -25,7 +26,6 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.Upstream
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
@@ -34,8 +34,8 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send._
+import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{BlindedRouteCreation, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
@@ -57,7 +57,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val RandomizeFinalExpiry = "random_final_expiry"
   }
 
-  case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, trampolinePayFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
   val featuresWithoutMpp: Features[Bolt11Feature] = Features(
     VariableLengthOnion -> Mandatory,
@@ -77,7 +77,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     TrampolinePaymentPrototype -> Optional,
   )
 
-  case class FakePaymentFactory(payFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
+  case class FakePaymentFactory(payFsm: TestProbe, trampolinePayFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
     // @formatter:off
     override def spawnOutgoingPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
       payFsm.ref ! cfg
@@ -87,6 +87,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       multiPartPayFsm.ref ! cfg
       multiPartPayFsm.ref
     }
+    override def spawnOutgoingTrampolinePayment(context:  ActorContext): typed.ActorRef[TrampolinePaymentLifecycle.Command] = trampolinePayFsm.ref.toTyped
     // @formatter:on
   }
 
@@ -102,11 +103,11 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       PaymentFinalExpiryConf(CltvExpiryDelta(1), CltvExpiryDelta(1))
     }
     val nodeParams = TestConstants.Alice.nodeParams.copy(features = features.unscoped(), paymentFinalExpiry = paymentFinalExpiry)
-    val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
+    val (sender, payFsm, trampolinePayFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    val initiator = TestActorRef(new PaymentInitiator(nodeParams, FakePaymentFactory(payFsm, multiPartPayFsm)))
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
+    val initiator = TestActorRef(new PaymentInitiator(nodeParams, FakePaymentFactory(payFsm, trampolinePayFsm, multiPartPayFsm)))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, trampolinePayFsm, multiPartPayFsm, sender, eventListener)))
   }
 
   test("forward payment with user custom tlv records") { f =>
@@ -171,7 +172,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val finalExpiryDelta = CltvExpiryDelta(36)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), finalExpiryDelta)
     val route = PredefinedNodeRoute(finalAmount, Seq(a, b, c))
-    val request = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None, None)
+    val request = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None)
     sender.send(initiator, request)
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, c, Upstream.Local(payment.paymentId), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, confidence = 1.0))
@@ -257,7 +258,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18), features = featuresWithMpp)
     val route = PredefinedChannelRoute(finalAmount / 2, c, Seq(channelUpdate_ab.shortChannelId, channelUpdate_bc.shortChannelId))
-    val req = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None, None)
+    val req = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None)
     sender.send(initiator, req)
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, c, Upstream.Local(payment.paymentId), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, confidence = 1.0))
@@ -296,8 +297,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features.empty, payerKey)
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
-      ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
+      val introductionNodeId = path.route.firstNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
+      ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.firstPathKey, path.route.blindedHops), path.paymentInfo)
     })
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
@@ -330,8 +331,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payerKey = randomKey()
     val invoice = createBolt12Invoice(Features(BasicMultiPartPayment -> Optional), payerKey)
     val resolvedPaths = invoice.blindedPaths.map(path => {
-      val introductionNodeId = path.route.introductionNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
-      ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.blindingKey, path.route.blindedNodes), path.paymentInfo)
+      val introductionNodeId = path.route.firstNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
+      ResolvedPath(FullBlindedRoute(introductionNodeId, path.route.firstPathKey, path.route.blindedHops), path.paymentInfo)
     })
     val req = SendPaymentToNode(sender.ref, finalAmount, invoice, resolvedPaths, 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams, payerKey_opt = Some(payerKey))
     sender.send(initiator, req)
@@ -362,50 +363,24 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val ignoredRoutingHints = List(List(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(9), features = featuresWithTrampoline, extraHops = ignoredRoutingHints)
-    val trampolineFees = 21_000 msat
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, Seq((trampolineFees, CltvExpiryDelta(12))), nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val req = SendTrampolinePayment(sender.ref, invoice, b, nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
-    multiPartPayFsm.expectMsgType[SendPaymentConfig]
+    assert(trampolinePayFsm.expectMsgType[TrampolinePaymentLifecycle.SendPayment].invoice == invoice)
 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
-    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, req)))
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
-    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, Nil, req)))
-
-    val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg.recipient.nodeId == c)
-    assert(msg.recipient.totalAmount == finalAmount)
-    assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
-    assert(msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
-    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
-    assert(msg.maxAttempts == nodeParams.maxPaymentAttempts)
+    sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingTrampolinePayment(sender.ref, req)))
   }
 
   test("forward trampoline to legacy payment") { f =>
     import f._
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some wallet invoice"), CltvExpiryDelta(9))
-    val trampolineFees = 21_000 msat
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, Seq((trampolineFees, CltvExpiryDelta(12))), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val req = SendTrampolinePayment(sender.ref, invoice, b, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
-    multiPartPayFsm.expectMsgType[SendPaymentConfig]
-
-    val msg = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg.recipient.nodeId == c)
-    assert(msg.recipient.totalAmount == finalAmount)
-    assert(msg.recipient.expiry.toLong == currentBlockCount + 9 + 1)
-    assert(!msg.recipient.features.hasFeature(Features.TrampolinePaymentPrototype))
-    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineNodeId == b)
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineFees)
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineExpiry == CltvExpiry(currentBlockCount + 9 + 1 + 12))
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret != invoice.paymentSecret) // we should not leak the invoice secret to the trampoline node
-    assert(msg.maxAttempts == nodeParams.maxPaymentAttempts)
+    assert(trampolinePayFsm.expectMsgType[TrampolinePaymentLifecycle.SendPayment].invoice == invoice)
   }
 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>
@@ -413,130 +388,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // This is disabled because it would let the trampoline node steal the whole payment (if malicious).
     val routingHints = List(List(Bolt11Invoice.ExtraHop(b, channelUpdate_bc.shortChannelId, 10 msat, 100, CltvExpiryDelta(144))))
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, None, paymentHash, priv_a.privateKey, Left("#abittooreckless"), CltvExpiryDelta(18), None, None, routingHints, features = featuresWithMpp)
-    val trampolineFees = 21_000 msat
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, Seq((trampolineFees, CltvExpiryDelta(12))), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    val req = SendTrampolinePayment(sender.ref, invoice, b, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id == id)
-    assert(fail.failures == LocalFailure(finalAmount, Nil, PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
-
-    multiPartPayFsm.expectNoMessage(50 millis)
-    payFsm.expectNoMessage(50 millis)
-  }
-
-  test("retry trampoline payment") { f =>
-    import f._
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
-    val trampolineAttempts = (21_000 msat, CltvExpiryDelta(12)) :: (25_000 msat, CltvExpiryDelta(24)) :: Nil
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, trampolineAttempts, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
-    sender.send(initiator, req)
-    val id = sender.expectMsgType[UUID]
-    val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    assert(cfg.storeInDb)
-    assert(!cfg.publishEvent)
-
-    val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg1.recipient.totalAmount == finalAmount)
-    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
-
-    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
-    sender.expectMsgType[PaymentIsPending]
-
-    // Simulate a failure which should trigger a retry.
-    multiPartPayFsm.send(initiator, PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg1.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient())))))
-    multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg2.recipient.totalAmount == finalAmount)
-    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
-
-    // Simulate success which should publish the event and respond to the original sender.
-    val success = PaymentSent(cfg.parentId, invoice.paymentHash, randomBytes32(), finalAmount, c, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), 1000 msat, 500 msat, randomBytes32(), None)))
-    multiPartPayFsm.send(initiator, success)
-    sender.expectMsg(success)
-    eventListener.expectMsg(success)
-    sender.expectNoMessage(100 millis)
-    eventListener.expectNoMessage(100 millis)
-
-    sender.send(initiator, GetPayment(PaymentIdentifier.PaymentUUID(id)))
-    sender.expectMsg(NoPendingPayment(PaymentIdentifier.PaymentUUID(id)))
-  }
-
-  test("retry trampoline payment and fail") { f =>
-    import f._
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
-    val trampolineAttempts = (21_000 msat, CltvExpiryDelta(12)) :: (25_000 msat, CltvExpiryDelta(24)) :: Nil
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, trampolineAttempts, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
-    sender.send(initiator, req)
-    sender.expectMsgType[UUID]
-    val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    assert(cfg.storeInDb)
-    assert(!cfg.publishEvent)
-
-    val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg1.recipient.totalAmount == finalAmount)
-    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
-
-    // Simulate a failure which should trigger a retry.
-    multiPartPayFsm.send(initiator, PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg1.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient())))))
-    multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg2.recipient.totalAmount == finalAmount)
-    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
-
-    // Simulate a failure that exhausts payment attempts.
-    val failed = PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg2.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure()))))
-    multiPartPayFsm.send(initiator, failed)
-    sender.expectMsg(failed)
-    eventListener.expectMsg(failed)
-    sender.expectNoMessage(100 millis)
-    eventListener.expectNoMessage(100 millis)
-  }
-
-  test("retry trampoline payment and fail (route not found)") { f =>
-    import f._
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = featuresWithTrampoline)
-    val trampolineAttempts = (21_000 msat, CltvExpiryDelta(12)) :: (25_000 msat, CltvExpiryDelta(24)) :: Nil
-    val req = SendTrampolinePayment(sender.ref, finalAmount, invoice, b, trampolineAttempts, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
-    sender.send(initiator, req)
-    sender.expectMsgType[UUID]
-
-    val cfg = multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    val msg1 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg1.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 21_000.msat)
-    // Trampoline node couldn't find a route for the given fee.
-    val failed = PaymentFailed(cfg.parentId, invoice.paymentHash, Seq(RemoteFailure(msg1.recipient.totalAmount, Nil, Sphinx.DecryptedFailurePacket(b, TrampolineFeeInsufficient()))))
-    multiPartPayFsm.send(initiator, failed)
-    multiPartPayFsm.expectMsgType[SendPaymentConfig]
-    val msg2 = multiPartPayFsm.expectMsgType[SendMultiPartPayment]
-    assert(msg2.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + 25_000.msat)
-    // Trampoline node couldn't find a route even with the increased fee.
-    multiPartPayFsm.send(initiator, failed)
-
-    val failure = sender.expectMsgType[PaymentFailed]
-    assert(failure.failures == Seq(LocalFailure(finalAmount, Seq(NodeHop(b, c, CltvExpiryDelta(24), 25_000 msat)), RouteNotFound)))
-    eventListener.expectMsg(failure)
-    sender.expectNoMessage(100 millis)
-    eventListener.expectNoMessage(100 millis)
-  }
-
-  test("forward trampoline payment with pre-defined route") { f =>
-    import f._
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some invoice"), CltvExpiryDelta(18))
-    val trampolineAttempt = TrampolineAttempt(randomBytes32(), 100 msat, CltvExpiryDelta(144))
-    val route = PredefinedNodeRoute(finalAmount + trampolineAttempt.fees, Seq(a, b))
-    val req = SendPaymentToRoute(finalAmount, invoice, Nil, route, None, None, Some(trampolineAttempt))
-    sender.send(initiator, req)
-    val payment = sender.expectMsgType[SendPaymentToRouteResponse]
-    assert(payment.trampolineSecret.contains(trampolineAttempt.paymentSecret))
-    payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, c, Upstream.Local(payment.paymentId), Some(invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, confidence = 1.0))
-    val msg = payFsm.expectMsgType[PaymentLifecycle.SendPaymentToRoute]
-    assert(msg.route == Left(route))
-    assert(msg.amount == finalAmount + trampolineAttempt.fees)
-    assert(msg.recipient.totalAmount == finalAmount)
-    assert(msg.recipient.isInstanceOf[TrampolineRecipient])
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolineAmount == finalAmount + trampolineAttempt.fees)
-    assert(msg.recipient.asInstanceOf[TrampolineRecipient].trampolinePaymentSecret == payment.trampolineSecret.get)
+    assert(fail.failures.head.isInstanceOf[LocalFailure])
+    trampolinePayFsm.expectNoMessage(50 millis)
   }
 
 }

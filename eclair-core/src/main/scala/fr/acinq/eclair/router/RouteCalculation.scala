@@ -189,14 +189,6 @@ object RouteCalculation {
         // In that case, we will slightly over-estimate the fee we're paying, but at least we won't exceed our fee budget.
         val maxFee = totalMaxFee - pendingChannelFee - r.pendingPayments.map(_.blindedFee).sum
         (targetNodeId, amountToSend, maxFee, extraEdges)
-      case recipient: TrampolineRecipient =>
-        // Trampoline payments require finding routes to the trampoline node, not the final recipient.
-        // This also ensures that we correctly take the trampoline fee into account only once, even when using MPP to
-        // reach the trampoline node (which will aggregate the incoming MPP payment and re-split as necessary).
-        val targetNodeId = recipient.trampolineHop.nodeId
-        val amountToSend = recipient.trampolineAmount - pendingAmount
-        val maxFee = totalMaxFee - pendingChannelFee - recipient.trampolineFee
-        (targetNodeId, amountToSend, maxFee, Set.empty)
     }
   }
 
@@ -205,7 +197,6 @@ object RouteCalculation {
       recipient match {
         case _: ClearRecipient => Some(route)
         case _: SpontaneousRecipient => Some(route)
-        case recipient: TrampolineRecipient => Some(route.copy(finalHop_opt = Some(recipient.trampolineHop)))
         case recipient: BlindedRecipient =>
           route.hops.lastOption.flatMap {
             hop => recipient.blindedHops.find(_.dummyId == hop.shortChannelId)
@@ -264,7 +255,7 @@ object RouteCalculation {
     }
   }
 
-  def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit log: DiagnosticLoggingAdapter): Data = {
     val boundaries: MessagePath.RichWeight => Boolean = { weight =>
       weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
     }

@@ -342,42 +342,42 @@ object Sphinx extends Logging {
   object RouteBlinding {
 
     /**
-     * @param nodeId introduction node's id (which cannot be blinded since the sender need to find a route to it).
-     * @param blindedPublicKey     blinded public key, which hides the real public key.
-     * @param blindingEphemeralKey blinding tweak that can be used by the receiving node to derive the private key that
-     *                             matches the blinded public key.
-     * @param encryptedPayload     encrypted payload that can be decrypted with the introduction node's private key and the
-     *                             blinding ephemeral key.
+     * @param nodeId           first node's id (which cannot be blinded since the sender need to find a route to it).
+     * @param blindedPublicKey blinded public key, which hides the real public key.
+     * @param pathKey          blinding tweak that can be used by the receiving node to derive the private key that
+     *                         matches the blinded public key.
+     * @param encryptedPayload encrypted payload that can be decrypted with the introduction node's private key and the
+     *                         path key.
      */
-    case class IntroductionNode(nodeId: EncodedNodeId, blindedPublicKey: PublicKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector)
+    case class FirstNode(nodeId: EncodedNodeId, blindedPublicKey: PublicKey, pathKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
      * @param blindedPublicKey blinded public key, which hides the real public key.
      * @param encryptedPayload encrypted payload that can be decrypted with the receiving node's private key and the
-     *                         blinding ephemeral key.
+     *                         path key.
      */
-    case class BlindedNode(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
+    case class BlindedHop(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param introductionNodeId the first node, not blinded so that the sender can locate it.
-     * @param blindingKey        blinding tweak that can be used by the introduction node to derive the private key that
+     * @param firstNodeId        the first node, not blinded so that the sender can locate it.
+     * @param firstPathKey       blinding tweak that can be used by the introduction node to derive the private key that
      *                           matches the blinded public key.
-     * @param blindedNodes       blinded nodes (including the introduction node).
+     * @param blindedHops       blinded nodes (including the introduction node).
      */
-    case class BlindedRoute(introductionNodeId: EncodedNodeId, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
-      require(blindedNodes.nonEmpty, "blinded route must not be empty")
-      val introductionNode: IntroductionNode = IntroductionNode(introductionNodeId, blindedNodes.head.blindedPublicKey, blindingKey, blindedNodes.head.encryptedPayload)
-      val subsequentNodes: Seq[BlindedNode] = blindedNodes.tail
-      val blindedNodeIds: Seq[PublicKey] = blindedNodes.map(_.blindedPublicKey)
-      val encryptedPayloads: Seq[ByteVector] = blindedNodes.map(_.encryptedPayload)
-      val length: Int = blindedNodes.length - 1
+    case class BlindedRoute(firstNodeId: EncodedNodeId, firstPathKey: PublicKey, blindedHops: Seq[BlindedHop]) {
+      require(blindedHops.nonEmpty, "blinded route must not be empty")
+      val firstNode: FirstNode = FirstNode(firstNodeId, blindedHops.head.blindedPublicKey, firstPathKey, blindedHops.head.encryptedPayload)
+      val subsequentNodes: Seq[BlindedHop] = blindedHops.tail
+      val blindedNodeIds: Seq[PublicKey] = blindedHops.map(_.blindedPublicKey)
+      val encryptedPayloads: Seq[ByteVector] = blindedHops.map(_.encryptedPayload)
+      val length: Int = blindedHops.length - 1
     }
 
     /**
-     * @param route        blinded route.
-     * @param lastBlinding blinding point for the last node, which can be used to derive the blinded private key.
+     * @param route       blinded route.
+     * @param lastPathKey path key for the last node, which can be used to derive the blinded private key.
      */
-    case class BlindedRouteDetails(route: BlindedRoute, lastBlinding: PublicKey)
+    case class BlindedRouteDetails(route: BlindedRoute, lastPathKey: PublicKey)
 
     /**
      * Blind the provided route and encrypt intermediate nodes' payloads.
@@ -390,44 +390,44 @@ object Sphinx extends Logging {
     def create(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector]): BlindedRouteDetails = {
       require(publicKeys.length == payloads.length, "a payload must be provided for each node in the blinded path")
       var e = sessionKey
-      val (blindedHops, blindingKeys) = publicKeys.zip(payloads).map { case (publicKey, payload) =>
-        val blindingKey = e.publicKey
+      val (blindedHops, pathKeys) = publicKeys.zip(payloads).map { case (publicKey, payload) =>
+        val pathKey = e.publicKey
         val sharedSecret = computeSharedSecret(publicKey, e)
         val blindedPublicKey = blind(publicKey, generateKey("blinded_node_id", sharedSecret))
         val rho = generateKey("rho", sharedSecret)
         val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(rho, zeroes(12), payload, ByteVector.empty)
-        e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
-        (BlindedNode(blindedPublicKey, encryptedPayload ++ mac), blindingKey)
+        e = e.multiply(PrivateKey(Crypto.sha256(pathKey.value ++ sharedSecret.bytes)))
+        (BlindedHop(blindedPublicKey, encryptedPayload ++ mac), pathKey)
       }.unzip
-      BlindedRouteDetails(BlindedRoute(EncodedNodeId.WithPublicKey.Plain(publicKeys.head), blindingKeys.head, blindedHops), blindingKeys.last)
+      BlindedRouteDetails(BlindedRoute(EncodedNodeId.WithPublicKey.Plain(publicKeys.head), pathKeys.head, blindedHops), pathKeys.last)
     }
 
     /**
      * Compute the blinded private key that must be used to decrypt an incoming blinded onion.
      *
-     * @param privateKey           this node's private key.
-     * @param blindingEphemeralKey unblinding ephemeral key.
+     * @param privateKey this node's private key.
+     * @param pathKey    unblinding ephemeral key.
      * @return this node's blinded private key.
      */
-    def derivePrivateKey(privateKey: PrivateKey, blindingEphemeralKey: PublicKey): PrivateKey = {
-      val sharedSecret = computeSharedSecret(blindingEphemeralKey, privateKey)
+    def derivePrivateKey(privateKey: PrivateKey, pathKey: PublicKey): PrivateKey = {
+      val sharedSecret = computeSharedSecret(pathKey, privateKey)
       privateKey.multiply(PrivateKey(generateKey("blinded_node_id", sharedSecret)))
     }
 
     /**
      * Decrypt the encrypted payload (usually found in the onion) that contains instructions to locate the next node.
      *
-     * @param privateKey           this node's private key.
-     * @param blindingEphemeralKey unblinding ephemeral key.
-     * @param encryptedPayload     encrypted payload for this node.
-     * @return a tuple (decrypted payload, unblinding ephemeral key for the next node)
+     * @param privateKey       this node's private key.
+     * @param pathKey          unblinding ephemeral key.
+     * @param encryptedPayload encrypted payload for this node.
+     * @return a tuple (decrypted payload, path key for the next node)
      */
-    def decryptPayload(privateKey: PrivateKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector): Try[(ByteVector, PublicKey)] = Try {
-      val sharedSecret = computeSharedSecret(blindingEphemeralKey, privateKey)
+    def decryptPayload(privateKey: PrivateKey, pathKey: PublicKey, encryptedPayload: ByteVector): Try[(ByteVector, PublicKey)] = Try {
+      val sharedSecret = computeSharedSecret(pathKey, privateKey)
       val rho = generateKey("rho", sharedSecret)
       val decrypted = ChaCha20Poly1305.decrypt(rho, zeroes(12), encryptedPayload.dropRight(16), ByteVector.empty, encryptedPayload.takeRight(16))
-      val nextBlindingEphemeralKey = blind(blindingEphemeralKey, computeBlindingFactor(blindingEphemeralKey, sharedSecret))
-      (decrypted, nextBlindingEphemeralKey)
+      val nextPathKey = blind(pathKey, computeBlindingFactor(pathKey, sharedSecret))
+      (decrypted, nextPathKey)
     }
 
   }

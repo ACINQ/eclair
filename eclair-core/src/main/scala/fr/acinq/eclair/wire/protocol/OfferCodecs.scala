@@ -18,7 +18,7 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
@@ -57,15 +57,15 @@ object OfferCodecs {
     .subcaseP(0x04) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x02 => e }(tweakFirstByteCodec(2).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
     .subcaseP(0x05) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x03 => e }(tweakFirstByteCodec(3).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
 
-  private val blindedNodeCodec: Codec[BlindedNode] =
+  private val blindedNodeCodec: Codec[BlindedHop] =
     (("nodeId" | publicKey) ::
-      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedHop]
 
-  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
+  private val blindedNodesCodec: Codec[Seq[BlindedHop]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
 
   val blindedRouteCodec: Codec[BlindedRoute] =
     (("firstNodeId" | encodedNodeIdCodec) ::
-      ("blinding" | publicKey) ::
+      ("firstPathKey" | publicKey) ::
       ("path" | blindedNodesCodec)).as[BlindedRoute]
 
   private val offerPaths: Codec[OfferPaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))

@@ -370,7 +370,7 @@ object MultiPartHandler {
                   createBlindedRouteFromHops(dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                 }
                 val contactInfo = route.shortChannelIdDir_opt match {
-                  case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                  case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.firstPathKey, blindedRoute.route.blindedHops)
                   case None => blindedRoute.route
                 }
                 val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
@@ -381,7 +381,7 @@ object MultiPartHandler {
                   val clearRoute = routeResponse.routes.head
                   val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                   val contactInfo = route.shortChannelIdDir_opt match {
-                    case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.blindingKey, blindedRoute.route.blindedNodes)
+                    case Some(shortChannelIdDir) => BlindedRoute(shortChannelIdDir, blindedRoute.route.firstPathKey, blindedRoute.route.blindedHops)
                     case None => blindedRoute.route
                   }
                   val paymentInfo = aggregatePaymentInfo(r.amount, clearRoute.hops ++ dummyHops, nodeParams.channelConf.minFinalExpiryDelta)

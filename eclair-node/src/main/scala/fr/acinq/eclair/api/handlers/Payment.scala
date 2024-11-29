@@ -17,14 +17,14 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.send.PaymentIdentifier
 import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, randomBytes32}
 
 import java.util.UUID
 
@@ -55,16 +55,13 @@ trait Payment {
 
   val sendToRoute: Route = postRequest("sendtoroute") { implicit t =>
     withRoute { hops =>
-      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?,
-        "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, maxFeeMsatFormParam.?, "blip18InboundFees".as[Boolean].?, "excludePositiveInboundFees".as[Boolean].?) {
-        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, maxFee_opt, blip18InboundFees_opt, excludePositiveInboundFees_opt) => {
+      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?, maxFeeMsatFormParam.?, "blip18InboundFees".as[Boolean].?, "excludePositiveInboundFees".as[Boolean].?) {
+        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, maxFee_opt, blip18InboundFees_opt, excludePositiveInboundFees_opt) => {
           val route = hops match {
             case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds, maxFee_opt, blip18InboundFees_opt.getOrElse(false), excludePositiveInboundFees_opt.getOrElse(false))
             case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds, maxFee_opt, blip18InboundFees_opt.getOrElse(false), excludePositiveInboundFees_opt.getOrElse(false))
           }
-          complete(eclairApi.sendToRoute(
-            recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta))
-          )
+          complete(eclairApi.sendToRoute(recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route))
         }
       }
     }

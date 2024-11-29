@@ -80,7 +80,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = badOnion match {
-            case _: InvalidOnionBlinding if add.blinding_opt.isEmpty =>
+            case _: InvalidOnionBlinding if add.pathKey_opt.isEmpty =>
               // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
               // could come from a downstream node.
               val delay = Some(500.millis + Random.nextLong(1500).millis)
