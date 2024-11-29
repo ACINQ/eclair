@@ -453,7 +453,7 @@ object PaymentOnion {
       override val expiry = records.get[OutgoingCltv].get.cltv
       val pathKey_opt: Option[PublicKey] = records.get[PathKey].map(_.publicKey)
       val pathId = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].get.data
-      val paymentConstraints = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
+      val paymentConstraints_opt = blindedRecords.get[RouteBlindingEncryptedDataTlv.PaymentConstraints]
       val allowedFeatures = blindedRecords.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
     }
 

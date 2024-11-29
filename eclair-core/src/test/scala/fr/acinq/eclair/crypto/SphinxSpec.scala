@@ -561,7 +561,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(decryptedPayloadEve) = RouteBlindingEncryptedDataCodecs.decode(eve, pathKeyForEve, tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val Right(payloadEve) = PaymentOnion.FinalPayload.Blinded.validate(tlvsEve, decryptedPayloadEve.tlvs)
       assert(payloadEve.pathId == hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415")
-      assert(payloadEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat))
+      assert(payloadEve.paymentConstraints_opt.contains(RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat)))
       assert(payloadEve.allowedFeatures.isEmpty)
 
       assert(Seq(onionPayloadAlice, onionPayloadBob, onionPayloadCarol, onionPayloadDave, onionPayloadEve) == payloads)
