@@ -59,6 +59,7 @@ object IncomingPaymentPacket {
     def innerPayload: IntermediatePayload.NodeRelay
   }
   case class RelayToTrampolinePacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.Standard, nextPacket: OnionRoutingPacket) extends NodeRelayPacket
+  case class RelayToBlindedTrampolinePacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.Blinded, nextPacket: OnionRoutingPacket) extends NodeRelayPacket
   case class RelayToNonTrampolinePacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.ToNonTrampoline) extends NodeRelayPacket
   case class RelayToBlindedPathsPacket(add: UpdateAddHtlc, outerPayload: FinalPayload.Standard, innerPayload: IntermediatePayload.NodeRelay.ToBlindedPaths) extends NodeRelayPacket
   // @formatter:on
@@ -161,9 +162,14 @@ object IncomingPaymentPacket {
             val trampolinePacket_opt = payload.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet).orElse(payload.get[OnionPaymentPayloadTlv.LegacyTrampolineOnion].map(_.packet))
             trampolinePacket_opt match {
               case Some(trampolinePacket) =>
-                // NB: when we enable blinded trampoline routes, we will need to check if the outer onion contains a
-                // path key and use it to derive the decryption key for the blinded trampoline onion.
-                decryptOnion(add.paymentHash, privateKey, trampolinePacket).flatMap {
+                // If we are an intermediate trampoline node inside a blinded path, the payer doesn't know our node_id
+                // and has encrypted the trampoline onion to our blinded node_id: in that case, the previous trampoline
+                // node will provide the path key in the outer onion.
+                val trampolineOnionDecryptionKey = payload.get[OnionPaymentPayloadTlv.PathKey].map(_.publicKey) match {
+                  case Some(pathKey) => Sphinx.RouteBlinding.derivePrivateKey(privateKey, pathKey)
+                  case None => privateKey
+                }
+                decryptOnion(add.paymentHash, trampolineOnionDecryptionKey, trampolinePacket).flatMap {
                   case DecodedOnionPacket(innerPayload, Some(next)) =>
                     // We are an intermediate trampoline node.
                     if (innerPayload.get[InvoiceRoutingInfo].isDefined) {
@@ -172,7 +178,8 @@ object IncomingPaymentPacket {
                       // The payer is a wallet using the legacy trampoline feature.
                       validateTrampolineToNonTrampoline(add, payload, innerPayload)
                     } else {
-                      validateNodeRelay(add, payload, innerPayload, next)
+                      // The recipient supports trampoline (and may support blinded payments).
+                      validateNodeRelay(add, privateKey, payload, innerPayload, next)
                     }
                   case DecodedOnionPacket(innerPayload, None) =>
                     if (innerPayload.get[OutgoingBlindedPaths].isDefined) {
@@ -184,8 +191,8 @@ object IncomingPaymentPacket {
                       // They can be reached with the invoice data provided.
                       validateTrampolineToNonTrampoline(add, payload, innerPayload)
                     } else {
-                      // We're the final recipient of this trampoline payment.
-                      validateTrampolineFinalPayload(add, payload, innerPayload)
+                      // We're the final recipient of this trampoline payment (which may be blinded).
+                      validateTrampolineFinalPayload(add, privateKey, payload, innerPayload)
                     }
                 }
               case None =>
@@ -228,31 +235,50 @@ object IncomingPaymentPacket {
     }
   }
 
-  private def validateTrampolineFinalPayload(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
-    // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
-    FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
-      FinalPayload.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
-        case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
-        case _ if add.cltvExpiry < outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload if outerPayload.expiry < innerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry)) // previous trampoline didn't forward the right expiry
-        case innerPayload if outerPayload.totalAmount < innerPayload.amount => Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount)) // previous trampoline didn't forward the right amount
-        case innerPayload =>
-          // We merge contents from the outer and inner payloads.
-          // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-          val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
-          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket)))
-      }
+  private def validateTrampolineFinalPayload(add: UpdateAddHtlc, privateKey: PrivateKey, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv]): Either[FailureMessage, FinalPacket] = {
+    // The outer payload cannot use route blinding, but the inner payload may.
+    FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap {
+      case outerPayload if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
+      case outerPayload if add.cltvExpiry < outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+      case outerPayload =>
+        innerPayload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
+          case Some(encrypted) =>
+            decryptEncryptedRecipientData(add, privateKey, outerPayload.records, encrypted.data).flatMap {
+              case DecodedEncryptedRecipientData(blindedPayload, _) => validateBlindedFinalPayload(add, innerPayload, blindedPayload)
+            }
+          case None =>
+            FinalPayload.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
+              case innerPayload if outerPayload.expiry < innerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry)) // previous trampoline didn't forward the right expiry
+              case innerPayload if outerPayload.totalAmount < innerPayload.amount => Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount)) // previous trampoline didn't forward the right amount
+              case innerPayload =>
+                // We merge contents from the outer and inner payloads.
+                // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
+                val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
+                Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket)))
+            }
+        }
     }
   }
 
-  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, RelayToTrampolinePacket] = {
-    // The outer payload cannot use route blinding, but the inner payload may (but it's not supported yet).
-    FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap { outerPayload =>
-      IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).flatMap {
-        case _ if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
-        case _ if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-        case innerPayload => Right(RelayToTrampolinePacket(add, outerPayload, innerPayload, next))
-      }
+  private def validateNodeRelay(add: UpdateAddHtlc, privateKey: PrivateKey, outerPayload: TlvStream[OnionPaymentPayloadTlv], innerPayload: TlvStream[OnionPaymentPayloadTlv], next: OnionRoutingPacket): Either[FailureMessage, IncomingPaymentPacket] = {
+    // The outer payload cannot use route blinding, but the inner payload may.
+    FinalPayload.Standard.validate(outerPayload).left.map(_.failureMessage).flatMap {
+      case outerPayload if add.amountMsat < outerPayload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
+      case outerPayload if add.cltvExpiry != outerPayload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
+      case outerPayload =>
+        innerPayload.get[OnionPaymentPayloadTlv.EncryptedRecipientData] match {
+          case Some(encrypted) =>
+            // The path key can be found:
+            //  - in the inner payload if we are the introduction node of the blinded path (provided by the payer).
+            //  - in the outer payload if we are an intermediate node in the blinded path (provided by the previous trampoline node).
+            val pathKey_opt = innerPayload.get[OnionPaymentPayloadTlv.PathKey].orElse(outerPayload.records.get[OnionPaymentPayloadTlv.PathKey]).map(_.publicKey)
+            decryptEncryptedRecipientData(add, privateKey, pathKey_opt, encrypted.data).flatMap {
+              case DecodedEncryptedRecipientData(blindedPayload, nextPathKey) =>
+                IntermediatePayload.NodeRelay.Blinded.validate(innerPayload, blindedPayload, nextPathKey).left.map(_.failureMessage).map(innerPayload => RelayToBlindedTrampolinePacket(add, outerPayload, innerPayload, next))
+            }
+          case None =>
+            IntermediatePayload.NodeRelay.Standard.validate(innerPayload).left.map(_.failureMessage).map(innerPayload => RelayToTrampolinePacket(add, outerPayload, innerPayload, next))
+        }
     }
   }
 

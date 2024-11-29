@@ -32,9 +32,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager._
@@ -775,6 +776,37 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    assert(receivedAmount >= amount)
+  }
+
+  test("send a blinded payment D->A with trampoline (non-trampoline recipient)") {
+    val amount = 10_000_000 msat
+    val chain = nodes("A").nodeParams.chainHash
+    val offerPath = OnionMessages.buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId)), Recipient(nodes("A").nodeParams.nodeId, None))
+    val offerKey = Sphinx.RouteBlinding.derivePrivateKey(nodes("A").nodeParams.privateKey, offerPath.lastPathKey)
+    val offer = Offer.withPaths(Some(amount), Some("test offer"), Seq(offerPath.route), nodes("A").nodeParams.features.bolt12Features(), chain)
+    val offerHandler = TypedProbe[HandlerCommand]()(nodes("A").system.toTyped)
+    nodes("A").offerManager ! RegisterOffer(offer, Some(offerKey), None, offerHandler.ref)
+
+    val sender = TestProbe()
+    val dave = new EclairImpl(nodes("D"))
+    dave.payOfferTrampoline(offer, amount, 1, nodes("C").nodeParams.nodeId, maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
+
+    val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
+    val receivingRoutes = Seq(ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("A").nodeParams.nodeId), CltvExpiryDelta(500)))
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"0123"))
+
+    val handlePayment = offerHandler.expectMessageType[HandlePayment]
+    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.pluginData_opt.contains(hex"0123"))
+    handlePayment.replyTo ! PaymentActor.AcceptPayment()
+
+    val paymentSent = sender.expectMsgType[PaymentSent]
+    assert(paymentSent.recipientAmount == amount, paymentSent)
+    assert(paymentSent.feesPaid >= 0.msat, paymentSent)
+
+    awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 
