@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.TxId
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
@@ -73,16 +74,25 @@ object UpdateFailMalformedHtlcTlv {
 sealed trait CommitSigTlv extends Tlv
 
 object CommitSigTlv {
+  /**
+   * While a splice is ongoing and not locked, we have multiple valid commitments.
+   * We send one [[CommitSig]] message for each valid commitment.
+   *
+   * @param size        the number of [[CommitSig]] messages in the batch.
+   * @param fundingTxId the funding transaction spent by this commitment.
+   */
+  case class BatchTlv(size: Int, fundingTxId: TxId) extends CommitSigTlv
 
-  /** @param size the number of [[CommitSig]] messages in the batch */
-  case class BatchTlv(size: Int) extends CommitSigTlv
+  private val batchTlv: Codec[BatchTlv] = tlvField(uint16 :: txIdAsHash)
 
-  object BatchTlv {
-    val codec: Codec[BatchTlv] = tlvField(tu16)
-  }
+  /** Similar to [[BatchTlv]] for peers who only support the experimental version of splicing. */
+  case class ExperimentalBatchTlv(size: Int) extends CommitSigTlv
+
+  private val experimentalBatchTlv: Codec[ExperimentalBatchTlv] = tlvField(tu16)
 
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
-    .typecase(UInt64(0x47010005), BatchTlv.codec)
+    .typecase(UInt64(0), batchTlv)
+    .typecase(UInt64(0x47010005), experimentalBatchTlv)
   )
 
 }
