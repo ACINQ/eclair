@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Cryp
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
+import fr.acinq.eclair.blockchain.AddressType
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
@@ -784,7 +785,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
-    case Some(keyManager) => keyManager.masterPubKey(account)
+    case Some(keyManager) => keyManager.masterPubKey(account, AddressType.Bech32)
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
