@@ -335,13 +335,23 @@ object OutgoingPaymentPacket {
   }
 
   private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+    extractSharedSecret(nodeSecret, add).map(sharedSecret => {
+      reason match {
+        case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
+        case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+      }
+    })
+  }
+
+  /**
+   * We decrypt the onion again to extract the shared secret used to encrypt onion failures.
+   * We could avoid this by storing the shared secret after the initial onion decryption, but we would have to store it
+   * in the database since we must be able to fail HTLCs after restarting our node.
+   * It's simpler to extract it again from the encrypted onion.
+   */
+  private def extractSharedSecret(nodeSecret: PrivateKey, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector32] = {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
-      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
-        val encryptedReason = reason match {
-          case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-          case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
-        }
-        Right(encryptedReason)
+      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) => Right(sharedSecret)
       case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
   }
