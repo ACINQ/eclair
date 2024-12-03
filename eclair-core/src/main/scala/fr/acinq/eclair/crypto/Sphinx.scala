@@ -272,6 +272,13 @@ object Sphinx extends Logging {
    */
   case class DecryptedFailurePacket(originNode: PublicKey, failureMessage: FailureMessage)
 
+  /**
+   * The downstream failure could not be decrypted.
+   *
+   * @param unwrapped encrypted failure packet after unwrapping using our shared secrets.
+   */
+  case class CannotDecryptFailurePacket(unwrapped: ByteVector)
+
   object FailurePacket {
 
     /**
@@ -314,18 +321,18 @@ object Sphinx extends Logging {
      *
      * @param packet        failure packet.
      * @param sharedSecrets nodes shared secrets.
-     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
-     *         decrypted, Failure otherwise.
+     * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
+     *         failure packet otherwise.
      */
-    def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[DecryptedFailurePacket] = Try {
+    def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Either[CannotDecryptFailurePacket, DecryptedFailurePacket] = {
       @tailrec
-      def loop(packet: ByteVector, secrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = secrets match {
-        case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
+      def loop(packet: ByteVector, secrets: Seq[(ByteVector32, PublicKey)]): Either[CannotDecryptFailurePacket, DecryptedFailurePacket] = secrets match {
+        case Nil => Left(CannotDecryptFailurePacket(packet))
         case (secret, pubkey) :: tail =>
           val packet1 = wrap(packet, secret)
           val um = generateKey("um", secret)
           FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
-            case Attempt.Successful(value) => DecryptedFailurePacket(pubkey, value.value)
+            case Attempt.Successful(value) => Right(DecryptedFailurePacket(pubkey, value.value))
             case _ => loop(packet1, tail)
           }
       }
@@ -359,10 +366,10 @@ object Sphinx extends Logging {
     case class BlindedHop(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param firstNodeId        the first node, not blinded so that the sender can locate it.
-     * @param firstPathKey       blinding tweak that can be used by the introduction node to derive the private key that
-     *                           matches the blinded public key.
-     * @param blindedHops       blinded nodes (including the introduction node).
+     * @param firstNodeId  the first node, not blinded so that the sender can locate it.
+     * @param firstPathKey blinding tweak that can be used by the introduction node to derive the private key that
+     *                     matches the blinded public key.
+     * @param blindedHops  blinded nodes (including the introduction node).
      */
     case class BlindedRoute(firstNodeId: EncodedNodeId, firstPathKey: PublicKey, blindedHops: Seq[BlindedHop]) {
       require(blindedHops.nonEmpty, "blinded route must not be empty")

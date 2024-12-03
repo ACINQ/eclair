@@ -657,7 +657,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(fail_c.id == add_c.id)
     val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
     assert(fail_b.id == add_b.id)
-    val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
+    val Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
     assert(failingNode == e)
     assert(decryptedFailure == failure)
   }
@@ -693,7 +693,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(fail_c.id == add_c.id)
     val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, CMD_FAIL_HTLC(add_b.id, Left(fail_c.reason)), add_b)
     assert(fail_b.id == add_b.id)
-    val Success(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
+    val Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, payment.sharedSecrets)
     assert(failingNode == c)
     assert(decryptedFailure == failure)
   }

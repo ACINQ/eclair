@@ -229,19 +229,19 @@ class SphinxSpec extends AnyFunSuite {
     val packet1 = FailurePacket.create(sharedSecrets.head, expected.failureMessage)
     assert(packet1.length == 292)
 
-    val Success(decrypted1) = FailurePacket.decrypt(packet1, Seq(0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted1) = FailurePacket.decrypt(packet1, Seq(0).map(i => (sharedSecrets(i), publicKeys(i))))
     assert(decrypted1 == expected)
 
     val packet2 = FailurePacket.wrap(packet1, sharedSecrets(1))
     assert(packet2.length == 292)
 
-    val Success(decrypted2) = FailurePacket.decrypt(packet2, Seq(1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted2) = FailurePacket.decrypt(packet2, Seq(1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
     assert(decrypted2 == expected)
 
     val packet3 = FailurePacket.wrap(packet2, sharedSecrets(2))
     assert(packet3.length == 292)
 
-    val Success(decrypted3) = FailurePacket.decrypt(packet3, Seq(2, 1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted3) = FailurePacket.decrypt(packet3, Seq(2, 1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
     assert(decrypted3 == expected)
   }
 
@@ -258,7 +258,7 @@ class SphinxSpec extends AnyFunSuite {
         sharedSecrets(1)),
       sharedSecrets(2))
 
-    assert(FailurePacket.decrypt(packet, Seq(0, 2, 1).map(i => (sharedSecrets(i), publicKeys(i)))).isFailure)
+    assert(FailurePacket.decrypt(packet, Seq(0, 2, 1).map(i => (sharedSecrets(i), publicKeys(i)))).isLeft)
   }
 
   test("last node replies with a short failure message (old reference test vector)") {
@@ -286,7 +286,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(error4 == hex"9c5add3963fc7f6ed7f148623c84134b5647e1306419dbe2174e523fa9e2fbed3a06a19f899145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12d")
 
       // origin parses error packet and can see that it comes from node #4
-      val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error4, sharedSecrets)
+      val Right(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error4, sharedSecrets)
       assert(pubkey == publicKeys(4))
       assert(failure == TemporaryNodeFailure())
     }
@@ -318,7 +318,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(error4 == hex"2dd2f49c1f5af0fcad371d96e8cddbdcd5096dc309c1d4e110f955926506b3c03b44c192896f45610741c85ed4074212537e0c118d472ff3a559ae244acd9d783c65977765c5d4e00b723d00f12475aafaafff7b31c1be5a589e6e25f8da2959107206dd42bbcb43438129ce6cce2b6b4ae63edc76b876136ca5ea6cd1c6a04ca86eca143d15e53ccdc9e23953e49dc2f87bb11e5238cd6536e57387225b8fff3bf5f3e686fd08458ffe0211b87d64770db9353500af9b122828a006da754cf979738b4374e146ea79dd93656170b89c98c5f2299d6e9c0410c826c721950c780486cd6d5b7130380d7eaff994a8503a8fef3270ce94889fe996da66ed121741987010f785494415ca991b2e8b39ef2df6bde98efd2aec7d251b2772485194c8368451ad49c2354f9d30d95367bde316fec6cbdddc7dc0d25e99d3075e13d3de0822669861dafcd29de74eac48b64411987285491f98d78584d0c2a163b7221ea796f9e8671b2bb91e38ef5e18aaf32c6c02f2fb690358872a1ed28166172631a82c2568d23238017188ebbd48944a147f6cdb3690d5f88e51371cb70adf1fa02afe4ed8b581afc8bcc5104922843a55d52acde09bc9d2b71a663e178788280f3c3eae127d21b0b95777976b3eb17be40a702c244d0e5f833ff49dae6403ff44b131e66df8b88e33ab0a58e379f2c34bf5113c66b9ea8241fc7aa2b1fa53cf4ed3cdd91d407730c66fb039ef3a36d4050dde37d34e80bcfe02a48a6b14ae28227b1627b5ad07608a7763a531f2ffc96dff850e8c583461831b19feffc783bc1beab6301f647e9617d14c92c4b1d63f5147ccda56a35df8ca4806b8884c4aa3c3cc6a174fdc2232404822569c01aba686c1df5eecc059ba97e9688c8b16b70f0d24eacfdba15db1c71f72af1b2af85bd168f0b0800483f115eeccd9b02adf03bdd4a88eab03e43ce342877af2b61f9d3d85497cd1c6b96674f3d4f07f635bb26add1e36835e321d70263b1c04234e222124dad30ffb9f2a138e3ef453442df1af7e566890aedee568093aa922dd62db188aa8361c55503f8e2c2e6ba93de744b55c15260f15ec8e69bb01048ca1fa7bbbd26975bde80930a5b95054688a0ea73af0353cc84b997626a987cc06a517e18f91e02908829d4f4efc011b9867bd9bfe04c5f94e4b9261d30cc39982eb7b250f12aee2a4cce0484ff34eebba89bc6e35bd48d3968e4ca2d77527212017e202141900152f2fd8af0ac3aa456aae13276a13b9b9492a9a636e18244654b3245f07b20eb76b8e1cea8c55e5427f08a63a16b0a633af67c8e48ef8e53519041c9138176eb14b8782c6c2ee76146b8490b97978ee73cd0104e12f483be5a4af414404618e9f6633c55dda6f22252cb793d3d16fae4f0e1431434e7acc8fa2c009d4f6e345ade172313d558a4e61b4377e31b8ed4e28f7cd13a7fe3f72a409bc3bdabfe0ba47a6d861e21f64d2fac706dab18b3e546df4")
 
       // origin parses error packet and can see that it comes from node #4
-      val Success(DecryptedFailurePacket(pubkey, parsedFailure)) = FailurePacket.decrypt(error4, sharedSecrets)
+      val Right(DecryptedFailurePacket(pubkey, parsedFailure)) = FailurePacket.decrypt(error4, sharedSecrets)
       assert(pubkey == publicKeys(4))
       assert(parsedFailure == failure)
     }
@@ -346,7 +346,7 @@ class SphinxSpec extends AnyFunSuite {
     assert(error4 == hex"751c187d145e5498306824f193c6bf9ed4a974fa85b3cc5d32d549ce494c1e7b3a06a19f8a9145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366067d88c50f7e829138fde4f78d39b5b5802f1b92a8a820865af5cc79f9f30bc3f461c66af95d13e5e1f0381c184572a91dee1c849048a647a1158cf884064deddbf1b0b88dfe2f791428d0ba0f6fb2f04e14081f69165ae66d9297c118f0907705c9c4954a199bae0bb96fad763d690e7daa6cfda59ba7f2c8d11448b604d12dc942b5cf1db059d3e73d63967e464b5d5cfd4052de195387de93535e88a2e618e15a7c521d67ce2cc836c49118f205c99f18570504504221e337a29e2716fb28671b2bb91e38ef5e18aaf32c6c02f2fb690358872a1ed28166172631a82c2568d23238017188ebbd48944a147f6cdb3690d5f88e51371cb70adf1fa02afe4ed8b581afc8bcc5104922843a55d52acde09bc9d2b71a663e178788280f3c3eae127d21b0b95777976b3eb17be40a702c244d0e5f833ff49dae6403ff44b131e66df8b88e33ab0a58e379f2c34bf5113c66b9ea8241fc7aa2b1fa53cf4ed3cdd91d407730c66fb039ef3a36d4050dde37d34e80bcfe02a48a6b14ae28227b1627b5ad07608a7763a531f2ffc96dff850e8c583461831b19feffc783bc1beab6301f647e9617d14c92c4b1d63f5147ccda56a35df8ca4806b8884c4aa3c3cc6a174fdc2232404822569c01aba686c1df5eecc059ba97e9688c8b16b70f0d24eacfdba15db1c71f72af1b2af85bd168f0b0800483f115eeccd9b02adf03bdd4a88eab03e43ce342877af2b61f9d3d85497cd1c6b96674f3d4f07f635bb26add1e36835e321d70263b1c04234e222124dad30ffb9f2a138e3ef453442df1af7e566890aedee568093aa922dd62db188aa8361c55503f8e2c2e6ba93de744b55c15260f15ec8e69bb01048ca1fa7bbbd26975bde80930a5b95054688a0ea73af0353cc84b997626a987cc06a517e18f91e02908829d4f4efc011b9867bd9bfe04c5f94e4b9261d30cc39982eb7b250f12aee2a4cce0484ff34eebba89bc6e35bd48d3968e4ca2d77527212017e202141900152f2fd8af0ac3aa456aae13276a13b9b9492a9a636e18244654b3245f07b20eb76b8e1cea8c55e5427f08a63a16b0a633af67c8e48ef8e53519041c9138176eb14b8782c6c2ee76146b8490b97978ee73cd0104e12f483be5a4af414404618e9f6633c55dda6f22252cb793d3d16fae4f0e1431434e7acc8fa2c009d4f6e345ade172313d558a4e61b4377e31b8ed4e28f7cd13a7fe3f72a409bc3bdabfe0ba47a6d861e21f64d2fac706dab18b3e546df4")
 
     // origin parses error packet and can see that it comes from node #4
-    val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error4, sharedSecrets)
+    val Right(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error4, sharedSecrets)
     assert(pubkey == publicKeys(4))
     assert(failure == TemporaryNodeFailure())
   }
@@ -366,7 +366,7 @@ class SphinxSpec extends AnyFunSuite {
       val error2 = FailurePacket.wrap(error1, sharedSecret0)
 
       // origin parses error packet and can see that it comes from node #2
-      val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error2, sharedSecrets)
+      val Right(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error2, sharedSecrets)
       assert(pubkey == publicKeys(2))
       assert(failure == InvalidRealm())
     }
@@ -387,7 +387,7 @@ class SphinxSpec extends AnyFunSuite {
     assert(error2 == hex"c843486107187673b4586f5cdaad43ad84fbac03b39df51bbf9169b2bd682b409a855b2feb0545705f12eba9dbaecee84e328a9c2e4c3086bb1d0909d1f2e4f8a0e9c6be9541e94a849a0887756b984031dcb74d11c20d437a55daf3ee4109dea68ad74f9b742e7571d5e4d1b2ea4f7094787cf361b448a22a547ea85b833aae20f3ba79fb41c6636414c2092d41dd5328e2c1a1c754cb1f0d297628219f91fe946169f593ce7fce79103945d4d24adce46c083ab24757870356af55fcd3d22b9cfd83c45d409eb3081b218448d5dca3a201cf89ac88c9b66049d7c262b32081d3aba2098ea853bfa173ec23aa9253e083dfa881ef487b76780435c1b9f8a1d794557f0ac91d261d280bfb8513ad0c4dab0d7152eb9ee36ae63b8d384613684326d8735dc559f31cecb21b1d55bbcf7a281127adbedd0210b243325fd291cb82d443beec8f4b96aaee4b1a619724d7456b756d391e8fd3256d2b0766e39a435eb4d6d144c7fca1c73105710266e31120565444dfd6e9099e44d73a0f28419809577a267bbbc6671f723669d00c35c8e60fad88d89d4a7477a0c30f9839485197ed76338330f2ca00cf0e31c59da4eeebef977f429ad2c61acac35939866dac5b1df1c3c487ebaf961340c0c1dbc4bedebde7ee0633c3f480b7df265a3d90e78a4bcb9497f4228169fadb647e77afe6f43aa129286bb21767f6e75ac5c092473f99f2cf8b4e191f300c70b210e077a0385d483971bc0c66f5c119c0731a8753793ad12703d9cc5153eb1c8f25b71ee88a8d1d4433aa8f8277366c82111dbebfe0f548411588d54c3606742330d3d84a2f107df98d60995297de11672f6300b11444a04e252d69d8187772798afc6a9cd8b245a5ebd51bf0659f18c57daf1d1f724d2f15d524ab6902fb17a8fa6cee8e01df67735eac34bb0efc183dcb8d2a7cb401bd786c32a17f14c9d9ffc02b4f58c4ebab898a78b4913647d4cb5bafe6f7f27b5a256d1635c10f0ca71796610068c090c270c20bb18ec9d205e640d7655bdf5c9aeae20d7f9426eade0733c19d0aa577caf31f9d5be0a99ed0c509e84ccb555389ca69f09c3e66694a4ea2785f8d839d7dfff08b2c21aff89a023161cb1ebdd1e7a46d6380c0ddbc88eb3526e624fadcd222ecaa09566c2678158f933f03623299fec134a880d39a9d82ba2b29211e7787b3f32d478df856389a02cb68b66fc0dfc0b52353e7360f31e5457a6a9dd34512e912afeb5a92f3cbd3883b62c37e3ba5e4e8b688033150103c810740d130a5597c8a4a16311f50cfb3a919aac1e0a1096f20a14a536c55068ad38f40e62fc6f178b2fee67ca2cbd8afa29ef6c89b217aee02419ca26d59b604521a55e37c0a5a693fbc3ebcba23cd62479ddf62e5521847a2b4ac5e7686ef662c29cf8a8983660530942ee9a6c53b55e08af0b43467989693cefe6267fd524435152c01c9b93aebdec6146366a94162f99ac4c7157c15b988")
 
     // origin parses error packet and can see that it comes from node #2
-    val Success(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error2, sharedSecrets)
+    val Right(DecryptedFailurePacket(pubkey, failure)) = FailurePacket.decrypt(error2, sharedSecrets)
     assert(pubkey == publicKeys(2))
     assert(failure == InvalidRealm())
   }
