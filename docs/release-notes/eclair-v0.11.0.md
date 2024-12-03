@@ -40,7 +40,7 @@ Meanwhile, you can experiment with splicing between eclair nodes on unannounced 
 
 This release includes an early prototype for [liquidity ads](https://github.com/lightning/bolts/pull/1153).
 Liquidity ads allow nodes to sell their liquidity in a trustless and decentralized manner.
-Every node advertizes the rates at which they sell their liquidity, and buyers connect to sellers that offer interesting rates.
+Every node advertises the rates at which they sell their liquidity, and buyers connect to sellers that offer interesting rates.
 
 The liquidity ads specification is still under review and will likely change.
 This feature isn't meant to be used on mainnet yet and is thus disabled by default.
@@ -84,8 +84,8 @@ This is still experimental at this point and is waiting for other implementation
 
 ### API changes
 
-- `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return first 10 entries. (#2890)
-- `createinvoice` now takes an optional `--privateChannelIds` parameter that can be used to add routing hints through private channels. (#2909)
+- `channelstats` now takes optional parameters `--count` and `--skip` to control pagination. By default, it will return the first 10 entries (#2890)
+- `createinvoice` now takes an optional `--privateChannelIds` parameter that can be used to add routing hints through private channels (#2909)
 - `nodes` allows filtering nodes that offer liquidity ads (#2848)
 - `rbfsplice` lets any channel participant RBF the current unconfirmed splice transaction (#2887)
 
