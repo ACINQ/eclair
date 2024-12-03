@@ -334,11 +334,11 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
     extractSharedSecret(nodeSecret, add).map(sharedSecret => {
       reason match {
-        case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-        case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+        case FailureReason.EncryptedDownstreamFailure(packet) => Sphinx.FailurePacket.wrap(packet, sharedSecret)
+        case FailureReason.LocalFailure(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
       }
     })
   }

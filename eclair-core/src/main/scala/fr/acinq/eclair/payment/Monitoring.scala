@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
+import fr.acinq.eclair.wire.protocol.FailureReason
 import kamon.Kamon
 
 object Monitoring {
@@ -127,8 +128,8 @@ object Monitoring {
       val Malformed = "MalformedHtlc"
 
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
-        case Left(_) => Remote
-        case Right(f) => f.getClass.getSimpleName
+        case _: FailureReason.EncryptedDownstreamFailure => Remote
+        case FailureReason.LocalFailure(f) => f.getClass.getSimpleName
       }
 
       def apply(pf: PaymentFailure): String = pf match {

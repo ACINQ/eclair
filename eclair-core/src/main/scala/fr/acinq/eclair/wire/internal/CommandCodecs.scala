@@ -30,9 +30,18 @@ object CommandCodecs {
 
   // A trailing tlv stream was added in https://github.com/lightning/bolts/pull/1021 which wasn't handled properly by
   // our previous set of codecs because we didn't prefix failure messages with their length.
-  private val legacyCmdFailCodec: Codec[CMD_FAIL_HTLC] =
+  private val cmdFailWithoutLengthCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
-      ("reason" | either(bool, varsizebinarydata, provide(TemporaryNodeFailure()).upcast[FailureMessage])) ::
+      ("reason" | either(bool, varsizebinarydata, provide(TemporaryNodeFailure()).upcast[FailureMessage]).xmap[FailureReason](
+        {
+          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet)
+          case Right(f) => FailureReason.LocalFailure(f)
+        },
+        {
+          case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
+          case FailureReason.LocalFailure(f) => Right(f)
+        }
+      )) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
@@ -43,9 +52,27 @@ object CommandCodecs {
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
 
+  // We previously supported only two types of HTLC failures, represented by an Either[ByteVector, FailureMessage].
+  private val cmdFailEitherCodec: Codec[CMD_FAIL_HTLC] =
+    (("id" | int64) ::
+      ("reason" | either(bool8, varsizebinarydata, variableSizeBytes(uint16, failureMessageCodec)).xmap[FailureReason](
+        {
+          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet)
+          case Right(f) => FailureReason.LocalFailure(f)
+        },
+        {
+          case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
+          case FailureReason.LocalFailure(f) => Right(f)
+        }
+      )) ::
+      // No need to delay commands after a restart, we've been offline which already created a random delay.
+      ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
+
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
-      ("reason" | either(bool8, varsizebinarydata, variableSizeBytes(uint16, failureMessageCodec))) ::
+      ("reason" | failureReasonCodec) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -60,9 +87,10 @@ object CommandCodecs {
 
   val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     // NB: order matters!
-    .typecase(3, cmdFailCodec)
+    .typecase(4, cmdFailCodec)
+    .typecase(3, cmdFailEitherCodec)
     .typecase(2, cmdFailMalformedCodec)
-    .typecase(1, legacyCmdFailCodec)
+    .typecase(1, cmdFailWithoutLengthCodec)
     .typecase(0, cmdFulfillCodec)
 
 }
