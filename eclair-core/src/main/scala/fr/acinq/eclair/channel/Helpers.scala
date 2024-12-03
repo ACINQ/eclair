@@ -997,7 +997,8 @@ object Helpers {
         val remoteHtlcPubkey = Generators.derivePubKey(commitment.remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
         val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
         val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
-        val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+        val localPaymentBasepoint = commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+        val localPaymentPubkey = if (commitment.params.channelFeatures.hasFeature(Features.StaticRemoteKey)) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
         val outputs = makeCommitTxOutputs(!commitment.localParams.paysCommitTxFees, commitment.remoteParams.dustLimit, remoteRevocationPubkey, commitment.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitment.remoteFundingPubKey, localFundingPubkey, remoteCommit.spec, commitment.params.commitmentFormat)
         // we need to use a rather high fee for htlc-claim because we compete with the counterparty
         val feeratePerKwHtlc = feerates.fast
