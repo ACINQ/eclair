@@ -1251,9 +1251,10 @@ Returns information about public nodes on the lightning network; this informatio
 
 ### Parameters
 
-Parameter | Description                            | Optional | Type
---------- | -------------------------------------- | -------- | -----------------------------------------------
-nodeIds   | The **nodeIds** of the nodes to return | Yes      | CSV or JSON list of 33-bytes-HexString (String)
+Parameter         | Description                                       | Optional | Type
+----------------- | ------------------------------------------------- | -------- | -----------------------------------------------
+nodeIds           | The **nodeIds** of the nodes to return            | Yes      | CSV or JSON list of 33-bytes-HexString (String)
+liquidityProvider | If true, only returns nodes selling liquidity ads | Yes      | Boolean
 
 ## Node
 
@@ -1479,14 +1480,15 @@ Create a **BOLT11** payment invoice.
 
 ### Parameters
 
-Parameter       | Description                                                | Optional | Type
---------------- | ---------------------------------------------------------- | -------- | ---------------------------
-description     | A description for the invoice                              | Yes (*)  | String
-descriptionHash | Hash of the description for the invoice                    | Yes (*)  | 32-bytes-HexString (String)
-amountMsat      | Amount in millisatoshi for this invoice                    | Yes      | Millisatoshi (Integer)
-expireIn        | Number of seconds that the invoice will be valid           | Yes      | Seconds (Integer)
-fallbackAddress | An on-chain fallback address to receive the payment        | Yes      | Bitcoin address (String)
-paymentPreimage | A user defined input for the generation of the paymentHash | Yes      | 32-bytes-HexString (String)
+Parameter         | Description                                                | Optional | Type
+----------------- | ---------------------------------------------------------- | -------- | ---------------------------
+description       | A description for the invoice                              | Yes (*)  | String
+descriptionHash   | Hash of the description for the invoice                    | Yes (*)  | 32-bytes-HexString (String)
+amountMsat        | Amount in millisatoshi for this invoice                    | Yes      | Millisatoshi (Integer)
+expireIn          | Number of seconds that the invoice will be valid           | Yes      | Seconds (Integer)
+fallbackAddress   | An on-chain fallback address to receive the payment        | Yes      | Bitcoin address (String)
+paymentPreimage   | A user defined input for the generation of the paymentHash | Yes      | 32-bytes-HexString (String)
+privateChannelIds | List of private channels to include as routing hints       | Yes      | CSV or JSON list of channelId
 
 (*): you must specify either description or descriptionHash, but not both.
 
@@ -3051,6 +3053,8 @@ Parameter | Description                                           | Optional | T
 --------- | ----------------------------------------------------- | -------- | -----------------------------------
 from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
 to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
+count     | Limits the number of results returned                 | Yes      | Integer
+skip      | Skip some number of results                           | Yes      | Integer
 
 ## UsableBalances
 
