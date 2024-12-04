@@ -35,7 +35,6 @@ import fr.acinq.eclair.router.Router.{NodeHop, Route}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
-import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampMilli, TimestampSecondLong, UInt64, nodeFee, randomBytes32, randomKey}
@@ -44,7 +43,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
-import scala.util.Success
 
 /**
  * Created by PM on 31/05/2016.
@@ -312,7 +310,12 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
-    assert(payload_e == FinalPayload.Standard(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(paymentSecret, finalAmount), OnionPaymentPayloadTlv.PaymentMetadata(hex"010203"))))
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+    assert(payload_e.amount == finalAmount)
+    assert(payload_e.expiry == finalExpiry)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(hex"010203"))
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].isTrampoline)
   }
 
   test("build outgoing trampoline payment with non-trampoline recipient") {
@@ -355,7 +358,12 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
-    assert(payload_e == FinalPayload.Standard(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(invoice.paymentSecret, finalAmount), OnionPaymentPayloadTlv.PaymentMetadata(hex"010203"))))
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+    assert(payload_e.amount == finalAmount)
+    assert(payload_e.expiry == finalExpiry)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentSecret == invoice.paymentSecret)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(hex"010203"))
+    assert(!payload_e.asInstanceOf[FinalPayload.Standard].isTrampoline)
   }
 
   test("build outgoing trampoline payment with non-trampoline recipient and dummy trampoline packet") {
@@ -412,7 +420,12 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
-    assert(payload_e == FinalPayload.Standard(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(invoice.paymentSecret, finalAmount), OnionPaymentPayloadTlv.PaymentMetadata(hex"010203"))))
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+    assert(payload_e.amount == finalAmount)
+    assert(payload_e.expiry == finalExpiry)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentSecret == invoice.paymentSecret)
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(hex"010203"))
+    assert(!payload_e.asInstanceOf[FinalPayload.Standard].isTrampoline)
   }
 
   test("fail to build outgoing payment with invalid route") {

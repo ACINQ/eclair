@@ -238,7 +238,8 @@ object IncomingPaymentPacket {
         case innerPayload =>
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
+          val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
+          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket)))
       }
     }
   }

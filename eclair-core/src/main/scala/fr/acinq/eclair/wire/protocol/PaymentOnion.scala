@@ -431,6 +431,7 @@ object PaymentOnion {
       val paymentSecret = records.get[PaymentData].map(_.secret).orElse(records.get[KeySend].map(_.paymentPreimage)).get
       val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
       val paymentMetadata = records.get[PaymentMetadata].map(_.data)
+      val isTrampoline = records.get[TrampolineOnion].nonEmpty
     }
 
     object Standard {
@@ -442,12 +443,13 @@ object PaymentOnion {
         Right(Standard(records))
       }
 
-      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
+      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, trampolineOnion_opt: Option[OnionRoutingPacket] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
         val tlvs: Set[OnionPaymentPayloadTlv] = Set(
           Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
-          paymentMetadata.map(m => PaymentMetadata(m))
+          paymentMetadata.map(m => PaymentMetadata(m)),
+          trampolineOnion_opt.map(o => TrampolineOnion(o)),
         ).flatten
         Standard(TlvStream(tlvs, customTlvs))
       }
