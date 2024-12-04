@@ -1278,6 +1278,37 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("htlc success tx double-spent by claim-htlc-timeout") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      import f._
+
+      val feerate = FeeratePerKw(15_000 sat)
+      setFeerate(feerate, fastest = feerate)
+      val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f, aliceBlockHeight() + 144)
+      // We reach the HTLC timeout before publishing our HTLC-success transaction.
+      generateBlocks(144)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+
+      // Bob detects Alice's commit tx and publishes his claim-htlc-timeout, which gets confirmed.
+      probe.send(bob, WatchFundingSpentTriggered(commitTx))
+      bob2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
+      bob2blockchain.expectMsgType[PublishFinalTx] // claim main output
+      val claimHtlcTimeout = bob2blockchain.expectMsgType[PublishReplaceableTx] // claim-htlc-timeout
+      assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
+      wallet.publishTransaction(claimHtlcTimeout.txInfo.tx).pipeTo(probe.ref)
+      probe.expectMsg(claimHtlcTimeout.txInfo.tx.txid)
+      generateBlocks(1)
+
+      // When Alice tries to publish her HTLC-success, it is immediately aborted.
+      val htlcSuccessPublisher = createPublisher()
+      htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd == htlcSuccess)
+      assert(result.reason == ConflictingTxConfirmed)
+      htlcSuccessPublisher ! Stop
+    }
+  }
+
   test("htlc success tx confirmation target reached, increasing fees") {
     withFixture(Seq(50 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._

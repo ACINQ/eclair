@@ -561,7 +561,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(decryptedPayloadEve) = RouteBlindingEncryptedDataCodecs.decode(eve, pathKeyForEve, tlvsEve.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
       val Right(payloadEve) = PaymentOnion.FinalPayload.Blinded.validate(tlvsEve, decryptedPayloadEve.tlvs)
       assert(payloadEve.pathId == hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415")
-      assert(payloadEve.paymentConstraints == RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat))
+      assert(payloadEve.paymentConstraints_opt.contains(RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(750000), 50 msat)))
       assert(payloadEve.allowedFeatures.isEmpty)
 
       assert(Seq(onionPayloadAlice, onionPayloadBob, onionPayloadCarol, onionPayloadDave, onionPayloadEve) == payloads)
@@ -577,14 +577,14 @@ class SphinxSpec extends AnyFunSuite {
   }
 
   test("invalid blinded route") {
-    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route.encryptedPayloads
+    val path = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).route
+    assert(RouteBlinding.decryptPayload(privKeys(0), path.firstPathKey, path.encryptedPayloads(0)).isSuccess)
     // Invalid node private key:
-    val ephKey0 = sessionKey.publicKey
-    assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)
-    // Invalid unblinding ephemeral key:
-    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, encryptedPayloads(0)).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(1), path.firstPathKey, path.encryptedPayloads(0)).isFailure)
+    // Invalid path key:
+    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, path.encryptedPayloads(0)).isFailure)
     // Invalid encrypted payload:
-    assert(RouteBlinding.decryptPayload(privKeys(0), ephKey0, encryptedPayloads(1)).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(0), path.firstPathKey, path.encryptedPayloads(1)).isFailure)
   }
 
 }

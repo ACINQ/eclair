@@ -126,7 +126,6 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
 
     val testCases = Seq(
       hex"0c08000b35702d0fa9d2" -> MissingRequiredTlv(UInt64(6)), // missing path id
-      hex"0603010203" -> MissingRequiredTlv(UInt64(12)), // missing payment constraints
     )
 
     for ((bin, expected) <- testCases) {

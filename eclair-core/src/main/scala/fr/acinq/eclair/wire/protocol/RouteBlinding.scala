@@ -126,7 +126,6 @@ object BlindedRouteData {
 
   def validPaymentRecipientData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, TlvStream[RouteBlindingEncryptedDataTlv]] = {
     if (records.get[PathId].isEmpty) return Left(MissingRequiredTlv(UInt64(6)))
-    if (records.get[PaymentConstraints].isEmpty) return Left(MissingRequiredTlv(UInt64(12)))
     Right(records)
   }
 

@@ -385,7 +385,7 @@ object Sphinx extends Logging {
      * @param sessionKey this node's session key.
      * @param publicKeys public keys of each node on the route, starting from the introduction point.
      * @param payloads   payloads that should be encrypted for each node on the route.
-     * @return a blinded route and the blinding tweak of the last node.
+     * @return a blinded route and the path key for the last node.
      */
     def create(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector]): BlindedRouteDetails = {
       require(publicKeys.length == payloads.length, "a payload must be provided for each node in the blinded path")
