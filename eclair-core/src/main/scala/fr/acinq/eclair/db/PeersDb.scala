@@ -17,8 +17,10 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.NodeAddress
+import scodec.bits.ByteVector
 
 trait PeersDb {
 
@@ -33,5 +35,14 @@ trait PeersDb {
   def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit
 
   def getRelayFees(nodeId: PublicKey): Option[RelayFees]
+
+  /** Update our peer's blob data when [[fr.acinq.eclair.Features.ProvideStorage]] is enabled. */
+  def updateStorage(nodeId: PublicKey, data: ByteVector): Unit
+
+  /** Get the last blob of data we stored for that peer, if [[fr.acinq.eclair.Features.ProvideStorage]] is enabled. */
+  def getStorage(nodeId: PublicKey): Option[ByteVector]
+
+  /** Remove storage from peers that have had no active channel with us for a while. */
+  def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit
 
 }

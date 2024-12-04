@@ -777,4 +777,17 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(updateAddHtlcCodec.encode(decoded.value).require.bytes == bin)
     }
   }
+
+  test("encode/decode peer storage messages") {
+    val testCases = Seq(
+      hex"0007 0003 012345" -> PeerStorageStore(hex"012345"),
+      hex"0009 0002 abcd" -> PeerStorageRetrieval(hex"abcd"),
+    )
+    for ((bin, ref) <- testCases) {
+      val decoded = lightningMessageCodec.decode(bin.bits).require
+      assert(decoded.value == ref)
+      assert(decoded.remainder.isEmpty)
+      assert(lightningMessageCodec.encode(ref).require.bytes == bin)
+    }
+  }
 }
