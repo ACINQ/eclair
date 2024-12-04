@@ -1897,6 +1897,12 @@ eclair-cli nodes
 <td>Yes</td>
 <td>CSV or JSON list of 33-bytes-HexString (String)</td>
 </tr>
+<tr>
+<td>liquidityProvider</td>
+<td>If true, only returns nodes selling liquidity ads</td>
+<td>Yes</td>
+<td>Boolean</td>
+</tr>
 </tbody></table>
 <h2 id='node'>Node</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="s2">"http://localhost:8080/node"</span>
 
@@ -2163,6 +2169,12 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <td>A user defined input for the generation of the paymentHash</td>
 <td>Yes</td>
 <td>32-bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>privateChannelIds</td>
+<td>List of private channels to include as routing hints</td>
+<td>Yes</td>
+<td>CSV or JSON list of channelId</td>
 </tr>
 </tbody></table>
 
@@ -4217,6 +4229,18 @@ statistics about the routing activity of the channels. Values are in Satoshis.</
 <td>Filters elements no younger than this unix-timestamp</td>
 <td>Yes</td>
 <td>Unix timestamp in seconds (Integer)</td>
+</tr>
+<tr>
+<td>count</td>
+<td>Limits the number of results returned</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+<tr>
+<td>skip</td>
+<td>Skip some number of results</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 </tbody></table>
 <h2 id='usablebalances'>UsableBalances</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/usablebalances"</span>
