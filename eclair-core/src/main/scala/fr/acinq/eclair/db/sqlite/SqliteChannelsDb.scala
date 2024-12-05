@@ -32,7 +32,7 @@ import java.sql.{Connection, Statement}
 
 object SqliteChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 5
+  val CURRENT_VERSION = 6
 }
 
 class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
@@ -83,13 +83,23 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
     }
 
+    def migration56(): Unit = {
+      // We're changing our composite index to two distinct indices to improve performance.
+      statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
+      statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
+      statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
         statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number INTEGER NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
         statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-      case Some(v@(1 | 2 | 3 | 4)) =>
+        // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
+        // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
+        statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
+        statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
+      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -102,6 +112,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         }
         if (v < 5) {
           migration45()
+        }
+        if (v < 6) {
+          migration56()
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
