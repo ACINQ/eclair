@@ -154,7 +154,7 @@
         <dependency>
             <groupId>io.kamon</groupId>
             <artifactId>kanela-agent</artifactId>
-            <version>1.0.17</version>
+            <version>${kanela-agent.version}</version>
         </dependency>
     </dependencies>
 </project>

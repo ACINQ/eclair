@@ -491,7 +491,11 @@ object NodeAddress {
 }
 
 object IPAddress {
-  def apply(inetAddress: InetAddress, port: Int): IPAddress = inetAddress match {
+  def apply(inetAddress: InetAddress, port: Int): IPAddress = (inetAddress: @unchecked) match {
+    // we need the @unchecked annotation to suppress a "matching not exhaustive". Before JDK21, InetAddress was a regular so scalac would not check anything (it only checks sealed patterns)
+    // with JDK21 InetAddress is defined as `public sealed class InetAddress implements Serializable permits Inet4Address, Inet6Address` and scalac complains because in theory there could be
+    // an InetAddress() instance, though its not possible in practice because the constructor is package private :(
+    // remove @unchecked if we upgrade to a newer JDK that does not have this pb, or if scalac pattern matching becomes more clever
     case address: Inet4Address => IPv4(address, port)
     case address: Inet6Address => IPv6(address, port)
   }
