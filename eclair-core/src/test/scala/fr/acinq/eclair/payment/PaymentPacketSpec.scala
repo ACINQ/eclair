@@ -1193,6 +1193,491 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(decryptedFailure == failure)
   }
 
+  test("build htlc failure onion with attribution data (trampoline payment)") {
+    // Create a trampoline payment to e:
+    //        .--> d --.
+    //       /          \
+    // b -> c            e
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, Features.TrampolinePayment -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(12), paymentSecret = paymentSecret, features = invoiceFeatures)
+    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
+
+    val add_c = UpdateAddHtlc(randomBytes32(), 0, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, 1.0, None)
+    val Right(RelayToTrampolinePacket(_, _, payload_c, trampolinePacket_e, _)) = decrypt(add_c, priv_c.privateKey, Features.empty)
+    val (add_d, sharedSecrets_c) = {
+      // c finds a path c->d->e
+      val payloads = Seq(
+        NodePayload(d, PaymentOnion.IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, payload_c.amountToForward, payload_c.outgoingCltv)),
+        NodePayload(e, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(payload_c.amountToForward, payload_c.amountToForward, payload_c.outgoingCltv, paymentSecret, trampolinePacket_e, None))
+      )
+      val onion_d = OutgoingPaymentPacket.buildOnion(payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      val add_d = UpdateAddHtlc(randomBytes32(), 0, payload_c.amountToForward + 500.msat, paymentHash, payload_c.outgoingCltv + CltvExpiryDelta(36), onion_d.packet, None, 1.0, None)
+      (add_d, onion_d.sharedSecrets)
+    }
+    val Right(ChannelRelayPacket(_, _, packet_e, _)) = decrypt(add_d, priv_d.privateKey, Features.empty)
+    val add_e = UpdateAddHtlc(randomBytes32(), 3, payload_c.amountToForward, paymentHash, payload_c.outgoingCltv, packet_e, None, 1.0, None)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    assert(payload_e.isInstanceOf[FinalPayload.Standard])
+
+    // e returns a trampoline failure
+    val failure = IncorrectOrUnknownPaymentDetails(finalAmount, BlockHeight(currentBlockCount))
+    val Right(fail_e: UpdateFailHtlc) = buildHtlcFailure(priv_e.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_e.id, FailureReason.LocalTrampolineFailure(failure), Some(TimestampMilli(500))), add_e, now = TimestampMilli(550))
+    assert(fail_e.id == add_e.id)
+    val Right(fail_d: UpdateFailHtlc) = buildHtlcFailure(priv_d.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_d.id, FailureReason.EncryptedDownstreamFailure(fail_e.reason, fail_e.attribution_opt), Some(TimestampMilli(350))), add_d, now = TimestampMilli(560))
+    assert(fail_d.id == add_d.id)
+    // c tries to decrypt the failure but cannot because it's encrypted for b, so she relays it upstream.
+    // c is however able to decrypt attribution data for the downstream path.
+    val failureDetails_c = Sphinx.FailurePacket.decrypt(fail_d.reason, fail_d.attribution_opt, sharedSecrets_c)
+    assert(failureDetails_c.holdTimes == Seq(HoldTime(200 millis, d), HoldTime(0 millis, e)))
+    assert(failureDetails_c.failure.isLeft)
+    val Sphinx.CannotDecryptFailurePacket(unwrapped_c, attribution_c) = failureDetails_c.failure.left.toOption.get
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_c.id, FailureReason.EncryptedDownstreamFailure(unwrapped_c, attribution_c), Some(TimestampMilli(250))), add_c, now = TimestampMilli(600))
+    // b decrypts the failure with the outer onion secrets *and* trampoline onion secrets
+    val failureDetails_b = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.onion.sharedSecrets)
+    assert(failureDetails_b.holdTimes == Seq(HoldTime(300 millis, c)))
+    assert(failureDetails_b.failure.isLeft)
+    val Sphinx.CannotDecryptFailurePacket(unwrapped_b, attribution_b) = failureDetails_b.failure.left.toOption.get
+    val Sphinx.HtlcFailure(holdTimes, Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure))) = Sphinx.FailurePacket.decrypt(unwrapped_b, attribution_b, payment.trampolineOnion.sharedSecrets)
+    assert(holdTimes == List(Sphinx.HoldTime(300 millis, c), Sphinx.HoldTime(0 millis, e)))
+    assert(failingNode == e)
+    assert(decryptedFailure == failure)
+  }
+
+  test("build htlc failure onion (blinded trampoline payment)") {
+    // Eve creates a trampoline blinded path to herself going through Carol and Dave.
+    //                    .-> Dave -.
+    //                   /           \
+    // Alice -> Bob -> Carol         Eve
+    val path = {
+      val blindedPayloadEve = TlvStream[RouteBlindingEncryptedDataTlv](RouteBlindingEncryptedDataTlv.PathId(randomBytes32()))
+      val blindedPayloadDave = TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(e)),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(36), 750, 2_000 msat),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+      )
+      val blindedPayloadCarol = TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(d)),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(64), 500, 3_000 msat),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+      )
+      val blindedPayloads = Seq(blindedPayloadCarol, blindedPayloadDave, blindedPayloadEve).map { p => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(p).require.bytes }
+      val blindedRouteDetails = Sphinx.RouteBlinding.create(randomKey(), Seq(c, d, e), blindedPayloads)
+      val paymentInfo = OfferTypes.PaymentInfo(10_000 msat, 0, CltvExpiryDelta(100), 1 msat, 500_000_000 msat, Features.empty)
+      PaymentBlindedRoute(blindedRouteDetails.route, paymentInfo)
+    }
+
+    // Alice creates a trampoline onion using Eve's blinded path.
+    val trampolineOnion = {
+      val payloadEve = PaymentOnion.FinalPayload.Blinded(
+        records = TlvStream(
+          OnionPaymentPayloadTlv.AmountToForward(150_000_000 msat),
+          OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(800_000)),
+          OnionPaymentPayloadTlv.TotalAmount(150_000_000 msat),
+          OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads.last),
+        ),
+        blindedRecords = TlvStream(RouteBlindingEncryptedDataTlv.PathId(randomBytes32())),
+      )
+      val payloadDave = PaymentOnion.IntermediatePayload.NodeRelay.Blinded(
+        records = TlvStream(OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads(1))),
+        paymentRelayData = BlindedRouteData.PaymentRelayData(TlvStream(
+          RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(e)),
+          RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(36), 750, 2_000 msat),
+          RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+        )),
+        nextPathKey = randomKey().publicKey
+      )
+      val payloadCarol = PaymentOnion.IntermediatePayload.NodeRelay.Blinded(
+        records = TlvStream(
+          OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads.head),
+          OnionPaymentPayloadTlv.PathKey(path.route.firstPathKey),
+        ),
+        paymentRelayData = BlindedRouteData.PaymentRelayData(TlvStream(
+          RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(d)),
+          RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(64), 500, 3_000 msat),
+          RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+        )),
+        nextPathKey = randomKey().publicKey
+      )
+      OutgoingPaymentPacket.buildOnion(NodePayload(c, payloadCarol) :: NodePayload(path.route.blindedNodeIds(1), payloadDave) :: NodePayload(path.route.blindedNodeIds.last, payloadEve) :: Nil, paymentHash, None).toOption.get
+    }
+
+    // Alice creates a payment onion for Carol (Alice -> Bob -> Carol).
+    val (htlcForBob, sharedSecretsAlice) = {
+      val payloadBob = PaymentOnion.IntermediatePayload.ChannelRelay.Standard(ShortChannelId(1105), 150_005_000 msat, CltvExpiry(800_100))
+      val payloadCarol = PaymentOnion.TrampolineWithoutMppPayload.create(150_005_000 msat, CltvExpiry(800_100), trampolineOnion.packet)
+      val onion = OutgoingPaymentPacket.buildOnion(NodePayload(b, payloadBob) :: NodePayload(c, payloadCarol) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      (UpdateAddHtlc(randomBytes32(), 1, 150_010_000 msat, paymentHash, CltvExpiry(800_150), onion.packet, None, 1.0, None), onion.sharedSecrets)
+    }
+
+    // Bob decrypts the onion and relays to Carol.
+    val htlcForCarol = {
+      val Right(packetForBob: ChannelRelayPacket) = decrypt(htlcForBob, priv_b.privateKey, Features.empty)
+      UpdateAddHtlc(randomBytes32(), 1, packetForBob.amountToForward, paymentHash, packetForBob.outgoingCltv, packetForBob.nextPacket, None, 1.0, None)
+    }
+
+    // Carol decrypts the onion and relays to Dave.
+    val (htlcForDave, sharedSecretsCarol) = {
+      val Right(RelayToBlindedTrampolinePacket(_, _, innerPayload, trampolineOnionForDave, _)) = decrypt(htlcForCarol, priv_c.privateKey, Features(Features.RouteBlinding -> FeatureSupport.Optional))
+      assert(innerPayload.outgoing == Left(EncodedNodeId.WithPublicKey.Plain(d)))
+      val outgoingAmount = innerPayload.outgoingAmount(htlcForCarol.amountMsat)
+      val outgoingExpiry = innerPayload.outgoingExpiry(htlcForCarol.cltvExpiry)
+      val payloadDave = PaymentOnion.TrampolineWithoutMppPayload.create(outgoingAmount, outgoingExpiry, trampolineOnionForDave, Some(innerPayload.nextPathKey))
+      val onion = OutgoingPaymentPacket.buildOnion(NodePayload(d, payloadDave) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      (UpdateAddHtlc(randomBytes32(), 1, outgoingAmount, paymentHash, outgoingExpiry, onion.packet, None, 1.0, None), onion.sharedSecrets)
+    }
+
+    // Dave decrypts the onion and relays to Eve.
+    val (htlcForEve, sharedSecretsDave) = {
+      val Right(RelayToBlindedTrampolinePacket(_, _, innerPayload, trampolineOnionForEve, _)) = decrypt(htlcForDave, priv_d.privateKey, Features(Features.RouteBlinding -> FeatureSupport.Optional))
+      assert(innerPayload.outgoing == Left(EncodedNodeId.WithPublicKey.Plain(e)))
+      val outgoingAmount = innerPayload.outgoingAmount(htlcForDave.amountMsat)
+      val outgoingExpiry = innerPayload.outgoingExpiry(htlcForDave.cltvExpiry)
+      val payloadEve = PaymentOnion.TrampolineWithoutMppPayload.create(outgoingAmount, outgoingExpiry, trampolineOnionForEve, Some(innerPayload.nextPathKey))
+      val onion = OutgoingPaymentPacket.buildOnion(NodePayload(e, payloadEve) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      (UpdateAddHtlc(randomBytes32(), 1, outgoingAmount, paymentHash, outgoingExpiry, onion.packet, None, 1.0, None), onion.sharedSecrets)
+    }
+
+    // Eve decrypts the onion and returns a non-blinded failure.
+    val failure = IncorrectOrUnknownPaymentDetails(150_000_000 msat, BlockHeight(800_000))
+    val failedAt = TimestampMilli.now()
+    val failureForDave = {
+      val Right(FinalPacket(_, payload, _)) = decrypt(htlcForEve, priv_e.privateKey, Features(Features.RouteBlinding -> FeatureSupport.Optional))
+      assert(payload.isInstanceOf[FinalPayload.Blinded])
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_e.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(htlcForEve.id, FailureReason.LocalTrampolineFailure(failure), Some(failedAt - 150.millis)), htlcForEve, failedAt)
+      fail
+    }
+
+    // Dave cannot decrypt the failure, so he forwards it to Carol.
+    val failureForCarol = {
+      val Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution)) = Sphinx.FailurePacket.decrypt(failureForDave.reason, failureForDave.attribution_opt, sharedSecretsDave).failure
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_d.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(failureForDave.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution), Some(failedAt - 250.millis)), htlcForDave, failedAt + 50.millis)
+      fail
+    }
+
+    // Carol cannot decrypt the failure, so she forwards it to Bob.
+    val failureForBob = {
+      val Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution)) = Sphinx.FailurePacket.decrypt(failureForCarol.reason, failureForCarol.attribution_opt, sharedSecretsCarol).failure
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution), Some(failedAt - 400.millis)), htlcForCarol, failedAt + 100.millis)
+      fail
+    }
+
+    // Bob cannot decrypt the failure, so he forwards it to Alice.
+    val failureForAlice = {
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(failureForBob.id, FailureReason.EncryptedDownstreamFailure(failureForBob.reason, failureForBob.attribution_opt), Some(failedAt - 550.millis)), htlcForBob, failedAt + 150.millis)
+      fail
+    }
+
+    // Alice is able to decrypt the failure using the outer onion and trampoline onion shared secrets.
+    val Sphinx.HtlcFailure(holdTimes, Right(decrypted)) = Sphinx.FailurePacket.decrypt(failureForAlice.reason, failureForAlice.attribution_opt, sharedSecretsAlice ++ trampolineOnion.sharedSecrets)
+    assert(holdTimes == List(Sphinx.HoldTime(700 millis, b), Sphinx.HoldTime(500 millis, c), Sphinx.HoldTime(500 millis, c)))
+    assert(decrypted.failureMessage == failure)
+    assert(decrypted.originNode == path.route.blindedNodeIds.last)
+  }
+
+  // See bolt04/trampoline-onion-error-test.json
+  test("build htlc failure onion (trampoline reference test vector)") {
+    //                    .-> Dave -.
+    //                   /           \
+    // Alice -> Bob -> Carol         Eve
+    val paymentHash = ByteVector32.fromValidHex("4242424242424242424242424242424242424242424242424242424242424242")
+    val bob = PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
+    val carol = PublicKey(hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
+    val eve = PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")
+
+    // Alice creates a trampoline onion Carol -> Eve.
+    val trampolineOnionForCarol = {
+      val paymentSecret = ByteVector32.fromValidHex("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a")
+      val payloads = Seq(
+        NodePayload(carol, PaymentOnion.IntermediatePayload.NodeRelay.Standard(100_000_000 msat, CltvExpiry(800_000), eve)),
+        NodePayload(eve, PaymentOnion.FinalPayload.Standard.createPayload(100_000_000 msat, 100_000_000 msat, CltvExpiry(800_000), paymentSecret)),
+      )
+      val sessionKey = PrivateKey(hex"0303030303030303030303030303030303030303030303030303030303030303")
+      OutgoingPaymentPacket.buildOnion(sessionKey, payloads, paymentHash, packetPayloadLength_opt = None).toOption.get
+    }
+
+    // Alice wraps it into a payment onion Alice -> Bob -> Carol.
+    val (htlcForBob, sharedSecretsAlice) = {
+      val paymentSecret = ByteVector32.fromValidHex("2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b")
+      val payloads = Seq(
+        NodePayload(bob, PaymentOnion.IntermediatePayload.ChannelRelay.Standard(ShortChannelId.fromCoordinates("572330x7x1105").get, 100_005_000 msat, CltvExpiry(800_250))),
+        NodePayload(carol, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(100_005_000 msat, 100_005_000 msat, CltvExpiry(800_250), paymentSecret, trampolineOnionForCarol.packet, None)),
+      )
+      val sessionKey = PrivateKey(hex"0404040404040404040404040404040404040404040404040404040404040404")
+      val onion = OutgoingPaymentPacket.buildOnion(sessionKey, payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      (UpdateAddHtlc(randomBytes32(), 1, 100_006_000 msat, paymentHash, CltvExpiry(800_300), onion.packet, None, 1.0, None), onion.sharedSecrets)
+    }
+
+    // Bob decrypts the payment onion and forwards it to Carol.
+    val htlcForCarol = {
+      val priv = PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242")
+      val Right(ChannelRelayPacket(_, _, onionForCarol, _)) = decrypt(htlcForBob, priv, Features.empty)
+      UpdateAddHtlc(randomBytes32(), 1, 100_005_000 msat, paymentHash, CltvExpiry(800_250), onionForCarol, None, 1.0, None)
+    }
+
+    // Carol decrypts the payment onion and the inner trampoline onion.
+    val trampolineOnionForEve = {
+      val priv = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
+      val Right(RelayToTrampolinePacket(_, _, _, trampolineOnionForEve, _)) = decrypt(htlcForCarol, priv, Features.empty)
+      trampolineOnionForEve
+    }
+
+    // Carol wraps the trampoline onion for Eve into a payment Carol -> Dave -> Eve.
+    val (htlcForDave, sharedSecretsCarol) = {
+      val paymentSecret = ByteVector32.fromValidHex("2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c")
+      val dave = PublicKey(hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
+      val eve = PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")
+      val payloads = Seq(
+        NodePayload(dave, PaymentOnion.IntermediatePayload.ChannelRelay.Standard(ShortChannelId.fromCoordinates("572330x42x1729").get, 100_000_000 msat, CltvExpiry(800_000))),
+        NodePayload(eve, PaymentOnion.FinalPayload.Standard.createTrampolinePayload(100_000_000 msat, 100_000_000 msat, CltvExpiry(800_000), paymentSecret, trampolineOnionForEve, None)),
+      )
+      val sessionKey = PrivateKey(hex"0505050505050505050505050505050505050505050505050505050505050505")
+      val onion = OutgoingPaymentPacket.buildOnion(sessionKey, payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      (UpdateAddHtlc(randomBytes32(), 1, 100_001_000 msat, paymentHash, CltvExpiry(800_100), onion.packet, None, 1.0, None), onion.sharedSecrets)
+    }
+
+    // Dave decrypts the payment onion and forwards it to Eve.
+    val htlcForEve = {
+      val priv = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
+      val Right(ChannelRelayPacket(_, _, onionForEve, _)) = decrypt(htlcForDave, priv, Features.empty)
+      UpdateAddHtlc(randomBytes32(), 1, 100_000_000 msat, paymentHash, CltvExpiry(800_000), onionForEve, None, 1.0, None)
+    }
+
+    // Eve returns an encrypted failure.
+    val failedAt = TimestampMilli.now()
+    val failureForDave = {
+      val priv = PrivateKey(hex"4545454545454545454545454545454545454545454545454545454545454545")
+      val failure = IncorrectOrUnknownPaymentDetails(100_000_000 msat, BlockHeight(800_000))
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(htlcForEve.id, FailureReason.LocalTrampolineFailure(failure), Some(failedAt)), htlcForEve, failedAt + 1.millis)
+      assert(fail.reason == hex"8d332db2f2192d54ccf1717318e231f5fa80853036e86f7a6d6ac60a88452efeeef9d37d69bbb954bb5868d2c364a3eec1a5647b6f1a166e90f0682882679e8121bc2eed0d750cfef58de6e455920dbb5def6244cb8b2b47bc3f19dc903d9f2c578733aae4e943a1c7ce9893687848d40d2cac174905e99c1b65e4d637583b93c231c593d9752fc6b0265f647cbf708efb2de632f8df4c8253ad56dd13552ff1704ac7f1ed7c1c6450995a7e4c820f55bd1ae4330e7e822f18b2d5cbbe578d5708fbec0474ec2a0501c6100cf644c634c166e7501c7d70723be5defe8b0fd200d7ed64e2b09260867864890558351af9178c867a6cb59e83185ba4e92c64e19a6d057af2856c7b9aeb66a9c30d6f672de9a556d4020aabb388af96e644fa34d8bef34262")
+      fail
+    }
+
+    // Dave forwards the failure to Carol.
+    val failureForCarol = {
+      val priv = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(failureForDave.id, FailureReason.EncryptedDownstreamFailure(failureForDave.reason, failureForDave.attribution_opt), Some(failedAt - 150.millis)), htlcForDave, failedAt + 10.millis)
+      assert(fail.reason == hex"59048eb5ae82a97991db9e51d94efbeb91035627d3aa9608e7079509ec7dceb26bfa9346c7bb4aa33b42edb0d7d29f2e962afd03c5220a2597662bceb3ce0ef43090ddd89dd61b51a5c35bda4b19a74939b538b45680c25430fa3f024a8b16736179f3f583538ba80625aafc6e363a4a4f5055ad780dfe93e0086b26206db463eeed12c77b4df58b3df3f8e977061722f0007329aecaf7f0853bd46ee3afbbc26969f723f61f02a4000b8a59d572d9adfc147b6b53e19a49289714ffb8b64bd5d8f9a57854bd775c8cc488c108031cf4a447ef3f1e011b35d16050b6e91a4de63b85e6167ce602363df02d10cdc29ac52f59a788f16ec2fe65c6717346f054c0e42b1ab87547d047277d901a7e081291a040bdebbc2fa578b7aa996261c2396237255c54")
+      fail
+    }
+
+    // Carol cannot decrypt the failure, so she forwards it to Bob.
+    val failureForBob = {
+      val priv = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
+      assert(sharedSecretsCarol.map(_.secret) == Seq(ByteVector32.fromValidHex("ba32b1206434f6ded793257f34e497d4ba67f66e026a108860cc65dd9a6c8989"), ByteVector32.fromValidHex("e79cf33c343ca26b7048f029ad3c70f0dae0e3061eef960b5677696ffd297f54")))
+      val Left(Sphinx.CannotDecryptFailurePacket(unwrapped, _)) = Sphinx.FailurePacket.decrypt(failureForCarol.reason, failureForCarol.attribution_opt, sharedSecretsCarol).failure
+      assert(unwrapped == hex"af2704cc847cc1e1bd33242f6a123a5139015910d813c18f9c7cfda520519cabaa2bfcdb3e43e30adefd8471e095949ab5d39e1b3b875f48f8162c9740fa837ca72404a0eccaca2b521a46cb5d6cc0d1dcc8a15670efe05d8ba8b22f08b2315b796dbd713b55b7ed639f5fbeff3b0dcb87cd36b44b56530fcb2c752a98497241611ff09c03b6853a7eae890723899057bf3ab77d1638a287178c370305f54ade00af7e5c4fbb838aed9ac86c24fd70c5f716e5cdefdf8c3037bc85b467251b0644a01f3c428744ed09263dd07b6671960775425f9025f290af6e0a53cc16976107ba13200b13703fa5f09c5b4edca19853e9528feef13b4e62633c97e4f417c9a098c2ce7125c29c3196cd92b5240d31ecf2d22197cd26aa005c88598d0ab9fd5ea0e77e")
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, failureForCarol.attribution_opt), Some(failedAt - 320.millis)), htlcForCarol, failedAt + 20.millis)
+      assert(fail.reason == hex"d3ab773d52436535f3f85a1204afc975319b28e7ab953c6ee81d61aa0fc77885abea0f0cbb44a6729b4916f490994dcb180d6cb0fdfe2c50ee0f96ef4d24f82fdb488817e7d099362351df2ded93992d175d1fbcf04ffc1c3f4d1e797c81c652f4f648a03950ed43002b75f23c734de26a33060320a436214f7c2fe71eb3e34c0eabe9eada713b667e882a99667bf6327353447dbd0115c5e0ca74524fb6c4eb2839c7db82804644306f534878c163b0e7f2398592ba3b7155d1db259447c56de0420bb81d9a0a33150e4316818cd66b5d74fb3327e769b83c865aea6e77493bf0a977417b8a52328b5927aec7bd14764a7a304ef15b5349ceb606ada2babc45c1f1b5ed0b9e3b2181a61611b93a6f40f360e508d3a42dcacf690bda01da0086f603c382")
+      fail
+    }
+
+    // Bob forwards the failure to Alice.
+    val failureForAlice = {
+      val priv = PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242")
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(failureForBob.id, FailureReason.EncryptedDownstreamFailure(failureForBob.reason, failureForBob.attribution_opt), Some(failedAt - 410.millis)), htlcForBob, failedAt + 30.millis)
+      assert(fail.reason == hex"f8941a320b8fde4ad7b9b920c69cbf334114737497d93059d77e591eaa78d6334d3e2aeefcb0cc83402eaaf91d07d695cd895d9cad1018abdaf7d2a49d7657b1612729db7f393f0bb62b25afaaaa326d72a9214666025385033f2ec4605dcf1507467b5726d806da180ea224a7d8631cd31b0bdd08eead8bfe14fc8c7475e17768b1321b54dd4294aecc96da391efe0ca5bd267a45ee085c85a60cf9a9ac152fa4795fff8700a3ea4f848817f5e6943e855ab2e86f6929c9e885d8b20c49b14d2512c59ed21f10bd38691110b0d82c00d9fa48a20f10c7550358724c6e8e2b966e56a0aadf458695b273768062fa7c6e60eb72d4cdc67bf525c194e4a17fdcaa0e9d80480b586bf113f14eea530b6728a1c53fe5cee092e24a90f21f4b764015e7ed5e23")
+      fail
+    }
+
+    // Alice decrypts the failure message.
+    assert(sharedSecretsAlice.map(_.secret) == Seq(ByteVector32.fromValidHex("4bb46ded4fb0cae53a11db2e3ed5239ad083e2df6b9a98122268414ad525a868"), ByteVector32.fromValidHex("4546a66fb391bab8f165ffe444bf5d90192d1fad950434033183c64f08b6b091")))
+    val Sphinx.HtlcFailure(holdTimes, Left(Sphinx.CannotDecryptFailurePacket(trampolineFailure, trampolineAttribution))) = Sphinx.FailurePacket.decrypt(failureForAlice.reason, failureForAlice.attribution_opt, sharedSecretsAlice)
+    assert(holdTimes == List(Sphinx.HoldTime(400 millis, bob), Sphinx.HoldTime(300 millis, carol)))
+    assert(trampolineFailure == hex"1ecb52bae42f744559016d17fb74c65e0a252ee89e4fbcd977a6f9b89dda92d5169dca498cde6fd2b33108433ec4243e95f90be7286e4d8ac011fd572c1a5e2e534a374ae2cdad3906e9eafe73be334d40b4796a77b5550742e759590ad4f2af5d32d701a1bc87101b87eed4460bc288970fc905faa3b122fb2f93e5e430f8744da9918e93db0ae9987abb5fbe5740127d0ce48e022e85a988ba84e5390bc3f3e4026b841109489a21d0e7050815fd069d50ff1222a48708badffa2904de8786d00200e59c2f0f6a7f38a1ac2d11cbf1eded8414de55ba516af6c43c339ad02d363b60f91258d2596f6cc329666e825cc830996b4e0726ab85e69bfc52e6e7f91b8fbfb2a3e3b69cf20677138e6aaeb262a463ca9448b27eeacafbe52bee5bca0796ef69")
+    assert(trampolineOnionForCarol.sharedSecrets.map(_.secret) == Seq(ByteVector32.fromValidHex("cf4ca0186dc2c2ea3f8e5b0999418151a6c61339ee09fef4c4804cd2c60fb359"), ByteVector32.fromValidHex("7bd32e41e242e1bb33e9bbfbff62b51249332a7c86d814dd4c8945b9c3bc9950")))
+    val Sphinx.HtlcFailure(trampolineHoldTimes, Right(f)) = Sphinx.FailurePacket.decrypt(trampolineFailure, trampolineAttribution, trampolineOnionForCarol.sharedSecrets)
+    assert(trampolineHoldTimes == List(Sphinx.HoldTime(300 millis, carol), Sphinx.HoldTime(0 millis, eve)))
+    assert(f.originNode == eve)
+    assert(f.failureMessage == IncorrectOrUnknownPaymentDetails(100_000_000 msat, BlockHeight(800_000)))
+  }
+
+  // See bolt04/trampoline-onion-error-test.json
+  test("build htlc failure onion (trampoline reference test vector, blinded payment)") {
+    val preimage = ByteVector32.fromValidHex("85bf91e47ab9f1bccdb43bce6aaf80d3bcf81d7bc6ebdfe515be3650e71c197d")
+    val paymentHash = Crypto.sha256(preimage)
+    val bob = PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
+    val carol = PublicKey(hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")
+    val dave = PublicKey(hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
+    val evePriv = PrivateKey(hex"4545454545454545454545454545454545454545454545454545454545454545")
+    val eve = evePriv.publicKey
+
+    // Eve creates a blinded path to herself going through Carol and Dave.
+    val pathId = hex"c110b6b8bf6e404439f81b0d7b506346c9f2dee3004fa2b79a2f67fa48a4cb12"
+    val path = {
+      val blindedPayloadEve = TlvStream[RouteBlindingEncryptedDataTlv](RouteBlindingEncryptedDataTlv.PathId(pathId))
+      val blindedPayloadDave = TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(eve)),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(30), 0, 2_000 msat),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+      )
+      val blindedPayloadCarol = TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(dave)),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(70), 0, 3_000 msat),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+      )
+      assert(RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(blindedPayloadCarol).require.bytes == hex"0x0421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 0a080046000000000bb80c0500 0cf85001")
+      assert(RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(blindedPayloadDave).require.bytes == hex"0x042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145 0a08001e0000000007d00c0500 0cf85001")
+      assert(RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(blindedPayloadEve).require.bytes == hex"0620c110b6b8bf6e404439f81b0d7b506346c9f2dee3004fa2b79a2f67fa48a4cb12")
+      val sessionKey = PrivateKey(hex"c775094205ef9fd01baf02e3509d35aef5d41072aeceac99ccc18f7ec98fbf9a")
+      val blindedRouteDetails = Sphinx.RouteBlinding.create(sessionKey, Seq(carol, dave, eve), Seq(blindedPayloadCarol, blindedPayloadDave, blindedPayloadEve).map { p =>
+        RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(p).require.bytes
+      })
+      assert(EncodedNodeId(carol) == blindedRouteDetails.route.firstNodeId)
+      assert(PublicKey(hex"02fdbcd6421a898889635964b708e351a2da7623e4f72b0c500b8c2b26b519fcbc") == blindedRouteDetails.lastPathKey)
+      assert(PublicKey(hex"021ec9467be2cae24056472eec967aca614b6ce5639793bf3c367efbdadec505fc") == blindedRouteDetails.route.firstPathKey)
+      val blindedNodes = Seq(
+        PublicKey(hex"0291973446349ea220d41e5dcbc66e4a635d37de56de000dc4161996d07db4d721"),
+        PublicKey(hex"02bd4c23c41d52f27215752ffae592752ce779e2c47330ac3e124465544ff8c124"),
+        PublicKey(hex"03af94235d0a0da23a86b005fdbdaaf60e7c7430119e71b68d364c41e6c242084f"),
+      )
+      assert(blindedNodes == blindedRouteDetails.route.blindedNodeIds)
+      val encryptedPayloads = Seq(
+        hex"ca6bbd4376ccc3bdf31cb3e31e4a6b707a25f387a84b90b47b44703834b578ebbe78fc50625084d3aed99f4801ed353beb522c60d7821234ff8b51ee2a36dd561745ad06",
+        hex"6e7178bd22210c97d06ba273c565f499528b81cfb77f4cc42a430648944c722dc552ca0cc7e7e402d59187b2f6c529a5a35f6221acae703ca133011ecb4536d81ce99958",
+        hex"fb22a19839151cb8d4523696dc6f6e69a8e20ec34a54b788adc253d7292acc9833bc9dde604518e86b86bc6b099cacd9ed17",
+      )
+      assert(encryptedPayloads == blindedRouteDetails.route.encryptedPayloads)
+      val paymentInfo = OfferTypes.PaymentInfo(5_000 msat, 0, CltvExpiryDelta(100), 1 msat, 500_000_000 msat, Features.empty)
+      PaymentBlindedRoute(blindedRouteDetails.route, paymentInfo)
+    }
+
+    // Alice creates a trampoline onion using Eve's blinded path.
+    val trampolineOnion = {
+      assert(EncodedNodeId(carol) == path.route.firstNodeId)
+      val payloadEve = PaymentOnion.FinalPayload.Blinded(
+        records = TlvStream(
+          OnionPaymentPayloadTlv.AmountToForward(150_000_000 msat),
+          OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(800_000)),
+          OnionPaymentPayloadTlv.TotalAmount(150_000_000 msat),
+          OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads.last),
+        ),
+        blindedRecords = TlvStream(RouteBlindingEncryptedDataTlv.PathId(pathId)),
+      )
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadEve.records).require.bytes == hex"45 020408f0d180 04030c3500 0a32fb22a19839151cb8d4523696dc6f6e69a8e20ec34a54b788adc253d7292acc9833bc9dde604518e86b86bc6b099cacd9ed17 120408f0d180")
+      val payloadDave = PaymentOnion.IntermediatePayload.NodeRelay.Blinded(
+        records = TlvStream(
+          OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads(1)),
+        ),
+        paymentRelayData = BlindedRouteData.PaymentRelayData(TlvStream(
+          RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(eve)),
+          RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(30), 0, 2_000 msat),
+          RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+        )),
+        nextPathKey = randomKey().publicKey
+      )
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadDave.records).require.bytes == hex"46 0a446e7178bd22210c97d06ba273c565f499528b81cfb77f4cc42a430648944c722dc552ca0cc7e7e402d59187b2f6c529a5a35f6221acae703ca133011ecb4536d81ce99958")
+      val payloadCarol = PaymentOnion.IntermediatePayload.NodeRelay.Blinded(
+        records = TlvStream(
+          OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads.head),
+          OnionPaymentPayloadTlv.PathKey(path.route.firstPathKey),
+        ),
+        paymentRelayData = BlindedRouteData.PaymentRelayData(TlvStream(
+          RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId(eve)),
+          RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(70), 0, 3_000 msat),
+          RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(850_000), 1 msat),
+        )),
+        nextPathKey = randomKey().publicKey
+      )
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadCarol.records).require.bytes == hex"69 0a44ca6bbd4376ccc3bdf31cb3e31e4a6b707a25f387a84b90b47b44703834b578ebbe78fc50625084d3aed99f4801ed353beb522c60d7821234ff8b51ee2a36dd561745ad06 0c21021ec9467be2cae24056472eec967aca614b6ce5639793bf3c367efbdadec505fc")
+      val sessionKey = PrivateKey(hex"b88c99e501646c71afbea99afba7201069159298e84d327f4663fe76c3246d6c")
+      val trampolineOnion = OutgoingPaymentPacket.buildOnion(sessionKey, NodePayload(carol, payloadCarol) :: NodePayload(path.route.blindedNodeIds(1), payloadDave) :: NodePayload(path.route.blindedNodeIds.last, payloadEve) :: Nil, paymentHash, None).toOption.get
+      val encoded = OnionRoutingCodecs.onionRoutingPacketCodec(trampolineOnion.packet.payload.length.toInt).encode(trampolineOnion.packet).require.bytes
+      assert(encoded == hex"0003775903fcf5d90e9a667d39b7077ac05d6af2887046bae7db7be95d21e2e43cda0ca84ff61e9235e79fcf66e76110f6b0d1c3880ea594fca459db9e7f45700cd068ed3c57a1e08861fd64ff3422847b87f41398f607c50fe731d68283e57f512db8f7c7323d10a67669e6c73f074175465a1777fc0f0fb1d95754b6fd4e118d331a6a2204f8ad8599965ea11ba3a62de6ee557e4e5bf94439eae57f317153e051aef57a61a80d94004a9b15fbb146e0de23c08263021b9915babfe63bf25289dc4a118f7f4ae54034a423ca0d40898775adf8bd7d4c8bb99a355e8543195d7eae5b697a49a7d8886395fa9f9b3783ae76604048553817bf1aa74d6d95d081757fee83bb7cc24c4d57365aac18011881d9e690affb96c9d867a7644ee63f9828d2f942dfa227004fab8eb110f55f7ab3652fe7e57ce6ece0c7edb6601d16f4c60b985d971d16a4c89c6cb7c303e04c9df926397ebd40da168ad0daefb0d834dec4b14869376d82261d51f0eb63a2890cf0571ec0489bb61cb7dbf2dfdb12047492f0248064c121027b37b8bfba04d0e6cdb3c6727f989b54")
+      trampolineOnion
+    }
+
+    // Alice creates a payment onion for Carol (Alice -> Bob -> Carol).
+    val (onionForBob, sharedSecretsAlice) = {
+      val sessionKey = PrivateKey(hex"ba1560fc54cf1813db7f522ccd2dd7479b27bae31a0016748a49d795be7f00c2")
+      val payloadBob = PaymentOnion.IntermediatePayload.ChannelRelay.Standard(ShortChannelId.fromCoordinates("572330x42x2821").get, 150_005_000 msat, CltvExpiry(800_100))
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadBob.records).require.bytes == hex"15 020408f0e508 04030c3564 060808bbaa00002a0b05")
+      val payloadCarol = PaymentOnion.TrampolineWithoutMppPayload.create(150_005_000 msat, CltvExpiry(800_100), trampolineOnion.packet)
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadCarol.records).require.bytes == hex"fd01a8 020408f0e508 04030c3564 14fd01990003775903fcf5d90e9a667d39b7077ac05d6af2887046bae7db7be95d21e2e43cda0ca84ff61e9235e79fcf66e76110f6b0d1c3880ea594fca459db9e7f45700cd068ed3c57a1e08861fd64ff3422847b87f41398f607c50fe731d68283e57f512db8f7c7323d10a67669e6c73f074175465a1777fc0f0fb1d95754b6fd4e118d331a6a2204f8ad8599965ea11ba3a62de6ee557e4e5bf94439eae57f317153e051aef57a61a80d94004a9b15fbb146e0de23c08263021b9915babfe63bf25289dc4a118f7f4ae54034a423ca0d40898775adf8bd7d4c8bb99a355e8543195d7eae5b697a49a7d8886395fa9f9b3783ae76604048553817bf1aa74d6d95d081757fee83bb7cc24c4d57365aac18011881d9e690affb96c9d867a7644ee63f9828d2f942dfa227004fab8eb110f55f7ab3652fe7e57ce6ece0c7edb6601d16f4c60b985d971d16a4c89c6cb7c303e04c9df926397ebd40da168ad0daefb0d834dec4b14869376d82261d51f0eb63a2890cf0571ec0489bb61cb7dbf2dfdb12047492f0248064c121027b37b8bfba04d0e6cdb3c6727f989b54")
+      val onionForBob = OutgoingPaymentPacket.buildOnion(sessionKey, NodePayload(bob, payloadBob) :: NodePayload(carol, payloadCarol) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
+      val encoded = PaymentOnionCodecs.paymentOnionPacketCodec.encode(onionForBob.packet).require.bytes
+      assert(encoded == hex"00024a8829a84a737a3fc6895779624ef7f356199aa9370284126c5d8dd609b0ededf2389838c342759c38ebc1d83652bc317ce75244c3e5147a8b778a294bec8438c9a2fe3707931775ba350aea1e5b2b9961db32cd5afccc68bbe74730866ded045d7f1c427b9fc523272cdc9a767691961bb79a8ac4fe676c0ff93e10074c6cc692400237a7faa43325bd3662161cbe9f8d9f7b4a55c3188534798030bdccfb269e4c6ecb314a066535b76faf83924618fcb95a6aa84d8d22195493b2d705c2472dacf61a2fc564e410da53423846455bd102eec8d372a08ae105b234bf35a8debccca0932fad6ea76b2e6478114c2add5c2aa4f7427a231fb60eb5fa9b7c62b626eeb9b87e90071aebbfca9e6512e04379f149b9d6f0ba2cdaffc4aba69caa46522eebf9e5d5b864a1e9c9132d3dd51032e66462308ace1a591c2266593985196126dcbb653c476ff2132da4173c3f50b42c73e578345ea6a9a673c3f810dc7c1159dd675da6acdf14256543eca500ecf9fe1cd70813b5c4f6d048afd2846fb542a89613423292f56ae1f7a427cd2ac2ef5ad30e3a347487c57d0fd7ff517288720a86e3718d955e4e1b81786721f5c3b6f7e8ff2bedfc295dfb1a4b2731c955c386177e08c85e9449a6f03b599da0efb14fd04eb9911210e3ae46d4a507d624baedf6d6979ee2114b12ab2ed74c14ab246425a4222e005e10273c2b39a5d8c615141403b05354c1812c79a63c7af91cfa8723969097d94f31a1495da02e6262b955f2577b1d8e9fceca90be0c93e61f05c94683f642917ee2599a42f13a00024dc81fbdfb35ad437805edbed0453f9f31643c6af0db46950f9290c2a5a0839baf53afe33c310fb3fd542127b087997eb62a8ad9b5a04f4bce859f11a31224a5535678a625ff628c8ac87b533cc606321dfc553d3caf5e68c1e587c0e80248a09b406555c2233dd35cf9d803c9f9cdb1cc65de2f6c42bbadf875e647541ec052570d3fa66e98ceee34060599bd18a98bd004f7d7cfc80bc5fdfbd182eff1471180b3fb3de0dca7af2cb1ac56473a78caec24e98904b78dd23ca81de5de0c2f5f63c1f9b5911d4191a47860b0ef65412cd76b354357e4a686b571fd9f2575c4ce18fd5a4a151faea0368815a2efd504ad27be5cd3077ed0c165db4e9c70bf554ae90fd2625b361d85e030f65fae4fa62affb0457d74072c125e1c1d1172d6081124cbf11045fad8d7a366d5fa3c534a89ab8c96c56dadca8a7efc6b12f077955db19dd4f662515e9eed9eb547df5df0fbf391fcdb3031ad83b594f12c35e01a4467f1cefbb16e097292eaabe073fbbd02ddcec0cca5c6169e352236b78021532d058e0d4ccf503a73840e7cef1209d8b10e62dfc2e1e8a86327e90dc39534a4f34b5fcebdcdd70a50b2689aad5fe0c77515f5efaf33d38e82e8a708d08bac92f31e2d3cdf65278599984741cfd630111c78bf6f6d4766b103247a46b0d5fc7ebeffc92484f5493a5023f6fd5d45a2d11906f72730fe98ba83948a92eca2671a35d843f652a085799118804e9cb5af10d9f598fb9cde9dd0f0da64f8ba6cb5acd5fee9dcdf7cb9f25e878f1f5e1eec874f598a0641352cb9b9bd201421476150c7f14d61f95ed8db27c9e2380915efa7c994625a207f09f40331f79ee889e8abd519bd28e78eaed5261d75c5cde8d67223bec4b4b83009a84f3e7fd7453a80ac4a4c0cad6913b84fdbc94a612ca3abcde92f0df8da1e7414565f3aa24d8e2a82c9e1d09c927aaedd5992fc3abc2393f64a72351237a871a00ad58b1378851cbe8489cb149ff71fe1a1cf063e97751c8c1360675925c1aae9ca78288c7fe081fc6de52bf09e7ff0aa58eedc910661c74fa812a2ec43368a53263f11ccd916ed6a7e06f356fffdd5dcca2e12ae7fe559eb1067a33b44")
+      (onionForBob.packet, onionForBob.sharedSecrets)
+    }
+
+    // Bob decrypts the onion and relays to Carol.
+    val onionForCarol = {
+      val bobPriv = PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242")
+      val add = UpdateAddHtlc(randomBytes32(), 1, 150_010_000 msat, paymentHash, CltvExpiry(800_150), onionForBob, None, 1.0, None)
+      val Right(packetForBob: ChannelRelayPacket) = decrypt(add, bobPriv, Features.empty)
+      assert(packetForBob.payload.outgoing.contains(ShortChannelId.fromCoordinates("572330x42x2821").get))
+      assert(packetForBob.amountToForward == 150_005_000.msat)
+      assert(packetForBob.outgoingCltv == CltvExpiry(800_100))
+      val encoded = PaymentOnionCodecs.paymentOnionPacketCodec.encode(packetForBob.nextPacket).require.bytes
+      assert(encoded == hex"00030147117e68955d3033a3dc6334599ee4d01cd141e0a2ee77361665510a14eb337bf9125b50b71732f89f6eb42d27437efbb005319f70d11f4560749fbb2b43b600170bb1d5338c179db895a4bf817538ff1dd512c18fd4c59831c97fc9681c01a3a424f1ec27d447dae3650e47f9c1bb011ecc76483e91c0341455ee2ee30b05ae271e52fbc6086bea913eda6ba1b74f31e1dadd59c4a13886b907d353f7bd2785b8f204013aeef68d6de7340d2380452a5ef70f8c7542611d4bd8c66c3df00988240c0eed8f75ad554f0031e8a4cef9d73d7407ecb4a343d3ac1a9a68eeaa2194e245c66181726756fac2c30ad06c59f21a11167aa2750500c49657897544ee91b7aa0ddb2ef4fa23fc502926d4ce9b751c08668914be4fc558efd1d634ffee02ce5c00f10926696babcf70a530c27a4efb8e26dc6b7813ece23d64263dcd39a173f4259fffe19bca10689c671ba3903cd408ee792e87be524feaa38405ec7a99b9e7704edbc0c2410eeaee04268384e5baa78cea60b662efef7892fde2e8694db29a2f4f30e163ee951a348d7688bcbd4cd6a327ee36dfb3a200f3a04787234c971ec96df0493b9637c36f757e0cdc5f65a09e5c9d0b8c36313b89ecad900e5d7b443fb8b7c03d0e1edd06b6c0955c62641333fd00f339ed81ef3159125e6563b21d4852cc70bbb159ef06363b6ed5025ac1eca1f35d379be937837db850748090178a848057899379d611484f10139edc02e3b3d2177c0d430496bc78328b41655da444298c6efe022818b1a685846cb4396d9328a6e1ce63538f35736f67da52def0b0c2c68836a3282c4e52ecd8ea88bcec7f17d4c60dc4678cc09b70997f871809766f3b7149235abc0b0ef4db40c4dd3e37b383238ed2841354ba5664f6378c5c642013c70d4b666359ea6440dccf37be08c0c7ab7026658411aebe43a6f05b1dbf925acc4aeda16d3653b59abd4c2b83125fe71951b8d782c97f5fafa0b04ab9f32b69e3b6abf80ca02453eceb7e0147ffd8ff69ad6239e46a3cfa9fa8cdb9ac951e14b037cf117a323bc022baf93ec24146208516945585623d23e32868cfef47aefcae5ec8fdf45f3fda1a0562dd6d1e8dfdbacf90c16a94f0586dc2def77b1ce386d2e8c23182a9d05aa4e7f954e3cdba07742500eeb48a049f461383eb6431ed4f0cbe7abed1063c67723e94f50c264a056d8fe2f75270b55baa05afec063bee72d923bd59e3bbbe5a051713abbd832424838916b638b3b2e1d78483f7e4c1135968b81b5a270f048fed9ca304c292c8551a625d364a76722a53c4cc10ea2fcde378c86fd16fc7515b38e13cb9e754a4ca93ddec33febf4bdea92f4613d3c035cf7e17c876953f09b2f7d28d52c2db8bfa58be4daf4a646a96358c6f3fef0da19b3dfb07990b1bcdba62a5750eac5b0df938f447a05bf26ea9acf8d89115ef998ad4b2bd57397caae6f52825fe7d39fed886399e25cd80a502d6c5e402c283a04fc8e212ec0805d48ec3213aa065a7346fc6d05897098cdcded7e89c5a5df675c7c085186b497dff317d85fbde9ca6d8c15d0e74a337c233b24eb647d007a52bd1ae9957c1e5085f1b7db1d56b2711b8124f2ff62cacd223fc542d65ae93b4fedb5d2fa691664bb1d6f63469ef34cb0ffa1a3de7a0b68140baa042eee5e07d964163b43c751c057f04d30c260d37dae8dcdae19dcb333e7bd75b49452fb52ca2f4d05911cd03b3703ef90779252752c57ad82a9199bf3fc8c400300ba8b7327efdf9f03d9723f4ba9b2dd4c001fbeeb70d127c7e32ac3c1b73f6644bb4e3314ab121ac59f2387acbdbd6ca6bc6d4b5cc777d3f9affbc04caaac72da3c56b25af3fd12bcff88c8964bdedad9c3ebd38d0083e82c40d10d5fb4b20e0fd8907c7a9f67a3fb9784b35103b99bccf0a8b")
+      packetForBob.nextPacket
+    }
+
+    // Carol decrypts the onion: she is the introduction node of the blinded path, and should relay to Dave.
+    val onionForDave = {
+      val carolPriv = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
+      val add = UpdateAddHtlc(randomBytes32(), 1, 150_005_000 msat, paymentHash, CltvExpiry(800_100), onionForCarol, None, 1.0, None)
+      val Right(RelayToBlindedTrampolinePacket(_, payload, innerPayload, trampolineOnionForDave, _)) = decrypt(add, carolPriv, Features.empty)
+      assert(payload.amount == 150_005_000.msat)
+      assert(payload.expiry == CltvExpiry(800_100))
+      assert(innerPayload.outgoingAmount(add.amountMsat) == 150_002_000.msat)
+      assert(innerPayload.outgoingExpiry(add.cltvExpiry) == CltvExpiry(800_030))
+      assert(innerPayload.outgoing == Left(EncodedNodeId.WithPublicKey.Plain(dave)))
+      val sessionKey = PrivateKey(hex"1a7c672a778795bf93d30f2b643258bb9536b6395caad1db75d717be3633acc5")
+      val payloadDave = PaymentOnion.TrampolineWithoutMppPayload.create(150_002_000 msat, CltvExpiry(800_030), trampolineOnionForDave, Some(innerPayload.nextPathKey))
+      assert(PaymentOnionCodecs.perHopPayloadCodec.encode(payloadDave.records).require.bytes == hex"fd01cb 020408f0d950 04030c351e 0c21038277801bcd52897eb6c2568a474494fa493b4e1d615823064c21cad45bf41c30 14fd0199000209bf6fd592367ef37d5caf1041863c7b7a4c78e35fa6006359d4b09a6d078526466d008baeef3dcf2dfb7d5ff14d08b7ce6d3fd8f01a6243317d032fb49e94464db2ce7ec6f45e10b77ac2625896085c180abb3ed3b169caeffd3d892bdf0588802bb69e4034aa8c6591d188876490ee7584b084570e798bcd8b795740f23a8654a36e4322cb348895aee722ff625e83acb744b60012c32cc94fc91e8d23321cbc089dabc72f717daaf128867b435e008efe677288fc498a08bb5f58ddab853b2ffca1a5e82cdb34e7fef791b41401a8a579f04d2636e34c61dd3a17000842983074c6d4b90e15e4fa8533380224ec4ffa5a61e115e24043d49917eca869d9d902610c4389d5eb98a99107aea3d5a883eb3198c2266c823ee595341a24d4953fc7d58660182368467aa66be662bd1205dfd2ee4476176ca5eadfb9a49a1e547c509fa8d92b147a4692d4379efd0c458b35d929984e8a09ce0bc1177bcf51fff29f44535d9abbe097fe171ee7684dc7c0f9c2c92e332bda4c7c32319cf2743beaad05387bdbd5577bdd694d8ad93f128109c2b93b915b3d")
+      val onionForDave = OutgoingPaymentPacket.buildOnion(sessionKey, NodePayload(dave, payloadDave) :: Nil, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get.packet
+      val encoded = PaymentOnionCodecs.paymentOnionPacketCodec.encode(onionForDave).require.bytes
+      assert(encoded == hex"0002352e39e9e03e58469a9b32c70af97e8aca844eef1d125f98d1d03a3386954d7bb9e1e225cdcfc31d3054eb49aa245dc9db2e3c59d5c6ce785f7bcb6cbe6469869bf2f9f7e4fdc0e35f2db322a876337e54cab7d488f2a8e5f1f0e8fe9203aae82efdc2c8b77f28a10a76fe7376915873143274f17dcf90d80373d5728668887e631e2155de5c19fe99180cd4b9ebecf937d9fb3b3e7ce351d4d9b05126a65cc93ee40f71b0680668b6ca6a0052f13a5631b1ed191bdb0c2cc9d443fd1f16cd5fcd667191bb372e1dc34d5678d0a0c7587441ede631b035255e40d292ec2a1ebf1f769a629396eb66f1661aa0953425c58c4dd45489450bb9cb4642b3e183e47437bed11ac6e159de51b5a53ef62ac3911c1ff9aeea5181d851dd1aeed59a92a7e434695706523e13d06cba7c09af83be9eab4378ac1507bc0ec4ca6785fee13445c6202ec9abdebc3aabc01a45bf49ec4139168fad9eff03b08e31d63da12e6be181d855a578912f62d9a0e999513a9bcb2d3a104656c0451f04f196d3c2eaf74f95a295828e5e73dfcce61f0fe6471a24303602339ee4b3cceaa20e97e703b4c080f4868e9a9b7cb4bb606576ef3008531c9cfc05dd901a5205802e1bc3104a47fe617eef57cf656e5ec8afc556c2a74a6e8980319e422f9429062a1c06377339cc86806e99d2cadfaf19770b2ec6585dd5b4f31c010cd089804644c3ef484c1a030f5248bf7feed39362d92dc08723277b952845f0208ac1f44e779661d9bbbab37bace8b32882c5ca4064b2a63740f0d9119732b49e9979ab23b22697da3430a59e39b7cf86ecb52da78f9f8df9be7a071e47de47fc8657180476a6e9e8f86b29b9b44f63c11fece6bf7c2a24cb6e9035a73964be967abf8faafa34b40566277021dab1b390d71ea654f7288d233551fcdcfcbcfa5e50f65a11346424dfae23a2b1e017c55bcedee4841ce14c4f87e1ff32f3e88d410c13681d555cb5d5b6c2072d781de21c33dc087ba462b5e9d62ff17d94579d4c2e90549d8949a070394eccfeda33c329bcb27a5697459791b165ae85d758bcc47c69bd19f52e1508c3b77dd2bbef4119c003d39a7f6a23b8645999c3164b28cb46685b2a0bfbeea52f38a5b71f1899f50ec9baf1248bb3956f334a96bbcc60e547a1b12137768bb4e4ccec0dcafb409fac6419aff6e5ea39ae1c78d94253fc933444b669dd9cbfc0e4bd2c80c9a2b63b7c5963ffa5d87ba69896fd5f925805adfff4fb8563555fb5fd3bfe40f4b9275655d38640e8e4ca9f0874ad432ddcd726bf413914aface266dae9c66fe641e118dbb7fb418306e9ef274b4713fbd5a301e347f37a11a47302b3e4846078fac76abb3846c1891fa93c4051d3d5f7028e10b7b9856fc3bd48fd44a2b7b01ce6f3d0d5aa27695bcdced1b8ec899a30623d6ef97c6d77879cb9edd57f2f2f520d087dd723129684daec75021e326d8a833e005522aa44544bd08af7cb2d716827ba327f60309a05c53141b8b66608c4caf762b01fc88f0f59d18f82df0950ba9ef1412be8074a708409a612971c62e41bbccbac62514342d95774a5cf23fda4cd4168dd93b30ff5f9ca676542c9304d2f3be9d2643c57be2eecc823b5521854579e734b61165907b0b729a92e2bab80954fe063954a58314d406534b5ae04c11b067ede1b190c994623c66ab0a376773325d28ce904fddbbf83f755a6176464c48f9a84901ef6f662800dbab121eae95b2b4d54b640aeb0db272b8c1f43a610edce98db371435924026b601ae0ae1329ae18c192443f5d0c133a506a235e922bb687f8c5aadc7684008c229d84035b4e44d34fc7598a3f63ea4de01038806e9e9b0bdb41f33783b9f4d41915b85c5af4f76c7d2135905232de6f88ea226bd2548ee25167ce61a6aeef82ea94422ed91")
+      onionForDave
+    }
+
+    // Dave decrypts the onion and blinded path data and sends a failure back to Carol.
+    val failedAt = TimestampMilli.now()
+    val failureForCarol = {
+      val davePriv = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
+      val add = UpdateAddHtlc(randomBytes32(), 3, 150_002_000 msat, paymentHash, CltvExpiry(800_030), onionForDave, None, 1.0, None)
+      val Right(RelayToBlindedTrampolinePacket(_, payload, innerPayload, _, _)) = decrypt(add, davePriv, Features(Features.RouteBlinding -> FeatureSupport.Optional))
+      assert(payload.amount == 150_002_000.msat)
+      assert(payload.expiry == CltvExpiry(800_030))
+      assert(innerPayload.outgoing == Left(EncodedNodeId.WithPublicKey.Plain(eve)))
+      assert(innerPayload.outgoingAmount(add.amountMsat) == 150_000_000.msat)
+      assert(innerPayload.outgoingExpiry(add.cltvExpiry) == CltvExpiry(800_000))
+
+      // Nodes after the introduction node must send `update_fail_malformed_htlc` messages.
+      val failure = InvalidOnionBlinding(Sphinx.hash(payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].get.packet))
+      UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code)
+    }
+
+    // Carol is the introduction node, so she creates a normal failure for Alice, wrapped inside a failure for Bob.
+    val failureForBob = {
+      val carolPriv = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
+      val add = UpdateAddHtlc(randomBytes32(), 1, 150_005_000 msat, paymentHash, CltvExpiry(800_100), onionForCarol, None, 1.0, None)
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(carolPriv, useAttributableFailures = true, CMD_FAIL_HTLC(add.id, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(failedAt - 130.millis)), add, failedAt + 15.millis)
+      assert(fail.reason == hex"7b5d085fc545742096fabdcc1d37a1c62b88080f3c6ab8f4abd4f0fbd35639e36625db968c12816c072f374d79e5c642a6419aa13c12abb69537581ad0afe96f41cc2789d91b25ce04d46fffbeeb6ef639f44f9a2188f21a64cb836167267b54b5b3611ab77efd5f052f76295966c41d0b6d8a1c0fce72eece41e67156e649de0c849d96be186f5d57790409f918b45cd052d3bd3972cd4f0edc990ac13d5d54ecf2667888e989bf5a034b32a0693d01a0d9465007d5395343cc1a61129bcf0cbb67eff959f73350853c039219a9e356999389c1604f7728e3d66a239ddf1cf12b12f6a6d6810065955c8128c43e85d8290f499f420f308cc1a8ae3acb4a1aa268dbfeb3b17c17ca50b8fadce5f38e1519881bd29ac2823043f35891de23e156e40ac0b2")
+      fail
+    }
+
+    // Bob forwards the failure to Alice.
+    val failureForAlice = {
+      val bobPriv = PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242")
+      val add = UpdateAddHtlc(randomBytes32(), 1, 150_010_000 msat, paymentHash, CltvExpiry(800_150), onionForBob, None, 1.0, None)
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(bobPriv, useAttributableFailures = true, CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(failureForBob.reason, failureForBob.attribution_opt), Some(failedAt - 150.millis)), add, failedAt + 25.millis)
+      assert(fail.reason == hex"c572fa6d2b2ab9dd05f361b15acc20327b7067758155ee3361b71ae52dbd2b819b54a39e339a4138998d07ed2d84967df06eeb9283b617694eaba71f934036b68a826f3d1a7b47e01a34828f34717959dd2c8aaff91cfcdbb46f7c6485279580c3229bb4c73bcde667850620ec09443540a4edc9ab126bb17de6ccc85c9e0d04979e65ecc9c84a4bb8b301c21159882699aa8d50ca420286b6977f467567d1614f5172e6a591a26aa7cf2e29f929b7b31303b1c75036a91710fd5499f487829d8d4912d1dd103a3d25b5cfeca0902bdc6c2cc58283fad5066192b52e3300c88d741cda42108f886f61644a84b21d3a06b9a5c7b493096a8095d67fecc9b48a32f989a31771a8d1cbd36cbe7d2e3f1e33b15aa68ca6eae03895094aa27d1549d8ed8e31b2")
+      fail
+    }
+
+    // Alice decrypts the failure message.
+    assert(sharedSecretsAlice.map(_.secret) == Seq(ByteVector32.fromValidHex("21940511853dd5bd14ffc350149b04ba88df752e31ebe5b2ad039bdc1ce160e4"), ByteVector32.fromValidHex("21ea283167d589794e1bb1702ec6254647a043cd1a535559f0ba2e2e280e5a9f")))
+    val Sphinx.HtlcFailure(holdTimes, Left(Sphinx.CannotDecryptFailurePacket(trampolineFailure, trampolineAttribution))) = Sphinx.FailurePacket.decrypt(failureForAlice.reason, failureForAlice.attribution_opt, sharedSecretsAlice)
+    assert(holdTimes == List(Sphinx.HoldTime(100 millis, bob), Sphinx.HoldTime(100 millis, carol)))
+    assert(trampolineFailure == hex"ab449799be03533fc503942d59c85c95b42d05307e2b382f46147a4c23c9b1dcf4f03baab8a1ca8467fa5dd26953a2c47679f7b9568742cf1b43ed52b6786236dea7bb4e14a0c5fdd530c35f3e60b455fd3081b16ed97298dc944d0f1d9c97e09b28eb9c2de05f84a1416d41f2117285121e2a9dcc9a78988f8b402ae4311354e46b9f92fd095beb3b1a74f38b272bc98b3eeff5b582e08bf8a5fc4afb3e0f7771b09c5c9e8c46baf71adeff8fddb7a5a53a4ace9ef32b23460520dc7759e8c4a7ae7ce1a92432e0d77b7c5a0b437541ba0f55ccfb3fce1a17a13ed57e6137e2dc7e100dc87ac02a34ac676d735192fc698da48461620dbf2a83361b8892d9863c2e357659275dd243c036cd62f81124f2683405413acbe9f450283ba60fe3169cc783f4")
+    assert(trampolineOnion.sharedSecrets.map(_.secret) == Seq(ByteVector32.fromValidHex("10d608eee2dcc6a00f1c08fa14659bd88531a608be3d68c8cf5988874a2e589b"), ByteVector32.fromValidHex("746a293d921da6db1a5564b204a5a9f06c4ca0cf5540593319ffa511e6b411f0"), ByteVector32.fromValidHex("b98befc45213d74357027e292510d9ba8000ba07d659c2af58854a818e3d436f")))
+    val Sphinx.HtlcFailure(trampolineHoldTimes, Right(f)) = Sphinx.FailurePacket.decrypt(trampolineFailure, trampolineAttribution, trampolineOnion.sharedSecrets)
+    assert(trampolineHoldTimes == List(Sphinx.HoldTime(100 millis, carol)))
+    assert(f.originNode == carol)
+    assert(f.failureMessage == TemporaryTrampolineFailure())
+  }
+
 }
 
 object PaymentPacketSpec {
