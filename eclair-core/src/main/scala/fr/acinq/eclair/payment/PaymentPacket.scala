@@ -376,13 +376,30 @@ object OutgoingPaymentPacket {
   }
 
   private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
-    extractSharedSecret(nodeSecret, add).map(sharedSecret => {
+    extractSharedSecret(nodeSecret, add).map(ss => {
       reason match {
-        case FailureReason.EncryptedDownstreamFailure(packet) => Sphinx.FailurePacket.wrap(packet, sharedSecret)
-        case FailureReason.LocalFailure(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+        case FailureReason.EncryptedDownstreamFailure(packet) =>
+          ss.trampolineOnionSecret_opt match {
+            case Some(trampolineOnionSecret) =>
+              // If we are unable to decrypt the downstream failure and the payment is using trampoline, the failure is
+              // intended for the payer. We encrypt it with the trampoline secret first and then the outer secret.
+              Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret), ss.outerOnionSecret)
+            case None => Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret)
+          }
+        case FailureReason.LocalFailure(failure) =>
+          // This isn't a trampoline failure, so we only encrypt it for the node who created the outer onion.
+          Sphinx.FailurePacket.create(ss.outerOnionSecret, failure)
+        case FailureReason.LocalTrampolineFailure(failure) =>
+          // This is a trampoline failure: we try to encrypt it to the node who created the trampoline onion.
+          ss.trampolineOnionSecret_opt match {
+            case Some(trampolineOnionSecret) => Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(trampolineOnionSecret, failure), ss.outerOnionSecret)
+            case None => Sphinx.FailurePacket.create(ss.outerOnionSecret, failure) // this shouldn't happen, we only generate trampoline failures when there was a trampoline onion
+          }
       }
     })
   }
+
+  private case class HtlcSharedSecrets(outerOnionSecret: ByteVector32, trampolineOnionSecret_opt: Option[ByteVector32])
 
   /**
    * We decrypt the onion again to extract the shared secret used to encrypt onion failures.
@@ -390,9 +407,18 @@ object OutgoingPaymentPacket {
    * in the database since we must be able to fail HTLCs after restarting our node.
    * It's simpler to extract it again from the encrypted onion.
    */
-  private def extractSharedSecret(nodeSecret: PrivateKey, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector32] = {
+  private def extractSharedSecret(nodeSecret: PrivateKey, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, HtlcSharedSecrets] = {
     Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
-      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) => Right(sharedSecret)
+      case Right(Sphinx.DecryptedPacket(payload, _, outerOnionSecret)) =>
+        // Let's look at the onion payload to see if it contains a trampoline onion.
+        PaymentOnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload, _)) =>
+            perHopPayload.get[OnionPaymentPayloadTlv.TrampolineOnion].flatMap(p => Sphinx.peel(nodeSecret, Some(add.paymentHash), p.packet).toOption) match {
+              case Some(Sphinx.DecryptedPacket(_, _, trampolineOnionSecret)) => Right(HtlcSharedSecrets(outerOnionSecret, Some(trampolineOnionSecret)))
+              case None => Right(HtlcSharedSecrets(outerOnionSecret, None))
+            }
+          case Attempt.Failure(_) => Right(HtlcSharedSecrets(outerOnionSecret, None))
+        }
       case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
   }
