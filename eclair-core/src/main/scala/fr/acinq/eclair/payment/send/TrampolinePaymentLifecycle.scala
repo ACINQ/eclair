@@ -60,7 +60,7 @@ object TrampolinePaymentLifecycle {
   }
   private case class TrampolinePeerNotFound(trampolineNodeId: PublicKey) extends Command
   private case class CouldntAddHtlc(failure: Throwable) extends Command
-  private case class HtlcSettled(result: HtlcResult, part: PaymentPart, holdTimes: Seq[Sphinx.HoldTime]) extends Command
+  private case class HtlcSettled(result: HtlcResult, part: PaymentPart, holdTimes: Seq[Sphinx.HoldTime], trampolineHoldTimes: Seq[Sphinx.HoldTime]) extends Command
   private case class WrappedPeerChannels(channels: Seq[Peer.ChannelInfo]) extends Command
   // @formatter:on
 
@@ -131,28 +131,30 @@ object TrampolinePaymentLifecycle {
         }
         case WrappedHtlcSettled(result) => result.result match {
           case fulfill: HtlcResult.Fulfill =>
-            val holdTimes = fulfill match {
+            val (holdTimes, trampolineHoldTimes) = fulfill match {
               case HtlcResult.RemoteFulfill(updateFulfill) =>
                 updateFulfill.attribution_opt match {
-                  // Note that we only use the outer onion shared secrets here: this actor only exists to help other
-                  // implementations run cross-compatibility tests, so we don't bother fully decrypting the fulfillment
-                  // payload, which would require appending the trampoline onion shared secrets (see Sphinx.SuccessPacket.decrypt).
-                  // This means that PaymentSent below contains an encrypted payload and that hold times may be missing
-                  // when a fulfillment payload is used.
-                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(updateFulfill.fulfillmentPayload_opt, Some(attribution), outerOnionSecrets).holdTimes
-                  case None => Nil
+                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(updateFulfill.fulfillmentPayload_opt, Some(attribution), outerOnionSecrets) match {
+                    case Sphinx.HtlcSuccess(holdTimes, _, None) => (holdTimes, Nil)
+                    case Sphinx.HtlcSuccess(holdTimes, fulfillmentPayload_opt, Some(remaining)) =>
+                      val trampolineHoldTimes = Sphinx.SuccessPacket.decrypt(fulfillmentPayload_opt, Some(remaining), trampolineOnionSecrets).holdTimes
+                      (holdTimes, trampolineHoldTimes)
+                  }
+                  case None => (Nil, Nil)
                 }
-              case _: HtlcResult.OnChainFulfill => Nil
+              case _: HtlcResult.OnChainFulfill => (Nil, Nil)
             }
-            parent ! HtlcSettled(fulfill, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
+            parent ! HtlcSettled(fulfill, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes, trampolineHoldTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
-            val holdTimes = fail match {
-              case HtlcResult.RemoteFail(updateFail) =>
-                Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
-              case _ => Nil
+            val (holdTimes, trampolineHoldTimes) = fail match {
+              case HtlcResult.RemoteFail(updateFail) => Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets) match {
+                case Sphinx.HtlcFailure(holdTimes, Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt))) => (holdTimes, Sphinx.FailurePacket.decrypt(unwrapped, attribution_opt, trampolineOnionSecrets).holdTimes)
+                case Sphinx.HtlcFailure(holdTimes, Right(_: Sphinx.DecryptedFailurePacket)) => (holdTimes, Nil)
+              }
+              case _ => (Nil, Nil)
             }
-            parent ! HtlcSettled(fail, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
+            parent ! HtlcSettled(fail, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes, trampolineHoldTimes)
             Behaviors.stopped
         }
       }
@@ -235,9 +237,9 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
           cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil, startedAt, settledAt = TimestampMilli.now())
           Behaviors.stopped
         }
-      case HtlcSettled(result: HtlcResult, part, holdTimes) =>
+      case HtlcSettled(result: HtlcResult, part, holdTimes, trampolineHoldTimes) =>
         if (holdTimes.nonEmpty) {
-          context.system.eventStream ! EventStream.Publish(Router.ReportedHoldTimes(holdTimes))
+          context.system.eventStream ! EventStream.Publish(Router.ReportedHoldTimes(holdTimes, trampolineHoldTimes))
         }
         result match {
           case fulfill: HtlcResult.Fulfill =>

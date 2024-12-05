@@ -425,16 +425,53 @@ object OutgoingPaymentPacket {
 
   private case class AttributableHtlcFailure(encryptedReason: ByteVector, attribution_opt: Option[ByteVector])
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, AttributableHtlcFailure] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration, trampolineHoldTime: FiniteDuration): Either[CannotExtractSharedSecret, AttributableHtlcFailure] = {
     extractSharedSecret(nodeSecret, add).map(ss => {
       reason match {
         case FailureReason.EncryptedDownstreamFailure(packet, downstreamAttribution_opt) =>
-          val attribution = Sphinx.Attribution.create(downstreamAttribution_opt, Some(packet), holdTime, ss.outerOnionSecret)
-          AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), Some(attribution))
+          ss.trampolineOnionSecret_opt match {
+            case Some(trampolineOnionSecret) =>
+              // If we are unable to decrypt the downstream failure and the payment is using trampoline, the failure is
+              // intended for the payer. We encrypt it with the trampoline secret first and then the outer secret.
+              val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
+              val attribution_opt = if (!ss.blinded) {
+                val trampolineAttribution = Sphinx.Attribution.create(downstreamAttribution_opt, Some(packet), trampolineHoldTime, trampolineOnionSecret)
+                val outerAttribution = Sphinx.Attribution.create(Some(trampolineAttribution), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+                Some(outerAttribution)
+              } else {
+                // When we're inside a blinded path, we don't report our attribution data.
+                None
+              }
+              AttributableHtlcFailure(Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), attribution_opt)
+            case None =>
+              val attribution = Sphinx.Attribution.create(downstreamAttribution_opt, Some(packet), holdTime, ss.outerOnionSecret)
+              AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), Some(attribution))
+          }
         case FailureReason.LocalFailure(failure) =>
+          // This isn't a trampoline failure, so we only encrypt it for the node who created the outer onion.
           val packet = Sphinx.FailurePacket.create(ss.outerOnionSecret, failure)
           val attribution = Sphinx.Attribution.create(downstreamAttribution_opt = None, Some(packet), holdTime, ss.outerOnionSecret)
           AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), Some(attribution))
+        case FailureReason.LocalTrampolineFailure(failure) =>
+          // This is a trampoline failure: we try to encrypt it to the node who created the trampoline onion.
+          ss.trampolineOnionSecret_opt match {
+            case Some(trampolineOnionSecret) =>
+              val packet = Sphinx.FailurePacket.create(trampolineOnionSecret, failure)
+              val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
+              val attribution_opt = if (!ss.blinded) {
+                val trampolineAttribution = Sphinx.Attribution.create(downstreamAttribution_opt = None, Some(packet), trampolineHoldTime, trampolineOnionSecret)
+                val outerAttribution = Sphinx.Attribution.create(Some(trampolineAttribution), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+                Some(outerAttribution)
+              } else {
+                // When we're inside a blinded path, we don't report our attribution data.
+                None
+              }
+              AttributableHtlcFailure(Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), attribution_opt)
+            case None =>
+              // This shouldn't happen, we only generate trampoline failures when there was a trampoline onion.
+              val packet = Sphinx.FailurePacket.create(ss.outerOnionSecret, failure)
+              AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), None)
+          }
       }
     })
   }
@@ -448,8 +485,9 @@ object OutgoingPaymentPacket {
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
         // If the attribution was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
+        val trampolineHoldTime = cmd.attribution_opt.flatMap(_.trampolineReceivedAt_opt).map(receivedAt => now - receivedAt).getOrElse(0 millisecond)
         val holdTime = cmd.attribution_opt.map(a => now - a.htlcReceivedAt).getOrElse(0 millisecond)
-        buildHtlcFailure(nodeSecret, cmd.reason, add, holdTime).map { f =>
+        buildHtlcFailure(nodeSecret, cmd.reason, add, holdTime, trampolineHoldTime).map { f =>
           val tlvs: Set[UpdateFailHtlcTlv] = Set(
             if (useAttributableFailures) f.attribution_opt.map(UpdateFailHtlcTlv.AttributionData(_)) else None
           ).flatten

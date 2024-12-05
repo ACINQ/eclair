@@ -44,6 +44,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
@@ -103,6 +104,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
