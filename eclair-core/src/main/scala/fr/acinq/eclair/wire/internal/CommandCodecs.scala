@@ -40,6 +40,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
@@ -63,6 +64,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
