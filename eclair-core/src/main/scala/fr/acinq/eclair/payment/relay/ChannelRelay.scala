@@ -186,7 +186,8 @@ class ChannelRelay private(nodeParams: NodeParams,
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelayNeedsFunding(nextNodeId, cmdFail) =>
-            val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextPathKey_opt, upstream)
+            // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
+            val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, Nil, nextPathKey_opt, upstream)
             register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, nextNodeId, cmd)
             waitForOnTheFlyFundingResponse(cmdFail)
           case RelaySuccess(selectedChannelId, cmdAdd) =>
