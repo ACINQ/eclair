@@ -139,7 +139,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = peel(privKeys(4), associatedData, nextPacket3)
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == referencePaymentPayloads)
-    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_.secret))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
     assert(packets(0).hmac == ByteVector32(hex"901fb2bb905d1cfac67727f900daa2bb9da6801ac31ccce78663e5021e83983b"))
@@ -159,7 +159,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = peel(privKeys(4), associatedData, nextPacket3)
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == paymentPayloadsFull)
-    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_.secret))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
     assert(packets(0).hmac == ByteVector32(hex"859cd694cf604442547246f4fae144f255e71e30cb366b9775f488cac713f0db"))
@@ -196,7 +196,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, _, sharedSecret4)) = peel(privKeys(4), associatedData, nextPacket3)
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == trampolinePaymentPayloads)
-    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_.secret))
   }
 
   test("create packet with invalid payload") {
@@ -229,19 +229,19 @@ class SphinxSpec extends AnyFunSuite {
     val packet1 = FailurePacket.create(sharedSecrets.head, expected.failureMessage)
     assert(packet1.length == 292)
 
-    val Right(decrypted1) = FailurePacket.decrypt(packet1, Seq(0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted1) = FailurePacket.decrypt(packet1, Seq(0).map(i => SharedSecret(sharedSecrets(i), publicKeys(i))))
     assert(decrypted1 == expected)
 
     val packet2 = FailurePacket.wrap(packet1, sharedSecrets(1))
     assert(packet2.length == 292)
 
-    val Right(decrypted2) = FailurePacket.decrypt(packet2, Seq(1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted2) = FailurePacket.decrypt(packet2, Seq(1, 0).map(i => SharedSecret(sharedSecrets(i), publicKeys(i))))
     assert(decrypted2 == expected)
 
     val packet3 = FailurePacket.wrap(packet2, sharedSecrets(2))
     assert(packet3.length == 292)
 
-    val Right(decrypted3) = FailurePacket.decrypt(packet3, Seq(2, 1, 0).map(i => (sharedSecrets(i), publicKeys(i))))
+    val Right(decrypted3) = FailurePacket.decrypt(packet3, Seq(2, 1, 0).map(i => SharedSecret(sharedSecrets(i), publicKeys(i))))
     assert(decrypted3 == expected)
   }
 
@@ -258,7 +258,7 @@ class SphinxSpec extends AnyFunSuite {
         sharedSecrets(1)),
       sharedSecrets(2))
 
-    assert(FailurePacket.decrypt(packet, Seq(0, 2, 1).map(i => (sharedSecrets(i), publicKeys(i)))).isLeft)
+    assert(FailurePacket.decrypt(packet, Seq(0, 2, 1).map(i => SharedSecret(sharedSecrets(i), publicKeys(i)))).isLeft)
   }
 
   test("last node replies with a short failure message (old reference test vector)") {
@@ -565,7 +565,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(payloadEve.allowedFeatures.isEmpty)
 
       assert(Seq(onionPayloadAlice, onionPayloadBob, onionPayloadCarol, onionPayloadDave, onionPayloadEve) == payloads)
-      assert(Seq(sharedSecretAlice, sharedSecretBob, sharedSecretCarol, sharedSecretDave, sharedSecretEve) == sharedSecrets.map(_._1))
+      assert(Seq(sharedSecretAlice, sharedSecretBob, sharedSecretCarol, sharedSecretDave, sharedSecretEve) == sharedSecrets.map(_.secret))
 
       val packets = Seq(packetForBob, packetForCarol, packetForDave, packetForEve, packetForNobody)
       assert(packets(0).hmac == ByteVector32(hex"73fba184685e19b9af78afe876aa4e4b4242382b293133771d95a2bd83fa9c62"))

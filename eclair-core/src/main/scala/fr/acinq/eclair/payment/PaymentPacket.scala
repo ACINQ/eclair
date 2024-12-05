@@ -282,7 +282,7 @@ object IncomingPaymentPacket {
  * @param outgoingChannel channel to send the HTLC to.
  * @param sharedSecrets   shared secrets (used to decrypt the error in case of payment failure).
  */
-case class OutgoingPaymentPacket(cmd: CMD_ADD_HTLC, outgoingChannel: ShortChannelId, sharedSecrets: Seq[(ByteVector32, PublicKey)])
+case class OutgoingPaymentPacket(cmd: CMD_ADD_HTLC, outgoingChannel: ShortChannelId, sharedSecrets: Seq[Sphinx.SharedSecret])
 
 /** Helpers to create outgoing payment packets. */
 object OutgoingPaymentPacket {
