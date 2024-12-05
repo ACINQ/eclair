@@ -61,6 +61,9 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   )
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, register: TestProbe, rateLimiter: TestProbe, probe: TestProbe) {
+    // Shared secrets used for the outgoing will_add_htlc onion.
+    val onionSharedSecrets = Sphinx.SharedSecret(randomBytes32(), remoteNodeId) :: Nil
+
     def connect(peer: TestFSMRef[Peer.State, Peer.Data, Peer], remoteInit: protocol.Init = protocol.Init(remoteFeatures.initFeatures()), channelCount: Int = 0): Unit = {
       val localInit = protocol.Init(nodeParams.features.initFeatures())
       val address = NodeAddress.fromParts("0.0.0.0", 9735).get
@@ -93,7 +96,12 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
         case u: Upstream.Hot.Trampoline if u.received.exists(_.add.pathKey_opt.nonEmpty) => Some(randomKey().publicKey)
         case _ => None
       }
-      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, pathKey, upstream)
+      val sharedSecrets = upstream match {
+        // Shared secrets are only useful in the trampoline case, where we created an outgoing onion.
+        case _: Upstream.Hot.Trampoline => onionSharedSecrets
+        case _ => Nil
+      }
+      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, sharedSecrets, pathKey, upstream)
     }
 
     def proposeFunding(amount: MilliSatoshi, expiry: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID())): WillAddHtlc = {
@@ -247,7 +255,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(fwd3.message.id == upstream3.add.id)
     assert(fwd3.message.reason == FailureReason.LocalFailure(InvalidOnionHmac(fail3.onionHash)))
 
-    val fail4 = WillFailHtlc(willAdd4.id, paymentHash, randomBytes(75))
+    val fail4 = WillFailHtlc(willAdd4.id, paymentHash, randomBytes(292))
     peerConnection.send(peer, fail4)
     upstream4.received.map(_.add).foreach(add => {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
@@ -256,7 +264,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
     })
 
-    val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(75))
+    val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(292))
     peerConnection.send(peer, fail5)
     upstream5.received.map(_.add).foreach(add => {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]

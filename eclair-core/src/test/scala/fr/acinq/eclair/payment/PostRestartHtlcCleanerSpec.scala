@@ -174,9 +174,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // The HTLCs were not relayed yet, but they match pending on-the-fly funding proposals.
     val upstreamChannel = Upstream.Hot.Channel(htlc_ab_1.head.add, TimestampMilli.now(), a)
-    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, channelPaymentHash, CltvExpiry(500)), upstreamChannel)), createStatus())
+    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, channelPaymentHash, CltvExpiry(500)), upstreamChannel, Nil)), createStatus())
     val upstreamTrampoline = Upstream.Hot.Trampoline(List(htlc_ab_1.last, htlc_ab_2.head).map(htlc => Upstream.Hot.Channel(htlc.add, TimestampMilli.now(), a)))
-    val downstreamTrampoline = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, trampolinePaymentHash, CltvExpiry(500)), upstreamTrampoline)), createStatus())
+    val downstreamTrampoline = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, trampolinePaymentHash, CltvExpiry(500)), upstreamTrampoline, Nil)), createStatus())
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamChannel)
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamTrampoline)
 
@@ -671,7 +671,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       buildHtlcIn(2, channelId_ab_1, paymentHash2), // trampoline relayed
     )
     // The first upstream HTLC was not relayed but has a pending on-the-fly funding proposal.
-    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, paymentHash1, CltvExpiry(500)), Upstream.Hot.Channel(htlc_ab(0).add, TimestampMilli.now(), a))), createStatus())
+    val downstreamChannel = OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(createWillAdd(100_000 msat, paymentHash1, CltvExpiry(500)), Upstream.Hot.Channel(htlc_ab(0).add, TimestampMilli.now(), a), Nil)), createStatus())
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(randomKey().publicKey, downstreamChannel)
     // The other two HTLCs were relayed after completing on-the-fly funding.
     val htlc_bc = Seq(
