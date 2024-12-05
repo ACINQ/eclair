@@ -130,7 +130,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, fullRoute))
         case _: HtlcResult.OnChainFulfill => None
       }
-      attribution_opt.foreach(a => if (a.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(a.holdTimes)))
+      attribution_opt.foreach(a => if (a.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(a.holdTimes, trampolineHoldTimes = Nil)))
       myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, attribution_opt.flatMap(_.fulfillmentPayload_opt), attribution_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
@@ -196,7 +196,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val now = TimestampMilli.now()
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
     if (htlcFailure.holdTimes.nonEmpty) {
-      context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
+      context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes = htlcFailure.holdTimes, trampolineHoldTimes = Nil))
     }
     ((htlcFailure.failure match {
       case success@Right(e) =>
