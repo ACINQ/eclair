@@ -166,7 +166,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id == add_ab.id)
-    assert(fail.reason == Right(InvalidOnionBlinding(Sphinx.hash(add_ab.onionRoutingPacket))))
+    assert(fail.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(add_ab.onionRoutingPacket))))
     assert(fail.delay_opt.nonEmpty)
 
     register.expectNoMessage(50 millis)
@@ -202,7 +202,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     val fail = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id == add_ab.id)
-    assert(fail.reason == Right(RequiredNodeFeatureMissing()))
+    assert(fail.reason == FailureReason.LocalFailure(RequiredNodeFeatureMissing()))
 
     register.expectNoMessage(50 millis)
   }

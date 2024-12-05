@@ -230,7 +230,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd1.channelId == upstream1.add.channelId)
     assert(fwd1.message.id == upstream1.add.id)
-    assert(fwd1.message.reason == Left(fail1.reason))
+    assert(fwd1.message.reason == FailureReason.EncryptedDownstreamFailure(fail1.reason))
     register.expectNoMessage(100 millis)
 
     val fail2 = WillFailHtlc(willAdd2.id, paymentHash, randomBytes(50))
@@ -238,14 +238,14 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId == upstream2.add.channelId)
     assert(fwd2.message.id == upstream2.add.id)
-    assert(fwd2.message.reason == Right(InvalidOnionBlinding(Sphinx.hash(upstream2.add.onionRoutingPacket))))
+    assert(fwd2.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(upstream2.add.onionRoutingPacket))))
 
     val fail3 = WillFailMalformedHtlc(willAdd3.id, paymentHash, randomBytes32(), InvalidOnionHmac(randomBytes32()).code)
     peerConnection.send(peer, fail3)
     val fwd3 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd3.channelId == upstream3.add.channelId)
     assert(fwd3.message.id == upstream3.add.id)
-    assert(fwd3.message.reason == Right(InvalidOnionHmac(fail3.onionHash)))
+    assert(fwd3.message.reason == FailureReason.LocalFailure(InvalidOnionHmac(fail3.onionHash)))
 
     val fail4 = WillFailHtlc(willAdd4.id, paymentHash, randomBytes(75))
     peerConnection.send(peer, fail4)
@@ -253,7 +253,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(TemporaryNodeFailure()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
     })
 
     val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(75))
@@ -262,7 +262,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(TemporaryNodeFailure()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
     })
   }
 
@@ -322,7 +322,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == u.add.channelId)
       assert(fwd.message.id == u.add.id)
-      assert(fwd.message.reason == Right(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket))))
+      assert(fwd.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket))))
       assert(fwd.message.commit)
     })
     peerConnection.expectMsgType[Warning]
@@ -332,7 +332,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == u.add.channelId)
       assert(fwd.message.id == u.add.id)
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     peerConnection.expectMsgType[Warning]
@@ -402,7 +402,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwds = (0 until 5).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
     register.expectNoMessage(100 millis)
     fwds.foreach(fwd => {
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.channelId).toSet)
@@ -1151,7 +1151,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     register.expectNoMessage(100 millis)
@@ -1176,7 +1176,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == upstream1.add.channelId)
     assert(fwd.message.id == upstream1.add.id)
-    assert(fwd.message.reason == Right(UnknownNextPeer()))
+    assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
     assert(fwd.message.commit)
     register.expectNoMessage(100 millis)
     probe.expectNoMessage(100 millis)

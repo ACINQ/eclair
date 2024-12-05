@@ -31,6 +31,17 @@ import scodec.{Attempt, Codec, Err}
  * Created by fabrice on 14/03/17.
  */
 
+// @formatter:off
+/** Reason for failing an HTLC, which will be encrypted into a failure onion packet. */
+sealed trait FailureReason
+object FailureReason {
+  /** An encrypted failure coming from downstream which we should re-encrypt and forward upstream. */
+  case class EncryptedDownstreamFailure(packet: ByteVector) extends FailureReason
+  /** A local failure that should be encrypted for the node that created the payment onion. */
+  case class LocalFailure(failure: FailureMessage) extends FailureReason 
+}
+// @formatter:on
+
 sealed trait FailureMessageTlv extends Tlv
 
 // @formatter:off
@@ -157,6 +168,10 @@ object FailureMessageCodecs {
     fallback = unknownFailureMessageCodec.upcast[FailureMessage]
   )
 
+  val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
+    .typecase(0, varsizebinarydata.as[FailureReason.EncryptedDownstreamFailure])
+    .typecase(1, variableSizeBytes(uint16, failureMessageCodec).as[FailureReason.LocalFailure])
+  
   private def failureOnionPayload(payloadAndPadLength: Int): Codec[FailureMessage] = Codec(
     encoder = f => variableSizeBytes(uint16, failureMessageCodec).encode(f).flatMap(bits => {
       val payloadLength = bits.bytes.length - 2
