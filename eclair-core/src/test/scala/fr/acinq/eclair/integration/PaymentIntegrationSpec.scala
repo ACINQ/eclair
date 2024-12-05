@@ -51,6 +51,7 @@ import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, EncodedNodeId, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
+import org.scalatest.Inside.inside
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
@@ -177,7 +178,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.isEmpty)
+    }
   }
 
   test("send an HTLC A->D with an invalid expiry delta for B") {
@@ -263,7 +267,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.failures.size == 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
 
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.isEmpty)
+    }
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -506,8 +513,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < paymentSent.feesPaid, relayed)
 
-    assert(holdTimesRecorderG.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C", "F").map(nodes(_).nodeParams.nodeId))
-    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("G").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorderG.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("C", "F").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.isEmpty)
+    }
+    inside(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("G").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.map(_.remoteNodeId) == Seq("G", "F").map(nodes(_).nodeParams.nodeId))
+    }
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
@@ -607,7 +620,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentFailed.id == paymentId, paymentFailed)
     assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
 
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+    }
   }
 
   test("send a trampoline payment A->D (temporary remote failure at trampoline)") {
@@ -628,8 +644,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentFailed.id == paymentId, paymentFailed)
     assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
 
-    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
-    assert(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.isEmpty)
+    }
+    inside(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
+    }
   }
 
   test("send a blinded payment B->D with many blinded routes") {
@@ -816,8 +838,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
 
-    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
-    assert(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
+    inside(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.isEmpty)
+    }
+    inside(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.map(_.remoteNodeId) == Seq("B", "C").map(nodes(_).nodeParams.nodeId))
+    }
   }
 
   test("send a blinded payment D->A with trampoline (non-trampoline recipient)") {
@@ -830,7 +858,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("A").system.toTyped)
     nodes("A").offerManager ! RegisterOffer(offer, Some(offerKey), Some(pathId), offerHandler.ref)
 
-    val sender = TestProbe()
+    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
+    nodes("D").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
     val dave = new EclairImpl(nodes("D"))
     dave.payOfferTrampoline(offer, amount, 1, nodes("C").nodeParams.nodeId, maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
 
@@ -853,6 +882,11 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
+
+    inside(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes]) { e =>
+      assert(e.holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+      assert(e.trampolineHoldTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+    }
   }
 
   test("send to compact route") {
