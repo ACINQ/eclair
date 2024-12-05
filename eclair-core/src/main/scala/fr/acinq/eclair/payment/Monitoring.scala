@@ -130,6 +130,7 @@ object Monitoring {
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
         case _: FailureReason.EncryptedDownstreamFailure => Remote
         case FailureReason.LocalFailure(f) => f.getClass.getSimpleName
+        case FailureReason.LocalTrampolineFailure(f) => f.getClass.getSimpleName
       }
 
       def apply(pf: PaymentFailure): String = pf match {

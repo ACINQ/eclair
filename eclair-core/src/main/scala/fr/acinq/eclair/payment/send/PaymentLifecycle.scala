@@ -127,7 +127,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             case Some(attribution) =>
               val unwrapped = Sphinx.Attribution.unwrap(attribution, d.sharedSecrets)
               if (unwrapped.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(unwrapped.holdTimes))
+                context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes = unwrapped.holdTimes, trampolineHoldTimes = Nil))
               }
               unwrapped.remaining_opt
             case None => None
@@ -198,7 +198,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     import d._
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
     if (htlcFailure.holdTimes.nonEmpty) {
-      context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
+      context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes = htlcFailure.holdTimes, trampolineHoldTimes = Nil))
     }
     ((htlcFailure.failure match {
       case success@Right(e) =>
