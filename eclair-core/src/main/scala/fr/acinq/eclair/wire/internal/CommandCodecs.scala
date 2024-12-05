@@ -43,6 +43,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
@@ -77,6 +78,7 @@ object CommandCodecs {
         {
           case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
+          case FailureReason.LocalTrampolineFailure(f) => Right(f)
         }
       )) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
