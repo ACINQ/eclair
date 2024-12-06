@@ -737,6 +737,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(300_000 sat, defaultSpliceOutScriptPubKey)))
     val spliceCommitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.find(_.fundingTxId == spliceTx.txid).get
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == spliceTx.txid)
 
     // Alice RBFs the splice transaction.
     // Our dummy bitcoin wallet adds an additional input at every funding attempt.
@@ -744,6 +745,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(rbfTx1.txIn.size == spliceTx.txIn.size + 1)
     spliceTx.txIn.foreach(txIn => assert(rbfTx1.txIn.map(_.outPoint).contains(txIn.outPoint)))
     assert(rbfTx1.txOut.size == spliceTx.txOut.size)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == rbfTx1.txid)
 
     // Bob RBFs the splice transaction: he needs to add an input to pay the fees.
     // Our dummy bitcoin wallet adds an additional input for Alice: a real bitcoin wallet would simply lower the previous change output.
@@ -752,6 +754,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(rbfTx2.txIn.size > rbfTx1.txIn.size)
     rbfTx1.txIn.foreach(txIn => assert(rbfTx2.txIn.map(_.outPoint).contains(txIn.outPoint)))
     assert(rbfTx2.txOut.size == rbfTx1.txOut.size + 1)
+    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == rbfTx2.txid)
 
     // There are three pending splice transactions that double-spend each other.
     inside(alice.stateData.asInstanceOf[DATA_NORMAL]) { data =>
@@ -767,6 +770,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     confirmSpliceTx(f, rbfTx2)
     inside(alice.stateData.asInstanceOf[DATA_NORMAL]) { data =>
       assert(data.commitments.active.map(_.fundingTxId) == Seq(rbfTx2.txid))
+      assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == rbfTx2.txid)
+      alice2blockchain.expectMsgAllOf(
+        UnwatchTxConfirmed(spliceTx.txid),
+        UnwatchTxConfirmed(rbfTx1.txid),
+      )
       data.commitments.active.foreach(c => assert(c.localCommit.spec.toLocal == spliceCommitment.localCommit.spec.toLocal))
       data.commitments.active.foreach(c => assert(c.localCommit.spec.toRemote == spliceCommitment.localCommit.spec.toRemote))
     }

@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.c
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction, TxIn}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, SingleKeyOnChainWallet}
@@ -33,6 +33,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -751,7 +752,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx
     alice ! WatchFundingSpentTriggered(bobCommitTx.tx)
     aliceListener.expectMsgType[TransactionPublished]
-    val claimAnchor = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.tx.txid)
@@ -777,6 +778,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(aliceListener.expectMsgType[ShortChannelIdAssigned].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     alice2blockchain.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
     awaitCond(alice.stateData.isInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY])
@@ -786,7 +788,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Bob broadcasts his commit tx.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == bobCommitTx1.txid)
-    val claimAnchor = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
@@ -807,7 +809,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     alice2 ! WatchFundingSpentTriggered(bobData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx)
-    val claimAnchorAlice = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainAlice = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainAlice.input.txid == bobData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
@@ -818,7 +820,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     bob2 ! WatchFundingSpentTriggered(aliceData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx)
-    val claimAnchorBob = bob2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(bob2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainBob = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainBob.input.txid == aliceData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
@@ -844,8 +846,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     alice2 ! WatchFundingSpentTriggered(bobCommitTx1)
-    val claimAnchorAlice = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainAlice = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainAlice.input.txid == bobCommitTx1.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.txid)
@@ -856,8 +859,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2 ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1)
     assert(bobListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    bob2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     bob2 ! WatchFundingSpentTriggered(aliceCommitTx1)
-    val claimAnchorBob = bob2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(bob2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainBob = bob2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainBob.input.txid == aliceCommitTx1.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.txid)
@@ -1016,7 +1020,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(alice.stateName == CLOSING)
     aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    val claimAnchorLocal = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainLocal = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainLocal.input.txid == aliceCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
@@ -1025,7 +1029,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     alice2blockchain.expectMsgType[WatchOutputSpent]
-    val claimAnchorRemote = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainRemote = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainRemote.input.txid == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
@@ -1050,7 +1054,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(alice.stateName == CLOSING)
     aliceListener.expectMsgType[ChannelAborted]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx2.tx.txid)
-    val claimAnchor2 = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain2 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain2.input.txid == aliceCommitTx2.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx2.tx.txid)
@@ -1061,8 +1065,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(aliceListener.expectMsgType[TransactionConfirmed].tx == fundingTx1)
     alice2blockchain.expectMsgType[WatchOutputSpent]
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx1.txid)
+    alice2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == aliceCommitTx1.tx.txid)
-    val claimAnchor1 = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMain1 = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMain1.input.txid == aliceCommitTx1.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx1.tx.txid)
@@ -1072,7 +1077,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Bob publishes his commit tx, Alice reacts by spending her remote main output.
     alice ! WatchFundingSpentTriggered(bobCommitTx1.tx)
     alice2blockchain.expectMsgType[WatchOutputSpent]
-    val claimAnchorRemote = alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
+    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     val claimMainRemote = alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx]
     assert(claimMainRemote.input.txid == bobCommitTx1.tx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx1.tx.txid)
