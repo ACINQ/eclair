@@ -189,37 +189,53 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       import f._
 
       val address = getNewAddress(probe)
-      val tx = sendToAddress(address, Btc(1), probe)
+      val tx1 = sendToAddress(address, Btc(0.7), probe)
+      val tx2 = sendToAddress(address, Btc(0.5), probe)
 
-      watcher ! WatchFundingConfirmed(probe.ref, tx.txid, 1)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx.txid, 4)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx.txid, 4) // setting the watch multiple times should be a no-op
+      watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 1)
+      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4)
+      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4) // setting the watch multiple times should be a no-op
+      watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 3)
+      watcher ! WatchFundingDeeplyBuried(probe.ref, tx2.txid, 6)
+      probe.expectNoMessage(100 millis)
+
+      watcher ! ListWatches(probe.ref)
+      assert(probe.expectMsgType[Set[Watch[_]]].size == 4)
+
+      generateBlocks(1)
+      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx1.txid)
+      probe.expectNoMessage(100 millis)
+
+      watcher ! ListWatches(probe.ref)
+      assert(probe.expectMsgType[Set[Watch[_]]].size == 3)
+
+      generateBlocks(2)
+      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx2.txid)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
       assert(probe.expectMsgType[Set[Watch[_]]].size == 2)
 
-      generateBlocks(1)
-      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx.txid)
-      probe.expectNoMessage(100 millis)
-
+      watcher ! UnwatchTxConfirmed(tx2.txid)
       watcher ! ListWatches(probe.ref)
       assert(probe.expectMsgType[Set[Watch[_]]].size == 1)
 
-      generateBlocks(3)
-      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx.txid)
+      generateBlocks(1)
+      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx1.txid)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
       assert(probe.expectMsgType[Set[Watch[_]]].isEmpty)
 
       // If we try to watch a transaction that has already been confirmed, we should immediately receive a WatchEventConfirmed.
-      watcher ! WatchFundingConfirmed(probe.ref, tx.txid, 1)
-      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx.txid)
-      watcher ! WatchFundingConfirmed(probe.ref, tx.txid, 2)
-      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx.txid)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx.txid, 4)
-      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx.txid)
+      watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 1)
+      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx1.txid)
+      watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 2)
+      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx2.txid)
+      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4)
+      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx1.txid)
+      watcher ! WatchFundingDeeplyBuried(probe.ref, tx2.txid, 4)
+      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx2.txid)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)

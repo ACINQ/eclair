@@ -170,6 +170,9 @@ object ZmqWatcher {
   private case object Keep extends AddWatchResult
   private case object Ignore extends AddWatchResult
 
+  /** Stop watching confirmations for a given transaction: must be used to stop watching obsolete RBF attempts. */
+  case class UnwatchTxConfirmed(txId: TxId) extends Command
+
   sealed trait WatchHint
   /**
    * In some cases we don't need to check watches every time a block is found and only need to check again after we
@@ -363,6 +366,14 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         val deprecatedWatches = watches.keySet.filter(_.replyTo == origin)
         val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
         watching(watches -- deprecatedWatches, watchedUtxos1)
+
+      case UnwatchTxConfirmed(txId) =>
+        // We remove watches that match the given txId.
+        val deprecatedWatches = watches.keySet.filter {
+          case w: WatchConfirmed[_] => w.txId == txId
+          case _ => false
+        }
+        watching(watches -- deprecatedWatches, watchedUtxos)
 
       case ValidateRequest(replyTo, ann) =>
         client.validate(ann).map(replyTo ! _)
