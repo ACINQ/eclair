@@ -1146,6 +1146,7 @@ class RouterSpec extends BaseRouterSpec {
     // The channel update for the splice is confirmed and the channel is not removed.
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn, newCapacity1, None, None) :: Nil))
+    eventListener.expectMsg(ChannelLost(scid_ab))
     peerConnection.expectNoMessage(100 millis)
     eventListener.expectNoMessage(100 millis)
 

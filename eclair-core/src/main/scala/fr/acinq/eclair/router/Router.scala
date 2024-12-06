@@ -66,7 +66,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
-  context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
   context.system.eventStream.publish(SubscriptionsComplete(this.getClass))
 
   startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
@@ -265,7 +264,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
       val txId = d.channels.getOrElse(shortChannelId, d.prunedChannels(shortChannelId)).fundingTxId
-      log.info("funding tx txId={} of channelId={} has been spent - delay removing it from the graph until {} blocks after the spend confirms", txId, shortChannelId, ANNOUNCEMENTS_MINCONF * 2)
+      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", txId, shortChannelId, spendingTx.txid)
       watcher ! WatchTxConfirmed(self, spendingTx.txid, ANNOUNCEMENTS_MINCONF * 2)
       stay() using d.copy(spentChannels = d.spentChannels + (spendingTx.txid -> shortChannelId))
 

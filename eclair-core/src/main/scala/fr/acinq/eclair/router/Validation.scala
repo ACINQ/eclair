@@ -31,10 +31,9 @@ import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.Validation.{addPublicChannel, splicePublicChannel}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TimestampSecond, TxCoordinates}
 
 object Validation {
 
@@ -115,7 +114,15 @@ object Validation {
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
             d0.spentChannels.get(tx.txid) match {
-              case Some(parentScid) => Some(splicePublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, d0.channels(parentScid)))
+              case Some(parentScid) =>
+                d0.channels.get(parentScid) match {
+                  case Some(parentChannel) =>
+                    Some(updateSplicedPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, parentChannel))
+                  case None =>
+                    log.error("spent parent channel shortChannelId={} not found for splice shortChannelId={}", parentScid, c.shortChannelId)
+                    val spentChannels1 = d0.spentChannels.filter(_._2 != parentScid)
+                    Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None).copy(spentChannels = spentChannels1))
+                }
               case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
             }
           }
@@ -160,35 +167,40 @@ object Validation {
     }
   }
 
-  private def splicePublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, spliceTxId: TxId, capacity: Satoshi, parentChannel: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  private def updateSplicedPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, spliceTxId: TxId, capacity: Satoshi, parentChannel: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val fundingOutputIndex = outputIndex(ann.shortChannelId)
     watcher ! WatchExternalChannelSpent(ctx.self, spliceTxId, fundingOutputIndex, ann.shortChannelId)
+    // we notify front nodes that the channel has been replaced
     ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
+    ctx.system.eventStream.publish(ChannelLost(parentChannel.shortChannelId))
     nodeParams.db.network.addChannel(ann, spliceTxId, capacity)
     nodeParams.db.network.removeChannel(parentChannel.shortChannelId)
-    val pubChan = PublicChannel(
+    val newPubChan = parentChannel.copy(
       ann = ann,
       fundingTxId = spliceTxId,
       capacity = capacity,
-      update_1_opt = None,
-      update_2_opt = None,
-      meta_opt = parentChannel.meta_opt
+      // update the timestamps of the channel updates to ensure the spliced channel is not pruned
+      update_1_opt = parentChannel.update_1_opt.map(_.copy(shortChannelId = ann.shortChannelId, timestamp = TimestampSecond.now())),
+      update_2_opt = parentChannel.update_2_opt.map(_.copy(shortChannelId = ann.shortChannelId, timestamp = TimestampSecond.now())),
     )
-    log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, pubChan)
+    log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, newPubChan)
     // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
-    log.debug("updating the graph for shortChannelId={}", pubChan.shortChannelId)
+    log.debug("updating the graph for shortChannelId={}", newPubChan.shortChannelId)
     val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
+    val spentChannels1 = d.spentChannels.filter(_._2 != parentChannel.shortChannelId)
     d.copy(
       // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
-      channels = d.channels + (pubChan.shortChannelId -> pubChan) - parentChannel.shortChannelId,
+      channels = d.channels + (newPubChan.shortChannelId -> newPubChan) - parentChannel.shortChannelId,
+      // remove the parent channel from the pruned channels
+      prunedChannels = d.prunedChannels - parentChannel.shortChannelId,
       // we also add the newly validated channels to the rebroadcast queue
       rebroadcast = d.rebroadcast.copy(
         // we rebroadcast the splice channel to our peers
-        channels = d.rebroadcast.channels + (pubChan.ann -> d.awaiting.getOrElse(pubChan.ann, if (pubChan.nodeId1 == nodeParams.nodeId || pubChan.nodeId2 == nodeParams.nodeId) Seq(LocalGossip) else Nil).toSet),
+        channels = d.rebroadcast.channels + (newPubChan.ann -> d.awaiting.getOrElse(newPubChan.ann, if (isRelatedTo(ann, nodeParams.nodeId)) Seq(LocalGossip) else Nil).toSet),
       ),
       graphWithBalances = graph1,
-      spentChannels = d.spentChannels.filter(_._2 != parentChannel.shortChannelId)
+      spentChannels = spentChannels1
     )
   }
 
@@ -272,7 +284,11 @@ object Validation {
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = d.spentChannels.filter(_._2 != shortChannelId))
+    // we no longer need to track this or alternative transactions that spent the parent channel
+    // either this channel was really closed, or it was spliced and the announcement was not received in time
+    // we will re-add a spliced channel as a new channel later when we receive the announcement
+    val spentChannels1 = d.spentChannels.filter(_._2 != shortChannelId)
+    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
   }
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
