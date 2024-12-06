@@ -1832,7 +1832,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.ignoreMsg { case _: ChannelUpdate => true }
 
     disconnect(f)
-    reconnect(f)
+    reconnect(f, interceptFundingDeeplyBuried = false)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
 
     // NB: channel_ready are not re-sent because the channel has already been used (for building splices).
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
@@ -1846,7 +1847,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[WatchFundingSpent]
 
     disconnect(f)
-    reconnect(f)
+    reconnect(f, interceptFundingDeeplyBuried = false)
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
 
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
@@ -1860,7 +1862,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[WatchFundingSpent]
 
     disconnect(f)
-    reconnect(f)
+    reconnect(f, interceptFundingDeeplyBuried = false)
 
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
@@ -1876,7 +1878,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // NB: we disconnect *before* transmitting the splice_locked to Alice.
     disconnect(f)
-    reconnect(f)
+    reconnect(f, interceptFundingDeeplyBuried = false)
 
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
@@ -1887,7 +1889,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
 
     disconnect(f)
-    reconnect(f)
+    reconnect(f, interceptFundingDeeplyBuried = false)
 
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
