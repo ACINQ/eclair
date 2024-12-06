@@ -300,15 +300,9 @@ object Features {
     val mandatory = 54
   }
 
-  // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
-  // We're not advertising these bits yet in our announcements, clients have to assume support.
-  // This is why we haven't added them yet to `areSupported`.
-  // The version of trampoline enabled by this feature bit does not match the latest spec PR: once the spec is accepted,
-  // we will introduce a new version of trampoline that will work in parallel to this legacy one, until we can safely
-  // deprecate it.
-  case object TrampolinePaymentPrototype extends Feature with InitFeature with NodeFeature with Bolt11Feature {
-    val rfcName = "trampoline_payment_prototype"
-    val mandatory = 148
+  case object TrampolinePayment extends Feature with InitFeature with NodeFeature with Bolt11Feature with Bolt12Feature {
+    val rfcName = "trampoline_routing"
+    val mandatory = 56
   }
 
   // TODO: @remyers update feature bits once spec-ed (currently reserved here: https://github.com/lightning/bolts/pull/989)
@@ -363,7 +357,7 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
-    TrampolinePaymentPrototype,
+    TrampolinePayment,
     AsyncPaymentPrototype,
     SplicePrototype,
     OnTheFlyFunding,
@@ -378,9 +372,9 @@ object Features {
     AnchorOutputs -> (StaticRemoteKey :: Nil),
     AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
     RouteBlinding -> (VariableLengthOnion :: Nil),
-    TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
+    TrampolinePayment -> (BasicMultiPartPayment :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
-    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
+    AsyncPaymentPrototype -> (TrampolinePayment :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
