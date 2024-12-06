@@ -643,6 +643,7 @@ object CustomTypeHints {
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
       classOf[DATA_NEGOTIATING],
+      classOf[DATA_NEGOTIATING_SIMPLE],
       classOf[DATA_CLOSING],
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
     ), typeHintFieldName = "type")
