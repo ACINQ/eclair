@@ -446,7 +446,8 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
     val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
     val anchorWeight = Map(anchorTx.txInfo.input.outPoint -> anchorInputWeight.toLong)
-    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, externalInputsWeight = anchorWeight).flatMap { fundTxResponse =>
+    // We only use confirmed inputs for anchor transactions to be able to leverage 1-parent-1-child package relay.
+    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, externalInputsWeight = anchorWeight, minConfirmations_opt = Some(1)).flatMap { fundTxResponse =>
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
       // We merge our dummy change output with the one added by Bitcoin Core, if any.
