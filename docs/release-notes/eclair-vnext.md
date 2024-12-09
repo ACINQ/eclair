@@ -4,6 +4,11 @@
 
 ## Major changes
 
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 28.1.
+Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+
 ### Simplified mutual close
 
 This release includes support for the latest [mutual close protocol](https://github.com/lightning/bolts/pull/1205).
