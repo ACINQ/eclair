@@ -375,7 +375,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       shortIds4.real.toOption.get.toLong -> channelId4,
     )
     val g = GraphWithBalanceEstimates(DirectedGraph(Nil), 1 hour)
-    val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty)
+    val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty, Map.empty)
 
     eclair.findRoute(c, 250_000 msat, None)
     val routeRequest1 = router.expectMsgType[RouteRequest]

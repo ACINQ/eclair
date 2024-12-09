@@ -104,20 +104,6 @@ object ZmqWatcher {
     def hints: Set[TxId]
   }
 
-  /**
-   * Watch for the first transaction spending the given outpoint. We assume that txid is already confirmed or in the
-   * mempool (i.e. the outpoint exists).
-   *
-   * NB: an event will be triggered only once when we see a transaction that spends the given outpoint. If you want to
-   * react to the transaction spending the outpoint, you should use [[WatchSpent]] instead.
-   */
-  sealed trait WatchSpentBasic[T <: WatchSpentBasicTriggered] extends Watch[T] {
-    /** TxId of the outpoint to watch. */
-    def txId: TxId
-    /** Index of the outpoint to watch. */
-    def outputIndex: Int
-  }
-
   /** This event is sent when a [[WatchConfirmed]] condition is met. */
   sealed trait WatchConfirmedTriggered extends WatchTriggered {
     /** Block in which the transaction was confirmed. */
@@ -134,11 +120,10 @@ object ZmqWatcher {
     def spendingTx: Transaction
   }
 
-  /** This event is sent when a [[WatchSpentBasic]] condition is met. */
-  sealed trait WatchSpentBasicTriggered extends WatchTriggered
-
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
-  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpent[WatchExternalChannelSpentTriggered] {
+    override def hints: Set[TxId] = Set.empty
+  }
+  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId, spendingTx: Transaction) extends WatchSpentTriggered
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
@@ -197,7 +182,6 @@ object ZmqWatcher {
   private def utxo(w: GenericWatch): Option[OutPoint] = {
     w match {
       case w: WatchSpent[_] => Some(OutPoint(w.txId, w.outputIndex))
-      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId, w.outputIndex))
       case _ => None
     }
   }
@@ -245,7 +229,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           .flatMap(watchedUtxos.get)
           .flatten
           .foreach {
-            case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
+            case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, tx))
             case w: WatchFundingSpent => context.self ! TriggerEvent(w.replyTo, w, WatchFundingSpentTriggered(tx))
             case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
             case _: WatchPublished => // nothing to do
@@ -339,9 +323,6 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         val result = w match {
           case _ if watches.contains(w) =>
             Ignore // we ignore duplicates
-          case w: WatchSpentBasic[_] =>
-            checkSpentBasic(w)
-            Keep
           case w: WatchSpent[_] =>
             checkSpent(w)
             Keep
@@ -387,17 +368,6 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         r.replyTo ! watches.keySet
         Behaviors.same
 
-    }
-  }
-
-  private def checkSpentBasic(w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]): Future[Unit] = {
-    // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
-    client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-      case false =>
-        log.info(s"output=${w.txId}:${w.outputIndex} has already been spent")
-        w match {
-          case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
-        }
     }
   }
 

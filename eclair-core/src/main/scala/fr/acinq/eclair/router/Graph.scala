@@ -624,7 +624,15 @@ object Graph {
       }
     }
 
-    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge])
+    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge]) {
+      def update(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): Vertex =
+        incomingEdges.get(desc) match {
+          case None => this
+          case Some(edge) =>
+            val updatedEdge = edge.copy(desc = desc.copy(shortChannelId = newShortChannelId), capacity = newCapacity)
+            copy(incomingEdges = incomingEdges - desc + (desc.copy(shortChannelId = newShortChannelId) -> updatedEdge))
+        }
+    }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */
     case class DirectedGraph(private val vertices: Map[PublicKey, Vertex]) {
@@ -676,6 +684,22 @@ object Graph {
 
       def removeChannels(descList: Iterable[ChannelDesc]): DirectedGraph = {
         descList.foldLeft(this)((acc, edge) => acc.removeChannel(edge))
+      }
+
+      /**
+       * Update the shortChannelId and capacity of edges corresponding to the given channel-desc,
+       * both edges (corresponding to both directions) are updated.
+       *
+       * @param desc the channel description for the channel to update
+       * @param newShortChannelId the new shortChannelId for this channel
+       * @param newCapacity the new capacity of the channel
+       * @return a new graph with updated vertexes
+       */
+      def updateChannel(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): DirectedGraph = {
+        DirectedGraph(vertices
+          .updatedWith(desc.b)(_.map(_.update(desc, newShortChannelId, newCapacity)))
+          .updatedWith(desc.a)(_.map(_.update(desc.reversed, newShortChannelId, newCapacity)))
+        )
       }
 
       /**
