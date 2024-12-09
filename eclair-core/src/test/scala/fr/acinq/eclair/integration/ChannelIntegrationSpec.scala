@@ -199,6 +199,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -240,6 +243,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -293,6 +299,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -349,6 +358,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -594,6 +606,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val closingTx = sender.expectMsgType[Transaction]
     assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(finalPubKeyScriptC, finalPubKeyScriptF))
 
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -645,6 +659,9 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     generateBlocks(2)
     // and we wait for C's channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -768,6 +785,9 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
     generateBlocks(2)
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -797,6 +817,9 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     generateBlocks(2)
     // and we wait for C's channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
+
+    // generate enough blocks so the router will know the channel has been closed and not spliced
+    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
