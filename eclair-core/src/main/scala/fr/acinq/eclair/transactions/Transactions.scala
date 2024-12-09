@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
@@ -30,7 +30,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
-import scala.util.Try
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 15/12/2016.
@@ -94,9 +94,22 @@ object Transactions {
 
   // @formatter:off
   case class OutputInfo(index: Long, amount: Satoshi, publicKeyScript: ByteVector)
-  case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector)
+
+  /**
+   * to spend the output of a taproot transactions, we need to know the script tree and internal key used to build this output
+   */
+  case class ScriptTreeAndInternalKey(scriptTree: ScriptTree, internalKey: XonlyPublicKey) {
+    val publicKeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
+  }
+
+  case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey]) {
+    val redeemScriptOrEmptyScript: ByteVector = redeemScriptOrScriptTree.swap.getOrElse(ByteVector.empty) // TODO: use the actual script tree for taproot transactions, once we implement them
+  }
+
   object InputInfo {
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new InputInfo(outPoint, txOut, Script.write(redeemScript))
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector) = new InputInfo(outPoint, txOut, Left(redeemScript))
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new InputInfo(outPoint, txOut, Left(Script.write(redeemScript)))
+    def apply(outPoint: OutPoint, txOut: TxOut, scriptTree: ScriptTreeAndInternalKey) = new InputInfo(outPoint, txOut, Right(scriptTree))
   }
 
   /** Owner of a given transaction (local/remote). */
@@ -118,7 +131,23 @@ object Transactions {
     }
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
+
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = Transactions.sign(this, key, sighash(txOwner, commitmentFormat))
+
+    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = {
+      // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+      // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
+      val inputIndex = tx.txIn.zipWithIndex.find(_._1.outPoint == input.outPoint).get._2
+      Transactions.sign(tx, input.redeemScriptOrEmptyScript, input.txOut.amount, key, sighashType, inputIndex)
+    }
+
+    def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
+      val sighash = this.sighash(txOwner, commitmentFormat)
+      val data = Transaction.hashForSigning(tx, inputIndex = 0, input.redeemScriptOrEmptyScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
+      Crypto.verifySignature(data, sig, pubKey)
+    }
   }
+
   sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo {
     /** Block before which the transaction must be confirmed. */
     def confirmationTarget: ConfirmationTarget
@@ -230,6 +259,27 @@ object Transactions {
    * @return the fee rate (in Satoshi/Kw) for this tx
    */
   def fee2rate(fee: Satoshi, weight: Int): FeeratePerKw = FeeratePerKw((fee * 1000L) / weight)
+
+  /** As defined in https://github.com/lightning/bolts/blob/master/03-transactions.md#dust-limits */
+  def dustLimit(scriptPubKey: ByteVector): Satoshi = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => 546.sat
+      case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => 540.sat
+      case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => 294.sat
+      case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => 330.sat
+      case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => 354.sat
+      case Success(OP_RETURN :: _) => 0.sat // OP_RETURN is never dust
+      case _ => 546.sat
+    }
+  }
+
+  /** When an output is using OP_RETURN, we usually want to make sure its amount is 0, otherwise bitcoind won't accept it. */
+  def isOpReturn(scriptPubKey: ByteVector): Boolean = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_RETURN :: _) => true
+      case _ => false
+    }
+  }
 
   /** Offered HTLCs below this amount will be trimmed. */
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
@@ -814,6 +864,77 @@ object Transactions {
     ClosingTx(commitTxInput, tx, toLocalOutput)
   }
 
+  // @formatter:off
+  /** We always create multiple versions of each closing transaction, where fees are either paid by us or by our peer. */
+  sealed trait SimpleClosingTxFee
+  object SimpleClosingTxFee {
+    case class PaidByUs(fee: Satoshi) extends SimpleClosingTxFee
+    case class PaidByThem(fee: Satoshi) extends SimpleClosingTxFee
+  }
+  // @formatter:on
+
+  /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
+  case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {
+    /** Preferred closing transaction for this closing attempt. */
+    val preferred_opt: Option[ClosingTx] = localAndRemote_opt.orElse(localOnly_opt).orElse(remoteOnly_opt)
+    val all: Seq[ClosingTx] = Seq(localAndRemote_opt, localOnly_opt, remoteOnly_opt).flatten
+
+    override def toString: String = s"localAndRemote=${localAndRemote_opt.map(_.tx.toString()).getOrElse("n/a")}, localOnly=${localOnly_opt.map(_.tx.toString()).getOrElse("n/a")}, remoteOnly=${remoteOnly_opt.map(_.tx.toString()).getOrElse("n/a")}"
+  }
+
+  def makeSimpleClosingTxs(input: InputInfo, spec: CommitmentSpec, fee: SimpleClosingTxFee, lockTime: Long, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector): ClosingTxs = {
+    require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
+
+    val txNoOutput = Transaction(2, Seq(TxIn(input.outPoint, ByteVector.empty, sequence = 0xFFFFFFFDL)), Nil, lockTime)
+
+    // We compute the remaining balance for each side after paying the closing fees.
+    // This lets us decide whether outputs can be included in the closing transaction or not.
+    val (toLocalAmount, toRemoteAmount) = fee match {
+      case SimpleClosingTxFee.PaidByUs(fee) => (spec.toLocal.truncateToSatoshi - fee, spec.toRemote.truncateToSatoshi)
+      case SimpleClosingTxFee.PaidByThem(fee) => (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - fee)
+    }
+
+    // An OP_RETURN script may be provided, but only when burning all of the peer's balance to fees.
+    val toLocalOutput_opt = if (toLocalAmount >= dustLimit(localScriptPubKey)) {
+      val amount = if (isOpReturn(localScriptPubKey)) 0.sat else toLocalAmount
+      Some(TxOut(amount, localScriptPubKey))
+    } else {
+      None
+    }
+    val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit(remoteScriptPubKey)) {
+      val amount = if (isOpReturn(remoteScriptPubKey)) 0.sat else toRemoteAmount
+      Some(TxOut(amount, remoteScriptPubKey))
+    } else {
+      None
+    }
+
+    // We may create multiple closing transactions based on which outputs may be included.
+    (toLocalOutput_opt, toRemoteOutput_opt) match {
+      case (Some(toLocalOutput), Some(toRemoteOutput)) =>
+        val txLocalAndRemote = LexicographicalOrdering.sort(txNoOutput.copy(txOut = Seq(toLocalOutput, toRemoteOutput)))
+        val toLocalOutputInfo = findPubKeyScriptIndex(txLocalAndRemote, localScriptPubKey).map(index => OutputInfo(index, toLocalOutput.amount, localScriptPubKey)).toOption
+        ClosingTxs(
+          localAndRemote_opt = Some(ClosingTx(input, txLocalAndRemote, toLocalOutputInfo)),
+          // We also provide a version of the transaction without the remote output, which they may want to omit if not economical to spend.
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalOutput.amount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (Some(toLocalOutput), None) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalOutput.amount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (None, Some(toRemoteOutput)) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = None,
+          remoteOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toRemoteOutput)), None))
+        )
+      case (None, None) => ClosingTxs(None, None, None)
+    }
+  }
+
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteVector): Either[TxGenerationSkipped, Int] = {
     val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == pubkeyScript)
     if (outputIndex >= 0) {
@@ -852,14 +973,12 @@ object Transactions {
     sig64
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
+  private def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
     // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
     // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
     val inputIndex = txinfo.tx.txIn.zipWithIndex.find(_._1.outPoint == txinfo.input.outPoint).get._2
-    sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType, inputIndex)
+    sign(txinfo.tx, txinfo.input.redeemScriptOrEmptyScript, txinfo.input.txOut.amount, key, sighashType, inputIndex)
   }
-
-  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(txinfo, key, txinfo.sighash(txOwner, commitmentFormat))
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
@@ -867,32 +986,32 @@ object Transactions {
   }
 
   def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: ByteVector64): MainPenaltyTx = {
-    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, mainPenaltyTx.input.redeemScript)
+    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, mainPenaltyTx.input.redeemScriptOrEmptyScript)
     mainPenaltyTx.copy(tx = mainPenaltyTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector64, revocationPubkey: PublicKey): HtlcPenaltyTx = {
-    val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, htlcPenaltyTx.input.redeemScript)
+    val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, htlcPenaltyTx.input.redeemScriptOrEmptyScript)
     htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
-    val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript, commitmentFormat)
+    val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScriptOrEmptyScript, commitmentFormat)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
-    val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript, commitmentFormat)
+    val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScriptOrEmptyScript, commitmentFormat)
     htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = {
-    val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
+    val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScriptOrEmptyScript)
     claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector64): ClaimHtlcTimeoutTx = {
-    val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
+    val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScriptOrEmptyScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
@@ -902,27 +1021,27 @@ object Transactions {
   }
 
   def addSigs(claimRemoteDelayedOutputTx: ClaimRemoteDelayedOutputTx, localSig: ByteVector64): ClaimRemoteDelayedOutputTx = {
-    val witness = witnessClaimToRemoteDelayedFromCommitTx(localSig, claimRemoteDelayedOutputTx.input.redeemScript)
+    val witness = witnessClaimToRemoteDelayedFromCommitTx(localSig, claimRemoteDelayedOutputTx.input.redeemScriptOrEmptyScript)
     claimRemoteDelayedOutputTx.copy(tx = claimRemoteDelayedOutputTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimDelayedOutputTx: ClaimLocalDelayedOutputTx, localSig: ByteVector64): ClaimLocalDelayedOutputTx = {
-    val witness = witnessToLocalDelayedAfterDelay(localSig, claimDelayedOutputTx.input.redeemScript)
+    val witness = witnessToLocalDelayedAfterDelay(localSig, claimDelayedOutputTx.input.redeemScriptOrEmptyScript)
     claimDelayedOutputTx.copy(tx = claimDelayedOutputTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcDelayedTx: HtlcDelayedTx, localSig: ByteVector64): HtlcDelayedTx = {
-    val witness = witnessToLocalDelayedAfterDelay(localSig, htlcDelayedTx.input.redeemScript)
+    val witness = witnessToLocalDelayedAfterDelay(localSig, htlcDelayedTx.input.redeemScriptOrEmptyScript)
     htlcDelayedTx.copy(tx = htlcDelayedTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimAnchorOutputTx: ClaimLocalAnchorOutputTx, localSig: ByteVector64): ClaimLocalAnchorOutputTx = {
-    val witness = witnessAnchor(localSig, claimAnchorOutputTx.input.redeemScript)
+    val witness = witnessAnchor(localSig, claimAnchorOutputTx.input.redeemScriptOrEmptyScript)
     claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcDelayedPenalty: ClaimHtlcDelayedOutputPenaltyTx, revocationSig: ByteVector64): ClaimHtlcDelayedOutputPenaltyTx = {
-    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimHtlcDelayedPenalty.input.redeemScript)
+    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimHtlcDelayedPenalty.input.redeemScriptOrEmptyScript)
     claimHtlcDelayedPenalty.copy(tx = claimHtlcDelayedPenalty.tx.updateWitness(0, witness))
   }
 
@@ -935,11 +1054,4 @@ object Transactions {
     // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
   }
-
-  def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
-    val sighash = txinfo.sighash(txOwner, commitmentFormat)
-    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, sighash, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
-    Crypto.verifySignature(data, sig, pubKey)
-  }
-
 }
