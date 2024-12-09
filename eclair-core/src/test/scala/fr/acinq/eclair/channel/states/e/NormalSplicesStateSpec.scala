@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
+import fr.acinq.eclair.channel.states.ChannelStateTestsTags.{AnchorOutputsZeroFeeHtlcTxs, OptionSimpleTaprootStaging, ZeroConf}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
 import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
@@ -41,7 +42,7 @@ import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, ClaimLocalAnchorOutputTx}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -609,7 +610,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
-    assert(commitFees > 20_000.sat)
+    if (commitment.params.commitmentFormat.useTaproot) {
+      assert(commitFees > 7_000.sat)
+    } else {
+      assert(commitFees > 20_000.sat)
+    }
 
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
@@ -924,7 +929,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(sender.expectMsgType[RES_FAILURE[_, ChannelException]].t.isInstanceOf[InvalidRbfMissingLiquidityPurchase])
     alice2bob.forward(bob, Stfu(alice.stateData.channelId, initiator = true))
     bob2alice.expectMsgType[Stfu]
-    alice2bob.forward(bob, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(17_500 sat), 500_000 sat, requireConfirmedInputs = false, requestFunding_opt = None))
+    alice2bob.forward(bob, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(17_500 sat), 500_000 sat, requireConfirmedInputs = false, requestFunding_opt = None, List.empty))
     inside(bob2alice.expectMsgType[TxAbort]) { msg =>
       assert(msg.toAscii.contains("the previous attempt contained a liquidity purchase"))
     }
@@ -945,7 +950,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     bob2alice.forward(alice, Stfu(alice.stateData.channelId, initiator = true))
     alice2bob.expectMsgType[Stfu]
-    bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(15_000 sat), 250_000 sat, requireConfirmedInputs = false, None))
+    bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(15_000 sat), 250_000 sat, requireConfirmedInputs = false, None, List.empty))
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("transaction is already confirmed"))
   }
 
@@ -962,7 +967,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     bob2alice.forward(alice, Stfu(alice.stateData.channelId, initiator = true))
     alice2bob.expectMsgType[Stfu]
-    bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(15_000 sat), 250_000 sat, requireConfirmedInputs = false, None))
+    bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(15_000 sat), 250_000 sat, requireConfirmedInputs = false, None, List.empty))
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("we're using zero-conf"))
   }
 
@@ -1679,6 +1684,41 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
   }
 
+  test("disconnect (tx_signatures sent by bob, commit_sig not received by Alice)") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    // we supposed Alice has not received Bob's commit signature and has an unsigned commit tx
+    // bob2alice.forward(alice)
+    val spliceTxId = bob2alice.expectMsgType[TxSignatures].txId // Alice doesn't receive Bob's tx_signatures
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f, interceptFundingDeeplyBuried = false)
+    assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceTxId))
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceTxId))
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2blockchain.expectWatchFundingConfirmed(spliceTxId)
+
+    val spliceTx = exchangeSpliceSigs(f, sender)
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+  }
+
   test("disconnect (tx_signatures received by alice)") { f =>
     import f._
 
@@ -1939,6 +1979,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[Error]
     val commitTx2 = assertPublished(alice2blockchain, "commit-tx")
     Transaction.correctlySpends(commitTx2, Seq(fundingTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val isAnchorOutputs = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => true
+      case _ => false
+    }
+    if (isAnchorOutputs) {
+      val claimAnchor = assertPublished(alice2blockchain, "local-anchor")
+    }
     val claimMainDelayed2 = assertPublished(alice2blockchain, "local-main-delayed")
     // Alice publishes her htlc timeout transactions.
     val htlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "htlc-timeout"))
@@ -1946,6 +1994,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val watchConfirmedCommit2 = alice2blockchain.expectWatchTxConfirmed(commitTx2.txid)
     val watchConfirmedClaimMainDelayed2 = alice2blockchain.expectWatchTxConfirmed(claimMainDelayed2.txid)
+    // watch for all htlc outputs from local commit-tx to be spent
+    if (isAnchorOutputs) {
+      alice2blockchain.expectMsgType[WatchOutputSpent]
+    }
     val watchHtlcsOut = htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
 
@@ -2684,5 +2736,18 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 805_000_000.msat)
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 695_000_000.msat)
   }
+}
 
+class NormalSplicesStateWithTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override def withFixture(test: OneArgTest): Outcome = {
+    val tags = test.tags + ChannelStateTestsTags.DualFunding + ChannelStateTestsTags.OptionSimpleTaprootStaging + ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs
+    val setup = init(tags = tags)
+    import setup._
+    reachNormal(setup, tags)
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    awaitCond(alice.stateName == NORMAL)
+    awaitCond(bob.stateName == NORMAL)
+    withFixture(test.toNoArgTest(setup))
+  }
 }

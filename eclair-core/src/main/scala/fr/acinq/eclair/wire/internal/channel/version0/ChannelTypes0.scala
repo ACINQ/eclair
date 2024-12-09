@@ -121,7 +121,7 @@ private[channel] object ChannelTypes0 {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
-      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, Left(remoteSig))
+      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
       val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
         case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
           val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
@@ -133,15 +133,15 @@ private[channel] object ChannelTypes0 {
       channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
     }
 
-    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
+    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): Either[ByteVector64, PartialSignatureWithNonce] = {
       require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
       val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
       val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
       require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
       if (pub1 == remoteFundingPubKey.value) {
-        Crypto.der2compact(sig1)
+        Left(Crypto.der2compact(sig1))
       } else {
-        Crypto.der2compact(sig2)
+        Left(Crypto.der2compact(sig2))
       }
     }
   }
