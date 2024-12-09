@@ -194,6 +194,52 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
   }
 
+  test("fund transactions with confirmed inputs") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val sender = TestProbe()
+    val miner = makeBitcoinCoreClient()
+    val wallet = new BitcoinCoreClient(createWallet("funding_confirmed_inputs", sender))
+    wallet.getReceiveAddress().pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    val pubkeyScript = Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get)
+
+    // We first receive some confirmed funds.
+    miner.sendToPubkeyScript(pubkeyScript, 150_000 sat, FeeratePerKw(FeeratePerByte(5 sat))).pipeTo(sender.ref)
+    val externalTxId = sender.expectMsgType[TxId]
+    generateBlocks(1)
+
+    // Our utxo has 1 confirmation: we can spend it if we allow this confirmation count.
+    val tx1 = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(125_000 sat, pubkeyScript)), 0)
+      wallet.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1_000 sat), minConfirmations = Some(2)), feeBudget_opt = None).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+      wallet.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1_000 sat), minConfirmations = Some(1)), feeBudget_opt = None).pipeTo(sender.ref)
+      val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+      wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    assert(tx1.txIn.map(_.outPoint.txid).toSet == Set(externalTxId))
+
+    // We now have an unconfirmed utxo, which we can spend if we allow spending unconfirmed transactions.
+    val tx2 = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, pubkeyScript)), 0)
+      wallet.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1_000 sat), minConfirmations = Some(1)), feeBudget_opt = None).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+      wallet.fundTransaction(txNotFunded, FundTransactionOptions(FeeratePerKw(1_000 sat), minConfirmations = None), feeBudget_opt = None).pipeTo(sender.ref)
+      val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+      wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    assert(tx2.txIn.map(_.outPoint.txid).toSet == Set(tx1.txid))
+  }
+
   test("fund transactions with external inputs") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
@@ -500,22 +546,26 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val bitcoinClient = makeBitcoinCoreClient()
 
-    // create a huge tx so we make sure it has > 2 inputs
+    // Create a huge tx so we make sure it has > 2 inputs without publishing it.
     bitcoinClient.makeFundingTx(pubkeyScript, 250 btc, FeeratePerKw(1000 sat)).pipeTo(sender.ref)
-    val MakeFundingTxResponse(fundingTx, outputIndex, _) = sender.expectMsgType[MakeFundingTxResponse]
+    val fundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
     assert(fundingTx.txIn.length > 2)
 
-    // spend the first 2 inputs
+    // Double-spend the first 2 inputs.
+    val amountIn = fundingTx.txIn.take(2).map(txIn => {
+      bitcoinClient.getTransaction(txIn.outPoint.txid).pipeTo(sender.ref)
+      sender.expectMsgType[Transaction].txOut(txIn.outPoint.index.toInt).amount
+    }).sum
     val tx1 = fundingTx.copy(
       txIn = fundingTx.txIn.take(2),
-      txOut = fundingTx.txOut.updated(outputIndex, fundingTx.txOut(outputIndex).copy(amount = 50 btc))
+      txOut = Seq(TxOut(amountIn - 15_000.sat, Script.pay2wpkh(randomKey().publicKey)))
     )
     bitcoinClient.signPsbt(new Psbt(tx1), tx1.txIn.indices, Nil).pipeTo(sender.ref)
     val tx2 = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
     bitcoinClient.commit(tx2).pipeTo(sender.ref)
     sender.expectMsg(true)
 
-    // fundingTx inputs are still locked except for the first 2 that were just spent
+    // The inputs of the first transaction are still locked except for the first 2 that were just spent.
     val expectedLocks = fundingTx.txIn.drop(2).map(_.outPoint).toSet
     assert(expectedLocks.nonEmpty)
     awaitAssert({
@@ -523,11 +573,11 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       sender.expectMsg(expectedLocks)
     }, max = 10 seconds, interval = 1 second)
 
-    // publishing fundingTx will fail as its first 2 inputs are already spent by tx above in the mempool
+    // Publishing the first transaction will fail as its first 2 inputs are already spent by the second transaction.
     bitcoinClient.commit(fundingTx).pipeTo(sender.ref)
     sender.expectMsg(false)
 
-    // and all locked inputs should now be unlocked
+    // And all locked inputs should now be unlocked.
     awaitAssert({
       bitcoinClient.listLockedOutpoints().pipeTo(sender.ref)
       sender.expectMsg(Set.empty[OutPoint])
@@ -594,15 +644,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
     wallet.getMempoolTx(anchorTx2.txid).pipeTo(sender.ref)
     sender.expectMsgType[MempoolTx]
-    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
-    wallet.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
 
-    // The second anchor transaction confirms, which frees up the wallet input of the first anchor transaction.
-    generateBlocks(1)
+    // Bitcoin Core automatically detects that the wallet input of the first anchor transaction is available again.
     wallet.listUnspent().pipeTo(sender.ref)
     val walletUtxos = sender.expectMsgType[Seq[Utxo]]
     assert(walletUtxos.exists(_.txid == walletInput1.txid))
+    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
     wallet.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
     sender.expectMsgType[FundTransactionResponse]
   }
@@ -668,15 +715,12 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(sender.expectMsgType[Failure].cause.getMessage.contains("Transaction not in mempool"))
     miner.getMempoolTx(htlcTimeoutTx.txid).pipeTo(sender.ref)
     sender.expectMsgType[MempoolTx]
-    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
-    wallet1.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
 
-    // The second anchor transaction confirms, which frees up the wallet input of the first anchor transaction.
-    generateBlocks(1)
+    // Bitcoin Core automatically detects that the wallet input of the first HTLC transaction is available again.
     wallet1.listUnspent().pipeTo(sender.ref)
     val walletUtxos = sender.expectMsgType[Seq[Utxo]]
     assert(walletUtxos.exists(_.txid == walletInput1.txid))
+    val txNotFunded = Transaction(2, Nil, Seq(TxOut(150_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
     wallet1.fundTransaction(txNotFunded, FeeratePerKw(1000 sat), replaceable = true).pipeTo(sender.ref)
     sender.expectMsgType[FundTransactionResponse]
   }

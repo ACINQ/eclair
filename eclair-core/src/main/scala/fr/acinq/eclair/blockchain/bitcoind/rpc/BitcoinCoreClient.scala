@@ -26,7 +26,6 @@ import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFu
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
-import fr.acinq.eclair.json.SatoshiSerializer
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{BlockHeight, TimestampSecond, TxCoordinates}
@@ -262,8 +261,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val onChainKeyManag
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq), feeBudget_opt = feeBudget_opt)
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None, minConfirmations_opt: Option[Int] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    fundTransaction(tx, FundTransactionOptions(feeRate, replaceable, inputWeights = externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq, minConfirmations = minConfirmations_opt), feeBudget_opt = feeBudget_opt)
   }
 
   private def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Option[Int] = None)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
@@ -704,10 +703,10 @@ object BitcoinCoreClient {
     def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.value.toHex, outPoint.index, weight)
   }
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], minconf: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   object FundTransactionOptions {
-    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, minConfirmations: Option[Int] = None, inputWeights: Seq[InputWeight] = Nil): FundTransactionOptions = {
       FundTransactionOptions(
         BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8),
         replaceable,
@@ -721,6 +720,7 @@ object BitcoinCoreClient {
         // potentially be double-spent.
         lockUnspents = true,
         changePosition,
+        minConfirmations,
         if (inputWeights.isEmpty) None else Some(inputWeights)
       )
     }
