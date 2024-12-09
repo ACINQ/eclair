@@ -681,7 +681,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
-    
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localPushAmount" | millisatoshi) ::
@@ -754,6 +754,27 @@ private[channel] object ChannelCodecs4 {
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
 
+    private val closingTxsCodec: Codec[ClosingTxs] = (
+      ("localAndRemote_opt" | optional(bool8, closingTxCodec)) ::
+        ("localOnly_opt" | optional(bool8, closingTxCodec)) ::
+        ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
+    
+    private val waitingForRemoteShutdownCodec: Codec[ClosingNegotiation.WaitingForRemoteShutdown] = (
+      ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerate" | feeratePerKw)
+      ).as[ClosingNegotiation.WaitingForRemoteShutdown]
+
+    val closingNegotiationCodec: Codec[ClosingNegotiation] = discriminated[ClosingNegotiation].by(uint8)
+      .\(0x01) { case status: ClosingNegotiation.WaitingForRemoteShutdown => status }(waitingForRemoteShutdownCodec)
+      .\(0x02) { case status: ClosingNegotiation.SigningTransactions => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, status.closingFeerate) }(waitingForRemoteShutdownCodec)
+      .\(0x03) { case status: ClosingNegotiation.WaitingForConfirmation => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, status.closingFeerate) }(waitingForRemoteShutdownCodec)
+
+    val DATA_NEGOTIATING_SIMPLE_14_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
+      ("commitments" | commitmentsCodec) ::
+        ("status" | closingNegotiationCodec) ::
+        ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
+        ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
+
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("waitingSince" | blockHeight) ::
@@ -789,6 +810,7 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x14, Codecs.DATA_NEGOTIATING_SIMPLE_14_Codec)
     .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec)
     .typecase(0x12, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_12_Codec)
     .typecase(0x11, Codecs.DATA_CLOSING_11_Codec)
