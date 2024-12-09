@@ -234,23 +234,21 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val channelId = randomBytes32()
     val localShutdown = Shutdown(channelId, Script.write(Script.pay2wpkh(randomKey().publicKey)))
     val remoteShutdown = Shutdown(channelId, Script.write(Script.pay2wpkh(randomKey().publicKey)))
-    val waitingForRemoteShutdown = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.WaitForSigs)
     val closingFeerate = FeeratePerKw(5000 sat)
-    val waitingForRemoteShutdownWithFeerate = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.SignTransaction(closingFeerate))
-    val closingCompleteSent = ClosingCompleteSent(ClosingComplete(channelId, 1500 sat, 0), closingFeerate)
+    val waitingForRemoteShutdown = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, closingFeerate)
+    val closingComplete = ClosingComplete(channelId, 1500 sat, 0)
     val closingSigReceived = ClosingSig(channelId)
-    val testCases = Map(
-      waitingForRemoteShutdown -> waitingForRemoteShutdown,
-      waitingForRemoteShutdownWithFeerate -> waitingForRemoteShutdownWithFeerate,
-      ClosingNegotiation.WaitingForConfirmation(localShutdown, remoteShutdown) -> waitingForRemoteShutdown,
-      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, None, None, None) -> waitingForRemoteShutdown,
-      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, Some(closingCompleteSent), None, None) -> waitingForRemoteShutdownWithFeerate,
-      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, Some(closingCompleteSent), None, Some(closingSigReceived)) -> waitingForRemoteShutdown,
+    val testCases = Seq(
+      waitingForRemoteShutdown,
+      ClosingNegotiation.WaitingForConfirmation(localShutdown, remoteShutdown, closingFeerate),
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, closingFeerate, None, None, None),
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, closingFeerate, Some(closingComplete), None, None),
+      ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, closingFeerate, Some(closingComplete), None, Some(closingSigReceived)),
     )
-    testCases.foreach { case (status, expected) =>
+    testCases.foreach { status =>
       val encoded = closingNegotiationCodec.encode(status).require
       val decoded = closingNegotiationCodec.decode(encoded).require.value
-      assert(decoded == expected)
+      assert(decoded == waitingForRemoteShutdown)
     }
   }
 

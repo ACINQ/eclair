@@ -91,7 +91,7 @@ object TestDatabases {
       // When negotiating closing transactions with the option_simple_close feature, we discard pending signatures on
       // disconnection and will restart a signing round on reconnection.
       def freeze4(input: PersistentChannelData): PersistentChannelData = input match {
-        case d: DATA_NEGOTIATING_SIMPLE => freeze3(d.copy(status = d.status.disconnect()))
+        case d: DATA_NEGOTIATING_SIMPLE => freeze3(d.copy(status = ClosingNegotiation.WaitingForRemoteShutdown(d.status.localShutdown, d.status.closingFeerate)))
         case d => freeze3(d)
       }
 

@@ -139,12 +139,12 @@ trait CommonHandlers {
     MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, commitments.latest, localScript, remoteScript, closingFeerate) match {
       case Left(f) =>
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
-        val status = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, None, None, None)
+        val status = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, closingFeerate, None, None, None)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, status, Nil, Nil)
         goto(NEGOTIATING_SIMPLE) using d storing() sending toSend
       case Right((closingTxs, closingComplete)) =>
         log.debug("signing local mutual close transactions: {}", closingTxs)
-        val status = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, Some(ClosingCompleteSent(closingComplete, closingFeerate)), None, None)
+        val status = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, closingFeerate, Some(closingComplete), None, None)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, status, closingTxs :: Nil, Nil)
         goto(NEGOTIATING_SIMPLE) using d storing() sending toSend :+ closingComplete
     }

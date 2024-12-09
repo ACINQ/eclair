@@ -758,20 +758,16 @@ private[channel] object ChannelCodecs4 {
       ("localAndRemote_opt" | optional(bool8, closingTxCodec)) ::
         ("localOnly_opt" | optional(bool8, closingTxCodec)) ::
         ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
-
-    private val onRemoteShutdownCodec: Codec[OnRemoteShutdown] = discriminated[OnRemoteShutdown].by(uint8)
-      .typecase(0x00, provide(OnRemoteShutdown.WaitForSigs))
-      .typecase(0x01, feeratePerKw.as[OnRemoteShutdown.SignTransaction])
     
     private val waitingForRemoteShutdownCodec: Codec[ClosingNegotiation.WaitingForRemoteShutdown] = (
       ("localShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("onRemoteShutdown" | onRemoteShutdownCodec)
+        ("closingFeerate" | feeratePerKw)
       ).as[ClosingNegotiation.WaitingForRemoteShutdown]
 
     val closingNegotiationCodec: Codec[ClosingNegotiation] = discriminated[ClosingNegotiation].by(uint8)
       .\(0x01) { case status: ClosingNegotiation.WaitingForRemoteShutdown => status }(waitingForRemoteShutdownCodec)
-      .\(0x02) { case status: ClosingNegotiation.SigningTransactions => status.disconnect() }(waitingForRemoteShutdownCodec)
-      .\(0x03) { case status: ClosingNegotiation.WaitingForConfirmation => status.disconnect() }(waitingForRemoteShutdownCodec)
+      .\(0x02) { case status: ClosingNegotiation.SigningTransactions => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, status.closingFeerate) }(waitingForRemoteShutdownCodec)
+      .\(0x03) { case status: ClosingNegotiation.WaitingForConfirmation => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, status.closingFeerate) }(waitingForRemoteShutdownCodec)
 
     val DATA_NEGOTIATING_SIMPLE_14_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
       ("commitments" | commitmentsCodec) ::

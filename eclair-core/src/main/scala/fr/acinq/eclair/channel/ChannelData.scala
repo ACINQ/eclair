@@ -536,36 +536,18 @@ object SpliceStatus {
   case object SpliceAborted extends SpliceStatus
 }
 
-case class ClosingCompleteSent(closingComplete: ClosingComplete, closingFeerate: FeeratePerKw)
-
-sealed trait OnRemoteShutdown
-object OnRemoteShutdown {
-  /** When receiving the remote shutdown, we sign a new version of our closing transaction. */
-  case class SignTransaction(closingFeerate: FeeratePerKw) extends OnRemoteShutdown
-  /** When receiving the remote shutdown, we don't sign a new version of our closing transaction, but our peer may sign theirs. */
-  case object WaitForSigs extends OnRemoteShutdown
-}
-
 sealed trait ClosingNegotiation {
   def localShutdown: Shutdown
-  // When we disconnect, we discard pending signatures.
-  def disconnect(): ClosingNegotiation.WaitingForRemoteShutdown = this match {
-    case status: ClosingNegotiation.WaitingForRemoteShutdown => status
-    case status: ClosingNegotiation.SigningTransactions => status.closingCompleteSent_opt.map(_.closingFeerate) match {
-      // If we were waiting for their signature, we will send closing_complete again after exchanging shutdown.
-      case Some(closingFeerate) if status.closingSigReceived_opt.isEmpty => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, OnRemoteShutdown.SignTransaction(closingFeerate))
-      case _ => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, OnRemoteShutdown.WaitForSigs)
-    }
-    case status: ClosingNegotiation.WaitingForConfirmation => ClosingNegotiation.WaitingForRemoteShutdown(status.localShutdown, OnRemoteShutdown.WaitForSigs)
-  }
+  /** Closing feerate for our closing transaction. */
+  def closingFeerate: FeeratePerKw
 }
 object ClosingNegotiation {
   /** We've sent a new shutdown message: we wait for their shutdown message before taking any action. */
-  case class WaitingForRemoteShutdown(localShutdown: Shutdown, onRemoteShutdown: OnRemoteShutdown) extends ClosingNegotiation
-  /** We've exchanged shutdown messages: at least one side will send closing_complete to renew their closing transaction. */
-  case class SigningTransactions(localShutdown: Shutdown, remoteShutdown: Shutdown, closingCompleteSent_opt: Option[ClosingCompleteSent], closingSigSent_opt: Option[ClosingSig], closingSigReceived_opt: Option[ClosingSig]) extends ClosingNegotiation
-  /** We've signed a new closing transaction and are waiting for confirmation or to initiate RBF. */
-  case class WaitingForConfirmation(localShutdown: Shutdown, remoteShutdown: Shutdown) extends ClosingNegotiation
+  case class WaitingForRemoteShutdown(localShutdown: Shutdown, closingFeerate: FeeratePerKw) extends ClosingNegotiation
+  /** We've exchanged shutdown messages: we both send closing_complete to renew the closing transactions. */
+  case class SigningTransactions(localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerate: FeeratePerKw, closingCompleteSent_opt: Option[ClosingComplete], closingSigSent_opt: Option[ClosingSig], closingSigReceived_opt: Option[ClosingSig]) extends ClosingNegotiation
+  /** We've signed new closing transactions and are waiting for confirmation or to initiate RBF. */
+  case class WaitingForConfirmation(localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerate: FeeratePerKw) extends ClosingNegotiation
 }
 
 sealed trait ChannelData extends PossiblyHarmful {

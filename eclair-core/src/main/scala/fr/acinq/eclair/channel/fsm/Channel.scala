@@ -1727,77 +1727,69 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   when(NEGOTIATING_SIMPLE)(handleExceptions {
     case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING_SIMPLE) =>
+      val localScript = d.status.localShutdown.scriptPubKey
+      val remoteScript = remoteShutdown.scriptPubKey
       d.status match {
         case status: ClosingNegotiation.WaitingForRemoteShutdown =>
           // We have already sent our shutdown. Now that we've received theirs, we're ready to sign closing transactions.
-          // If we don't have a closing feerate, we don't need to create a new version of our closing transaction (which
-          // can happen after a reconnection for example).
-          status.onRemoteShutdown match {
-            case OnRemoteShutdown.SignTransaction(closingFeerate) =>
-              val localScript = status.localShutdown.scriptPubKey
-              val remoteScript = remoteShutdown.scriptPubKey
-              MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localScript, remoteScript, closingFeerate) match {
-                case Left(f) =>
-                  log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
-                  val status1 = ClosingNegotiation.SigningTransactions(status.localShutdown, remoteShutdown, None, None, None)
-                  stay() using d.copy(status = status1)
-                case Right((closingTxs, closingComplete)) =>
-                  log.debug("signing local mutual close transactions: {}", closingTxs)
-                  val status1 = ClosingNegotiation.SigningTransactions(status.localShutdown, remoteShutdown, Some(ClosingCompleteSent(closingComplete, closingFeerate)), None, None)
-                  stay() using d.copy(status = status1, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) storing() sending closingComplete
-              }
-            case OnRemoteShutdown.WaitForSigs =>
-              val status1 = ClosingNegotiation.SigningTransactions(status.localShutdown, remoteShutdown, None, None, None)
+          MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localScript, remoteScript, status.closingFeerate) match {
+            case Left(f) =>
+              log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+              val status1 = ClosingNegotiation.SigningTransactions(status.localShutdown, remoteShutdown, status.closingFeerate, None, None, None)
               stay() using d.copy(status = status1)
+            case Right((closingTxs, closingComplete)) =>
+              log.debug("signing local mutual close transactions: {}", closingTxs)
+              val status1 = ClosingNegotiation.SigningTransactions(status.localShutdown, remoteShutdown, status.closingFeerate, Some(closingComplete), None, None)
+              stay() using d.copy(status = status1, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) storing() sending closingComplete
           }
-        case status: ClosingNegotiation.SigningTransactions =>
-          // We were in the middle of signing transactions: we restart a signing round from scratch.
-          // If we were waiting for their signature, we will send closing_complete again after exchanging shutdown.
-          val localShutdown = status.localShutdown
-          val onRemoteShutdown = status.closingCompleteSent_opt.map(_.closingFeerate) match {
-            case Some(closingFeerate) if status.closingSigReceived_opt.isEmpty => OnRemoteShutdown.SignTransaction(closingFeerate)
-            case _ => OnRemoteShutdown.WaitForSigs
-          }
-          val status1 = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, onRemoteShutdown)
-          self ! remoteShutdown
-          stay() using d.copy(status = status1) sending localShutdown
+        case _: ClosingNegotiation.SigningTransactions =>
+          // We were in the middle of signing transactions: sending shutdown is forbidden at that point.
+          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+          stay() sending Warning(d.channelId, ShutdownWaitingForSigs(d.channelId).getMessage)
         case status: ClosingNegotiation.WaitingForConfirmation =>
           // Our peer wants to create a new version of their closing transaction. We don't need to update our version of
-          // the closing transaction: we re-send our previous shutdown and wait for their closing_complete.
+          // the closing transaction: we use the same parameters as we did in the previous signing round.
           val localShutdown = status.localShutdown
-          val status1 = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, None, None, None)
-          stay() using d.copy(status = status1) sending localShutdown
+          MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, d.commitments.latest, localScript, remoteScript, status.closingFeerate) match {
+            case Left(f) =>
+              log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+              val status1 = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, status.closingFeerate, None, None, None)
+              stay() using d.copy(status = status1) sending localShutdown
+            case Right((closingTxs, closingComplete)) =>
+              log.debug("signing local mutual close transactions: {}", closingTxs)
+              val status1 = ClosingNegotiation.SigningTransactions(localShutdown, remoteShutdown, status.closingFeerate, Some(closingComplete), None, None)
+              stay() using d.copy(status = status1, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs) storing() sending Seq(localShutdown, closingComplete)
+          }
       }
 
     case Event(closingComplete: ClosingComplete, d: DATA_NEGOTIATING_SIMPLE) =>
       d.status match {
         case _: ClosingNegotiation.WaitingForRemoteShutdown =>
           log.info("ignoring remote closing_complete, we've sent shutdown to initiate a new signing round")
-          stay()
+          stay() sending Warning(d.channelId, UnexpectedClosingComplete(d.channelId, closingComplete.fees, closingComplete.lockTime).getMessage)
         case _: ClosingNegotiation.WaitingForConfirmation =>
           log.info("ignoring closing_complete, we've already sent closing_sig: peer must send shutdown again before closing_complete")
           stay() sending Warning(d.channelId, UnexpectedClosingComplete(d.channelId, closingComplete.fees, closingComplete.lockTime).getMessage)
         case status: ClosingNegotiation.SigningTransactions if status.closingSigSent_opt.nonEmpty =>
-          log.info("ignoring closing_complete, we've already sent closing_sig: peer must send shutdown again before closing_complete")
+          log.info("ignoring closing_complete, we've already sent closing_sig: peer must send closing_sig, then shutdown again before closing_complete")
           stay() sending Warning(d.channelId, UnexpectedClosingComplete(d.channelId, closingComplete.fees, closingComplete.lockTime).getMessage)
         case status: ClosingNegotiation.SigningTransactions =>
           val localScript = status.localShutdown.scriptPubKey
           val remoteScript = status.remoteShutdown.scriptPubKey
           MutualClose.signSimpleClosingTx(keyManager, d.commitments.latest, localScript, remoteScript, closingComplete) match {
             case Left(f) =>
-              // This may happen if scripts were updated concurrently, so we simply ignore failures.
               log.warning("invalid closing_complete: {}", f.getMessage)
-              stay()
+              stay() sending Warning(d.channelId, f.getMessage)
             case Right((signedClosingTx, closingSig)) =>
               log.debug("signing remote mutual close transaction: {}", signedClosingTx.tx)
               val status1 = status.closingCompleteSent_opt match {
                 // We've sent closing_complete: we may be waiting for their closing_sig.
                 case Some(_) => status.closingSigReceived_opt match {
-                  case Some(_) => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown)
+                  case Some(_) => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown, status.closingFeerate)
                   case None => status.copy(closingSigSent_opt = Some(closingSig))
                 }
-                // We haven't sent closing_complete: we're not waiting for their closing_sig'.
-                case None => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown)
+                // We haven't sent closing_complete: we're not waiting for their closing_sig.
+                case None => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown, status.closingFeerate)
               }
               val d1 = d.copy(status = status1, publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
               stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = false) sending closingSig
@@ -1818,14 +1810,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case status: ClosingNegotiation.SigningTransactions =>
           MutualClose.receiveSimpleClosingSig(keyManager, d.commitments.latest, d.proposedClosingTxs.last, closingSig) match {
             case Left(f) =>
-              // This may happen if scripts were updated concurrently, so we simply ignore failures.
               log.warning("invalid closing_sig: {}", f.getMessage)
-              stay()
+              stay() sending Warning(d.channelId, f.getMessage)
             case Right(signedClosingTx) =>
               log.debug("received signatures for local mutual close transaction: {}", signedClosingTx.tx)
               val status1 = status.closingSigSent_opt match {
                 // We have already signed their transaction: both local and remote closing transactions have been updated.
-                case Some(_) => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown)
+                case Some(_) => ClosingNegotiation.WaitingForConfirmation(status.localShutdown, status.remoteShutdown, status.closingFeerate)
                 // We haven't sent closing_sig yet: they may send us closing_complete to update their closing transaction.
                 case None => status.copy(closingSigReceived_opt = Some(closingSig))
               }
@@ -1859,17 +1850,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           log.info("we're already waiting for our peer to send their shutdown message, no need to send ours again")
           handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
         case _: ClosingNegotiation.SigningTransactions =>
-          val status1 = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.SignTransaction(closingFeerate))
-          stay() using d.copy(status = status1) storing() sending localShutdown
+          log.info("we're in the middle of signing closing transactions, we should finish this round before starting a new signing session")
+          handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
         case _: ClosingNegotiation.WaitingForConfirmation =>
-          val status1 = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.SignTransaction(closingFeerate))
+          val status1 = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, closingFeerate)
           stay() using d.copy(status = status1) storing() sending localShutdown
       }
 
     case Event(e: Error, d: DATA_NEGOTIATING_SIMPLE) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_NEGOTIATING_SIMPLE) =>
-      val status1 = d.status.disconnect()
+      val status1 = ClosingNegotiation.WaitingForRemoteShutdown(d.status.localShutdown, d.status.closingFeerate)
       goto(OFFLINE) using d.copy(status = status1)
 
   })
@@ -2526,10 +2517,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING_SIMPLE) =>
       // We retransmit our shutdown: we may have updated our script and they may not have received it.
       val localShutdown = d.status.localShutdown
-      val status1 = d.status match {
-        case status: ClosingNegotiation.WaitingForRemoteShutdown => status.copy(localShutdown = localShutdown)
-        case _ => ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, OnRemoteShutdown.WaitForSigs)
-      }
+      val status1 = ClosingNegotiation.WaitingForRemoteShutdown(localShutdown, d.status.closingFeerate)
       goto(NEGOTIATING_SIMPLE) using d.copy(status = status1) sending localShutdown
 
     // This handler is a workaround for an issue in lnd: starting with versions 0.10 / 0.11, they sometimes fail to send
