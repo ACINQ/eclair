@@ -120,10 +120,9 @@ object ZmqWatcher {
     def spendingTx: Transaction
   }
 
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpent[WatchExternalChannelSpentTriggered] {
-    override def hints: Set[TxId] = Set.empty
-  }
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpent[WatchExternalChannelSpentTriggered] { override def hints: Set[TxId] = Set.empty }
   case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId, spendingTx: Transaction) extends WatchSpentTriggered
+  case class UnwatchExternalChannelSpent(txId: TxId, outputIndex: Int) extends Command
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
@@ -355,6 +354,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           case _ => false
         }
         watching(watches -- deprecatedWatches, watchedUtxos)
+
+      case UnwatchExternalChannelSpent(txId, outputIndex) =>
+        val deprecatedWatches = watches.keySet.collect { case w: WatchExternalChannelSpent if w.txId == txId && w.outputIndex == outputIndex => w }
+        val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
+        watching(watches -- deprecatedWatches, watchedUtxos1)
 
       case ValidateRequest(replyTo, ann) =>
         client.validate(ann).map(replyTo ! _)

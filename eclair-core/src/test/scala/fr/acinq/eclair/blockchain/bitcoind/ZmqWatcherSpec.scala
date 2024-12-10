@@ -350,6 +350,54 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     })
   }
 
+  test("unwatch external channel") {
+    withWatcher(f => {
+      import f._
+
+      val (priv, address) = createExternalAddress()
+      val tx1 = sendToAddress(address, 250_000 sat, probe)
+      val outputIndex1 = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+      val spendingTx1 = createSpendP2WPKH(tx1, priv, priv.publicKey, 500 sat, 0, 0)
+      val tx2 = sendToAddress(address, 200_000 sat, probe)
+      val outputIndex2 = tx2.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+      val spendingTx2 = createSpendP2WPKH(tx2, priv, priv.publicKey, 500 sat, 0, 0)
+
+      watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, outputIndex1, RealShortChannelId(3))
+      watcher ! WatchExternalChannelSpent(probe.ref, tx2.txid, outputIndex2, RealShortChannelId(5))
+      watcher ! UnwatchExternalChannelSpent(tx1.txid, outputIndex1 + 1) // ignored
+      watcher ! UnwatchExternalChannelSpent(randomTxId(), outputIndex1) // ignored
+
+      // When publishing the transaction, the watch triggers immediately.
+      bitcoinClient.publishTransaction(spendingTx1)
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), spendingTx1))
+      probe.expectNoMessage(100 millis)
+
+      // If we unwatch the transaction, we will ignore when it's published.
+      watcher ! UnwatchExternalChannelSpent(tx2.txid, outputIndex2)
+      bitcoinClient.publishTransaction(spendingTx2)
+      probe.expectNoMessage(100 millis)
+
+      // If we watch again, this will trigger immediately because the transaction is in the mempool.
+      watcher ! WatchExternalChannelSpent(probe.ref, tx2.txid, outputIndex2, RealShortChannelId(5))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(5), spendingTx2))
+      probe.expectNoMessage(100 millis)
+
+      // We make the transactions confirm while we're not watching.
+      watcher ! UnwatchExternalChannelSpent(tx1.txid, outputIndex1)
+      watcher ! UnwatchExternalChannelSpent(tx2.txid, outputIndex2)
+      bitcoinClient.getBlockHeight().pipeTo(probe.ref)
+      val initialBlockHeight = probe.expectMsgType[BlockHeight]
+      system.eventStream.subscribe(probe.ref, classOf[CurrentBlockHeight])
+      generateBlocks(1)
+      awaitCond(probe.expectMsgType[CurrentBlockHeight].blockHeight >= initialBlockHeight + 1)
+
+      // If we watch again after confirmation, the watch instantly triggers.
+      watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, outputIndex1, RealShortChannelId(3))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), spendingTx1))
+      probe.expectNoMessage(100 millis)
+    })
+  }
+
   test("watch for unknown spent transactions") {
     withWatcher(f => {
       import f._

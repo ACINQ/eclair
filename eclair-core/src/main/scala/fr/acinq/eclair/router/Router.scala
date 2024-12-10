@@ -25,9 +25,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered, WatchTxConfirmed, WatchTxConfirmedTriggered}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.crypto.TransportHandler
@@ -263,14 +262,14 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
     case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
-      val txId = d.channels.getOrElse(shortChannelId, d.prunedChannels(shortChannelId)).fundingTxId
-      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", txId, shortChannelId, spendingTx.txid)
+      val fundingTxId = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.fundingTxId
+      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
       watcher ! WatchTxConfirmed(self, spendingTx.txid, ANNOUNCEMENTS_MINCONF * 2)
       stay() using d.copy(spentChannels = d.spentChannels + (spendingTx.txid -> shortChannelId))
 
     case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d) =>
       d.spentChannels.get(spendingTx.txid) match {
-        case Some(shortChannelId) => stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
+        case Some(shortChannelId) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, shortChannelId)
         case None => stay()
       }
 
@@ -585,7 +584,6 @@ object Router {
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
     def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
     def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
-    def emptyNodes(): Ignore = copy(nodes = Set.empty)
     def emptyChannels(): Ignore = copy(channels = Set.empty)
     // @formatter:on
   }
@@ -633,12 +631,6 @@ object Router {
 
     /** Full route including the final hop, if any. */
     val fullRoute: Seq[Hop] = hops ++ finalHop_opt.toSeq
-
-    /**
-     * Fee paid for the trampoline hop, if any.
-     * Note that when using MPP to reach the trampoline node, the trampoline fee must be counted only once.
-     */
-    val trampolineFee: MilliSatoshi = finalHop_opt.collect { case hop: NodeHop => hop.fee(amount) }.getOrElse(0 msat)
 
     /**
      * Fee paid for the blinded route, if any.
