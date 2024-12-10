@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
 import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TimestampSecond, TxCoordinates}
+import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TxCoordinates}
 
 object Validation {
 
@@ -120,8 +120,10 @@ object Validation {
                     Some(updateSplicedPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, parentChannel))
                   case None =>
                     log.error("spent parent channel shortChannelId={} not found for splice shortChannelId={}", parentScid, c.shortChannelId)
-                    val spentChannels1 = d0.spentChannels.filter(_._2 != parentScid)
-                    Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None).copy(spentChannels = spentChannels1))
+                    val spendingTxs = d0.spentChannels.filter(_._2 == parentScid).keySet
+                    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+                    val d1 = d0.copy(spentChannels = d0.spentChannels -- spendingTxs)
+                    Some(addPublicChannel(d1, nodeParams, watcher, c, tx.txid, capacity, None))
                 }
               case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
             }
@@ -171,6 +173,7 @@ object Validation {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val fundingOutputIndex = outputIndex(ann.shortChannelId)
     watcher ! WatchExternalChannelSpent(ctx.self, spliceTxId, fundingOutputIndex, ann.shortChannelId)
+    watcher ! UnwatchExternalChannelSpent(parentChannel.fundingTxId, outputIndex(parentChannel.ann.shortChannelId))
     // we notify front nodes that the channel has been replaced
     ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
     ctx.system.eventStream.publish(ChannelLost(parentChannel.shortChannelId))
@@ -180,15 +183,17 @@ object Validation {
       ann = ann,
       fundingTxId = spliceTxId,
       capacity = capacity,
-      // update the timestamps of the channel updates to ensure the spliced channel is not pruned
-      update_1_opt = parentChannel.update_1_opt.map(_.copy(shortChannelId = ann.shortChannelId, timestamp = TimestampSecond.now())),
-      update_2_opt = parentChannel.update_2_opt.map(_.copy(shortChannelId = ann.shortChannelId, timestamp = TimestampSecond.now())),
+      // we keep the previous channel updates to ensure that the channel is still used until we receive the new ones
+      update_1_opt = parentChannel.update_1_opt,
+      update_2_opt = parentChannel.update_2_opt,
     )
     log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, newPubChan)
     // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
     log.debug("updating the graph for shortChannelId={}", newPubChan.shortChannelId)
     val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
-    val spentChannels1 = d.spentChannels.filter(_._2 != parentChannel.shortChannelId)
+    val spendingTxs = d.spentChannels.filter(_._2 == parentChannel.shortChannelId).keySet
+    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(
       // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
       channels = d.channels + (newPubChan.shortChannelId -> newPubChan) - parentChannel.shortChannelId,
@@ -262,9 +267,9 @@ object Validation {
     } else d1
   }
 
-  def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.ann
+    val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get
     log.info("funding tx for channelId={} was spent", shortChannelId)
     // we need to remove nodes that aren't tied to any channels anymore
     val channels1 = d.channels - shortChannelId
@@ -287,7 +292,10 @@ object Validation {
     // we no longer need to track this or alternative transactions that spent the parent channel
     // either this channel was really closed, or it was spliced and the announcement was not received in time
     // we will re-add a spliced channel as a new channel later when we receive the announcement
-    val spentChannels1 = d.spentChannels.filter(_._2 != shortChannelId)
+    watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
+    val spendingTxs = d.spentChannels.filter(_._2 == shortChannelId).keySet
+    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
   }
 
