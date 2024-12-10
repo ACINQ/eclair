@@ -18,12 +18,13 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair._
 import fr.acinq.eclair.db.pg.PgPeersDb
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair._
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.HexStringSyntax
 
 import java.util.concurrent.Executors
 import scala.concurrent.duration._
@@ -104,6 +105,41 @@ class PeersDbSpec extends AnyFunSuite {
       db.addOrUpdateRelayFees(b, RelayFees(3 msat, 789))
       assert(db.getRelayFees(a) == Some(RelayFees(2 msat, 456)))
       assert(db.getRelayFees(b) == Some(RelayFees(3 msat, 789)))
+    }
+  }
+
+  test("add/update/remove peer storage") {
+    forAllDbs { dbs =>
+      val db = dbs.peers
+
+      val a = randomKey().publicKey
+      val b = randomKey().publicKey
+
+      assert(db.getStorage(a) == None)
+      assert(db.getStorage(b) == None)
+      db.updateStorage(a, hex"012345")
+      assert(db.getStorage(a) == Some(hex"012345"))
+      assert(db.getStorage(b) == None)
+      db.updateStorage(a, hex"6789")
+      assert(db.getStorage(a) == Some(hex"6789"))
+      assert(db.getStorage(b) == None)
+      db.updateStorage(b, hex"abcd")
+      assert(db.getStorage(a) == Some(hex"6789"))
+      assert(db.getStorage(b) == Some(hex"abcd"))
+
+      // Actively used storage shouldn't be removed.
+      db.removePeerStorage(TimestampSecond.now() + 1.hour)
+      assert(db.getStorage(a) == Some(hex"6789"))
+      assert(db.getStorage(b) == Some(hex"abcd"))
+
+      // After removing the peer, peer storage can be removed.
+      db.removePeer(a)
+      assert(db.getStorage(a) == Some(hex"6789"))
+      db.removePeerStorage(TimestampSecond.now() - 1.hour)
+      assert(db.getStorage(a) == Some(hex"6789"))
+      db.removePeerStorage(TimestampSecond.now() + 1.hour)
+      assert(db.getStorage(a) == None)
+      assert(db.getStorage(b) == Some(hex"abcd"))
     }
   }
 

@@ -108,6 +108,7 @@ object TestConstants {
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
+          Features.ProvideStorage -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -240,6 +241,7 @@ object TestConstants {
       willFundRates_opt = Some(defaultLiquidityRates),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -416,6 +418,7 @@ object TestConstants {
       willFundRates_opt = Some(defaultLiquidityRates),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
