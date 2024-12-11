@@ -269,7 +269,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d) =>
       d.spentChannels.get(spendingTx.txid) match {
-        case Some(shortChannelId) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, shortChannelId)
+        case Some(shortChannelId) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, spendingTx.txid, shortChannelId)
         case None => stay()
       }
 

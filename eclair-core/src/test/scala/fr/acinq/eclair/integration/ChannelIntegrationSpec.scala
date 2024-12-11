@@ -194,14 +194,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       val receivedByF = listReceivedByAddress(finalAddressF)
       (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make txs confirm
-    generateBlocks(2, Some(minerAddress))
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -238,14 +235,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
       (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make txs confirm
-    generateBlocks(2, Some(minerAddress))
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -294,14 +288,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
       (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make txs confirm
-    generateBlocks(2, Some(minerAddress))
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -353,14 +344,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       val receivedByF = listReceivedByAddress(finalAddressF, sender)
       (receivedByF diff previouslyReceivedByF).size == expectedTxCountF && (receivedByC diff previouslyReceivedByC).size == expectedTxCountC
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make tx confirm
-    generateBlocks(2, Some(minerAddress))
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -599,15 +587,13 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       bitcoinClient.getMempool().pipeTo(sender.ref)
       sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid == fundingOutpoint.txid)
     }, max = 20 seconds, interval = 1 second)
-    generateBlocks(3)
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12)
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
 
-    bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt, limit = 10).pipeTo(sender.ref)
+    bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt, limit = 12).pipeTo(sender.ref)
     val closingTx = sender.expectMsgType[Transaction]
     assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(finalPubKeyScriptC, finalPubKeyScriptF))
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 

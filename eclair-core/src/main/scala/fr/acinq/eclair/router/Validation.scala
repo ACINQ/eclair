@@ -267,7 +267,7 @@ object Validation {
     } else d1
   }
 
-  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId: TxId, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get
     log.info("funding tx for channelId={} was spent", shortChannelId)
@@ -294,7 +294,8 @@ object Validation {
     // we will re-add a spliced channel as a new channel later when we receive the announcement
     watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
     val spendingTxs = d.spentChannels.filter(_._2 == shortChannelId).keySet
-    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    // stop watching the spending txs that will never confirm, but continue to watch the tx that spends the parent channel
+    (spendingTxs - spendingTxId).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
     val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
   }
