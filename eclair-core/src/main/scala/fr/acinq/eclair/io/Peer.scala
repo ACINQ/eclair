@@ -147,6 +147,9 @@ class Peer(val nodeParams: NodeParams,
       stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
 
     case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
+      if (d.peerStorage.written == false && !isTimerActive("peer-storage-write")) {
+        startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+      }
       stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
 
     case Event(e: LocalChannelDown, d: DisconnectedData) =>
@@ -441,6 +444,9 @@ class Peer(val nodeParams: NodeParams,
                 }
             }
         }
+        if (d.peerStorage.written == false && !isTimerActive("peer-storage-write")) {
+          startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+        }
         stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
 
       case Event(e: LocalChannelDown, d: ConnectedData) =>
@@ -539,17 +545,19 @@ class Peer(val nodeParams: NodeParams,
         stay()
 
       case Event(store: PeerStorageStore, d: ConnectedData) =>
-        if (nodeParams.features.hasFeature(Features.ProvideStorage) && d.activeChannels.nonEmpty) {
+        if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
           // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
           // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
           // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
           // writing to the DB and may never store our peer's backup.
-          if (d.peerStorage.written) {
+          if (d.activeChannels.isEmpty) {
+            log.debug("received peer storage from peer with no active channel")
+          } else if (!isTimerActive("peer-storage-write")) {
             startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
           }
           stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
         } else {
-          log.debug("ignoring peer storage (feature={}, channels={})", nodeParams.features.hasFeature(Features.ProvideStorage), d.activeChannels.mkString(","))
+          log.debug("ignoring peer storage, feature disabled")
           stay()
         }
 
