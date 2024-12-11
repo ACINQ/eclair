@@ -336,11 +336,15 @@ class RouterSpec extends BaseRouterSpec {
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
+    val probe = TestProbe()
+    probe.send(router, GetRouterData)
+    val channels = probe.expectMsgType[Data].channels
+
     router ! WatchExternalChannelSpentTriggered(scid_ab, spendingTx(funding_a, funding_b))
     watcher.expectMsgType[WatchTxConfirmed]
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_ab).fundingTxId, ShortChannelId.outputIndex(scid_ab)))
     eventListener.expectMsg(ChannelLost(scid_ab))
-    assert(watcher.expectMsgType[UnwatchExternalChannelSpent].txId == fundingTx(funding_a, funding_b).txid)
     assert(nodeParams.db.network.getChannel(scid_ab).isEmpty)
     // a doesn't have any channels, b still has one with c
     eventListener.expectMsg(NodeLost(a))
@@ -351,7 +355,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! WatchExternalChannelSpentTriggered(scid_cd, spendingTx(funding_c, funding_d))
     watcher.expectMsgType[WatchTxConfirmed]
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_c, funding_d))
-    assert(watcher.expectMsgType[UnwatchExternalChannelSpent].txId == fundingTx(funding_c, funding_d).txid)
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_cd).fundingTxId, ShortChannelId.outputIndex(scid_cd)))
     eventListener.expectMsg(ChannelLost(scid_cd))
     assert(nodeParams.db.network.getChannel(scid_cd).isEmpty)
     // d doesn't have any channels, c still has one with b
@@ -363,7 +367,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! WatchExternalChannelSpentTriggered(scid_bc, spendingTx(funding_b, funding_c))
     watcher.expectMsgType[WatchTxConfirmed]
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_b, funding_c))
-    assert(watcher.expectMsgType[UnwatchExternalChannelSpent].txId == fundingTx(funding_b, funding_c).txid)
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_bc).fundingTxId, ShortChannelId.outputIndex(scid_bc)))
     eventListener.expectMsg(ChannelLost(scid_bc))
     assert(nodeParams.db.network.getChannel(scid_bc).isEmpty)
     // now b and c do not have any channels
@@ -390,6 +394,10 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(ann, 500_000 sat, None, None) :: Nil))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).nonEmpty))
 
+    val probe = TestProbe()
+    probe.send(router, GetRouterData)
+    val channels = probe.expectMsgType[Data].channels
+
     // The channel is pruned: we keep it in the DB until it is spent.
     router ! TickPruneStaleChannels
     eventListener.expectMsg(ChannelLost(scid_au))
@@ -400,7 +408,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! WatchExternalChannelSpentTriggered(scid_au, spendingTx(funding_a, priv_funding_u.publicKey))
     assert(watcher.expectMsgType[WatchTxConfirmed].txId == spendingTx(funding_a, priv_funding_u.publicKey).txid)
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, priv_funding_u.publicKey))
-    assert(watcher.expectMsgType[UnwatchExternalChannelSpent].txId == fundingTx_au.txid)
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_au).fundingTxId, ShortChannelId.outputIndex(scid_au)))
     eventListener.expectMsg(ChannelLost(scid_au))
     eventListener.expectMsg(NodeLost(priv_u.publicKey))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).isEmpty))

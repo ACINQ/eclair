@@ -641,13 +641,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       (receivedByC diff previouslyReceivedByC).size == 5
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make txs confirm
-    generateBlocks(2)
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12)
     // and we wait for C's channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 
@@ -769,11 +766,8 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     }, max = 20 seconds, interval = 1 second)
 
     // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
-    generateBlocks(2)
-    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
     generateBlocks(12)
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
   }
 
@@ -799,13 +793,10 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
       val receivedByC = listReceivedByAddress(finalAddressC, sender)
       (receivedByC diff previouslyReceivedByC).size == 6
     }, max = 30 seconds, interval = 1 second)
-    // we generate blocks to make txs confirm
-    generateBlocks(2)
+    // we generate enough blocks for the channel to be deeply confirmed
+    generateBlocks(12)
     // and we wait for C's channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
-
-    // generate enough blocks so the router will know the channel has been closed and not spliced
-    generateBlocks(12)
     awaitAnnouncements(1)
   }
 

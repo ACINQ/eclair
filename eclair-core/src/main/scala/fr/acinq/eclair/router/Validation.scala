@@ -294,7 +294,7 @@ object Validation {
     // we will re-add a spliced channel as a new channel later when we receive the announcement
     watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
     val spendingTxs = d.spentChannels.filter(_._2 == shortChannelId).keySet
-    // stop watching the spending txs that will never confirm, but continue to watch the tx that spends the parent channel
+    // stop watching the spending txs that will never confirm, we already got confirmations for this spending tx
     (spendingTxs - spendingTxId).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
     val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
