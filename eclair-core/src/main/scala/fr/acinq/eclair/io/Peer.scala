@@ -147,8 +147,8 @@ class Peer(val nodeParams: NodeParams,
       stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
 
     case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
-      if (d.peerStorage.written == false && !isTimerActive("peer-storage-write")) {
-        startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+      if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
+        startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
       }
       stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
 
@@ -444,8 +444,8 @@ class Peer(val nodeParams: NodeParams,
                 }
             }
         }
-        if (d.peerStorage.written == false && !isTimerActive("peer-storage-write")) {
-          startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+        if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
+          startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
         }
         stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
 
@@ -552,8 +552,8 @@ class Peer(val nodeParams: NodeParams,
           // writing to the DB and may never store our peer's backup.
           if (d.activeChannels.isEmpty) {
             log.debug("received peer storage from peer with no active channel")
-          } else if (!isTimerActive("peer-storage-write")) {
-            startSingleTimer("peer-storage-write", WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+          } else if (!isTimerActive(WritePeerStorageTimerKey)) {
+            startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
           }
           stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
         } else {
@@ -937,6 +937,7 @@ class Peer(val nodeParams: NodeParams,
     Logs.mdc(LogCategory(currentMessage), Some(remoteNodeId), Logs.channelId(currentMessage), nodeAlias_opt = Some(nodeParams.alias))
   }
 
+  private val WritePeerStorageTimerKey = "peer-storage-write"
 }
 
 object Peer {
