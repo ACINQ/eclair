@@ -38,7 +38,7 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.{Tag, TestData}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
@@ -108,11 +108,14 @@ class PeerSpec extends FixtureSpec {
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()))(implicit system: ActorSystem): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), initializePeer: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
-    switchboard.send(peer, Peer.Init(channels, Map.empty))
+    if (initializePeer) {
+      switchboard.send(peer, Peer.Init(channels, Map.empty))
+    }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
+    peerStorage.foreach(data => peerConnection.expectMsg(PeerStorageRetrieval(data)))
     peerConnection.expectMsgType[RecommendedFeerates]
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
@@ -750,6 +753,39 @@ class PeerSpec extends FixtureSpec {
     peerConnection.send(peer, open)
     channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     channel.expectMsg(open)
+  }
+
+  test("peer storage") { f =>
+    import f._
+
+    // We connect with a previous backup.
+    val channel = ChannelCodecsSpec.normal
+    val peerConnection1 = peerConnection
+    nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
+    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel), peerStorage = Some(hex"abcdef"))
+    peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxIndex)
+    peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
+    peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
+
+    // We disconnect and reconnect, sending the last backup we received.
+    peer ! Peer.Disconnect(f.remoteNodeId)
+    val peerConnection2 = TestProbe()
+    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
+    peerConnection2.send(peer, PeerStorageStore(hex"1111"))
+
+    // We reconnect again.
+    val peerConnection3 = TestProbe()
+    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"1111"))
+    // Because of the delayed writes, we may not have stored the latest value immediately, but we will eventually store it.
+    eventually {
+      assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
+    }
+
+    // Our channel closes, so we stop storing backups for that peer.
+    peer ! LocalChannelDown(ActorRef.noSender, channel.channelId, channel.shortIds, channel.remoteNodeId)
+    peerConnection3.send(peer, PeerStorageStore(hex"2222"))
+    assert(!peer.isTimerActive("peer-storage-write"))
+    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
   }
 
 }

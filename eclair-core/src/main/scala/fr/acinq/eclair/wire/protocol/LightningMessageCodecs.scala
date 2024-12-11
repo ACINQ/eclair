@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Features, InitFeature, KamonExt}
 import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by PM on 15/11/2016.
@@ -389,6 +389,14 @@ object LightningMessageCodecs {
       ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
       ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
 
+  val peerStorageStore: Codec[PeerStorageStore] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageStore]
+
+  val peerStorageRetrieval: Codec[PeerStorageRetrieval] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageRetrieval]
+
   // NB: blank lines to minimize merge conflicts
 
   //
@@ -476,6 +484,8 @@ object LightningMessageCodecs {
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
     .typecase(2, stfuCodec)
+    .typecase(7, peerStorageStore)
+    .typecase(9, peerStorageRetrieval)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)
