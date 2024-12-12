@@ -16,6 +16,7 @@ This is mostly intended for LSPs that serve mobile wallets to allow users to res
 ### Eclair requires a  Java 21 runtime
 
 Eclair now targets Java 21 and requires a compatible Java Runtime Environment. It will no longer work on JRE 11 or JRE 17.
+There are many organisations that package Java runtimes and development kits, for example [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21).
 
 ### API changes
 
