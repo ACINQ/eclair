@@ -365,10 +365,29 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
-    alice2bob.expectMsgType[CommitSig]
-    bob2alice.expectMsgType[CommitSig]
+    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
+    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    reconnect(f, fundingTxId)
+  }
+
+  test("recv INPUT_DISCONNECTED (commit_sig partially received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
+    bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
 
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
@@ -445,9 +464,13 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
     alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
-    assert(alice2bob.expectMsgType[ChannelReestablish].nextFundingTxId_opt.contains(fundingTxId))
+    val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
+    assert(channelReestablishAlice.nextFundingTxId_opt.contains(fundingTxId))
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[ChannelReestablish].nextFundingTxId_opt.contains(fundingTxId))
+    val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(fundingTxId))
+    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     bob2alice.forward(alice)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)

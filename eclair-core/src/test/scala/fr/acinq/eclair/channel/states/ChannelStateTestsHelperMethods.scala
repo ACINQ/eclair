@@ -47,6 +47,8 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 object ChannelStateTestsTags {
+  /** If set, the channel funding transaction will have more than 6 confirmations. */
+  val FundingDeeplyBuried = "funding_deeply_buried"
   /** If set, channels will not use option_support_large_channel. */
   val DisableWumbo = "disable_wumbo"
   /** If set, channels will use option_dual_fund. */
@@ -362,6 +364,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
     alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    if (tags.contains(ChannelStateTestsTags.FundingDeeplyBuried)) {
+      val fundingTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+      alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, fundingTx)
+      bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, fundingTx)
+    }
     eventually(assert(alice.stateName == NORMAL))
     eventually(assert(bob.stateName == NORMAL))
 
@@ -566,7 +573,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
     localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => {
-      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed] 
+      val watchConfirmed = s2blockchain.expectMsgType[WatchTxConfirmed]
       assert(watchConfirmed.txId == claimMain.tx.txid)
       assert(watchConfirmed.delay_opt.map(_.parentTxId).contains(publishedLocalCommitTx.txid))
     })
