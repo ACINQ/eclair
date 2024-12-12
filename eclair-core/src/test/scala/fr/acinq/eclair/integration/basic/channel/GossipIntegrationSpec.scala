@@ -59,20 +59,23 @@ class GossipIntegrationSpec extends ThreeNodesIntegrationSpec {
     val scid_bc = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
 
     // splice in to increase capacity of alice->bob channel
-    spliceIn(alice, bob, channelId_ab, 100_000 sat, None).asInstanceOf[RES_SPLICE].fundingTxId
+    spliceIn(alice, channelId_ab, 100_000 sat, None).asInstanceOf[RES_SPLICE].fundingTxId
 
     // verify that the new capacity and scid are correctly propagated
     eventually {
-      val scid_ab1 = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
-      /// assert(scid_ab != scid_ab1)
       val channelData_alice1 = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL]
       val channelData_bob1 = getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL]
       assert(channelData_alice1.commitments.latest.capacity == 200_000.sat)
       assert(channelData_bob1.commitments.latest.capacity == 200_000.sat)
       assert(channelData_alice1.shortIds.real.toOption.get == channelData_bob1.shortIds.real.toOption.get)
-      //assert(getRouterData(alice).channels(scid_ab1).capacity == 200_000.sat)
-      //assert(getRouterData(bob).channels(scid_ab1).capacity == 200_000.sat)
-      //assert(getRouterData(carol).channels(scid_ab1).capacity == 200_000.sat)
+      val scid_ab1 = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
+      val ann_splice = getRouterData(alice).channels(scid_ab1)
+      assert(ann_splice.capacity == 200_000.sat)
+      assert(getRouterData(bob).channels(scid_ab1) == ann_splice)
+      // TODO: after PR 2941, the slice ChannelAnnouncement will have a new scid and not be ignore by carol
+      assert(getRouterData(carol).spentChannels.exists(_._2 == ann_splice.shortChannelId))
+      // assert(scid_ab != scid_ab1)
+      // assert(getRouterData(carol).channels(scid_ab1).capacity == 200_000.sat)
     }
 
   }

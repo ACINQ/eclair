@@ -185,7 +185,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[OpenChannelResponse.Created]
   }
 
-  def spliceIn(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit system: ActorSystem): CommandResponse[CMD_SPLICE] = {
+  def spliceIn(node1: MinimalNodeFixture, channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit system: ActorSystem): CommandResponse[CMD_SPLICE] = {
     val sender = TestProbe("sender")
     val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
     val cmd = CMD_SPLICE(sender.ref.toTyped, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
@@ -321,6 +321,13 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
               val (blockHeight, txIndex) = deterministicTxCoordinates(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx)
+                case None => timers.startSingleTimer(watch, 10 millis)
+              }
+              Behaviors.same
+            case watch: ZmqWatcher.WatchExternalChannelSpent =>
+              knownFundingTxs().find(_.txIn.exists(_.outPoint.txid == watch.txId)) match {
+                case Some(nextFundingTx) =>
+                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, nextFundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same
