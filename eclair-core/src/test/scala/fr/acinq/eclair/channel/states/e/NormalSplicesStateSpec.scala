@@ -325,7 +325,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(postSpliceState.commitments.latest.localCommit.spec.htlcs.collect(outgoing).toSeq.map(_.amountMsat).sum == outgoingHtlcs)
   }
 
-  def resolveHtlcs(f: FixtureParam, htlcs: TestHtlcs, spliceOutFee: Satoshi): Unit = {
+  def resolveHtlcs(f: FixtureParam, htlcs: TestHtlcs, spliceOutFee: Satoshi = 0.sat): Unit = {
     import f._
 
     checkPostSpliceState(f, spliceOutFee)
@@ -737,7 +737,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv CMD_SPLICE (splice-in + splice-out)") { f =>
     val htlcs = setupHtlcs(f)
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
-    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("recv CMD_BUMP_FUNDING_FEE (splice-in + splice-out)") { f =>
@@ -1635,7 +1635,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (commit_sig received by alice)") { f =>
@@ -1683,7 +1683,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (tx_signatures sent by bob)") { f =>
@@ -1731,7 +1731,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (tx_signatures received by alice)") { f =>
@@ -1777,7 +1777,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -1823,7 +1823,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (tx_signatures sent by alice, splice confirms while bob is offline)") { f =>
@@ -1945,7 +1945,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val rbfTx = confirmRbfTx(f)
     assert(rbfTx.txid != spliceTx.txid)
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (RBF commit_sig received by alice)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
@@ -1992,7 +1992,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val rbfTx = confirmRbfTx(f)
     assert(rbfTx.txid != spliceTx.txid)
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("disconnect (RBF tx_signatures received by alice)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
@@ -2040,7 +2040,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val rbfTx = confirmRbfTx(f)
     assert(rbfTx.txid != spliceTx.txid)
-    resolveHtlcs(f, htlcs, 0 sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -2740,7 +2740,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
-    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -2759,7 +2759,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
-    resolveHtlcs(f, htlcs, spliceOutFee = 0.sat)
+    resolveHtlcs(f, htlcs)
   }
 
   test("recv multiple CMD_SPLICE (splice-in, splice-out)") { f =>
