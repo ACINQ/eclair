@@ -805,6 +805,8 @@ case class Commitments(params: ChannelParams,
   val remoteCommitIndex = active.head.remoteCommit.index
   val nextRemoteCommitIndex = remoteCommitIndex + 1
 
+  // While we have multiple active commitments, we use the most restrictive one.
+  val capacity = active.map(_.capacity).min
   lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
   lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
 
