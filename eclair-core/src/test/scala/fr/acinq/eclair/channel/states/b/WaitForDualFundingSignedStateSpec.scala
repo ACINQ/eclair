@@ -375,15 +375,16 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == OFFLINE)
 
-    reconnect(f, fundingTxId)
+    reconnect(f, fundingTxId, aliceExpectsCommitSig = true, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig not received, next_commitment_number = 0)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Alice)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
     alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
-    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
 
@@ -392,10 +393,10 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == OFFLINE)
 
-    reconnect(f, fundingTxId, aliceCommitmentNumber = 0, bobCommitmentNumber = 0)
+    reconnect(f, fundingTxId, aliceExpectsCommitSig = false, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig partially received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -411,26 +412,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == OFFLINE)
 
-    reconnect(f, fundingTxId)
-  }
-
-  test("recv INPUT_DISCONNECTED (commit_sig partially received, next_commitment_number = 0)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
-    import f._
-
-    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
-    bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
-    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_SIGNED)
-    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
-
-    alice ! INPUT_DISCONNECTED
-    awaitCond(alice.stateName == OFFLINE)
-    bob ! INPUT_DISCONNECTED
-    awaitCond(bob.stateName == OFFLINE)
-
-    reconnect(f, fundingTxId, aliceCommitmentNumber = 0)
+    reconnect(f, fundingTxId, aliceExpectsCommitSig = true, bobExpectsCommitSig = false)
   }
 
   test("recv INPUT_DISCONNECTED (commit_sig received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -450,7 +432,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob ! INPUT_DISCONNECTED
     awaitCond(bob.stateName == OFFLINE)
 
-    reconnect(f, fundingTxId)
+    reconnect(f, fundingTxId, aliceExpectsCommitSig = false, bobExpectsCommitSig = false)
   }
 
   test("recv INPUT_DISCONNECTED (tx_signatures received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -490,7 +472,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
   }
 
-  private def reconnect(f: FixtureParam, fundingTxId: TxId, aliceCommitmentNumber: Long = 1, bobCommitmentNumber: Long = 1): Unit = {
+  private def reconnect(f: FixtureParam, fundingTxId: TxId, aliceExpectsCommitSig: Boolean, bobExpectsCommitSig: Boolean): Unit = {
     import f._
 
     val listener = TestProbe()
@@ -501,17 +483,24 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
+    val nextLocalCommitmentNumberAlice = if (aliceExpectsCommitSig) 0 else 1
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(fundingTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
-    alice2bob.forward(bob, channelReestablishAlice.copy(nextLocalCommitmentNumber = aliceCommitmentNumber))
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == nextLocalCommitmentNumberAlice)
+    alice2bob.forward(bob, channelReestablishAlice)
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
+    val nextLocalCommitmentNumberBob = if (bobExpectsCommitSig) 0 else 1
     assert(channelReestablishBob.nextFundingTxId_opt.contains(fundingTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
-    bob2alice.forward(alice, channelReestablishBob.copy(nextLocalCommitmentNumber = bobCommitmentNumber))
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == nextLocalCommitmentNumberBob)
+    bob2alice.forward(alice, channelReestablishBob)
+
+    if (aliceExpectsCommitSig) {
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+    }
+    if (bobExpectsCommitSig) {
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+    }
     bob2alice.expectMsgType[TxSignatures]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxSignatures]
