@@ -407,6 +407,20 @@ private[channel] object ChannelCodecs4 {
       dfu => dfu
     )
 
+    private val confirmedFundingTxCodecWithoutBlockHeightAndTxIndexCodec: Codec[ConfirmedFundingTx] = (
+      ("tx" | txCodec ) ::
+        ("localSigs_opt" | optional(bool8, lengthDelimited(txSignaturesCodec))) ::
+        ("liquidityPurchase_opt" | optional(bool8, liquidityPurchaseCodec)) ::
+        ("blockHeight" | provide(BlockHeight(0))) ::
+        ("txIndex" | provide(0))).as[ConfirmedFundingTx]
+
+    private val confirmedFundingTxCodec: Codec[ConfirmedFundingTx] = (
+      ("tx" | txCodec ) ::
+        ("localSigs_opt" | optional(bool8, lengthDelimited(txSignaturesCodec))) ::
+        ("liquidityPurchase_opt" | optional(bool8, liquidityPurchaseCodec)) ::
+        ("blockHeight" | blockHeight) ::
+        ("txIndex" | uint16)).as[ConfirmedFundingTx]
+
     // When decoding interactive-tx from older codecs, we fill the shared input publicKeyScript if necessary.
     private def fillSharedInputScript(dfu: DualFundedUnconfirmedFundingTx): DualFundedUnconfirmedFundingTx = {
       (dfu.sharedTx.tx.sharedInput_opt, dfu.fundingParams.sharedInput_opt) match {
@@ -426,12 +440,13 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
       .typecase(0x07, dualFundedUnconfirmedFundingTxCodec)
       .typecase(0x08, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ZeroconfPublishedFundingTx])
-      .typecase(0x09, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
+      .typecase(0x10, confirmedFundingTxCodec)
+      .typecase(0x09, confirmedFundingTxCodecWithoutBlockHeightAndTxIndexCodec)
       .typecase(0x02, dualFundedUnconfirmedFundingTxWithoutLiquidityPurchaseCodec)
       .typecase(0x05, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x06, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x06, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo]) :: provide(BlockHeight(0)) :: provide(0)).as[ConfirmedFundingTx])
       .typecase(0x03, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x04, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x04, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo]) :: provide(BlockHeight(0)) :: provide(0)).as[ConfirmedFundingTx])
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
