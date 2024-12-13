@@ -8,7 +8,7 @@ import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Re
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, MilliSatoshi, NodeParams, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -185,6 +185,14 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[OpenChannelResponse.Created]
   }
 
+  def spliceIn(node1: MinimalNodeFixture, channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit system: ActorSystem): CommandResponse[CMD_SPLICE] = {
+    val sender = TestProbe("sender")
+    val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
+    val cmd = CMD_SPLICE(sender.ref.toTyped, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
+    sender.send(node1.register, Register.Forward(sender.ref.toTyped, channelId, cmd))
+    sender.expectMsgType[CommandResponse[CMD_SPLICE]]
+  }
+
   def confirmChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, channelId: ByteVector32, blockHeight: BlockHeight, txIndex: Int)(implicit system: ActorSystem): Option[RealScidStatus.Temporary] = {
     val fundingTx = getChannelData(node1, channelId) match {
       case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.signingSession.fundingTx.tx.buildUnsignedTx()
@@ -313,6 +321,13 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
               val (blockHeight, txIndex) = deterministicTxCoordinates(watch.txId)
               knownFundingTxs().find(_.txid == watch.txId) match {
                 case Some(fundingTx) => watch.replyTo ! ZmqWatcher.WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, fundingTx)
+                case None => timers.startSingleTimer(watch, 10 millis)
+              }
+              Behaviors.same
+            case watch: ZmqWatcher.WatchExternalChannelSpent =>
+              knownFundingTxs().find(_.txIn.exists(_.outPoint == OutPoint(watch.txId, watch.outputIndex))) match {
+                case Some(nextFundingTx) =>
+                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, nextFundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same

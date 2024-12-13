@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -38,7 +38,8 @@ import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestConstants, TimestampSecond, randomBytes32, randomKey}
+import org.scalatest.Inside.inside
 import scodec.bits._
 
 import scala.concurrent.duration._
@@ -318,12 +319,31 @@ class RouterSpec extends BaseRouterSpec {
     probe.expectMsg(PublicNode(node_b, 2, publicChannelCapacity * 2))
   }
 
+  def fundingTx(node1: PublicKey, node2: PublicKey, capacity: Satoshi = publicChannelCapacity): Transaction = {
+    val fundingScript = write(pay2wsh(Scripts.multiSig2of2(node1, node2)))
+    val fundingTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(capacity, fundingScript) :: Nil, lockTime = 0)
+    fundingTx
+  }
+
+  def spendingTx(node1: PublicKey, node2: PublicKey, capacity: Satoshi = publicChannelCapacity): Transaction = {
+    val fundingScript = write(pay2wsh(Scripts.multiSig2of2(node1, node2)))
+    val nextFundingTx = Transaction(version = 0, txIn = TxIn(OutPoint(fundingTx(node1, node2, capacity), 0), fundingScript, 0) :: Nil, txOut = TxOut(capacity, fundingScript) :: Nil, lockTime = 0)
+    nextFundingTx
+  }
+
   test("properly announce lost channels and nodes") { fixture =>
     import fixture._
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
-    router ! WatchExternalChannelSpentTriggered(scid_ab)
+    val probe = TestProbe()
+    probe.send(router, GetRouterData)
+    val channels = probe.expectMsgType[Data].channels
+
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spendingTx(funding_a, funding_b))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_ab).fundingTxId, ShortChannelId.outputIndex(scid_ab)))
     eventListener.expectMsg(ChannelLost(scid_ab))
     assert(nodeParams.db.network.getChannel(scid_ab).isEmpty)
     // a doesn't have any channels, b still has one with c
@@ -332,7 +352,10 @@ class RouterSpec extends BaseRouterSpec {
     assert(nodeParams.db.network.getNode(b).nonEmpty)
     eventListener.expectNoMessage(200 milliseconds)
 
-    router ! WatchExternalChannelSpentTriggered(scid_cd)
+    router ! WatchExternalChannelSpentTriggered(scid_cd, spendingTx(funding_c, funding_d))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_c, funding_d))
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_cd).fundingTxId, ShortChannelId.outputIndex(scid_cd)))
     eventListener.expectMsg(ChannelLost(scid_cd))
     assert(nodeParams.db.network.getChannel(scid_cd).isEmpty)
     // d doesn't have any channels, c still has one with b
@@ -341,7 +364,10 @@ class RouterSpec extends BaseRouterSpec {
     assert(nodeParams.db.network.getNode(c).nonEmpty)
     eventListener.expectNoMessage(200 milliseconds)
 
-    router ! WatchExternalChannelSpentTriggered(scid_bc)
+    router ! WatchExternalChannelSpentTriggered(scid_bc, spendingTx(funding_b, funding_c))
+    watcher.expectMsgType[WatchTxConfirmed]
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_b, funding_c))
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_bc).fundingTxId, ShortChannelId.outputIndex(scid_bc)))
     eventListener.expectMsg(ChannelLost(scid_bc))
     assert(nodeParams.db.network.getChannel(scid_bc).isEmpty)
     // now b and c do not have any channels
@@ -360,12 +386,17 @@ class RouterSpec extends BaseRouterSpec {
     val priv_funding_u = randomKey()
     val scid_au = RealShortChannelId(fixture.nodeParams.currentBlockHeight - 5000, 5, 0)
     val ann = channelAnnouncement(scid_au, priv_a, priv_u, priv_funding_a, priv_funding_u)
-    val fundingTx = Transaction(2, Nil, Seq(TxOut(500_000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_u.publicKey))))), 0)
+    val fundingTx_au = fundingTx(funding_a, priv_funding_u.publicKey, 500_000 sat)
     router ! PeerRoutingMessage(TestProbe().ref, remoteNodeId, ann)
     watcher.expectMsgType[ValidateRequest]
-    watcher.send(router, ValidateResult(ann, Right((fundingTx, UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(ann, Right((fundingTx_au, UtxoStatus.Unspent))))
+    watcher.expectMsgType[WatchExternalChannelSpent]
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(ann, 500_000 sat, None, None) :: Nil))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).nonEmpty))
+
+    val probe = TestProbe()
+    probe.send(router, GetRouterData)
+    val channels = probe.expectMsgType[Data].channels
 
     // The channel is pruned: we keep it in the DB until it is spent.
     router ! TickPruneStaleChannels
@@ -374,7 +405,10 @@ class RouterSpec extends BaseRouterSpec {
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).nonEmpty))
 
     // The channel is closed, now we can remove it from the DB.
-    router ! WatchExternalChannelSpentTriggered(scid_au)
+    router ! WatchExternalChannelSpentTriggered(scid_au, spendingTx(funding_a, priv_funding_u.publicKey))
+    assert(watcher.expectMsgType[WatchTxConfirmed].txId == spendingTx(funding_a, priv_funding_u.publicKey).txid)
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, priv_funding_u.publicKey))
+    watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_au).fundingTxId, ShortChannelId.outputIndex(scid_au)))
     eventListener.expectMsg(ChannelLost(scid_au))
     eventListener.expectMsg(NodeLost(priv_u.publicKey))
     awaitAssert(assert(nodeParams.db.network.getChannel(scid_au).isEmpty))
@@ -888,12 +922,12 @@ class RouterSpec extends BaseRouterSpec {
     val scid = RealShortChannelId(fixture.nodeParams.currentBlockHeight - 5000, 5, 0)
     val capacity = 1_000_000.sat
     val ann = channelAnnouncement(scid, priv_a, priv_c, priv_funding_a, priv_funding_c)
-    val fundingTx = Transaction(2, Nil, Seq(TxOut(capacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c))))), 0)
     val peerConnection = TestProbe()
+    val fundingTx_ac = fundingTx(funding_a, funding_c, capacity)
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, ann))
     watcher.expectMsgType[ValidateRequest]
-    watcher.send(router, ValidateResult(ann, Right((fundingTx, UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(ann, Right((fundingTx_ac, UtxoStatus.Unspent))))
     peerConnection.expectMsg(GossipDecision.Accepted(ann))
     probe.send(router, GetChannels)
     assert(probe.expectMsgType[Iterable[ChannelAnnouncement]].exists(_.shortChannelId == scid))
@@ -911,7 +945,7 @@ class RouterSpec extends BaseRouterSpec {
     val staleUpdate = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, scid, CltvExpiryDelta(72), 1 msat, 10 msat, 100, htlcMaximum, timestamp = staleTimestamp)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, staleUpdate))
     peerConnection.expectMsg(GossipDecision.Stale(staleUpdate))
-    assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, None, None, None)))
+    assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, None, None, None)))
 
     // We receive a non-stale channel update for one side of the channel.
     val update_ac_1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, scid, CltvExpiryDelta(72), 1 msat, 10 msat, 100, htlcMaximum, timestamp = TimestampSecond.now() - 3.days)
@@ -919,9 +953,9 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update_ac_1))
     peerConnection.expectNoMessage(100 millis)
     if (update_ac_1.channelFlags.isNode1) {
-      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, Some(update_ac_1), None, None)))
+      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, Some(update_ac_1), None, None)))
     } else {
-      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, None, Some(update_ac_1), None)))
+      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, None, Some(update_ac_1), None)))
     }
     probe.send(router, GetRouterData)
     val routerData1 = probe.expectMsgType[Data]
@@ -936,9 +970,9 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.expectMsg(GossipDecision.RelatedChannelPruned(update_ac_2))
     peerConnection.expectNoMessage(100 millis)
     if (update_ac_2.channelFlags.isNode1) {
-      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, Some(update_ac_2), None, None)))
+      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, Some(update_ac_2), None, None)))
     } else {
-      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, None, Some(update_ac_2), None)))
+      assert(nodeParams.db.network.getChannel(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, None, Some(update_ac_2), None)))
     }
     probe.send(router, GetRouterData)
     val routerData2 = probe.expectMsgType[Data]
@@ -955,9 +989,9 @@ class RouterSpec extends BaseRouterSpec {
     assert(routerData3.channels.contains(scid))
     assert(!routerData3.prunedChannels.contains(scid))
     if (update_ac_2.channelFlags.isNode1) {
-      assert(routerData3.channels.get(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, Some(update_ac_2), Some(update_ca), None)))
+      assert(routerData3.channels.get(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, Some(update_ac_2), Some(update_ca), None)))
     } else {
-      assert(routerData3.channels.get(scid).contains(PublicChannel(ann, fundingTx.txid, capacity, Some(update_ca), Some(update_ac_2), None)))
+      assert(routerData3.channels.get(scid).contains(PublicChannel(ann, fundingTx_ac.txid, capacity, Some(update_ca), Some(update_ac_2), None)))
     }
     assert(routerData3.graphWithBalances.graph.containsEdge(ChannelDesc(update_ac_2, ann)))
     assert(routerData3.graphWithBalances.graph.containsEdge(ChannelDesc(update_ca, ann)))
@@ -973,19 +1007,19 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // When the local channel comes back online, it will send a LocalChannelUpdate to the router.
-      val balances = Set[Option[MilliSatoshi]](Some(10000 msat), Some(15000 msat))
-      val commitments = CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, b, announceChannel = true)
+      val commitments = CommitmentsSpec.makeCommitments(channel_ab.capacity - 50_000_000.msat, 50_000_000 msat, a, b, announceChannel = true)
+      val balances = Set(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
       sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
-      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
+      val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)).flatten == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
-      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
-      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ab.capacity == channel_ab1.capacity && edge_ba.capacity == channel_ab1.capacity)
+      assert(edge_ab.balance_opt.contains(commitments.availableBalanceForSend))
       assert(edge_ba.balance_opt.isEmpty)
     }
 
@@ -996,53 +1030,54 @@ class RouterSpec extends BaseRouterSpec {
       assert(sender.expectMsgType[Data].rebroadcast.updates.isEmpty)
 
       // Then we update the balance without changing the contents of the channel update; the graph should still be updated.
-      val balances = Set[Option[MilliSatoshi]](Some(11000 msat), Some(14000 msat))
-      val commitments = CommitmentsSpec.makeCommitments(11000 msat, 14000 msat, a, b, announceChannel = true)
+      val commitments = CommitmentsSpec.makeCommitments(channel_ab.capacity - 40_000_000.msat, 40_000_000 msat, a, b, announceChannel = true)
+      val balances = Set(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
       sender.send(router, LocalChannelUpdate(sender.ref, null, scids_ab, b, Some(chan_ab), update_ab, commitments))
       sender.send(router, GetRoutingState)
-      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
+      val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)).flatten == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
-      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
-      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ab.capacity == channel_ab1.capacity && edge_ba.capacity == channel_ab1.capacity)
+      assert(edge_ab.balance_opt.contains(commitments.availableBalanceForSend))
       assert(edge_ba.balance_opt.isEmpty)
     }
 
     {
       // When HTLCs are relayed through the channel, balance changes are sent to the router.
-      val balances = Set[Option[MilliSatoshi]](Some(12000 msat), Some(13000 msat))
-      val commitments = CommitmentsSpec.makeCommitments(12000 msat, 13000 msat, a, b, announceChannel = true)
+      val commitments = CommitmentsSpec.makeCommitments(channel_ab.capacity - 55_000_000.msat, 55_000_000 msat, a, b, announceChannel = true)
+      val balances = Set(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
       sender.send(router, AvailableBalanceChanged(sender.ref, null, scids_ab, commitments))
       sender.send(router, GetRoutingState)
-      val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
-      assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) == balances)
+      val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
+      assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)).flatten == balances)
       // And the graph should be updated too.
       sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graphWithBalances.graph
       val edge_ab = g.getEdge(ChannelDesc(scid_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(scid_ab, b, a)).get
-      assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
-      assert(balances.contains(edge_ab.balance_opt))
+      assert(edge_ab.capacity == channel_ab1.capacity && edge_ba.capacity == channel_ab1.capacity)
+      assert(edge_ab.balance_opt.contains(commitments.availableBalanceForSend))
       assert(edge_ba.balance_opt.isEmpty)
     }
 
     {
       // Private channels should also update the graph when HTLCs are relayed through them.
-      val balances = Set(4620000 msat, 32620000 msat)
-      val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
+      sender.send(router, GetRouterData)
+      val channel_ag = sender.expectMsgType[Data].privateChannels(channelId_ag_private)
+      val commitments = CommitmentsSpec.makeCommitments(channel_ag.meta.balance1 + 10_000_000.msat, channel_ag.meta.balance2 - 10_000_000.msat, a, g, announceChannel = false)
       sender.send(router, AvailableBalanceChanged(sender.ref, channelId_ag_private, scids_ab, commitments))
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
-      val channel_ag = data.privateChannels(channelId_ag_private)
-      assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) == balances)
+      val channel_ag1 = data.privateChannels(channelId_ag_private)
+      assert(Set(channel_ag1.meta.balance1, channel_ag1.meta.balance2) == Set(commitments.availableBalanceForSend, commitments.availableBalanceForReceive))
       // And the graph should be updated too.
       val edge_ag = data.graphWithBalances.graph.getEdge(ChannelDesc(alias_ag_private, a, g)).get
-      assert(edge_ag.capacity == channel_ag.capacity)
-      assert(edge_ag.balance_opt.contains(balances.last))
+      assert(edge_ag.capacity == channel_ag1.capacity)
+      assert(edge_ag.balance_opt.contains(commitments.availableBalanceForSend))
     }
   }
 
@@ -1082,6 +1117,71 @@ class RouterSpec extends BaseRouterSpec {
       case cu: ChannelUpdatesReceived => cu == ChannelUpdatesReceived(List(update_ab_2))
       case _ => false
     }
+  }
+
+  test("update an existing channel after a splice") { fixture =>
+    import fixture._
+
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
+    val peerConnection = TestProbe()
+
+    // Channel ab is spent by a splice tx.
+    val capacity1 = publicChannelCapacity - 100_000.sat
+    val spliceTx1 = spendingTx(funding_a, funding_b, capacity1)
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx1)
+    inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == spliceTx1.txid)
+      assert(w.minDepth == 12)
+    }
+    eventListener.expectNoMessage(100 millis)
+
+    // Channel ab is spent and confirmed by an RBF of splice tx.
+    val capacity2 = publicChannelCapacity - 100_000.sat - 1000.sat
+    val spliceTx2 = spendingTx(funding_a, funding_b, capacity2)
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx2)
+    inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == spliceTx2.txid)
+      assert(w.minDepth == 12)
+    }
+    eventListener.expectNoMessage(100 millis)
+
+    // The splice of channel ab is announced.
+    val spliceScid = RealShortChannelId(BlockHeight(450000), 1, 0)
+    val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, spliceAnn))
+    peerConnection.expectNoMessage(100 millis)
+    assert(watcher.expectMsgType[ValidateRequest].ann == spliceAnn)
+    watcher.send(router, ValidateResult(spliceAnn, Right(spliceTx2, UtxoStatus.Unspent)))
+    peerConnection.expectMsg(TransportHandler.ReadAck(spliceAnn))
+    peerConnection.expectMsg(GossipDecision.Accepted(spliceAnn))
+    assert(peerConnection.sender() == router)
+
+    // And the graph should be updated too.
+    val sender = TestProbe()
+    sender.send(router, Router.GetRouterData)
+    val g = sender.expectMsgType[Data].graphWithBalances.graph
+    val edge_ab = g.getEdge(ChannelDesc(spliceScid, a, b)).get
+    val edge_ba = g.getEdge(ChannelDesc(spliceScid, b, a)).get
+    assert(g.getEdge(ChannelDesc(scid_ab, a, b)).isEmpty)
+    assert(g.getEdge(ChannelDesc(scid_ab, b, a)).isEmpty)
+    assert(edge_ab.capacity == capacity2 && edge_ba.capacity == capacity2)
+
+    // The channel update for the splice is confirmed and the channel is not removed.
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn, capacity2, None, None) :: Nil))
+    eventListener.expectMsg(ChannelLost(scid_ab))
+    peerConnection.expectNoMessage(100 millis)
+    eventListener.expectNoMessage(100 millis)
+
+    // The router no longer tracks the parent scid.
+    val probe = TestProbe()
+    awaitAssert({
+      probe.send(router, GetRouterData)
+      val routerData = probe.expectMsgType[Data]
+      assert(routerData.spentChannels.isEmpty)
+      assert(!routerData.channels.contains(scid_ab))
+    })
   }
 
 }

@@ -2,7 +2,9 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchExternalChannelSpent, WatchExternalChannelSpentTriggered, WatchFundingDeeplyBuriedTriggered}
+import fr.acinq.bitcoin.scalacompat.Transaction
+import fr.acinq.eclair.blockchain.CurrentBlockHeight
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchExternalChannelSpent, WatchExternalChannelSpentTriggered, WatchFundingDeeplyBuriedTriggered, WatchTxConfirmed, WatchTxConfirmedTriggered}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.{CMD_CLOSE, DATA_NORMAL}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -21,7 +23,7 @@ import scala.concurrent.duration.DurationInt
  */
 class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], rebroadcastListener: TestProbe, channels: SetupFixture, testTags: Set[String]) {
+  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], channels: SetupFixture, testTags: Set[String]) {
     //@formatter:off
     /** there is only one channel here */
     def privateChannel: PrivateChannel = router.stateData.privateChannels.values.head
@@ -33,14 +35,12 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   override def withFixture(test: OneArgTest): Outcome = {
     val channels = init(tags = test.tags)
-    val rebroadcastListener = TestProbe()
     val router: TestFSMRef[Router.State, Router.Data, Router] = {
       // we use alice's actor system so we share the same event stream
       implicit val system: ActorSystem = channels.alice.underlying.system
-      system.eventStream.subscribe(rebroadcastListener.ref, classOf[Router.Rebroadcast])
       TestFSMRef(new Router(channels.alice.underlyingActor.nodeParams, channels.alice.underlyingActor.blockchain, initialized = None))
     }
-    withFixture(test.toNoArgTest(FixtureParam(router, rebroadcastListener, channels, test.tags)))
+    withFixture(test.toNoArgTest(FixtureParam(router, channels, test.tags)))
   }
 
   private def internalTest(f: FixtureParam): Unit = {
@@ -175,9 +175,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     channels.bob2alice.expectMsgType[Shutdown]
     channels.bob2alice.forward(channels.alice)
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
-      // if the channel was public, the router asked the watcher to watch the funding tx and will be notified
-      val watchSpentBasic = channels.alice2blockchain.expectMsgType[WatchExternalChannelSpent]
-      watchSpentBasic.replyTo ! WatchExternalChannelSpentTriggered(watchSpentBasic.shortChannelId)
+      // if the channel was public, the router asked the watcher to watch the funding tx and will be notified when it confirms
+      val watchSpent = channels.alice2blockchain.expectMsgType[WatchExternalChannelSpent]
+      watchSpent.replyTo ! WatchExternalChannelSpentTriggered(watchSpent.shortChannelId, Transaction(0, Nil, Nil, 0))
+      val watchConfirmed = channels.alice2blockchain.expectMsgType[WatchTxConfirmed]
+      watchConfirmed.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, Transaction(0, Nil, Nil, 0))
     }
     // router cleans up the channel
     awaitAssert {

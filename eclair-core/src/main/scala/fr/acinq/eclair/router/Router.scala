@@ -26,8 +26,9 @@ import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -113,7 +114,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       scid2PrivateChannels = Map.empty,
       excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
-      sync = Map.empty)
+      sync = Map.empty,
+      spentChannels = Map.empty)
     startWith(NORMAL, data)
   }
 
@@ -259,8 +261,17 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: ValidateResult, d) =>
       stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
-    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
-      stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
+      val fundingTxId = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.fundingTxId
+      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
+      watcher ! WatchTxConfirmed(self, spendingTx.txid, ANNOUNCEMENTS_MINCONF * 2)
+      stay() using d.copy(spentChannels = d.spentChannels + (spendingTx.txid -> shortChannelId))
+
+    case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d) =>
+      d.spentChannels.get(spendingTx.txid) match {
+        case Some(shortChannelId) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, spendingTx.txid, shortChannelId)
+        case None => stay()
+      }
 
     case Event(n: NodeAnnouncement, d: Data) =>
       stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
@@ -409,9 +420,9 @@ object Router {
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (u.channelFlags.isNode1) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PublicChannel = if (commitments.localNodeId == ann.nodeId1) {
-      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
+      copy(capacity = commitments.capacity, meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
     } else {
-      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
+      copy(capacity = commitments.capacity, meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
     }
     def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
@@ -573,7 +584,6 @@ object Router {
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
     def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
     def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
-    def emptyNodes(): Ignore = copy(nodes = Set.empty)
     def emptyChannels(): Ignore = copy(channels = Set.empty)
     // @formatter:on
   }
@@ -621,12 +631,6 @@ object Router {
 
     /** Full route including the final hop, if any. */
     val fullRoute: Seq[Hop] = hops ++ finalHop_opt.toSeq
-
-    /**
-     * Fee paid for the trampoline hop, if any.
-     * Note that when using MPP to reach the trampoline node, the trampoline fee must be counted only once.
-     */
-    val trampolineFee: MilliSatoshi = finalHop_opt.collect { case hop: NodeHop => hop.fee(amount) }.getOrElse(0 msat)
 
     /**
      * Fee paid for the blinded route, if any.
@@ -757,7 +761,8 @@ object Router {
                   scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Map[ChannelDesc, ExcludedChannelStatus], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
-                  sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  spentChannels: Map[TxId, RealShortChannelId], // transactions that spend funding txs that are not yet deeply buried
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid
