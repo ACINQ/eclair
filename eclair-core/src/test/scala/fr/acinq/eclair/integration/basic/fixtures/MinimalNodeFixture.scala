@@ -8,7 +8,7 @@ import akka.testkit.{TestActor, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.ShortChannelId.txIndex
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -325,7 +325,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
               }
               Behaviors.same
             case watch: ZmqWatcher.WatchExternalChannelSpent =>
-              knownFundingTxs().find(_.txIn.exists(_.outPoint.txid == watch.txId)) match {
+              knownFundingTxs().find(_.txIn.exists(_.outPoint == OutPoint(watch.txId, watch.outputIndex))) match {
                 case Some(nextFundingTx) =>
                   watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, nextFundingTx)
                 case None => timers.startSingleTimer(watch, 10 millis)
