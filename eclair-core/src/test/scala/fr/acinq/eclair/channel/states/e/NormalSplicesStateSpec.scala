@@ -1560,7 +1560,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateName == OFFLINE)
   }
 
-  private def reconnect(f: FixtureParam): (ChannelReestablish, ChannelReestablish) = {
+  private def reconnect(f: FixtureParam, sendReestablish: Boolean = true): (ChannelReestablish, ChannelReestablish) = {
     import f._
 
     val aliceInit = Init(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
@@ -1568,9 +1568,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
+    if (sendReestablish) alice2bob.forward(bob)
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
-    bob2alice.forward(alice)
+    if (sendReestablish) bob2alice.forward(alice)
     (channelReestablishAlice, channelReestablishBob)
   }
 
@@ -1638,6 +1638,54 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
+  test("disconnect (commit_sig not received, reestablish with previous commitment_number)") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    val aliceCommitIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
+    val bobCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
+    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
+    val spliceStatus = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs]
+
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f, sendReestablish = false)
+    assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
+    alice2bob.forward(bob, channelReestablishAlice.copy(nextLocalCommitmentNumber = aliceCommitIndex))
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
+    bob2alice.forward(alice, channelReestablishBob.copy(nextLocalCommitmentNumber = bobCommitIndex))
+
+    // Alice and Bob retransmit commit_sig and tx_signatures.
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+    sender.expectMsgType[RES_SPLICE]
+
+    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs)
+  }
+
   test("disconnect (commit_sig received by alice)") { f =>
     import f._
 
@@ -1659,6 +1707,56 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
+
+    // Alice and Bob retransmit commit_sig and tx_signatures.
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+    sender.expectMsgType[RES_SPLICE]
+
+    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
+    bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+
+    resolveHtlcs(f, htlcs)
+  }
+
+  test("disconnect (commit_sig received by alice, reestablish with previous commitment_number)") { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    val aliceCommitIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
+    val bobCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
+    assert(aliceCommitIndex != bobCommitIndex)
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
+    val spliceStatus = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs]
+
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f, sendReestablish = false)
+    assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
+    alice2bob.forward(bob, channelReestablishAlice)
+    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
+    bob2alice.forward(alice, channelReestablishBob.copy(nextLocalCommitmentNumber = bobCommitIndex))
 
     // Alice and Bob retransmit commit_sig and tx_signatures.
     alice2bob.expectMsgType[CommitSig]
