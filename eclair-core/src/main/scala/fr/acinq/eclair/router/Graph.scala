@@ -21,7 +21,8 @@ import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Router.HopRelayParams
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
@@ -120,10 +121,11 @@ object Graph {
                         wr: Either[WeightRatios, HeuristicsConstants],
                         currentBlockHeight: BlockHeight,
                         boundaries: RichWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
+                        includeLocalChannelCost: Boolean,
+                        excludePositiveInboundFees: Boolean = false): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost, excludePositiveInboundFees)
     if (shortestPath.isEmpty) {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
@@ -162,7 +164,7 @@ object Graph {
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
           val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost, excludePositiveInboundFees)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
             val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -210,7 +212,8 @@ object Graph {
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: BlockHeight,
                                    wr: Either[WeightRatios, HeuristicsConstants],
-                                   includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
+                                   includeLocalChannelCost: Boolean,
+                                   excludePositiveInboundFees: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -251,7 +254,8 @@ object Graph {
             edge.params.htlcMaximum_opt.forall(current.weight.amount <= _) &&
             current.weight.amount >= edge.params.htlcMinimum &&
             !ignoredEdges.contains(edge.desc) &&
-            !ignoredVertices.contains(neighbor)) {
+            !ignoredVertices.contains(neighbor) &&
+            (!excludePositiveInboundFees || g.getBackEdge(edge).flatMap(_.getChannelUpdate).flatMap(_.blip18InboundFees_opt).forall(i => i.feeBase.toLong <= 0 && i.feeProportionalMillionths <= 0))) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
             // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
@@ -595,6 +599,11 @@ object Graph {
       ).flatten.min.max(0 msat)
 
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
+
+      def getChannelUpdate: Option[ChannelUpdate] = params match {
+        case HopRelayParams.FromAnnouncement(update, _) => Some(update)
+        case _ => None
+      }
     }
 
     object GraphEdge {
@@ -709,6 +718,10 @@ object Graph {
 
       def getEdge(desc: ChannelDesc): Option[GraphEdge] =
         vertices.get(desc.b).flatMap(_.incomingEdges.get(desc))
+
+      def getBackEdge(desc: ChannelDesc): Option[GraphEdge] = getEdge(desc.copy(a = desc.b, b = desc.a))
+
+      def getBackEdge(edge: GraphEdge): Option[GraphEdge] = getBackEdge(edge.desc)
 
       /**
        * @param keyA the key associated with the starting vertex

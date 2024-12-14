@@ -53,7 +53,16 @@ object ChannelAnnouncementTlv {
 sealed trait ChannelUpdateTlv extends Tlv
 
 object ChannelUpdateTlv {
-  val channelUpdateTlvCodec: Codec[TlvStream[ChannelUpdateTlv]] = tlvStream(discriminated[ChannelUpdateTlv].by(varint))
+  case class Blip18InboundFee(feeBase: Int, feeProportionalMillionths: Int) extends ChannelUpdateTlv
+
+  private val blip18InboundFeeCodec: Codec[Blip18InboundFee] = tlvField(Codec(
+    ("feeBase" | int32) ::
+      ("feeProportionalMillionths" | int32)
+  ).as[Blip18InboundFee])
+
+  val channelUpdateTlvCodec: Codec[TlvStream[ChannelUpdateTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
+    .typecase(UInt64(55555), blip18InboundFeeCodec)
+  )
 }
 
 sealed trait GossipTimestampFilterTlv extends Tlv
