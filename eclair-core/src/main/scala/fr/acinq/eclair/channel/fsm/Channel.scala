@@ -2324,14 +2324,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      log.debug("re-sending channelReady")
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
-    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      log.debug("re-sending channelReady")
+    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
-      goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+      // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
+      // and our commit_sig if they haven't received it already.
+      channelReestablish.nextFundingTxId_opt match {
+        case Some(fundingTxId) if fundingTxId == d.commitments.latest.fundingTxId =>
+          d.commitments.latest.localFundingStatus.localSigs_opt match {
+            case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
+              log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+              val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(commitSig, txSigs, channelReady)
+            case Some(txSigs) =>
+              log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(txSigs, channelReady)
+            case None =>
+              log.warning("cannot retransmit tx_signatures, we don't have them (status={})", d.commitments.latest.localFundingStatus)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+          }
+        case _ => goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+      }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       Syncing.checkSync(keyManager, d.commitments, channelReestablish) match {
