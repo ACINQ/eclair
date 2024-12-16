@@ -2200,7 +2200,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (RBF commit_sig received by bob)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
+  test("disconnect (RBF commit_sig received by bob)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
