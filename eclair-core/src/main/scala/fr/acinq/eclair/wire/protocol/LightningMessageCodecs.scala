@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Features, InitFeature, KamonExt}
 import scodec.bits.{BinStringSyntax, BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec}
 
 /**
  * Created by PM on 15/11/2016.
@@ -226,6 +226,22 @@ object LightningMessageCodecs {
       ("feeSatoshis" | satoshi) ::
       ("signature" | bytes64) ::
       ("tlvStream" | ClosingSignedTlv.closingSignedTlvCodec)).as[ClosingSigned]
+
+  val closingCompleteCodec: Codec[ClosingComplete] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+
+  val closingSigCodec: Codec[ClosingSig] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
@@ -497,6 +513,8 @@ object LightningMessageCodecs {
     .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
+    .typecase(40, closingCompleteCodec)
+    .typecase(41, closingSigCodec)
     .typecase(64, openDualFundedChannelCodec)
     .typecase(65, acceptDualFundedChannelCodec)
     .typecase(66, txAddInputCodec)
