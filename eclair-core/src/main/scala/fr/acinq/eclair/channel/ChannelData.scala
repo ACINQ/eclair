@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -72,6 +72,7 @@ case object WAIT_FOR_DUAL_FUNDING_READY extends ChannelState
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
+case object NEGOTIATING_SIMPLE extends ChannelState
 case object CLOSING extends ChannelState
 case object CLOSED extends ChannelState
 case object OFFLINE extends ChannelState
@@ -535,6 +536,20 @@ object SpliceStatus {
   case object SpliceAborted extends SpliceStatus
 }
 
+sealed trait ClosingNegotiation {
+  def localShutdown: Shutdown
+  /** Closing feerate for our closing transaction. */
+  def closingFeerate: FeeratePerKw
+}
+object ClosingNegotiation {
+  /** We've sent a new shutdown message: we wait for their shutdown message before taking any action. */
+  case class WaitingForRemoteShutdown(localShutdown: Shutdown, closingFeerate: FeeratePerKw) extends ClosingNegotiation
+  /** We've exchanged shutdown messages: we both send closing_complete to renew the closing transactions. */
+  case class SigningTransactions(localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerate: FeeratePerKw, closingCompleteSent_opt: Option[ClosingComplete], closingSigSent_opt: Option[ClosingSig], closingSigReceived_opt: Option[ClosingSig]) extends ClosingNegotiation
+  /** We've signed new closing transactions and are waiting for confirmation or to initiate RBF. */
+  case class WaitingForConfirmation(localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerate: FeeratePerKw) extends ClosingNegotiation
+}
+
 sealed trait ChannelData extends PossiblyHarmful {
   def channelId: ByteVector32
 }
@@ -652,6 +667,16 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.params.localParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+}
+final case class DATA_NEGOTIATING_SIMPLE(commitments: Commitments,
+                                         status: ClosingNegotiation,
+                                         // Closing transactions we created, where we pay the fees (unsigned).
+                                         proposedClosingTxs: List[ClosingTxs],
+                                         // Closing transactions we published: this contains our local transactions for
+                                         // which they sent a signature, and their closing transactions that we signed.
+                                         publishedClosingTxs: List[ClosingTx]) extends ChannelDataWithCommitments {
+  val localScriptPubKey: ByteVector = status.localShutdown.scriptPubKey
+  def findClosingTx(tx: Transaction): Option[ClosingTx] = publishedClosingTxs.find(_.tx.txid == tx.txid).orElse(proposedClosingTxs.flatMap(_.all).find(_.tx.txid == tx.txid))
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
