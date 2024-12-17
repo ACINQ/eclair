@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.channel.fsm
 
-import akka.actor.{ActorRef, FSM, Status}
+import akka.actor.FSM
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
 import fr.acinq.eclair.Features
+import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.wire.protocol.{HtlcSettlementMessage, LightningMessage, UpdateMessage}
+import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -106,6 +107,7 @@ trait CommonHandlers {
     case d: DATA_NORMAL if d.localShutdown.isDefined => d.localShutdown.get.scriptPubKey
     case d: DATA_SHUTDOWN => d.localShutdown.scriptPubKey
     case d: DATA_NEGOTIATING => d.localShutdown.scriptPubKey
+    case d: DATA_NEGOTIATING_SIMPLE => d.localScriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
     case d =>
       d.commitments.params.localParams.upfrontShutdownScript_opt match {
@@ -128,6 +130,22 @@ trait CommonHandlers {
     val finalScriptPubKey = Script.write(Script.pay2wpkh(finalPubKey))
     log.info(s"using finalScriptPubkey=$finalScriptPubKey")
     finalScriptPubKey
+  }
+
+  def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {
+    val localScript = localShutdown.scriptPubKey
+    val remoteScript = remoteShutdown.scriptPubKey
+    val closingFeerate = closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, commitments.latest, localScript, remoteScript, closingFeerate) match {
+      case Left(f) =>
+        log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
+        val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, Nil, Nil)
+        (d, None)
+      case Right((closingTxs, closingComplete)) =>
+        log.debug("signing local mutual close transactions: {}", closingTxs)
+        val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, closingTxs :: Nil, Nil)
+        (d, Some(closingComplete))
+    }
   }
 
 }

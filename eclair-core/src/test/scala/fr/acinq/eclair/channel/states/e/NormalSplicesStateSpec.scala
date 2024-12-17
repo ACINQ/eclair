@@ -2466,7 +2466,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // The commit confirms, along with Alice's 2nd-stage transactions.
     watchConfirmedCommit2.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, commitTx2)
     watchConfirmedClaimMainDelayed2.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMainDelayed2)
-    watchHtlcsOut.zip(htlcsTxsOut).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(tx) }
+    watchHtlcsOut.zip(htlcsTxsOut).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(watch.amount, tx) }
     htlcsTxsOut.foreach { tx =>
       alice2blockchain.expectWatchTxConfirmed(tx.txid)
       alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx)
@@ -2551,7 +2551,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     watchConfirmedClaimMain.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMain)
     val watchHtlcsOut1 = htlcs.aliceToBob.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
     htlcs.bobToAlice.map(_ => alice2blockchain.expectMsgType[WatchOutputSpent])
-    watchHtlcsOut1.zip(htlcsTxsOut1).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(tx) }
+    watchHtlcsOut1.zip(htlcsTxsOut1).foreach { case (watch, tx) => watch.replyTo ! WatchOutputSpentTriggered(watch.amount, tx) }
     htlcsTxsOut1.foreach { tx =>
       alice2blockchain.expectWatchTxConfirmed(tx.txid)
       alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx)
@@ -2843,7 +2843,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // all penalty txs confirm
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobRevokedCommitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceClaimMain)
-    alice ! WatchOutputSpentTriggered(aliceMainPenalty)
+    alice ! WatchOutputSpentTriggered(aliceMainPenalty.txOut(0).amount, aliceMainPenalty)
     alice2blockchain.expectWatchTxConfirmed(aliceMainPenalty.txid)
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, aliceMainPenalty)
     aliceHtlcsPenalty.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }

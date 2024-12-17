@@ -130,8 +130,7 @@ object TestConstants {
         scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 0 msat,
-        minDepthFunding = 6,
-        minDepthClosing = 3,
+        minDepth = 6,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -313,8 +312,7 @@ object TestConstants {
         scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
-        minDepthFunding = 3,
-        minDepthClosing = 3,
+        minDepth = 3,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
