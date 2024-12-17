@@ -1,0 +1,30 @@
+# TODO
+
+- Move `ChannelAnnouncement` inside `Commitment`:
+  - add `blockheight` and `txindex` to `ConfirmedFundingTx` so that `Commitment` can be mapped to an `scid`
+  - don't prune commitments if we're announcing the channel and don't have a more recent `channel_announcement`
+    - the scid we use for our `channel_update`s are based on the last announcement we sent
+    - `Commitments` exposes a `lastChannelAnnouncement_opt` containing channel announcement and commitment
+    - move `makeAnnouncementSigs` to commitment
+- Only update scids (`d.shortIds` and `ShortChannelIdAssigned`) after announcing the channel
+  - or immediately if private
+  - send `channel_announcement` to `Router` when we generate it
+  - refactor `WatchFundingDeeplyBuriedTriggered`
+  - receive `channel_ready`:
+    - re-send our `announcement_signatures`
+- Implement splice gossip:
+  - receive `WatchFundingConfirmedTriggered`:
+    - send `splice_locked`
+    - if we've received their `splice_locked`, send `announcement_signatures` (no need to store)
+  - receive `splice_locked`:
+    - if we've already sent `splice_locked`, send `announcement_signatures` (no need to store)
+  - receive `announcement_signatures`:
+    - if `splice_locked` sent and received:
+      - re-create local announcement sigs
+      - publish `channel_announcement`
+      - store it in the `commitment`
+    - otherwise:
+      - re-send remote `announcement_signatures` to ourselves after 30 seconds
+  - reconnection:
+    - re-send `channel_ready` / `splice_locked`
+    - announcement signatures will be re-sent when receiving remote

@@ -296,7 +296,15 @@ object Helpers {
     channelAnnouncement_opt.map(_.shortChannelId).getOrElse(localAlias)
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds.localAlias)
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = {
+    val channelAnnouncement_opt = d.channelAnnouncementStatus match {
+      case ann: ChannelAnnouncementStatus.RemoteSigsReceived => ann.previous_opt
+      case ann: ChannelAnnouncementStatus.LocalSigsSent => ann.previous_opt
+      case ChannelAnnouncementStatus.Sent(ann) => Some(ann)
+      case ChannelAnnouncementStatus.NotAnnounced => None
+    }
+    scidForChannelUpdate(channelAnnouncement_opt, d.shortIds.localAlias)
+  }
 
   /**
    * If our peer sent us an alias, that's what we must use in the channel_update we send them to ensure they're able to
@@ -350,9 +358,10 @@ object Helpers {
   def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
     Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
 
-  def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: ChannelParams, remoteFundingPubKey: PublicKey, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
+  // TODO: move to Commitments object with nodeParams, fundingTxIndex and shortChannelId as param? Or even omitting shortChannelId and getting it from localFundingStatus 
+  def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
     val features = Features.empty[Feature] // empty features for now
-    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, fundingTxIndex = 0) // TODO: public announcements are not yet supported with splices
+    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, fundingTxIndex)
     val witness = Announcements.generateChannelAnnouncementWitness(
       nodeParams.chainHash,
       shortChannelId,

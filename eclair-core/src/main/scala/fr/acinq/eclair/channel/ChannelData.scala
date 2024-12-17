@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -478,6 +478,14 @@ object RemoteFundingStatus {
   case object Locked extends RemoteFundingStatus
 }
 
+sealed trait ChannelAnnouncementStatus
+object ChannelAnnouncementStatus {
+  case class RemoteSigsReceived(sigs: AnnouncementSignatures, previous_opt: Option[ChannelAnnouncement]) extends ChannelAnnouncementStatus
+  case class LocalSigsSent(fundingTxId: TxId, sigs: AnnouncementSignatures, previous_opt: Option[ChannelAnnouncement]) extends ChannelAnnouncementStatus
+  case class Sent(ann: ChannelAnnouncement) extends ChannelAnnouncementStatus
+  case object NotAnnounced extends ChannelAnnouncementStatus
+}
+
 sealed trait DualFundingStatus
 object DualFundingStatus {
   /** We're waiting for one of the funding transactions to confirm. */
@@ -636,7 +644,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shor
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,
-                             channelAnnouncement: Option[ChannelAnnouncement],
+                             channelAnnouncementStatus: ChannelAnnouncementStatus,
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],

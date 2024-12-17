@@ -139,7 +139,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
     val commitments1 = commitments.modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
-    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments1, shortIds1, ChannelAnnouncementStatus.NotAnnounced, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

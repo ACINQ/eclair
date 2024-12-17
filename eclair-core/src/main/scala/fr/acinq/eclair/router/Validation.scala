@@ -551,6 +551,7 @@ object Validation {
         // channel is known, nothing more to do
         d1
       case None =>
+        // TODO: ShortChannelIdAssigned should have a "splice" flag and be ignored here
         // this is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a public
         // channel that doesn't yet have 6 confirmations), we create a corresponding private channel
         val pc = PrivateChannel(scia.channelId, scia.shortIds, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
