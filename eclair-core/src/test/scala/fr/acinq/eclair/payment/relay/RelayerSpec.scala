@@ -21,6 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.testkit.TestKit.awaitCond
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, TxId}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
@@ -51,8 +52,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
-    val disableTrampoline = test.tags.contains("trampoline-disabled")
-    val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolinePayment = !disableTrampoline)
+    val nodeParams = TestConstants.Bob.nodeParams
+      .modify(_.features).usingIf(test.tags.contains("trampoline-disabled"))(_.remove(Features.TrampolinePayment))
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val paymentHandler = TestProbe[Any]("payment-handler")
@@ -192,7 +193,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     // we use this to build a valid trampoline onion inside a normal onion
-    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, Features.TrampolinePayment -> Optional)
     val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures)
     val payment = TrampolinePayment.buildOutgoingPayment(b, invoice, finalExpiry)
 
