@@ -27,6 +27,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
+import fr.acinq.eclair.wire.internal.channel.version4.ChannelTypes4
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
@@ -264,7 +265,8 @@ private[channel] object ChannelCodecs1 {
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
       case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        val shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
+        ChannelTypes4.DATA_NORMAL_0e(commitments, shortIds, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice).migrate()
     }.decodeOnly
 
     val DATA_SHUTDOWN_23_Codec: Codec[DATA_SHUTDOWN] = (

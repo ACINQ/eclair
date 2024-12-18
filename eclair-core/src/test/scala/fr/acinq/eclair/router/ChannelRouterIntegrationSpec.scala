@@ -106,14 +106,14 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       // alice and bob won't send their channel_update directly to each other because the channel has been announced
       // but we can get the update from their data
       awaitCond {
-        channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined &&
-          channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined
+        channels.alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isDefined &&
+          channels.bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isDefined
       }
       val aliceChannelUpdate2 = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
       val bobChannelUpdate2 = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
       // this time, they use the real scid
-      val aliceAnn = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
-      val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
+      val aliceAnn = channels.alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+      val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
       assert(aliceAnn == bobAnn)
       assert(aliceChannelUpdate2.shortChannelId == aliceAnn.shortChannelId)
       assert(!aliceChannelUpdate2.dontForward)

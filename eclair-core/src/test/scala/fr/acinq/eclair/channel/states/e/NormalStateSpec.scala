@@ -3737,7 +3737,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice, annSigsB)
     awaitAssert {
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
-      assert(normal.shortIds.real == RealScidStatus.Final(annSigsA.shortChannelId) && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId)
+      assert(normal.shortIds.real == RealScidStatus.Final(annSigsA.shortChannelId) && normal.lastAnnouncement_opt.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId)
     }
     // we use the real scid instead of remote alias as soon as the channel is announced
     val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3761,7 +3761,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import initialState.commitments.latest.{localParams, remoteParams}
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey, initialState.commitments.latest.remoteFundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.contains(channelAnn))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(channelAnn))
 
     // actual test starts here
     // simulate bob re-sending its sigs
