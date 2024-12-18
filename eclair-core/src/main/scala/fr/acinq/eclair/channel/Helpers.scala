@@ -296,7 +296,7 @@ object Helpers {
     channelAnnouncement_opt.map(_.shortChannelId).getOrElse(localAlias)
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds.localAlias)
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.lastAnnouncement_opt, d.shortIds.localAlias)
 
   /**
    * If our peer sent us an alias, that's what we must use in the channel_update we send them to ensure they're able to
@@ -349,23 +349,6 @@ object Helpers {
 
   def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
     Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
-
-  def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: ChannelParams, remoteFundingPubKey: PublicKey, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
-    val features = Features.empty[Feature] // empty features for now
-    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, fundingTxIndex = 0) // TODO: public announcements are not yet supported with splices
-    val witness = Announcements.generateChannelAnnouncementWitness(
-      nodeParams.chainHash,
-      shortChannelId,
-      nodeParams.nodeKeyManager.nodeId,
-      channelParams.remoteParams.nodeId,
-      fundingPubKey.publicKey,
-      remoteFundingPubKey,
-      features
-    )
-    val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
-    val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
-    AnnouncementSignatures(channelParams.channelId, shortChannelId, localNodeSig, localBitcoinSig)
-  }
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)

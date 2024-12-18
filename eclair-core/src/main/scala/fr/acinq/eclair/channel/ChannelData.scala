@@ -444,6 +444,8 @@ sealed trait LocalFundingStatus {
   def localSigs_opt: Option[TxSignatures]
   /** Basic information about the liquidity purchase negotiated in this transaction, if any. */
   def liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]
+  /** After confirmation, we store the channel announcement matching this funding transaction, once we've created it. */
+  def announcement_opt: Option[ChannelAnnouncement]
 }
 object LocalFundingStatus {
   sealed trait NotLocked extends LocalFundingStatus
@@ -459,15 +461,18 @@ object LocalFundingStatus {
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx with NotLocked {
     override val localSigs_opt: Option[TxSignatures] = None
     override val liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo] = None
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with NotLocked {
     override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
     override val localSigs_opt: Option[TxSignatures] = Some(sharedTx.localSigs)
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
-  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, announcement_opt: Option[ChannelAnnouncement], localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -636,12 +641,12 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shor
 
 final case class DATA_NORMAL(commitments: Commitments,
                              shortIds: ShortIds,
-                             channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+  val lastAnnouncement_opt: Option[ChannelAnnouncement] = commitments.lastAnnouncement_opt
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }

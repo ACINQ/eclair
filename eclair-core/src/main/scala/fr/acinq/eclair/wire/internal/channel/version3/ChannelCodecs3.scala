@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
+import fr.acinq.eclair.wire.internal.channel.version4.ChannelTypes4
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
@@ -367,7 +368,8 @@ private[channel] object ChannelCodecs3 {
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
       case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        val shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
+        ChannelTypes4.DATA_NORMAL_0e(commitments, shortIds, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice).migrate()
     }.decodeOnly
 
     val DATA_NORMAL_07_Codec: Codec[DATA_NORMAL] = (
@@ -380,7 +382,8 @@ private[channel] object ChannelCodecs3 {
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec))).map {
       case commitments :: shortChannelId :: buried :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        val shortIds = ShortIds(real = if (buried) RealScidStatus.Final(shortChannelId) else RealScidStatus.Temporary(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
+        ChannelTypes4.DATA_NORMAL_0e(commitments, shortIds, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice).migrate()
     }.decodeOnly
 
     val DATA_NORMAL_09_Codec: Codec[DATA_NORMAL] = (
@@ -391,7 +394,7 @@ private[channel] object ChannelCodecs3 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | provide[SpliceStatus](SpliceStatus.NoSplice))).as[DATA_NORMAL]
+        ("spliceStatus" | provide[SpliceStatus](SpliceStatus.NoSplice))).as[ChannelTypes4.DATA_NORMAL_0e].xmap(d => d.migrate(), d => ChannelTypes4.DATA_NORMAL_0e.from(d))
 
     val DATA_SHUTDOWN_03_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
