@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
+import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -142,7 +142,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   }
 
   private val (requestedShortChannelId_opt, walletNodeId_opt) = r.payload.outgoing match {
-    case Left(walletNodeId) => (None, Some(walletNodeId))
+    case Left(EncodedNodeId.WithPublicKey.Wallet(walletNodeId)) => (None, Some(walletNodeId))
+    case Left(_) => (None, None)
     case Right(shortChannelId) => (Some(shortChannelId), None)
   }
 

@@ -71,7 +71,7 @@ object ChannelRelayer {
           case Relay(channelRelayPacket, originNode) =>
             val relayId = UUID.randomUUID()
             val nextNodeId_opt: Option[PublicKey] = channelRelayPacket.payload.outgoing match {
-              case Left(walletNodeId) => Some(walletNodeId)
+              case Left(outgoingNodeId) => Some(outgoingNodeId.publicKey)
               case Right(outgoingChannelId) => scid2channels.get(outgoingChannelId) match {
                 case Some(channelId) => channels.get(channelId).map(_.nextNodeId)
                 case None => None

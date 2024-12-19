@@ -98,10 +98,9 @@ object BlindedRouteData {
   }
 
   case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) {
-    // This is usually a channel, unless the next node is a mobile wallet connected to our node.
-    val outgoing: Either[PublicKey, ShortChannelId] = records.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId] match {
+    val outgoing: Either[EncodedNodeId.WithPublicKey, ShortChannelId] = records.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId] match {
       case Some(r) => Right(r.shortChannelId)
-      case None => Left(records.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey)
+      case None => Left(records.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId.asInstanceOf[EncodedNodeId.WithPublicKey])
     }
     val paymentRelay: PaymentRelay = records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].get
     val paymentConstraints: PaymentConstraints = records.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
@@ -114,7 +113,6 @@ object BlindedRouteData {
   }
 
   def validatePaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, PaymentRelayData] = {
-    // Note that the BOLTs require using an OutgoingChannelId, but we optionally support using a node_id.
     if (records.get[OutgoingChannelId].isEmpty && records.get[OutgoingNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
     if (records.get[OutgoingNodeId].nonEmpty && !records.get[OutgoingNodeId].get.nodeId.isInstanceOf[EncodedNodeId.WithPublicKey]) return Left(ForbiddenTlv(UInt64(4)))
     if (records.get[PaymentRelay].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))

@@ -112,8 +112,7 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
                   )
                   paymentRelayData.outgoing match {
                     case Left(outgoingNodeId) =>
-                      // The next node seems to be a wallet node directly connected to us.
-                      validateRelay(EncodedNodeId.WithPublicKey.Wallet(outgoingNodeId), nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
+                      validateRelay(outgoingNodeId, nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
                     case Right(outgoingChannelId) =>
                       register ! Register.GetNextNodeId(context.messageAdapter(WrappedNodeId), outgoingChannelId)
                       waitForNextNodeId(outgoingChannelId, nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
