@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, EncodedNodeId, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -228,7 +228,7 @@ object PaymentOnion {
     sealed trait ChannelRelay extends IntermediatePayload {
       // @formatter:off
       /** The outgoing channel, or the nodeId of one of our peers. */
-      def outgoing: Either[PublicKey, ShortChannelId]
+      def outgoing: Either[EncodedNodeId.WithPublicKey, ShortChannelId]
       def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi
       def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry
       // @formatter:on
