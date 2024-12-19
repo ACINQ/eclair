@@ -549,8 +549,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_CHANNEL_READY
     }, max = 30 seconds, interval = 10 seconds)
 
-    // 5 extra blocks make it 13, just the amount of confirmations needed
-    generateBlocks(5)
+    // 10 extra blocks make it 18, which should be enough confirmations
+    generateBlocks(10)
 
     awaitCond({
       fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))

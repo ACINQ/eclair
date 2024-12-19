@@ -39,13 +39,13 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   test("scale funding tx min depth according to funding amount") {
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 4)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.5)) == 31)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.6)) == 32)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(30)) == 73)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 121)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 5)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 5 conf would be enough but we use min-depth=6
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(3.125)) == 11) // we use scaling_factor=10 and a fixed block reward of 3.125BTC
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 21)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(10)) == 33)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(25)) == 81)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 161)
   }
 
   test("compute refresh delay") {

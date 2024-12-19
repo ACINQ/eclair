@@ -141,8 +141,8 @@ object ChannelParams {
       // small amount: not scaled
       defaultMinDepth
     } else {
-      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-      val scalingFactor = 15
+      val blockReward = 3.125 // this will be too large after the halving in 2028
+      val scalingFactor = 10
       val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
       defaultMinDepth.max(blocksToReachFunding)
     }
