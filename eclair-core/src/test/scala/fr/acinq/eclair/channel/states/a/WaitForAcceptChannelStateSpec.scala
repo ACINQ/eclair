@@ -301,7 +301,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (large channel)", Tag(LargeChannel)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.minimumDepth == 13) // with large channel tag we create a 5BTC channel
+    assert(accept.minimumDepth == 17) // with large channel tag we create a 5BTC channel
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     aliceOpenReplyTo.expectNoMessage()
