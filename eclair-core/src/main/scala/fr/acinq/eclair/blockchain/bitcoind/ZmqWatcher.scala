@@ -137,9 +137,6 @@ object ZmqWatcher {
   case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
-  case class WatchFundingDeeplyBuriedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
-
   case class RelativeDelay(parentTxId: TxId, delay: Long)
   case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long, delay_opt: Option[RelativeDelay] = None) extends WatchConfirmed[WatchTxConfirmedTriggered]
   case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
@@ -429,7 +426,6 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           client.getTransactionShortId(w.txId).map {
             case (height, index) => w match {
               case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, index, tx))
-              case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, index, tx))
               case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, index, tx))
               case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, index, tx))
               case w: WatchAlternativeCommitTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchAlternativeCommitTxConfirmedTriggered(height, index, tx))

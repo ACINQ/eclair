@@ -535,11 +535,12 @@ object Validation {
   }
 
   /**
-   * We will receive this event before [[LocalChannelUpdate]] or [[ChannelUpdate]]
+   * Note that we may receive this event before [[ChannelAnnouncement]], [[LocalChannelUpdate]] or [[ChannelUpdate]].
+   * This function must correctly handle cases where the channel isn't yet in the public graph but will be soon.
    */
   def handleShortChannelIdAssigned(d: Data, localNodeId: PublicKey, scia: ShortChannelIdAssigned)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    // NB: we don't map remote aliases because they are decided by our peer and could overlap with ours
+    // NB: we don't map remote aliases because they are decided by our peer and could overlap with ours.
     val mappings = scia.shortIds.real.toOption match {
       case Some(realScid) => Map(realScid.toLong -> scia.channelId, scia.shortIds.localAlias.toLong -> scia.channelId)
       case None => Map(scia.shortIds.localAlias.toLong -> scia.channelId)
@@ -548,14 +549,26 @@ object Validation {
     val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ mappings)
     d1.resolve(scia.channelId, scia.shortIds.real.toOption) match {
       case Some(_) =>
-        // channel is known, nothing more to do
+        // This channel is already known, nothing more to do.
         d1
       case None =>
-        // this is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a public
-        // channel that doesn't yet have 6 confirmations), we create a corresponding private channel
-        val pc = PrivateChannel(scia.channelId, scia.shortIds, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
-        log.debug("adding unannounced local channel to remote={} channelId={} localAlias={}", scia.remoteNodeId, scia.channelId, scia.shortIds.localAlias)
-        d1.copy(privateChannels = d1.privateChannels + (scia.channelId -> pc))
+        scia.shortIds.real match {
+          case RealScidStatus.Final(scid) if scia.isPublic =>
+            // This is a public channel (or a splice) that has enough confirmations, for which we created a
+            // channel_announcement. We are most likely concurrently processing the channel_announcement.
+            log.debug("ignoring confirmed public shortChannelId={}, announcement hasn't been processed yet", scid)
+            d1
+          case _ =>
+            // This is either:
+            //  - a private channel that hasn't been added yet
+            //  - a public channel that hasn't reached enough confirmations
+            // This is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a
+            // public channel that doesn't yet have enough confirmations). We create a corresponding private channel in both cases,
+            // which will be converted to a public channel later if it is announced.
+            log.debug("adding unannounced local channel to remote={} channelId={} localAlias={}", scia.remoteNodeId, scia.channelId, scia.shortIds.localAlias)
+            val pc = PrivateChannel(scia.channelId, scia.shortIds, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
+            d1.copy(privateChannels = d1.privateChannels + (scia.channelId -> pc))
+        }
     }
   }
 

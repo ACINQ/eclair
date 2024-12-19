@@ -1,0 +1,38 @@
+# TODO
+
+- In this PR:
+  - bump `min-depth` to 6 (or introduce `min-depth-funding` that cannot be set to less than 6)
+  - store remote `announcement_signatures` if this is too early for us
+    - replay it when we send our own `announcement_signatures`
+    - this way the handler for received `announcement_signatures` is the only place where we generate a `channel_announcement`
+  - send `channel_announcement` to `Router` when we generate it
+    - already included in `LocalChannelUpdate`, check how this is handled
+    - make sure `LocalChannelUpdate` uses the scid of this `channel_announcement`
+    - when publishing the `channel_announcement`, make sure we generate a new `channel_update` with that scid
+  - receive `channel_ready`:
+    - re-send our `announcement_signatures`?
+- In follow-up splicing gossip PRs:
+  - when receicing `WatchConfirmedTriggered`:
+    - update `localFundingStatus` with the corresponding final `scid` (set as confirmed)
+    - if channel is private:
+      - update `d.shortIds` and emit `ShortChannelIdAssigned`
+    - if channel is public:
+      - if online:
+        - send `announcement_signatures` (always since we've reached 6 confs, no need to look for remote `splice_locked`)
+        - if we've received the remote `announcement_signatures`, unstash them
+      - if offline:
+        - we simply don't send our `announcement_signatures` yet, they'll be re-sent on reconnection
+  - when receiving `splice_locked`:
+    - nothing more to do
+  - when receiving `announcement_signatures` (if we want to announce):
+    - if matching commitment is confirmed:
+      - create `channel_announcement`
+      - update `d.shortIds` and emit `ShortChannelIdAssigned`
+    - otherwise:
+      - stash `announcement_signatures` in-memory
+  - don't update `d.shortIds` and emit `ShortChannelIdAssigned` with a new real scid elsewhere!
+  - on reconnection:
+    - before re-emitting `ShortChannelIdAssigned`, send the `channel_announcement` to the `Router` in a `LocalChannelUpdate`?
+    - send `announcement_signatures` for the latest commitment that is confirmed and doesn't have a `channel_announcement`
+      - if the last confirmed one has a `channel_announcement`, no need to go further in the past
+  - spend some time doing regtest tests with txs confirming while offline, restarts, etc

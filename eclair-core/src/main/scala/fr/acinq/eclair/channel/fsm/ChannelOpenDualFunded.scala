@@ -729,7 +729,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           val realScidStatus = RealScidStatus.Unknown
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val shortIds = createShortIds(d.channelId, realScidStatus, d.commitments.announceChannel)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
@@ -740,7 +740,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, commitment)) =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt))
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val shortIds = createShortIds(d.channelId, realScidStatus, d.commitments.announceChannel)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
