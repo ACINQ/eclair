@@ -398,7 +398,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthBlocks), delay_opt = None)
           val realScidStatus = RealScidStatus.Unknown
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val shortIds = createShortIds(d.channelId, realScidStatus, d.commitments.announceChannel)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
@@ -409,7 +409,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
           val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt))
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val shortIds = createShortIds(d.channelId, realScidStatus, d.commitments.announceChannel)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
