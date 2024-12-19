@@ -14,8 +14,8 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.{LiquidityAds, TxSignatures, UpdateAddHtlc, UpdateMessage}
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, channel}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, RealShortChannelId, channel}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -423,15 +423,16 @@ private[channel] object ChannelCodecs4 {
     }
 
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
+      .typecase(0x0a, (txCodec :: realshortchannelid :: optional(bool8, lengthDelimited(channelAnnouncementCodec)) :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
       .typecase(0x07, dualFundedUnconfirmedFundingTxCodec)
       .typecase(0x08, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ZeroconfPublishedFundingTx])
-      .typecase(0x09, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
+      .typecase(0x09, (txCodec :: provide(RealShortChannelId(0)) :: provide(Option.empty[ChannelAnnouncement]) :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
       .typecase(0x02, dualFundedUnconfirmedFundingTxWithoutLiquidityPurchaseCodec)
       .typecase(0x05, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x06, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x06, (txCodec :: provide(RealShortChannelId(0)) :: provide(Option.empty[ChannelAnnouncement]) :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
       .typecase(0x03, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x04, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x04, (txCodec :: provide(RealShortChannelId(0)) :: provide(Option.empty[ChannelAnnouncement]) :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
@@ -681,7 +682,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
-    
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localPushAmount" | millisatoshi) ::
@@ -716,12 +717,21 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[DATA_NORMAL]
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].xmap(d => d.migrate(), d => ChannelTypes4.DATA_NORMAL_0e.from(d))
 
     val DATA_NORMAL_0e_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("shortids" | shortids) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].xmap(d => d.migrate(), d => ChannelTypes4.DATA_NORMAL_0e.from(d))
+
+    val DATA_NORMAL_14_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("shortIds" | shortids) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
@@ -789,6 +799,7 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x14, Codecs.DATA_NORMAL_14_Codec)
     .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec)
     .typecase(0x12, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_12_Codec)
     .typecase(0x11, Codecs.DATA_CLOSING_11_Codec)

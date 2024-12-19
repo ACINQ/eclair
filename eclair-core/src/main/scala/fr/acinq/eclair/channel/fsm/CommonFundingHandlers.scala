@@ -20,7 +20,6 @@ import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction, TxId}
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
@@ -28,6 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
+import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success, Try}
@@ -82,28 +82,31 @@ trait CommonFundingHandlers extends CommonHandlers {
         }
       case _ => () // in the dual-funding case, we have already verified the funding tx
     }
-    val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
-    // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
-    // clean-up the htlc data that we were storing for the matching penalty transactions.
-    d.commitments.all.find(_.fundingTxId == w.tx.txid).map(_.firstRemoteCommitIndex).foreach {
-      commitIndex => context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = commitIndex))
-    }
-    d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
-      case (commitments1, commitment) =>
-        // First of all, we watch the funding tx that is now confirmed.
-        // Children splice transactions may already spend that confirmed funding transaction.
-        val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-        watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
-        // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been
-        // double-spent by the tx that just confirmed.
-        val conflictingTxs = d.commitments.active // note how we use the unpruned original commitments
-          .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
-          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
-        conflictingTxs.foreach(tx => blockchain ! UnwatchTxConfirmed(tx.txId))
-        rollbackDualFundingTxs(conflictingTxs)
-        (commitments1, commitment)
+    d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
+      case Some(c) =>
+        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.commitInput.outPoint.index.toInt)
+        val fundingStatus = ConfirmedFundingTx(w.tx, scid, c.announcement_opt, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+        // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
+        // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
+        // clean-up the htlc data that we were storing for the matching penalty transactions.
+        context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = c.firstRemoteCommitIndex))
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
+          case (commitments1, commitment) =>
+            // First of all, we watch the funding tx that is now confirmed.
+            // Children splice transactions may already spend that confirmed funding transaction.
+            val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
+            watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
+            // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been
+            // double-spent by the tx that just confirmed.
+            val conflictingTxs = d.commitments.active // note how we use the unpruned original commitments
+              .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
+              .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+            conflictingTxs.foreach(tx => blockchain ! UnwatchTxConfirmed(tx.txId))
+            rollbackDualFundingTxs(conflictingTxs)
+            (commitments1, commitment)
+        }
+      case None => Left(d.commitments)
     }
   }
 
@@ -139,7 +142,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
     val commitments1 = commitments.modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
-    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments1, shortIds1, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {
