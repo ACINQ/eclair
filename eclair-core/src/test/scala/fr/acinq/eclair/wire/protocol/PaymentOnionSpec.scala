@@ -128,7 +128,8 @@ class PaymentOnionSpec extends AnyFunSuite {
         RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
       )
       val Right(payload) = IntermediatePayload.ChannelRelay.Blinded.validate(TlvStream(EncryptedRecipientData(hex"deadbeef")), blindedTlvs, randomKey().publicKey)
-      assert(payload.outgoing == Left(nextNodeId))
+      val Left(nodeId) = payload.outgoing
+      assert(nodeId.publicKey == nextNodeId)
       assert(payload.amountToForward(10_000 msat) == 9990.msat)
       assert(payload.outgoingCltv(CltvExpiry(1000)) == CltvExpiry(856))
       assert(payload.paymentRelayData.allowedFeatures.isEmpty)
