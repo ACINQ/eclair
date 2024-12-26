@@ -58,7 +58,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
 
   /** Return true if we should stop waiting for confirmations when receiving our peer's channel_ready. */
   def switchToZeroConf(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Boolean = {
-    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, d.latestFundingTx.sharedTx.tx).nonEmpty) {
+    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthFunding, d.latestFundingTx.sharedTx.tx).nonEmpty) {
       // We're not using zero-conf, but our peer decided to trust us anyway. We can skip waiting for confirmations if:
       //  - they provided a channel alias
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)

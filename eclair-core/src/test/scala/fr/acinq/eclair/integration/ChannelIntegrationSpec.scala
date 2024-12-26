@@ -127,12 +127,10 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(1, Some(minerAddress))
     // the funder sends its channel_ready after only one block
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_CHANNEL_READY, max = 30 seconds)
-    generateBlocks(2, Some(minerAddress))
-    // the fundee sends its channel_ready after 3 blocks
+    generateBlocks(5, Some(minerAddress))
+    // the fundee sends its channel_ready after 6 blocks
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
-    // we generate more blocks for the funding tx to be deeply buried and the channel to be announced
-    generateBlocks(3, Some(minerAddress))
     awaitAnnouncements(2)
     // first we make sure we are in sync with current blockchain height
     val currentBlockHeight = getBlockHeight()
@@ -481,16 +479,13 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     connect(nodes("A"), nodes("C"), 11000000 sat, 0 msat)
     // confirm the funding tx
-    generateBlocks(2)
+    generateBlocks(6)
     within(60 seconds) {
       var count = 0
       while (count < 2) {
         if (eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL) count = count + 1
       }
     }
-
-    // generate more blocks so that all funding txes are buried under at least 6 blocks
-    generateBlocks(4)
     awaitAnnouncements(1)
   }
 
@@ -502,7 +497,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     val sender = TestProbe()
     // mine the funding tx
-    generateBlocks(2)
+    generateBlocks(6)
     // get the channelId
     sender.send(fundee.register, Register.GetChannels)
     val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
@@ -514,13 +509,13 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY
     })
 
-    generateBlocks(6)
+    generateBlocks(2)
 
     // after 8 blocks the fundee is still waiting for more confirmations
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
     assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_CONFIRMED)
 
-    // after 8 blocks the funder is still waiting for funding_locked from the fundee
+    // after 8 blocks the funder is still waiting for channel_ready from the fundee
     funder.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
     assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY)
 
@@ -666,7 +661,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     connect(nodes("A"), nodes("C"), 11000000 sat, 0 msat)
     // confirm the funding tx
-    generateBlocks(2)
+    generateBlocks(6)
     within(60 seconds) {
       var count = 0
       while (count < 2) {
@@ -678,9 +673,6 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
         }
       }
     }
-
-    // generate more blocks so that all funding txs are buried under at least 6 blocks
-    generateBlocks(4)
     awaitAnnouncements(1)
   }
 

@@ -119,10 +119,10 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
       d.commitments.params.minDepthFunder
     } else {
       // when we're not the channel initiator we scale the min_depth confirmations depending on the funding amount
-      d.commitments.params.minDepthFundee(nodeParams.channelConf.minDepthBlocks, d.commitments.latest.commitInput.txOut.amount)
+      d.commitments.params.minDepthFundee(nodeParams.channelConf.minDepthFunding, d.commitments.latest.commitInput.txOut.amount)
     }
     val minDepth = minDepth_opt.getOrElse {
-      val defaultMinDepth = nodeParams.channelConf.minDepthBlocks
+      val defaultMinDepth = nodeParams.channelConf.minDepthFunding
       // If we are in state WAIT_FOR_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
       // have skipped this state. Maybe the computation method was changed and eclair was restarted?
       log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)

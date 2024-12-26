@@ -211,7 +211,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    */
   private def checkHtlcOutput(commitment: FullCommitment, htlcTx: HtlcTx): Future[Command] = {
     getRemoteCommitConfirmations(commitment).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthBlocks => Future.successful(RemoteCommitTxConfirmed)
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthClosing => Future.successful(RemoteCommitTxConfirmed)
       case _ => bitcoinClient.isTransactionOutputSpent(htlcTx.input.outPoint.txid, htlcTx.input.outPoint.index.toInt).map {
         case true => HtlcOutputAlreadySpent
         case false => ParentTxOk
@@ -289,7 +289,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    */
   private def checkClaimHtlcOutput(commitment: FullCommitment, claimHtlcTx: ClaimHtlcTx): Future[Command] = {
     bitcoinClient.getTxConfirmations(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthBlocks => Future.successful(LocalCommitTxConfirmed)
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthClosing => Future.successful(LocalCommitTxConfirmed)
       case _ => bitcoinClient.isTransactionOutputSpent(claimHtlcTx.input.outPoint.txid, claimHtlcTx.input.outPoint.index.toInt).map {
         case true => HtlcOutputAlreadySpent
         case false => ParentTxOk

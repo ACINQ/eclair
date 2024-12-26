@@ -81,7 +81,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.zmqblock" -> s"tcp://127.0.0.1:$bitcoindZmqBlockPort",
     "eclair.bitcoind.zmqtx" -> s"tcp://127.0.0.1:$bitcoindZmqTxPort",
     "eclair.bitcoind.wallet" -> defaultWallet,
-    "eclair.channel.mindepth-blocks" -> 2,
     "eclair.channel.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.channel.max-htlc-value-in-flight-percent" -> 100,
     "eclair.channel.max-block-processing-delay" -> "2 seconds",
