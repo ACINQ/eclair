@@ -193,10 +193,10 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val tx2 = sendToAddress(address, Btc(0.5), probe)
 
       watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 1)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4) // setting the watch multiple times should be a no-op
+      watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 4)
+      watcher ! WatchFundingConfirmed(probe.ref, tx1.txid, 4) // setting the watch multiple times should be a no-op
       watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 3)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx2.txid, 6)
+      watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 6)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
@@ -221,7 +221,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       assert(probe.expectMsgType[Set[Watch[_]]].size == 1)
 
       generateBlocks(1)
-      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx1.txid)
+      assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx1.txid)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
@@ -232,10 +232,6 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx1.txid)
       watcher ! WatchFundingConfirmed(probe.ref, tx2.txid, 2)
       assert(probe.expectMsgType[WatchFundingConfirmedTriggered].tx.txid == tx2.txid)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx1.txid, 4)
-      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx1.txid)
-      watcher ! WatchFundingDeeplyBuried(probe.ref, tx2.txid, 4)
-      assert(probe.expectMsgType[WatchFundingDeeplyBuriedTriggered].tx.txid == tx2.txid)
       probe.expectNoMessage(100 millis)
 
       watcher ! ListWatches(probe.ref)
@@ -463,22 +459,20 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val txid = randomTxId()
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 2)
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 3)
-      watcher ! WatchFundingDeeplyBuried(actor1.ref, txid, 3)
       watcher ! WatchFundingConfirmed(actor1.ref, TxId(txid.value.reverse), 3)
       watcher ! WatchOutputSpent(actor1.ref, txid, 0, Set.empty)
       watcher ! WatchOutputSpent(actor1.ref, txid, 1, Set.empty)
       watcher ! ListWatches(actor1.ref)
       val watches1 = actor1.expectMsgType[Set[Watch[_]]]
-      assert(watches1.size == 6)
+      assert(watches1.size == 5)
 
       watcher ! WatchFundingConfirmed(actor2.ref, txid, 2)
-      watcher ! WatchFundingDeeplyBuried(actor2.ref, txid, 3)
       watcher ! WatchFundingConfirmed(actor2.ref, TxId(txid.value.reverse), 3)
       watcher ! WatchOutputSpent(actor2.ref, txid, 0, Set.empty)
       watcher ! WatchOutputSpent(actor2.ref, txid, 1, Set.empty)
       watcher ! ListWatches(actor2.ref)
       val watches2 = actor2.expectMsgType[Set[Watch[_]]]
-      assert(watches2.size == 11)
+      assert(watches2.size == 9)
       assert(watches1.forall(w => watches2.contains(w)))
 
       watcher ! StopWatching(actor2.ref)

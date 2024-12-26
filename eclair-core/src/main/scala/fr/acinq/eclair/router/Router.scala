@@ -28,7 +28,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel.ANNOUNCEMENTS_MINCONF
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -343,6 +342,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
 object Router {
 
+  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+  val ANNOUNCEMENTS_MINCONF = 6
+
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
@@ -451,7 +453,7 @@ object Router {
       // we want the incoming channel_update
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
       // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
-      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real.toOption)
+      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real_opt)
       // we override the remote update's scid, because it contains either the real scid or our local alias
       scid_opt.flatMap { scid =>
         remoteUpdate_opt.map { remoteUpdate =>

@@ -92,8 +92,8 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val alias_ag_private = ShortChannelId.generateLocalAlias()
   val alias_ga_private = ShortChannelId.generateLocalAlias()
 
-  val scids_ab = ShortIds(RealScidStatus.Final(scid_ab), alias_ab, Some(alias_ba))
-  val scids_ag_private = ShortIds(RealScidStatus.Final(scid_ag_private), alias_ag_private, Some(alias_ga_private))
+  val scids_ab = ShortIds(Some(scid_ab), alias_ab, Some(alias_ba))
+  val scids_ag_private = ShortIds(Some(scid_ag_private), alias_ag_private, Some(alias_ga_private))
 
   val chan_ab = channelAnnouncement(scid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(scid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
@@ -167,7 +167,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, ShortChannelIdAssigned(sender.ref, channelId_ag_private, scids_ag_private, remoteNodeId = g))
+      sender.send(router, ShortChannelIdAssigned(sender.ref, channelId_ag_private, scids_ag_private, remoteNodeId = g, isAnnounced = false))
       sender.send(router, LocalChannelUpdate(sender.ref, channelId_ag_private, scids_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       sender.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ga_private))
       // watcher receives the get tx requests

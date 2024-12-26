@@ -728,8 +728,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case Right((commitments1, _)) =>
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
-          val realScidStatus = RealScidStatus.Unknown
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val shortIds = createShortIds(d.channelId, None)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
@@ -739,8 +738,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, commitment)) =>
-          val realScidStatus = RealScidStatus.Temporary(RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt))
-          val shortIds = createShortIds(d.channelId, realScidStatus)
+          val realScid = RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt)
+          val shortIds = createShortIds(d.channelId, Some(realScid))
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
@@ -787,7 +786,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_DUAL_FUNDING_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
-      goto(NORMAL) using d1 storing()
+      val annSigs_opt = d.shortIds.real_opt match {
+        case Some(realScid) if d.commitments.announceChannel => Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
+        case _ => None
+      }
+      goto(NORMAL) using d1 storing() sending annSigs_opt.toSeq
 
     case Event(_: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       // Our peer may not have received the funding transaction confirmation.

@@ -335,7 +335,7 @@ object ChannelCodecsSpec {
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)
-    DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments, ShortIds(Some(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
 }

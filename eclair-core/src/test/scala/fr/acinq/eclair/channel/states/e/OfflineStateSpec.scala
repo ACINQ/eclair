@@ -29,8 +29,8 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, HtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
@@ -403,7 +403,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob, reestablishA)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.expectMsgType[CommitSig]
-    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     bob2alice.expectNoMessage(100 millis)
     bob2blockchain.expectNoMessage(100 millis)
 
@@ -699,7 +698,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (shouldClose) {
       assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
     } else {
-      alice2blockchain.expectNoMessage()
+      alice2blockchain.expectNoMessage(100 millis)
     }
   }
 
@@ -723,8 +722,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // this time Alice will ignore feerate changes for the offline channel
     alice.setFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    alice2blockchain.expectNoMessage()
-    alice2bob.expectNoMessage()
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
   }
 
   def testUpdateFeeOnReconnect(f: FixtureParam, shouldUpdateFee: Boolean): Unit = {
@@ -740,8 +739,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice ignores feerate changes while offline
     alice.setFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    alice2blockchain.expectNoMessage()
-    alice2bob.expectNoMessage()
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
 
     // then we reconnect them; Alice should send the feerate changes to Bob
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -810,7 +809,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (shouldClose) {
       assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
     } else {
-      bob2blockchain.expectNoMessage()
+      bob2blockchain.expectNoMessage(100 millis)
     }
   }
 
@@ -834,9 +833,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice and bob resend their channel update at reconnection (unannounced channel)
     alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate]
-
-    alice2bob.expectNoMessage()
-    bob2alice.expectNoMessage()
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     // we make the peers exchange a few messages
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -855,15 +853,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice and bob resend their channel update at reconnection (unannounced channel)
     alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate]
-
-    alice2bob.expectNoMessage()
-    bob2alice.expectNoMessage()
-
-    // funding tx gets 6 confirmations
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    // channel is private so there is no announcement sigs
-    // we use aliases so there is no need to resend a channel_update
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     // we get disconnected again
     disconnect(alice, bob)

@@ -166,7 +166,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announceChannel = false)
         .modify(_.params.remoteParams.htlcMinimum).setTo(htlcMinimum)
         .modify(_.changes.localChanges).setTo(localChanges)
-      DATA_NORMAL(commitments, ShortIds(RealScidStatus.Unknown, Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
+      DATA_NORMAL(commitments, ShortIds(None, Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
     }
   }
 

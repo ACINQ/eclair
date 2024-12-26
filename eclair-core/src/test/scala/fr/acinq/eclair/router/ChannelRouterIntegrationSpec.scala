@@ -2,16 +2,15 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.Transaction
-import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchExternalChannelSpent, WatchExternalChannelSpentTriggered, WatchFundingDeeplyBuriedTriggered, WatchTxConfirmed, WatchTxConfirmedTriggered}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.{CMD_CLOSE, DATA_NORMAL}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, Shutdown}
-import fr.acinq.eclair.{BlockHeight, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, TestKitBaseClass, randomKey}
 import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -47,71 +46,81 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     import f._
 
     val (aliceNodeId, bobNodeId) = (channels.alice.underlyingActor.nodeParams.nodeId, channels.bob.underlyingActor.nodeParams.nodeId)
-    reachNormal(channels, testTags, interceptChannelUpdates = false)
+    val fundingTx = reachNormal(channels, testTags + ChannelStateTestsTags.DoNotInterceptGossip)
 
-    // the router learns about the local, still unannounced, channel
+    // The router learns about the local, still unannounced, channel.
     awaitCond(router.stateData.privateChannels.size == 1)
 
-    // only alice's channel_update is known (NB : due to how node ids are constructed, 1 = alice and 2 = bob)
+    // Alice only has her local channel_update at that point (NB: due to how node ids are constructed, 1 = alice and 2 = bob).
     assert(privateChannel.update_1_opt.isDefined)
     assert(privateChannel.update_2_opt.isEmpty)
-    // alice will only have a real scid if this is not a zeroconf channel
-    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.toOption.isEmpty == f.testTags.contains(ChannelStateTestsTags.ZeroConf))
+    // Alice will only have a real scid if this is not a zeroconf channel.
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty == testTags.contains(ChannelStateTestsTags.ZeroConf))
     assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.isDefined)
-    // alice uses her alias for her internal channel update
+    // Alice uses her alias for her internal channel update.
     val aliceInitialChannelUpdate = privateChannel.update_1_opt.value
     assert(aliceInitialChannelUpdate.shortChannelId == privateChannel.shortIds.localAlias)
 
-    // alice and bob send their channel_updates using remote alias when they go to NORMAL state
+    // If the channel is public and confirmed, announcement signatures are sent.
+    val (annSigsA_opt, annSigsB_opt) = if (testTags.contains(ChannelStateTestsTags.ChannelsPublic) && !testTags.contains(ChannelStateTestsTags.ZeroConf)) {
+      val annSigsA = channels.alice2bob.expectMsgType[AnnouncementSignatures]
+      val annSigsB = channels.bob2alice.expectMsgType[AnnouncementSignatures]
+      (Some(annSigsA), Some(annSigsB))
+    } else {
+      (None, None)
+    }
+
+    // In all cases, Alice and bob send their channel_updates using the remote alias when they go to NORMAL state.
     val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
     val bobChannelUpdate1 = channels.bob2alice.expectMsgType[ChannelUpdate]
-    // alice's channel_update uses bob's alias, and vice versa
+    // Alice's channel_update uses bob's alias, and vice versa.
     assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
     assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
-    // channel_updates are handled by the peer connection and sent to the router
+    // The channel_updates are handled by the peer connection and sent to the router.
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, bobNodeId, bobChannelUpdate1)
 
-    // router processes bob's channel_update and now knows both channel updates
-    awaitCond {
-      privateChannel.update_1_opt.contains(aliceInitialChannelUpdate) && privateChannel.update_2_opt.contains(bobChannelUpdate1)
-    }
+    // The router processes bob's channel_update and now knows both channel updates.
+    awaitCond(privateChannel.update_1_opt.contains(aliceInitialChannelUpdate) && privateChannel.update_2_opt.contains(bobChannelUpdate1))
 
-    // there is nothing for the router to rebroadcast, channel is not announced
+    // There is nothing for the router to rebroadcast, because the channel is not announced yet.
     assert(router.stateData.rebroadcast == Rebroadcast(Map.empty, Map.empty, Map.empty))
 
-    // router graph contains a single channel
+    // The router graph contains a single channel between Alice and Bob.
     assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
     assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
 
+    // The channel now confirms, if it hadn't confirmed already.
+    if (testTags.contains(ChannelStateTestsTags.ZeroConf)) {
+      channels.alice ! WatchFundingConfirmedTriggered(BlockHeight(400_000), 42, fundingTx)
+      channels.alice2blockchain.expectMsgType[WatchFundingSpent]
+      channels.bob ! WatchFundingConfirmedTriggered(BlockHeight(400_000), 42, fundingTx)
+      channels.bob2blockchain.expectMsgType[WatchFundingSpent]
+    }
+
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
-      // this is a public channel
-      // funding tx reaches 6 blocks, announcements are exchanged
-      channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-      channels.alice2bob.expectMsgType[AnnouncementSignatures]
-      channels.alice2bob.forward(channels.bob)
+      // The channel is public, so Alice and Bob exchange announcement signatures.
+      val annSigsA = annSigsA_opt.getOrElse(channels.alice2bob.expectMsgType[AnnouncementSignatures])
+      val annSigsB = annSigsB_opt.getOrElse(channels.bob2alice.expectMsgType[AnnouncementSignatures])
+      channels.alice2bob.forward(channels.bob, annSigsA)
+      channels.bob2alice.forward(channels.alice, annSigsB)
 
-      channels.bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-      channels.bob2alice.expectMsgType[AnnouncementSignatures]
-      channels.bob2alice.forward(channels.alice)
-
-      // the router learns about the announcement and channel graduates from private to public
-      awaitCond {
-        router.stateData.privateChannels.isEmpty && router.stateData.channels.size == 1
+      // The router learns about the announcement and the channel graduates from private to public.
+      awaitAssert {
+        assert(router.stateData.privateChannels.isEmpty)
+        assert(router.stateData.scid2PrivateChannels.isEmpty)
+        assert(router.stateData.channels.size == 1)
       }
 
-      // router has cleaned up the scid mapping
-      assert(router.stateData.scid2PrivateChannels.isEmpty)
-
-      // alice and bob won't send their channel_update directly to each other because the channel has been announced
+      // Alice and Bob won't send their channel_update directly to each other because the channel has been announced
       // but we can get the update from their data
-      awaitCond {
-        channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined &&
-          channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined
+      awaitAssert {
+        assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
+        assert(channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
       }
       val aliceChannelUpdate2 = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
       val bobChannelUpdate2 = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
-      // this time, they use the real scid
+      // Channel updates now use the real scid because the channel has been announced.
       val aliceAnn = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
       val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
       assert(aliceAnn == bobAnn)
@@ -120,25 +129,23 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       assert(bobChannelUpdate2.shortChannelId == bobAnn.shortChannelId)
       assert(!bobChannelUpdate2.dontForward)
 
-      // the router has already processed the new local channel update from alice which uses the real scid, and keeps bob's previous channel update
+      // The router has already processed the new local channel update from alice which uses the real scid, and keeps bob's previous channel update.
       assert(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate1))
 
-      // the router prepares to rebroadcast the channel announcement, the local update which uses the real scid, and the first node announcement
+      // The router will rebroadcast the channel announcement, the local update which uses the real scid, and the first node announcement.
       assert(router.stateData.rebroadcast == Rebroadcast(
         channels = Map(aliceAnn -> Set[GossipOrigin](LocalGossip)),
         updates = Map(aliceChannelUpdate2 -> Set[GossipOrigin](LocalGossip)),
         nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
       )
 
-      // bob's channel_update reaches the router
+      // Bob's new channel_update (using the real scid) reaches the router.
       router ! PeerRoutingMessage(peerConnection.ref, bobNodeId, bobChannelUpdate2)
 
-      // router processes bob's channel_update and now knows both channel updates with real scids
-      awaitCond {
-        publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate2)
-      }
+      // The router processes bob's channel_update and now uses channel updates with real scids.
+      awaitCond(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate2))
 
-      // router is now ready to rebroadcast both channel updates
+      // The router is now ready to rebroadcast both channel updates.
       assert(router.stateData.rebroadcast == Rebroadcast(
         channels = Map(aliceAnn -> Set[GossipOrigin](LocalGossip)),
         updates = Map(
@@ -148,40 +155,39 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
         nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
       )
 
-      // router graph contains a single channel
+      // The router graph still contains a single channel, with public updates.
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
       assert(router.stateData.graphWithBalances.graph.edgeSet().size == 2)
       assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate2, publicChannel), GraphEdge(bobChannelUpdate2, publicChannel)))
     } else {
-      // this is a private channel
-      // funding tx reaches 6 blocks, no announcements are exchanged because the channel is private
-      channels.alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-      channels.bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-
-      // alice and bob won't send their channel_update directly to each other because they haven't changed
+      // This is a private channel: alice and bob won't send a new channel_update to each other, even though the channel
+      // is confirmed, because they will keep using the scid aliases.
       channels.alice2bob.expectNoMessage(100 millis)
       channels.bob2alice.expectNoMessage(100 millis)
       assert(privateChannel.update_1_opt.get.dontForward)
       assert(privateChannel.update_2_opt.get.dontForward)
 
-      // router graph contains a single channel
+      // The router graph still contains a single private channel.
       assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
       assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
     }
-    // channel closes
+
+    // The channel closes.
     channels.alice ! CMD_CLOSE(TestProbe().ref, scriptPubKey = None, feerates = None)
     channels.alice2bob.expectMsgType[Shutdown]
     channels.alice2bob.forward(channels.bob)
     channels.bob2alice.expectMsgType[Shutdown]
     channels.bob2alice.forward(channels.alice)
+    // If the channel was public, the router is notified when the funding tx is spent.
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
-      // if the channel was public, the router asked the watcher to watch the funding tx and will be notified when it confirms
+      val closingTx = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
       val watchSpent = channels.alice2blockchain.expectMsgType[WatchExternalChannelSpent]
-      watchSpent.replyTo ! WatchExternalChannelSpentTriggered(watchSpent.shortChannelId, Transaction(0, Nil, Nil, 0))
+      watchSpent.replyTo ! WatchExternalChannelSpentTriggered(watchSpent.shortChannelId, closingTx)
       val watchConfirmed = channels.alice2blockchain.expectMsgType[WatchTxConfirmed]
-      watchConfirmed.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, Transaction(0, Nil, Nil, 0))
+      assert(watchConfirmed.txId == closingTx.txid)
+      watchConfirmed.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400_000), 42, closingTx)
     }
-    // router cleans up the channel
+    // The router can now clean up the closed channel.
     awaitAssert {
       assert(router.stateData.nodes == Map.empty)
       assert(router.stateData.channels == Map.empty)

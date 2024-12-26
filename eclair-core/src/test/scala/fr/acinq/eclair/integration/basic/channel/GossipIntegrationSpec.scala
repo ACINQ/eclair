@@ -2,7 +2,7 @@ package fr.acinq.eclair.integration.basic.channel
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
-import fr.acinq.eclair.channel.{DATA_NORMAL, RES_SPLICE, RealScidStatus}
+import fr.acinq.eclair.channel.{DATA_NORMAL, RES_SPLICE}
 import fr.acinq.eclair.integration.basic.ThreeNodesIntegrationSpec
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{getChannelData, getPeerChannels, spliceIn}
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
@@ -52,11 +52,11 @@ class GossipIntegrationSpec extends ThreeNodesIntegrationSpec {
 
     // channels confirm deeply
     eventually {
-      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
     }
-    val scid_ab = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
-    val scid_bc = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
+    val scid_ab = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real_opt.get
+    val scid_bc = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.get
 
     // splice in to increase capacity of alice->bob channel
     spliceIn(alice, channelId_ab, 100_000 sat, None).asInstanceOf[RES_SPLICE].fundingTxId
@@ -67,8 +67,8 @@ class GossipIntegrationSpec extends ThreeNodesIntegrationSpec {
       val channelData_bob1 = getChannelData(bob, channelId_ab).asInstanceOf[DATA_NORMAL]
       assert(channelData_alice1.commitments.latest.capacity == 200_000.sat)
       assert(channelData_bob1.commitments.latest.capacity == 200_000.sat)
-      assert(channelData_alice1.shortIds.real.toOption.get == channelData_bob1.shortIds.real.toOption.get)
-      val scid_ab1 = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Final].realScid
+      assert(channelData_alice1.shortIds.real_opt.get == channelData_bob1.shortIds.real_opt.get)
+      val scid_ab1 = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].shortIds.real_opt.get
       val ann_splice = getRouterData(alice).channels(scid_ab1)
       assert(ann_splice.capacity == 200_000.sat)
       assert(getRouterData(bob).channels(scid_ab1) == ann_splice)

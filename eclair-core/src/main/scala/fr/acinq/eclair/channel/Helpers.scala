@@ -306,7 +306,7 @@ object Helpers {
   def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, shortIds: ShortIds): ChannelUpdate = {
     shortIds.remoteAlias_opt match {
       case Some(remoteAlias) => Announcements.updateScid(nodeParams.privateKey, channelUpdate, remoteAlias)
-      case None => shortIds.real.toOption match {
+      case None => shortIds.real_opt match {
         case Some(realScid) => Announcements.updateScid(nodeParams.privateKey, channelUpdate, realScid)
         // This case is a spec violation: this is a 0-conf channel, so our peer MUST send their alias.
         // They won't be able to match our channel_update with their local channel, too bad for them.

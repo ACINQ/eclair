@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -565,8 +565,8 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 
 // @formatter:off
 /** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
-private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
-object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
+private case class ShortIdsJson(real: Option[RealShortChannelId], localAlias: Alias, remoteAlias: Option[ShortChannelId])
+object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real_opt, s.localAlias, s.remoteAlias_opt))
 // @formatter:on
 
 // @formatter:off
@@ -647,12 +647,6 @@ object CustomTypeHints {
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
     ), typeHintFieldName = "type")
 
-  val realScidStatuses: CustomTypeHints = CustomTypeHints(Map(
-    classOf[RealScidStatus.Unknown.type] -> "unknown",
-    classOf[RealScidStatus.Temporary] -> "temporary",
-    classOf[RealScidStatus.Final] -> "final",
-  ), typeHintFieldName = "status")
-
   val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
     classOf[RemoteFundingStatus.NotLocked.type] -> "not-locked",
     classOf[RemoteFundingStatus.Locked.type] -> "locked",
@@ -670,7 +664,6 @@ object JsonSerializers {
     CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
-    CustomTypeHints.realScidStatuses +
     CustomTypeHints.remoteFundingStatuses +
     ActorRefSerializer +
     TypedActorRefSerializer +

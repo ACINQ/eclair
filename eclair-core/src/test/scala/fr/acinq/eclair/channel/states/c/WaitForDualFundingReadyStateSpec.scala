@@ -145,7 +145,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
       case _ => false
     }
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     val aliceUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(aliceUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
@@ -153,7 +153,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(aliceUpdate.feeProportionalMillionths == 125)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Temporary])
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     val bobUpdate = bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(bobUpdate.shortChannelId == bobChannelReady.alias_opt.value)
@@ -185,12 +185,12 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Unknown)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == bobChannelReady.alias_opt.value)
     assert(bobCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
@@ -200,6 +200,55 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == aliceChannelReady.alias_opt.value)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
+  }
+
+  test("recv ChannelReady (public channel)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
+    alice2bob.forward(bob, aliceChannelReady)
+    awaitCond(bob.stateName == NORMAL)
+    val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice, bobChannelReady)
+    awaitCond(alice.stateName == NORMAL)
+
+    // Alice sends announcement_signatures to Bob.
+    val aliceAnnSigs = alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob, aliceAnnSigs)
+    val aliceChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    assert(aliceChannelUpdate.shortChannelId == bobChannelReady.alias_opt.value)
+    // Bob also sends announcement_signatures, but Alice doesn't receive it.
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    val bobChannelUpdate = bob2alice.expectMsgType[ChannelUpdate]
+    assert(bobChannelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.nonEmpty)
+
+    // Alice disconnects without receiving Bob's announcement_signatures.
+    alice ! INPUT_DISCONNECTED
+    bob ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // On reconnection, Alice retransmits channel_ready and announcement_signatures.
+    val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
+    val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+    // When receiving channel_ready, Bob retransmits announcement_signatures.
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.nonEmpty)
   }
 
   test("recv TxInitRbf", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

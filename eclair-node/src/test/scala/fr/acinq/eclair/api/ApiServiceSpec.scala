@@ -206,8 +206,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'usablebalances' returns expected balance json only for enabled channels") {
     val eclair = mock[Eclair]
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Unknown, Alias(1), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Final(RealShortChannelId(2)), Alias(3), Some(Alias(4))), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
+      ChannelBalance(aliceNodeId, ShortIds(None, Alias(1), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortIds(Some(RealShortChannelId(2)), Alias(3), Some(Alias(4))), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
     ))
 
     val mockService = mockApi(eclair)
@@ -226,8 +226,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'channelbalances' returns expected balance json for all channels") {
     val eclair = mock[Eclair]
     eclair.channelBalances()(any[Timeout]) returns Future.successful(List(
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Temporary(RealShortChannelId(1)), Alias(2), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Final(RealShortChannelId(3)), Alias(3), Some(Alias(3))), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
+      ChannelBalance(aliceNodeId, ShortIds(Some(RealShortChannelId(1)), Alias(2), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, ShortIds(Some(RealShortChannelId(3)), Alias(3), Some(Alias(3))), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
     ))
 
     val mockService = mockApi(eclair)

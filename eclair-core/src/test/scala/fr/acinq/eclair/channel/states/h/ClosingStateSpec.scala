@@ -104,6 +104,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     } else {
       within(30 seconds) {
         reachNormal(setup, test.tags)
+        if (test.tags.contains(ChannelStateTestsTags.ChannelsPublic) && test.tags.contains(ChannelStateTestsTags.DoNotInterceptGossip)) {
+          alice2bob.expectMsgType[AnnouncementSignatures]
+          alice2bob.forward(bob)
+          alice2bob.expectMsgType[ChannelUpdate]
+          bob2alice.expectMsgType[AnnouncementSignatures]
+          bob2alice.forward(alice)
+          bob2alice.expectMsgType[ChannelUpdate]
+        }
         alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
         alice.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])
         bob.underlying.system.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
@@ -349,24 +357,16 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData == initialState) // this was a no-op
   }
 
-  test("recv WatchFundingSpentTriggered (local commit, public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingSpentTriggered (local commit, public channel)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
 
     val listener = TestProbe()
     systemA.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
 
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
-    alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.forward(bob)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    bob2alice.forward(alice)
-    assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
-
     // an error occurs and alice publishes her commit tx
     localClose(alice, alice2blockchain)
     // she notifies the network that the channel shouldn't be used anymore
-    assert(!listener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+    inside(listener.expectMsgType[LocalChannelUpdate]) { u => assert(!u.channelUpdate.channelFlags.isEnabled) }
   }
 
   test("recv WatchOutputSpentTriggered") { f =>
@@ -838,25 +838,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
   }
 
-  test("recv WatchFundingSpentTriggered (remote commit, public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingSpentTriggered (remote commit, public channel)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
 
     val listener = TestProbe()
     systemA.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
 
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
-    alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.forward(bob)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    bob2alice.forward(alice)
-    assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
-
     // bob publishes his commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     remoteClose(bobCommitTx, alice, alice2blockchain)
     // alice notifies the network that the channel shouldn't be used anymore
-    assert(!listener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+    inside(listener.expectMsgType[LocalChannelUpdate]) { u => assert(!u.channelUpdate.channelFlags.isEnabled) }
   }
 
   test("recv CMD_BUMP_FORCE_CLOSE_FEE (remote commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
