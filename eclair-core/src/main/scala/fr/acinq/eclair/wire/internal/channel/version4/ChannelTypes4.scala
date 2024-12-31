@@ -1,0 +1,106 @@
+/*
+ * Copyright 2024 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package fr.acinq.eclair.wire.internal.channel.version4
+
+import fr.acinq.eclair.channel.LocalFundingStatus.ConfirmedFundingTx
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, Shutdown}
+import fr.acinq.eclair.{Alias, RealShortChannelId}
+
+private[channel] object ChannelTypes4 {
+
+  // We moved the real scid inside each commitment object when adding DATA_NORMAL_14_Codec.
+  case class ShortIds(real_opt: Option[RealShortChannelId], localAlias: Alias, remoteAlias_opt: Option[Alias])
+
+  // We moved the channel_announcement inside each commitment object when adding DATA_NORMAL_14_Codec.
+  case class DATA_NORMAL_0e(commitments: Commitments,
+                            shortIds: ShortIds,
+                            channelAnnouncement: Option[ChannelAnnouncement],
+                            channelUpdate: ChannelUpdate,
+                            localShutdown: Option[Shutdown],
+                            remoteShutdown: Option[Shutdown],
+                            closingFeerates: Option[ClosingFeerates],
+                            spliceStatus: SpliceStatus) {
+    def migrate(): DATA_NORMAL = {
+      val commitments1 = commitments.copy(
+        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, channelAnnouncement)),
+        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, channelAnnouncement)),
+      )
+      val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
+      DATA_NORMAL(commitments1, aliases, channelUpdate, localShutdown, remoteShutdown, closingFeerates, spliceStatus)
+    }
+  }
+
+  object DATA_NORMAL_0e {
+    // shouldn't be used since we only decode old data and never encode it
+    def from(d: DATA_NORMAL): DATA_NORMAL_0e = {
+      val shortIds = ShortIds(d.lastAnnouncement_opt.map(_.shortChannelId), d.aliases.localAlias, d.aliases.remoteAlias_opt)
+      DATA_NORMAL_0e(d.commitments, shortIds, d.lastAnnouncement_opt, d.channelUpdate, d.localShutdown, d.remoteShutdown, d.closingFeerates, d.spliceStatus)
+    }
+  }
+
+  case class DATA_WAIT_FOR_CHANNEL_READY_0b(commitments: Commitments, shortIds: ShortIds) {
+    def migrate(): DATA_WAIT_FOR_CHANNEL_READY = {
+      val commitments1 = commitments.copy(
+        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+      )
+      val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
+      DATA_WAIT_FOR_CHANNEL_READY(commitments1, aliases)
+    }
+  }
+
+  object DATA_WAIT_FOR_CHANNEL_READY_0b {
+    // shouldn't be used since we only decode old data and never encode it
+    def from(d: DATA_WAIT_FOR_CHANNEL_READY): DATA_WAIT_FOR_CHANNEL_READY_0b = {
+      val shortIds = ShortIds(None, d.aliases.localAlias, d.aliases.remoteAlias_opt)
+      DATA_WAIT_FOR_CHANNEL_READY_0b(d.commitments, shortIds)
+    }
+  }
+
+  case class DATA_WAIT_FOR_DUAL_FUNDING_READY_0d(commitments: Commitments, shortIds: ShortIds) {
+    def migrate(): DATA_WAIT_FOR_DUAL_FUNDING_READY = {
+      val commitments1 = commitments.copy(
+        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+      )
+      val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
+      DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, aliases)
+    }
+  }
+
+  object DATA_WAIT_FOR_DUAL_FUNDING_READY_0d {
+    // shouldn't be used since we only decode old data and never encode it
+    def from(d: DATA_WAIT_FOR_DUAL_FUNDING_READY): DATA_WAIT_FOR_DUAL_FUNDING_READY_0d = {
+      val shortIds = ShortIds(None, d.aliases.localAlias, d.aliases.remoteAlias_opt)
+      DATA_WAIT_FOR_DUAL_FUNDING_READY_0d(d.commitments, shortIds)
+    }
+  }
+
+  private def setAnnouncementAndScidIfMatches(c: Commitment, shortIds: ShortIds, announcement_opt: Option[ChannelAnnouncement]): Commitment = {
+    c.localFundingStatus match {
+      // We didn't support splicing on public channels in this version: the scid and announcement (if any) are for the
+      // initial funding transaction. For private channels we don't care about the real scid, it will be set correctly
+      // after the next splice.
+      case f: ConfirmedFundingTx if c.fundingTxIndex == 0 =>
+        val scid = shortIds.real_opt.getOrElse(f.shortChannelId)
+        c.copy(localFundingStatus = f.copy(shortChannelId = scid, announcement_opt = announcement_opt))
+      case _ => c
+    }
+  }
+
+}

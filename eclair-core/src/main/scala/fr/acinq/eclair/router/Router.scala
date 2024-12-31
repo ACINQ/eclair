@@ -393,7 +393,7 @@ object Router {
     }
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
-      if (u.channelFlags.isNode1) ChannelDesc(pc.shortIds.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.shortIds.localAlias, pc.nodeId2, pc.nodeId1)
+      if (u.channelFlags.isNode1) ChannelDesc(pc.aliases.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.aliases.localAlias, pc.nodeId2, pc.nodeId1)
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
@@ -431,7 +431,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(channelId: ByteVector32, shortIds: ShortIds, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(channelId: ByteVector32, aliases: ShortIdAliases, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -448,18 +448,17 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
-    /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
+    /** Create an invoice routing hint for that channel. */
     def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
-      // we want the incoming channel_update
+      // We use the incoming channel_update because we want to route to ourselves.
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
-      // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
-      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real_opt)
-      // we override the remote update's scid, because it contains either the real scid or our local alias
-      scid_opt.flatMap { scid =>
-        remoteUpdate_opt.map { remoteUpdate =>
-          Bolt11Invoice.ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
-        }
-      }
+      // They sent us their channel update using either the real scid or our local alias (to allow us to map the update
+      // to the right channel): we need to override it with the alias *they* are using for that channel. If they didn't
+      // provide one, we won't use this channel as routing hint, because it would leak its short_channel_id.
+      for {
+        scid <- aliases.remoteAlias_opt
+        update <- remoteUpdate_opt
+      } yield (Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta))
     }
   }
   // @formatter:on

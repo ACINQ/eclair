@@ -3598,9 +3598,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     // For zero-conf channels we don't have a real short_channel_id when going to the NORMAL state.
     val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceState.shortIds.real_opt.isEmpty)
-    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
-    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
+    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bob.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
+    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
     // When the funding transaction confirms, we obtain a real short_channel_id.
     val fundingTx = aliceState.commitments.latest.localFundingStatus.signedTx_opt.get
     val (blockHeight, txIndex) = (BlockHeight(400_000), 42)
@@ -3609,7 +3608,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     assert(annSigsA.shortChannelId == realShortChannelId)
     // Alice updates her internal state wih the real scid.
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.contains(realShortChannelId))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.contains(realShortChannelId))
     alice2bob.forward(bob, annSigsA)
     alice2bob.expectNoMessage(100 millis)
     // Bob doesn't know that the funding transaction is confirmed, so he doesn't send his announcement_signatures yet.
@@ -3618,11 +3617,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     assert(annSigsB.shortChannelId == realShortChannelId)
     bob2alice.forward(alice, annSigsB)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.nonEmpty)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.nonEmpty)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.map(_.shortChannelId).contains(realShortChannelId))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.map(_.shortChannelId).contains(realShortChannelId))
     // We emit a new local channel update containing the same channel_update, but with the new real scid.
     val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(lcu.shortIds.real_opt.contains(realShortChannelId))
+    assert(lcu.announcement_opt.map(_.shortChannelId).contains(realShortChannelId))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == realShortChannelId)
   }
 
@@ -3633,12 +3632,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     // zero-conf channel: the funding tx isn't confirmed
     val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceState.shortIds.real_opt.isEmpty)
     val fundingTx = aliceState.commitments.latest.localFundingStatus.signedTx_opt.get
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400_000), 42, fundingTx)
     val realShortChannelId = RealShortChannelId(BlockHeight(400_000), 42, 0)
     // update data with real short channel id
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.contains(realShortChannelId))
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.contains(realShortChannelId))
     // private channel: we'll use the remote alias in the channel_update we sent to our peer, there is no change so we don't create a new channel_update
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)
@@ -3649,7 +3647,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val realShortChannelId = initialState.shortIds.real_opt.get
+    val realShortChannelId = initialState.commitments.latest.shortChannelId_opt.get
     // Alice and Bob exchange announcement_signatures.
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     assert(annSigsA.shortChannelId == realShortChannelId)
@@ -3661,20 +3659,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val bobFundingKey = initialState.commitments.latest.remoteFundingPubKey
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, Bob.nodeParams.nodeId, aliceFundingKey, bobFundingKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     // actual test starts here
+    val listener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ShortChannelIdAssigned])
     bob2alice.forward(alice, annSigsB)
     awaitAssert {
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
-      assert(normal.shortIds.real_opt.contains(realShortChannelId))
-      assert(normal.channelAnnouncement.contains(channelAnn))
+      assert(normal.lastAnnouncement_opt.contains(channelAnn))
       assert(normal.channelUpdate.shortChannelId == realShortChannelId)
     }
-    // we use the real scid instead of remote alias as soon as the channel is announced
+    assert(listener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(channelAnn))
+    // We use the real scid in channel updates instead of the remote alias as soon as the channel is announced.
     val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(lcu.channelUpdate.shortChannelId == realShortChannelId)
-    assert(lcu.channelAnnouncement_opt.contains(channelAnn))
-    // we don't send directly the channel_update to our peer, public announcements are handled by the router
+    assert(lcu.announcement_opt.map(_.announcement).contains(channelAnn))
+    // We don't send directly the channel_update to our peer, public announcements are handled by the router.
     alice2bob.expectNoMessage(100 millis)
-    // we ignore redundant announcement_signatures
+    // We ignore redundant announcement_signatures.
     bob2alice.forward(alice, annSigsB)
     alice2bob.expectNoMessage(100 millis)
     channelUpdateListener.expectNoMessage(100 millis)

@@ -129,7 +129,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       assert(getChannelState(bob, channelId) == NORMAL)
       assert(getChannelState(carol, channelId) == NORMAL)
       // Carol must have received Bob's alias to create usable blinded routes to herself.
-      assert(getRouterData(carol).privateChannels.values.forall(_.shortIds.remoteAlias_opt.nonEmpty))
+      assert(getRouterData(carol).privateChannels.values.forall(_.aliases.remoteAlias_opt.nonEmpty))
     }
   }
 
@@ -554,7 +554,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId), IntermediateNode(carol.nodeId)), Recipient(carol.nodeId, Some(pathId))).route
     val offer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(blindedRoute))))
-    val scid_bc = getPeerChannels(bob, carol.nodeId).head.data.asInstanceOf[DATA_NORMAL].shortIds.real_opt.get
+    val scid_bc = getPeerChannels(bob, carol.nodeId).head.data.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.get
     val compactBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId, EncodedNodeId(bob.nodeId), Some(scid_bc)), IntermediateNode(carol.nodeId, EncodedNodeId(carol.nodeId), Some(ShortChannelId.toSelf))), Recipient(carol.nodeId, Some(pathId))).route
     val compactOffer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(compactBlindedRoute))))
     assert(compactOffer.toString.length < offer.toString.length)

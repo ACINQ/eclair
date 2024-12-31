@@ -41,7 +41,7 @@ object RouteCalculation {
       // We are the destination of that edge: local graph edges always use either the local alias or the real scid.
       // We want to use the remote alias when available, because our peer won't understand our local alias.
       d.resolve(e.desc.shortChannelId) match {
-        case Some(c: PrivateChannel) => c.shortIds.remoteAlias_opt.getOrElse(e.desc.shortChannelId)
+        case Some(c: PrivateChannel) => c.aliases.remoteAlias_opt.getOrElse(e.desc.shortChannelId)
         case _ => e.desc.shortChannelId
       }
     } else {
@@ -94,8 +94,8 @@ object RouteCalculation {
                   case _ => None
                 }
                 case Some(c: PrivateChannel) => currentNode match {
-                  case c.nodeId1 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId1, c.nodeId2))
-                  case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
+                  case c.nodeId1 => Some(ChannelDesc(c.aliases.localAlias, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(c.aliases.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
                 case None => extraEdges.find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)

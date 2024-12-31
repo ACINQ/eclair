@@ -94,8 +94,8 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(selected.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, shortIds, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId realScid=${shortIds.real_opt} localAlias=${shortIds.localAlias} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+          case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, shortIds, remoteNodeId, announcement_opt, channelUpdate, commitments)) =>
+            context.log.debug("updating local channel info for channelId={} realScid={} localAlias={} remoteNodeId={} channelUpdate={}", channelId, announcement_opt.map(_.shortChannelId), shortIds.localAlias, remoteNodeId, channelUpdate)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(shortIds, remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)
@@ -105,17 +105,17 @@ object ChannelRelayer {
             val node2channels1 = node2channels.addOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2channels1, node2channels1)
 
-          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortIds, remoteNodeId)) =>
-            context.log.debug(s"removed local channel info for channelId=$channelId localAlias=${shortIds.localAlias}")
+          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, realScids, aliases, remoteNodeId)) =>
+            context.log.debug("removed local channel info for channelId={} localAlias={}", channelId, aliases.localAlias)
             val channels1 = channels - channelId
-            val scid2Channels1 = scid2channels - shortIds.localAlias -- shortIds.real_opt
+            val scid2Channels1 = scid2channels - aliases.localAlias -- realScids
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
 
-          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortIds, commitments)) =>
+          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, aliases, commitments)) =>
             val channels1 = channels.get(channelId) match {
               case Some(c: Relayer.OutgoingChannel) =>
-                context.log.debug(s"available balance changed for channelId=$channelId localAlias=${shortIds.localAlias} availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
+                context.log.debug("available balance changed for channelId={} localAlias={} availableForSend={} availableForReceive={}", channelId, aliases.localAlias, commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
                 channels + (channelId -> c.copy(commitments = commitments))
               case None => channels // we only consider the balance if we have the channel_update
             }

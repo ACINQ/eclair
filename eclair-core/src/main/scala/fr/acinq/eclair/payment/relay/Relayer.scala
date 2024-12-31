@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -151,7 +151,7 @@ object Relayer extends Logging {
   }
 
   case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey)
-  case class ChannelBalance(remoteNodeId: PublicKey, shortIds: ShortIds, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
+  case class ChannelBalance(remoteNodeId: PublicKey, realScid: Option[RealShortChannelId], aliases: ShortIdAliases, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
   sealed trait OutgoingChannelParams {
     def channelId: ByteVector32
@@ -165,11 +165,13 @@ object Relayer extends Logging {
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(shortIds: ShortIds, nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: Commitments) extends OutgoingChannelParams {
+  case class OutgoingChannel(aliases: ShortIdAliases, nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: Commitments) extends OutgoingChannelParams {
     override val channelId: ByteVector32 = commitments.channelId
+    val realScid_opt: Option[RealShortChannelId] = commitments.lastAnnouncement_opt.map(_.shortChannelId)
     def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
-      shortIds = shortIds,
+      realScid = realScid_opt,
+      aliases = aliases,
       canSend = commitments.availableBalanceForSend,
       canReceive = commitments.availableBalanceForReceive,
       isPublic = commitments.announceChannel,

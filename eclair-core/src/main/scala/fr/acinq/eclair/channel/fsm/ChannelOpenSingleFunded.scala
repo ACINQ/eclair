@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, UInt64, randomKey, toLongId}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -397,7 +397,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
-          val shortIds = createShortIds(d.channelId, None)
+          val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
@@ -407,8 +407,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
-          val realScid = RealShortChannelId(w.blockHeight, w.txIndex, d.commitments.latest.commitInput.outPoint.index.toInt)
-          val shortIds = createShortIds(d.channelId, Some(realScid))
+          val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
@@ -439,13 +438,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_CHANNEL_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
-      val annSigs_opt = d.shortIds.real_opt match {
-        case Some(realScid) if d.commitments.announceChannel =>
-          announcementSigsSent += realScid
-          Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
-        case _ => None
-      }
+      val d1 = receiveChannelReady(d.aliases, channelReady, d.commitments)
+      val annSigs_opt = d1.commitments.all.find(_.fundingTxIndex == 0).flatMap(_.signAnnouncement(nodeParams, d1.commitments.params))
+      annSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
       goto(NORMAL) using d1 storing() sending annSigs_opt.toSeq
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.announceChannel =>

@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{RealShortChannelId, ToMilliSatoshiConversion, UInt64, randomBytes32}
+import fr.acinq.eclair.{ToMilliSatoshiConversion, UInt64, randomBytes32}
 
 /**
  * Created by t-bast on 19/04/2022.
@@ -728,7 +728,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case Right((commitments1, _)) =>
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
-          val shortIds = createShortIds(d.channelId, None)
+          val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
@@ -737,9 +737,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right((commitments1, commitment)) =>
-          val realScid = RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt)
-          val shortIds = createShortIds(d.channelId, Some(realScid))
+        case Right((commitments1, _)) =>
+          val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
@@ -785,13 +784,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_DUAL_FUNDING_READY)(handleExceptions {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
-      val annSigs_opt = d.shortIds.real_opt match {
-        case Some(realScid) if d.commitments.announceChannel =>
-          announcementSigsSent += realScid
-          Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
-        case _ => None
-      }
+      val d1 = receiveChannelReady(d.aliases, channelReady, d.commitments)
+      val annSigs_opt = d1.commitments.all.find(_.fundingTxIndex == 0).flatMap(_.signAnnouncement(nodeParams, d1.commitments.params))
+      annSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
       goto(NORMAL) using d1 storing() sending annSigs_opt.toSeq
 
     case Event(_: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>

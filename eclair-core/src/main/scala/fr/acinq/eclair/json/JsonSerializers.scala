@@ -577,15 +577,15 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 
 // @formatter:off
 /** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
-private case class ShortIdsJson(real: Option[RealShortChannelId], localAlias: Alias, remoteAlias: Option[ShortChannelId])
-object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real_opt, s.localAlias, s.remoteAlias_opt))
+private case class ShortIdAliasesJson(localAlias: Alias, remoteAlias: Option[ShortChannelId])
+object ShortIdAliasesSerializer extends ConvertClassSerializer[ShortIdAliases](s => ShortIdAliasesJson(s.localAlias, s.remoteAlias_opt))
 // @formatter:on
 
 // @formatter:off
-private case class FundingTxStatusJson(status: String, txid: Option[TxId])
+private case class FundingTxStatusJson(status: String, txid: Option[TxId], shortChannelId: Option[RealShortChannelId], announcement: Option[ChannelAnnouncement])
 object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStatus]({
-  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid))
-  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid))
+  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid), None, None)
+  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid), Some(s.shortChannelId), s.announcement_opt)
 })
 // @formatter:on
 
@@ -732,7 +732,7 @@ object JsonSerializers {
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer +
-    ShortIdsSerializer +
+    ShortIdAliasesSerializer +
     FundingTxStatusSerializer +
     CommitmentSerializer +
     TlvStreamSerializer +

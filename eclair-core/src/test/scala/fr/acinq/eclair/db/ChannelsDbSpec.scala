@@ -29,7 +29,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, CltvExpiry, TestDatabases, randomBytes32, randomKey, randomLong}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -60,7 +60,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
-      val channel2b = channel2a.modify(_.shortIds.real_opt).setTo(Some(RealShortChannelId(189371)))
+      val channel2b = channel2a.modify(_.aliases.remoteAlias_opt).setTo(Some(Alias(randomLong())))
 
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes

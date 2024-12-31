@@ -417,16 +417,15 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 }
 
 /**
- * Short identifiers for the channel.
+ * Short identifiers for the channel that aren't related to the on-chain utxo.
  *
- * @param real_opt        the real scid of the latest announced (and thus confirmed) funding transaction.
  * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
  *                          - identify incoming [[ChannelUpdate]] at the connection level
  *                          - route outgoing payments to that channel
  * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortIds(real_opt: Option[RealShortChannelId], localAlias: Alias, remoteAlias_opt: Option[Alias])
+case class ShortIdAliases(localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]
@@ -434,6 +433,8 @@ sealed trait LocalFundingStatus {
   def localSigs_opt: Option[TxSignatures]
   /** Basic information about the liquidity purchase negotiated in this transaction, if any. */
   def liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]
+  /** After confirmation, we store the channel announcement matching this funding transaction, once we've created it. */
+  def announcement_opt: Option[ChannelAnnouncement]
 }
 object LocalFundingStatus {
   sealed trait NotLocked extends LocalFundingStatus
@@ -449,15 +450,18 @@ object LocalFundingStatus {
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends UnconfirmedFundingTx with NotLocked {
     override val localSigs_opt: Option[TxSignatures] = None
     override val liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo] = None
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with NotLocked {
     override val signedTx_opt: Option[Transaction] = sharedTx.signedTx_opt
     override val localSigs_opt: Option[TxSignatures] = Some(sharedTx.localSigs)
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
+    override val announcement_opt: Option[ChannelAnnouncement] = None
   }
-  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, announcement_opt: Option[ChannelAnnouncement], localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -589,7 +593,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends ChannelDataWithCommitments {
   def fundingTx_opt: Option[Transaction] = commitments.latest.localFundingStatus.signedTx_opt
 }
-final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
@@ -622,16 +626,17 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
   def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortIds: ShortIds,
-                             channelAnnouncement: Option[ChannelAnnouncement],
+                             aliases: ShortIdAliases,
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+  val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = commitments.lastAnnouncement_opt 
+  val lastAnnouncement_opt: Option[ChannelAnnouncement] = lastAnnouncedCommitment_opt.map(_.announcement)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }

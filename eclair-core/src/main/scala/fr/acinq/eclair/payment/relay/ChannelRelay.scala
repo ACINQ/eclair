@@ -136,8 +136,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val requestedChannelId_opt = r.payload.outgoing match {
     case Left(_) => None
     case Right(outgoingChannelId) => channels.collectFirst {
-      case (channelId, channel) if channel.shortIds.localAlias == outgoingChannelId => channelId
-      case (channelId, channel) if channel.shortIds.real_opt.contains(outgoingChannelId) => channelId
+      case (channelId, channel) if channel.aliases.localAlias == outgoingChannelId => channelId
+      case (channelId, channel) if channel.realScid_opt.contains(outgoingChannelId) => channelId
     }
   }
 

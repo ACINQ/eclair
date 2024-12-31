@@ -388,7 +388,7 @@ private[channel] object ChannelCodecs0 {
         ("shortChannelId" | realshortchannelid) ::
         ("lastSent" | channelReadyCodec)).map {
       case commitments :: shortChannelId :: _ :: HNil =>
-        DATA_WAIT_FOR_CHANNEL_READY(commitments, shortIds = ShortIds(real_opt = Some(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None))
+        DATA_WAIT_FOR_CHANNEL_READY(commitments, aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None))
     }.decodeOnly
 
     val shutdownCodec: Codec[Shutdown] = (
@@ -406,8 +406,9 @@ private[channel] object ChannelCodecs0 {
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec)) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
-      case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real_opt = Some(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+      case commitments :: shortChannelId :: _ :: _ :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
+        DATA_NORMAL(commitments, aliases, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
     }.decodeOnly
 
     val DATA_NORMAL_10_Codec: Codec[DATA_NORMAL] = (
@@ -419,8 +420,9 @@ private[channel] object ChannelCodecs0 {
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec)) ::
         ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
-      case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
-        DATA_NORMAL(commitments, shortIds = ShortIds(real_opt = Some(shortChannelId), localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None), channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+      case commitments :: shortChannelId :: _ :: _ :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
+        DATA_NORMAL(commitments, aliases, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
     }.decodeOnly
 
     val DATA_SHUTDOWN_04_Codec: Codec[DATA_SHUTDOWN] = (

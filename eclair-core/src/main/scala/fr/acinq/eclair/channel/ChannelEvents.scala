@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds}
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
 
 /**
  * Created by PM on 17/08/2016.
@@ -44,8 +44,8 @@ case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: Act
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
-/** This event will be sent whenever a new scid is assigned to the channel, be it a real, local alias or remote alias. */
-case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, isAnnounced: Boolean) extends ChannelEvent
+/** This event will be sent whenever a new scid is assigned to the channel: local alias, remote alias or announcement. */
+case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, announcement_opt: Option[ChannelAnnouncement], aliases: ShortIdAliases, remoteNodeId: PublicKey) extends ChannelEvent
 
 /** This event will be sent if a channel was aborted before completing the opening flow. */
 case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
@@ -56,7 +56,7 @@ case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: 
 /** This event is sent once channel_ready or splice_locked have been exchanged. */
 case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxIndex: Long) extends ChannelEvent
 
-case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent {
+case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, remoteNodeId: PublicKey, announcement_opt: Option[AnnouncedCommitment], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent {
   /**
    * We always include the local alias because we must always be able to route based on it.
    * However we only include the real scid if option_scid_alias is disabled, because we otherwise want to hide it.
@@ -64,16 +64,16 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortI
   def scidsForRouting: Seq[ShortChannelId] = {
     val canUseRealScid = !commitments.params.channelFeatures.hasFeature(Features.ScidAlias)
     if (canUseRealScid) {
-      shortIds.real_opt.toSeq :+ shortIds.localAlias
+      announcement_opt.map(_.shortChannelId).toSeq :+ aliases.localAlias
     } else {
-      Seq(shortIds.localAlias)
+      Seq(aliases.localAlias)
     }
   }
 }
 
 case class ChannelUpdateParametersChanged(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, channelUpdate: ChannelUpdate) extends ChannelEvent
 
-case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
+case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, realScids: Seq[RealShortChannelId], aliases: ShortIdAliases, remoteNodeId: PublicKey) extends ChannelEvent
 
 case class ChannelStateChanged(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, previousState: ChannelState, currentState: ChannelState, commitments_opt: Option[Commitments]) extends ChannelEvent
 
@@ -97,7 +97,7 @@ case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey
 case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available.
-case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, commitments: Commitments) extends ChannelEvent
+case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, commitments: Commitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: PersistentChannelData) extends ChannelEvent
 

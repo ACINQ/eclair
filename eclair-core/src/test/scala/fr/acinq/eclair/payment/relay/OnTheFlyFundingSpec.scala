@@ -163,10 +163,10 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
 
     def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil)): DATA_NORMAL = {
-      val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announceChannel = false)
+      val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announcement_opt = None)
         .modify(_.params.remoteParams.htlcMinimum).setTo(htlcMinimum)
         .modify(_.changes.localChanges).setTo(localChanges)
-      DATA_NORMAL(commitments, ShortIds(None, Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
+      DATA_NORMAL(commitments, ShortIdAliases(Alias(42), None), null, None, None, None, SpliceStatus.NoSplice)
     }
   }
 
