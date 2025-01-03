@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.router.Router.{PaymentRouteNotFound, RouteResponse}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
@@ -281,10 +281,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, privKey, invoiceReq, receivingRoutes, router.ref, randomBytes32(), randomBytes32()))
     val finalizeRoute1 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute1.route == Router.PredefinedNodeRoute(25_000 msat, Seq(a, b, d)))
-    router.send(router.lastSender, RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ab, hop_bd), None))))
+    finalizeRoute1.replyTo ! RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ab, hop_bd), None)))
     val finalizeRoute2 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute2.route == Router.PredefinedNodeRoute(25_000 msat, Seq(c, d)))
-    router.send(router.lastSender, RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_cd), None))))
+    finalizeRoute2.replyTo ! RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_cd), None)))
     val invoice = sender.expectMsgType[CreateInvoiceActor.InvoiceCreated].invoice
     assert(invoice.amount == 25_000.msat)
     assert(invoice.nodeId == privKey.publicKey)
@@ -323,10 +323,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, privKey, invoiceReq, receivingRoutes, router.ref, randomBytes32(), randomBytes32()))
     val finalizeRoute1 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute1.route == Router.PredefinedNodeRoute(25_000 msat, Seq(a, c)))
-    router.send(router.lastSender, RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ac), None))))
+    finalizeRoute1.replyTo ! RouteResponse(Seq(Router.Route(25_000 msat, Seq(hop_ac), None)))
     val finalizeRoute2 = router.expectMsgType[Router.FinalizeRoute]
     assert(finalizeRoute2.route == Router.PredefinedNodeRoute(25_000 msat, Seq(b, c)))
-    router.send(router.lastSender, Status.Failure(new IllegalArgumentException("invalid route")))
+    finalizeRoute2.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("invalid route"))
     sender.expectMsgType[CreateInvoiceActor.BlindedRouteCreationFailed]
   }
 

@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.payment.send
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
@@ -58,7 +59,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val routeParams = r.routeParams.copy(randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       log.debug("sending {} with maximum fee {}", r.recipient.totalAmount, r.routeParams.getMaxFee(r.recipient.totalAmount))
       val d = PaymentProgress(r, r.maxAttempts, Map.empty, Ignore.empty, retryRouteRequest = false, failures = Nil)
-      router ! createRouteRequest(nodeParams, routeParams, d, cfg)
+      router ! createRouteRequest(self, nodeParams, routeParams, d, cfg)
       goto(WAIT_FOR_ROUTES) using d
   }
 
@@ -74,11 +75,11 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // remaining amount. In that case we discard these routes and send a new request to the router.
         log.debug("discarding routes, another child payment failed so we need to recompute them ({} payments still pending for {})", d.pending.size, d.pending.values.map(_.amount).sum)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
-        router ! createRouteRequest(nodeParams, routeParams, d, cfg)
+        router ! createRouteRequest(self, nodeParams, routeParams, d, cfg)
         stay() using d.copy(retryRouteRequest = false)
       }
 
-    case Event(Status.Failure(t), d: PaymentProgress) =>
+    case Event(PaymentRouteNotFound(t), d: PaymentProgress) =>
       log.warning("router error: {}", t.getMessage)
       // If no route can be found, we will retry once with the channels that we previously ignored.
       // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
@@ -87,7 +88,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (d.ignore.channels.nonEmpty) {
         log.debug("retry sending payment without ignoring channels {} ({} payments still pending for {})", d.ignore.channels.map(_.shortChannelId).mkString(","), d.pending.size, d.pending.values.map(_.amount).sum)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
-        router ! createRouteRequest(nodeParams, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
+        router ! createRouteRequest(self, nodeParams, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
         retriedFailedChannels = true
         stay() using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels(), retryRouteRequest = false)
       } else {
@@ -135,7 +136,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         log.debug("child payment failed, retrying payment ({} payments still pending for {})", stillPending.size, stillPending.values.map(_.amount).sum)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(recipient = recipient1), retryRouteRequest = false)
-        router ! createRouteRequest(nodeParams, routeParams, d1, cfg)
+        router ! createRouteRequest(self, nodeParams, routeParams, d1, cfg)
         goto(WAIT_FOR_ROUTES) using d1
       }
 
@@ -164,7 +165,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
 
     case Event(_: RouteResponse, _) => stay()
-    case Event(_: Status.Failure, _) => stay()
+    case Event(_: PaymentRouteNotFound, _) => stay()
   }
 
   when(PAYMENT_SUCCEEDED) {
@@ -190,7 +191,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       }
 
     case Event(_: RouteResponse, _) => stay()
-    case Event(_: Status.Failure, _) => stay()
+    case Event(_: PaymentRouteNotFound, _) => stay()
   }
 
   private def spawnChildPaymentFsm(childId: UUID): ActorRef = {
@@ -368,8 +369,8 @@ object MultiPartPaymentLifecycle {
    */
   case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
 
-  private def createRouteRequest(nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
-    RouteRequest(nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext))
+  private def createRouteRequest(replyTo: ActorRef, nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
+    RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext))
   }
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {

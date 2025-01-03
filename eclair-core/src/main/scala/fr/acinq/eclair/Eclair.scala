@@ -443,7 +443,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- (appKit.router ? RouteRequest(sourceNodeId, target, routeParams1, ignore)).mapTo[RouteResponse]
+          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore)).flatMap {
+            case r: RouteResponse => Future.successful(r)
+            case PaymentRouteNotFound(error) => Future.failed(error)
+          }
         } yield response
       case Left(t) => Future.failed(t)
     }

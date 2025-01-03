@@ -56,6 +56,10 @@ object Graph {
         amount >= edge.params.htlcMinimum
   }
 
+  object PaymentPathWeight {
+    def apply(amount: MilliSatoshi): PaymentPathWeight = PaymentPathWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)
+  }
+
   /**
    * The cumulative weight of a set of edges (path in the graph).
    *
@@ -249,7 +253,7 @@ object Graph {
                         boundaries: PaymentPathWeight => Boolean,
                         includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
-    val targetWeight = PaymentPathWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)
+    val targetWeight = PaymentPathWeight(amount)
     dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
@@ -439,6 +443,36 @@ object Graph {
     dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, Features(Features.OnionMessages -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true)
 
   /**
+   * Find non-overlapping (no vertices shared) payment paths that support route blinding
+   *
+   * @param pathsToFind Number of paths to find. We may return fewer paths if we couldn't find more non-overlapping ones.
+   */
+  def routeBlindingPaths(graph: DirectedGraph,
+                         sourceNode: PublicKey,
+                         targetNode: PublicKey,
+                         amount: MilliSatoshi,
+                         ignoredEdges: Set[ChannelDesc],
+                         ignoredVertices: Set[PublicKey],
+                         pathsToFind: Int,
+                         wr: WeightRatios[PaymentPathWeight],
+                         currentBlockHeight: BlockHeight,
+                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath] = {
+    val paths = new mutable.ArrayBuffer[WeightedPath](pathsToFind)
+    val verticesToIgnore = new mutable.HashSet[PublicKey]()
+    verticesToIgnore.addAll(ignoredVertices)
+    for (_ <- 1 to pathsToFind) {
+      dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, Features(Features.RouteBlinding -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true) match {
+        case Some(path) =>
+          val weight = pathWeight(sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true)
+          paths += WeightedPath(path, weight)
+          verticesToIgnore.addAll(path.drop(1).map(_.desc.a))
+        case None => return paths.toSeq
+      }
+    }
+    paths.toSeq
+  }
+
+  /**
    * Calculate the minimum amount that the start node needs to receive to be able to forward @amountWithFees to the end
    * node.
    *
@@ -476,7 +510,7 @@ object Graph {
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
   def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: BlockHeight, wr: WeightRatios[PaymentPathWeight], includeLocalChannelCost: Boolean): PaymentPathWeight = {
-    path.foldRight(PaymentPathWeight(amount, 0, CltvExpiryDelta(0), 1.0, 0 msat, 0 msat, 0.0)) { (edge, prev) =>
+    path.foldRight(PaymentPathWeight(amount)) { (edge, prev) =>
       wr.addEdgeWeight(sender, edge, prev, currentBlockHeight, includeLocalChannelCost)
     }
   }

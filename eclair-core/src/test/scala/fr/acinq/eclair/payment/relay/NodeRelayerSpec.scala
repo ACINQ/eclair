@@ -43,7 +43,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient}
-import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, RouteRequest}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, PaymentRouteNotFound, RouteRequest}
 import fr.acinq.eclair.router.{BalanceTooLow, BlindedRouteCreation, RouteNotFound, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload}
@@ -491,7 +491,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
-    payFSM ! Status.Failure(BalanceTooLow)
+    payFSM ! PaymentRouteNotFound(BalanceTooLow)
 
     incoming.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]

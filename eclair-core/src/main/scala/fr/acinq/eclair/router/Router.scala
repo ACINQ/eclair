@@ -242,6 +242,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: RouteRequest, d) =>
       stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
+    case Event(r: BlindedRouteRequest, d) =>
+      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r)
+
     case Event(r: MessageRouteRequest, d) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
@@ -592,7 +595,8 @@ object Router {
     def empty: Ignore = Ignore(Set.empty, Set.empty)
   }
 
-  case class RouteRequest(source: PublicKey,
+  case class RouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                          source: PublicKey,
                           target: Recipient,
                           routeParams: RouteParams,
                           ignore: Ignore = Ignore.empty,
@@ -600,7 +604,16 @@ object Router {
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
 
-  case class FinalizeRoute(route: PredefinedRoute,
+  case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                                 source: PublicKey,
+                                 target: PublicKey,
+                                 amount: MilliSatoshi,
+                                 routeParams: RouteParams,
+                                 pathsToFind: Int,
+                                 ignore: Ignore = Ignore.empty)
+
+  case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
+                           route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -661,9 +674,11 @@ object Router {
     }
   }
 
-  case class RouteResponse(routes: Seq[Route]) {
+  sealed trait PaymentRouteResponse
+  case class RouteResponse(routes: Seq[Route]) extends PaymentRouteResponse {
     require(routes.nonEmpty, "routes cannot be empty")
   }
+  case class PaymentRouteNotFound(error: Throwable) extends PaymentRouteResponse
 
   // @formatter:off
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */
