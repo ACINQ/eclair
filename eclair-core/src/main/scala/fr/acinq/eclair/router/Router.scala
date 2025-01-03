@@ -39,7 +39,7 @@ import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
+import fr.acinq.eclair.router.Graph.MessageWeightRatios
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -352,7 +352,7 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             heuristics: Either[WeightRatios, HeuristicsConstants],
+                             heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
@@ -567,7 +567,7 @@ object Router {
 
   case class RouteParams(randomize: Boolean,
                          boundaries: SearchBoundaries,
-                         heuristics: Either[WeightRatios, HeuristicsConstants],
+                         heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                          mpp: MultiPartParams,
                          experimentName: String,
                          includeLocalChannelCost: Boolean) {
@@ -577,7 +577,7 @@ object Router {
     }
   }
 
-  case class MessageRouteParams(maxRouteLength: Int, ratios: MessagePath.WeightRatios)
+  case class MessageRouteParams(maxRouteLength: Int, ratios: MessageWeightRatios)
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off

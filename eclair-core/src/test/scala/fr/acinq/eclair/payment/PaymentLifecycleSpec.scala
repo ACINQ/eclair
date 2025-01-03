@@ -39,7 +39,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.payment.send.{ClearRecipient, PaymentLifecycle}
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelAnnouncement, channelHopFromUpdate}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.PaymentWeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
@@ -278,7 +278,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val routeParams = PathFindingConf(
       randomize = false,
       boundaries = SearchBoundaries(100 msat, 0.0, 20, CltvExpiryDelta(2016)),
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       MultiPartParams(10_000 msat, 5),
       "my-test-experiment",
       experimentPercentage = 100

@@ -17,20 +17,17 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
-import fr.acinq.eclair.router.Graph.GraphStructure.{GraphEdge, DirectedGraph}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, PaymentWeightRatios, dijkstraMessagePath, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecondLong, randomKey}
+import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.wire.protocol.Color
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
-
-import scala.collection.immutable.SortedMap
 
 class GraphSpec extends AnyFunSuite {
 
@@ -265,7 +262,7 @@ class GraphSpec extends AnyFunSuite {
 
     val path :: Nil = yenKshortestPaths(graph, a, e, 100000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
-      Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true)),
+      HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
   }
@@ -289,7 +286,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     assert(paths.length == 2)
@@ -315,7 +312,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     // Even though paths to find is 2, we only find 1 because that is all the valid paths that there are.
@@ -348,7 +345,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(graph, c, h, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.length == 3)
     assert(paths(0).path == Seq(edgeCE, edgeEF, edgeFH))
@@ -389,7 +386,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(graph, a, b, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
-      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
+      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.head.path == Seq(edgeAB))
   }
@@ -418,47 +415,47 @@ class GraphSpec extends AnyFunSuite {
 
     {
       // All nodes can relay messages, same weight for each channel.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
-      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(1.0, 0.0, 0.0)
+      val Some(path) = dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.desc.shortChannelId.toLong) == Seq(4, 5))
     }
     {
       // Source and target don't relay messages but they can still emit and receive.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
         .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
-      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(4, 5))
+      val Some(path) = dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.desc.shortChannelId.toLong) == Seq(4, 5))
     }
     {
       // E doesn't relay messages.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
-      val Some(path) = MessagePath.dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+      val Some(path) = dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // Prefer high-capacity channels.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(0.0, 0.0, 1.0)
-      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(0.0, 0.0, 1.0)
+      val Some(path) = dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // We ignore E.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
-      val Some(path) = MessagePath.dijkstraMessagePath(graph, a, d, Set(e), boundaries, BlockHeight(793397), wr)
-      assert(path.map(_.shortChannelId.toLong) == Seq(1, 2, 3))
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(1.0, 0.0, 0.0)
+      val Some(path) = dijkstraMessagePath(graph, a, d, Set(e), boundaries, BlockHeight(793397), wr)
+      assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // Target not in graph.
-      val boundaries = (w: MessagePath.RichWeight) => w.length <= 8
-      val wr = MessagePath.WeightRatios(1.0, 0.0, 0.0)
-      assert(MessagePath.dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
+      val boundaries = (w: MessagePathWeight) => w.length <= 8
+      val wr = MessageWeightRatios(1.0, 0.0, 0.0)
+      assert(dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
     }
   }
 

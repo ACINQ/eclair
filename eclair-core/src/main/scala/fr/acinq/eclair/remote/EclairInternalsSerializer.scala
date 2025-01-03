@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -57,18 +57,24 @@ object EclairInternalsSerializer {
     ("feeBase" | millisatoshi) ::
       ("feeProportionalMillionths" | int64)).as[RelayFees]
 
-  val weightRatiosCodec: Codec[WeightRatios] = (
+  val paymentWeightRatiosCodec: Codec[PaymentWeightRatios] = (
     ("baseFactor" | double) ::
       ("cltvDeltaFactor" | double) ::
       ("ageFactor" | double) ::
       ("capacityFactor" | double) ::
-      ("hopCost" | relayFeesCodec)).as[WeightRatios]
+      ("hopCost" | relayFeesCodec)).as[PaymentWeightRatios]
 
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
       ("hopCost" | relayFeesCodec) ::
       ("useLogProbability" | bool(8))).as[HeuristicsConstants]
+
+  val weightRatiosCodec: Codec[Graph.WeightRatios[Graph.PaymentPathWeight]] =
+    discriminated[Graph.WeightRatios[Graph.PaymentPathWeight]]
+      .by(bool(8))
+      .caseP(false) { case x: PaymentWeightRatios => x }(x => x)(paymentWeightRatiosCodec)
+      .caseP(true) { case x: HeuristicsConstants => x }(x => x)(heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
@@ -77,7 +83,7 @@ object EclairInternalsSerializer {
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::
       ("boundaries" | searchBoundariesCodec) ::
-      ("heuristicsParams" | either(bool(8), weightRatiosCodec, heuristicsConstantsCodec)) ::
+      ("heuristicsParams" | weightRatiosCodec) ::
       ("mpp" | multiPartParamsCodec) ::
       ("experimentName" | utf8_32) ::
       ("experimentPercentage" | int32)).as[PathFindingConf]
@@ -90,7 +96,7 @@ object EclairInternalsSerializer {
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
       ("ageFactor" | double) ::
-      ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+      ("capacityFactor" | double)).as[Graph.MessageWeightRatios]).as[MessageRouteParams]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::

@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePathWeight, NegativeProbability, PaymentPathWeight}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -230,13 +230,13 @@ object RouteCalculation {
   }
 
   def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit log: DiagnosticLoggingAdapter): Data = {
-    val boundaries: MessagePath.RichWeight => Boolean = { weight =>
+    val boundaries: MessagePathWeight => Boolean = { weight =>
       weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
     }
     log.info("finding route for onion messages {} -> {}", r.source, r.target)
-    Graph.MessagePath.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
+    Graph.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
       case Some(path) =>
-        val intermediateNodes = path.map(_.a).drop(1)
+        val intermediateNodes = path.map(_.desc.a).drop(1)
         log.info("found route for onion messages {}", (r.source +: intermediateNodes :+ r.target).mkString(" -> "))
         r.replyTo ! MessageRoute(intermediateNodes, r.target)
       case None =>
@@ -323,7 +323,7 @@ object RouteCalculation {
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.boundaries.maxCltv
 
-    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
+    val boundaries: PaymentPathWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
     val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
