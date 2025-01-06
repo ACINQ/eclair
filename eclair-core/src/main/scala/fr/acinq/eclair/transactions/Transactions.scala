@@ -137,14 +137,19 @@ object Transactions {
     def sign(key: PrivateKey, sighashType: Int): ByteVector64 = {
       // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
       // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
-      val inputIndex = tx.txIn.zipWithIndex.find(_._1.outPoint == input.outPoint).get._2
+      val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
       Transactions.sign(tx, input.redeemScriptOrEmptyScript, input.txOut.amount, key, sighashType, inputIndex)
     }
 
     def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
       val sighash = this.sighash(txOwner, commitmentFormat)
-      val data = Transaction.hashForSigning(tx, inputIndex = 0, input.redeemScriptOrEmptyScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
-      Crypto.verifySignature(data, sig, pubKey)
+      val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
+      if (inputIndex >= 0) {
+        val data = Transaction.hashForSigning(tx, inputIndex, input.redeemScriptOrEmptyScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
+        Crypto.verifySignature(data, sig, pubKey)
+      } else {
+        false
+      }
     }
   }
 
