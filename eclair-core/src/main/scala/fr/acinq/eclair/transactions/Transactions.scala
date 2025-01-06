@@ -132,13 +132,19 @@ object Transactions {
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
-    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = Transactions.sign(this, key, sighash(txOwner, commitmentFormat))
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+      // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+      // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
+      sign(key, sighash(txOwner, commitmentFormat))
+    }
 
     def sign(key: PrivateKey, sighashType: Int): ByteVector64 = {
       // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
       // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
       val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
-      Transactions.sign(tx, input.redeemScriptOrEmptyScript, input.txOut.amount, key, sighashType, inputIndex)
+      val sigDER = Transaction.signInput(tx, inputIndex, input.redeemScriptOrEmptyScript, sighashType, input.txOut.amount, SIGVERSION_WITNESS_V0, key)
+      val sig64 = Crypto.der2compact(sigDER)
+      sig64
     }
 
     def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
@@ -879,19 +885,6 @@ object Transactions {
    */
   val PlaceHolderSig = ByteVector64(ByteVector.fill(64)(0xaa))
   assert(der(PlaceHolderSig).size == 72)
-
-  private def sign(tx: Transaction, redeemScript: ByteVector, amount: Satoshi, key: PrivateKey, sighashType: Int, inputIndex: Int): ByteVector64 = {
-    val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sighashType, amount, SIGVERSION_WITNESS_V0, key)
-    val sig64 = Crypto.der2compact(sigDER)
-    sig64
-  }
-
-  private def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
-    // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
-    // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
-    val inputIndex = txinfo.tx.txIn.zipWithIndex.find(_._1.outPoint == txinfo.input.outPoint).get._2
-    sign(txinfo.tx, txinfo.input.redeemScriptOrEmptyScript, txinfo.input.txOut.amount, key, sighashType, inputIndex)
-  }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
