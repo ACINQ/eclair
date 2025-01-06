@@ -6,6 +6,13 @@
 
 <insert changes>
 
+### Package relay
+
+With Bitcoin Core 28.1, eclair starts relying on the `submitpackage` RPC during channel force-close.
+When using anchor outputs, allows propagating our local commitment transaction to peers who are also running Bitcoin Core 28.x or newer, even if the commitment feerate is low (package relay).
+
+This removes the need for increasing the commitment feerate based on mempool conditions, which ensures that channels won't be force-closed anymore when nodes disagree on the current feerate.
+
 ### API changes
 
 - `listoffers` now returns more details about each offer.

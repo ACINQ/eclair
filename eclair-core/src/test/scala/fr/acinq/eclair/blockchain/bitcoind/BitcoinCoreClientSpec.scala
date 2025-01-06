@@ -1069,6 +1069,78 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.publishTransaction(signTxResponse.finalTx_opt.toOption.get).pipeTo(sender.ref)
     sender.expectMsg(signTxResponse.finalTx_opt.toOption.get.txid)
+    generateBlocks(1)
+  }
+
+  test("publish transaction package") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    // The mempool contains a first parent transaction.
+    val priv1 = randomKey()
+    val parentTx1 = {
+      bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(300_000 sat, Script.pay2wpkh(priv1.publicKey)) :: Nil, 0), FeeratePerKw(1000 sat), changePosition = Some(1)).pipeTo(sender.ref)
+      val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+      bitcoinClient.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+      bitcoinClient.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+
+    // We create a conflicting transaction that pays the same feerate.
+    val priv2 = randomKey()
+    val parentTx2 = {
+      val unsignedTx = parentTx1.copy(txOut = TxOut(300_000 sat, Script.pay2wpkh(priv2.publicKey)) +: parentTx1.txOut.tail)
+      bitcoinClient.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+    }
+
+    // We cannot publish this transaction on its own, but we can publish a package using CPFP.
+    bitcoinClient.publishTransaction(parentTx2).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+    val childTx2a = {
+      val unsignedTx = Transaction(2, Seq(TxIn(OutPoint(parentTx2, 0), Nil, 0)), Seq(TxOut(280_000 sat, Script.pay2wpkh(priv2.publicKey))), 0)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv2.publicKey), SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, priv2)
+      unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv2.publicKey, sig))
+    }
+    bitcoinClient.publishTransaction(childTx2a).pipeTo(sender.ref)
+    sender.expectMsgType[Failure]
+    bitcoinClient.publishPackage(parentTx2, childTx2a).pipeTo(sender.ref)
+    sender.expectMsg(childTx2a.txid)
+    // The initial parent tx has been replaced.
+    bitcoinClient.getMempool().map(txs => txs.map(_.txid).toSet).pipeTo(sender.ref)
+    sender.expectMsg(Set(parentTx2.txid, childTx2a.txid))
+
+    // We can replace the child transaction to increase the package feerate (sibling eviction).
+    val childTx2b = {
+      val unsignedTx = Transaction(2, Seq(TxIn(OutPoint(parentTx2, 0), Nil, 0)), Seq(TxOut(275_000 sat, Script.pay2wpkh(priv2.publicKey))), 0)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv2.publicKey), SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, priv2)
+      unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv2.publicKey, sig))
+    }
+    bitcoinClient.publishPackage(parentTx2, childTx2b).pipeTo(sender.ref)
+    sender.expectMsg(childTx2b.txid)
+    bitcoinClient.getMempool().map(txs => txs.map(_.txid).toSet).pipeTo(sender.ref)
+    sender.expectMsg(Set(parentTx2.txid, childTx2b.txid))
+
+    // We cannot replace the child transaction with the previous one that pays less fees.
+    bitcoinClient.publishPackage(parentTx2, childTx2a).pipeTo(sender.ref)
+    assert(sender.expectMsgType[Failure].cause.getMessage.contains("insufficient fee"))
+    bitcoinClient.getMempool().map(txs => txs.map(_.txid).toSet).pipeTo(sender.ref)
+    sender.expectMsg(Set(parentTx2.txid, childTx2b.txid))
+
+    // We can replace the whole package by a different package paying more fees.
+    val childTx1 = {
+      val unsignedTx = Transaction(2, Seq(TxIn(OutPoint(parentTx1, 0), Nil, 0)), Seq(TxOut(270_000 sat, Script.pay2wpkh(priv1.publicKey))), 0)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv1.publicKey), SigHash.SIGHASH_ALL, 300_000 sat, SigVersion.SIGVERSION_WITNESS_V0, priv1)
+      unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv1.publicKey, sig))
+    }
+    bitcoinClient.publishPackage(parentTx1, childTx1).pipeTo(sender.ref)
+    sender.expectMsg(childTx1.txid)
+    bitcoinClient.getMempool().map(txs => txs.map(_.txid).toSet).pipeTo(sender.ref)
+    sender.expectMsg(Set(parentTx1.txid, childTx1.txid))
   }
 
   test("send and list transactions") {

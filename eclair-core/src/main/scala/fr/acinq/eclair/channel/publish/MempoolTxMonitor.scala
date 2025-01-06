@@ -38,7 +38,7 @@ object MempoolTxMonitor {
 
   // @formatter:off
   sealed trait Command
-  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, minDepth: Int, desc: String, fee: Satoshi) extends Command
+  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, parentTx_opt: Option[Transaction], input: OutPoint, minDepth: Int, desc: String, fee: Satoshi) extends Command
   private case object PublishOk extends Command
   private case class PublishFailed(reason: Throwable) extends Command
   private case class InputStatus(spentConfirmed: Boolean, spentUnconfirmed: Boolean) extends Command
@@ -95,7 +95,10 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   private val log = context.log
 
   def publish(): Behavior[Command] = {
-    context.pipeToSelf(bitcoinClient.publishTransaction(cmd.tx)) {
+    context.pipeToSelf(cmd.parentTx_opt match {
+      case Some(parentTx) => bitcoinClient.publishPackage(parentTx, cmd.tx)
+      case None => bitcoinClient.publishTransaction(cmd.tx)
+    }) {
       case Success(_) => PublishOk
       case Failure(reason) => PublishFailed(reason)
     }

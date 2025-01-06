@@ -74,7 +74,7 @@ object ReplaceableTxFunder {
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
-            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf))
+            val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, cmd.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf))
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
@@ -85,17 +85,11 @@ object ReplaceableTxFunder {
     }
   }
 
-  private def commitWeight(commitment: FullCommitment): Int = {
-    val unsignedCommitTx = commitment.localCommit.commitTxAndRemoteSig.commitTx
-    val dummySignedCommitTx = addSigs(unsignedCommitTx, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderSig, PlaceHolderSig)
-    dummySignedCommitTx.tx.weight()
-  }
-
   /**
    * The on-chain feerate can be arbitrarily high, but it wouldn't make sense to pay more fees than the amount we're
    * trying to claim on-chain. We compute how much funds we have at risk and the feerate that matches this amount.
    */
-  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, currentFeerates: FeeratesPerKw, feeConf: OnChainFeeConf): FeeratePerKw = {
+  def maxFeerate(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, commitTx: Transaction, currentFeerates: FeeratesPerKw, feeConf: OnChainFeeConf): FeeratePerKw = {
     // We don't want to pay more in fees than the amount at risk in untrimmed pending HTLCs.
     val maxFee = txInfo match {
       case tx: HtlcTx => tx.input.txOut.amount
@@ -116,7 +110,7 @@ object ReplaceableTxFunder {
       case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
-      case _: ClaimLocalAnchorOutputTx => commitWeight(commitment) + Transactions.claimAnchorOutputMinWeight
+      case _: ClaimLocalAnchorOutputTx => commitTx.weight() + Transactions.claimAnchorOutputMinWeight
     }
     // It doesn't make sense to use a feerate that is much higher than the current feerate for inclusion into the next block.
     Transactions.fee2rate(maxFee, weight).min(currentFeerates.fastest * 1.25)
@@ -161,12 +155,12 @@ object ReplaceableTxFunder {
    * Adjust the outputs of a transaction that was previously published at a lower feerate.
    * If the current set of inputs doesn't let us to reach the target feerate, we should request new wallet inputs from bitcoind.
    */
-  def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw, commitment: FullCommitment): AdjustPreviousTxOutputResult = {
+  def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw, commitment: FullCommitment, commitTx: Transaction): AdjustPreviousTxOutputResult = {
     val dustLimit = commitment.localParams.dustLimit
     val targetFee = previousTx.signedTxWithWitnessData match {
       case _: ClaimLocalAnchorWithWitnessData =>
         val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
-        val totalWeight = previousTx.signedTx.weight() + commitWeight(commitment)
+        val totalWeight = previousTx.signedTx.weight() + commitTx.weight()
         weight2fee(targetFeerate, totalWeight) - commitFee
       case _ =>
         weight2fee(targetFeerate, previousTx.signedTx.weight())
@@ -273,7 +267,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
 
   private def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
     log.info("bumping {} tx (targetFeerate={})", previousTx.signedTxWithWitnessData.txInfo.desc, targetFeerate)
-    adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitment) match {
+    adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitment, cmd.commitTx) match {
       case AdjustPreviousTxOutputResult.Skip(reason) =>
         log.warn("skipping {} fee bumping: {} (feerate={})", cmd.desc, reason, targetFeerate)
         replyTo ! FundingFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
@@ -392,7 +386,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
               case Right(signedTx) =>
                 val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
                 val actualWeight = locallySignedTx match {
-                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + commitWeight(cmd.commitment)
+                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + cmd.commitTx.weight()
                   case _ => signedTx.weight()
                 }
                 val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
@@ -439,27 +433,34 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def addInputs(anchorTx: ClaimLocalAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimLocalAnchorWithWitnessData, Satoshi)] = {
-    val dustLimit = commitment.localParams.dustLimit
-    // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
-    // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
-    // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
-    // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
-    val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
-    val anchorWeight = Map(anchorTx.txInfo.input.outPoint -> anchorInputWeight.toLong)
+    // We want to pay the commit fees using CPFP. Since the commit tx may not be in the mempool yet (its feerate may be
+    // below the minimum acceptable mempool feerate), we cannot ask bitcoind to fund a transaction that spends that
+    // commit tx: it would fail because it cannot find the input in the utxo set. So we instead ask bitcoind to fund an
+    // empty transaction that pays the fees we must add to the transaction package, and we then add the input spending
+    // the commit tx and adjust the change output.
+    val expectedCommitFee = Transactions.weight2fee(targetFeerate, cmd.commitTx.weight())
+    val actualCommitFee = commitment.commitInput.txOut.amount - cmd.commitTx.txOut.map(_.amount).sum
+    val anchorInputFee = Transactions.weight2fee(targetFeerate, anchorInputWeight)
+    val missingFee = expectedCommitFee - actualCommitFee + anchorInputFee
+    val txNotFunded = Transaction(2, Nil, TxOut(commitment.localParams.dustLimit + missingFee, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil, 0)
     // We only use confirmed inputs for anchor transactions to be able to leverage 1-parent-1-child package relay.
-    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, externalInputsWeight = anchorWeight, minInputConfirmations_opt = Some(1)).flatMap { fundTxResponse =>
-      // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
-      val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
-      // We merge our dummy change output with the one added by Bitcoin Core, if any.
+    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, minInputConfirmations_opt = Some(1)).flatMap { fundTxResponse =>
+      // We merge our dummy change output with the one added by Bitcoin Core, if any, and adjust the change amount to
+      // pay the expected package feerate.
+      val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn
+      val packageWeight = cmd.commitTx.weight() + anchorInputWeight + fundTxResponse.tx.weight()
+      val expectedFee = Transactions.weight2fee(targetFeerate, packageWeight)
+      val currentFee = actualCommitFee + fundTxResponse.fee
+      val changeAmount = (fundTxResponse.tx.txOut.map(_.amount).sum - expectedFee + currentFee).max(commitment.localParams.dustLimit)
       fundTxResponse.changePosition match {
         case Some(changePos) =>
-          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum)
+          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = changeAmount)
           val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
           Future.successful(anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
         case None =>
           bitcoinClient.getChangePublicKeyScript().map(changeScript => {
             // We must have a change output, otherwise the transaction is invalid: we replace the PlaceHolderPubKey with a real wallet key.
-            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, changeScript)))
+            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(changeAmount, changeScript)))
             (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
           })
       }
