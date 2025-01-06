@@ -115,6 +115,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
+  /** True if we're trying to bump our local commit with an anchor transaction. */
+  private val isLocalCommitAnchor = cmd.txInfo match {
+    case txInfo: Transactions.ClaimLocalAnchorOutputTx => txInfo.input.outPoint.txid == cmd.commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
+    case _ => false
+  }
+
   /** The confirmation target may be updated in some corner cases (e.g. for a htlc if we learn a payment preimage). */
   private var confirmationTarget: ConfirmationTarget = cmd.txInfo.confirmationTarget
 
@@ -179,7 +185,11 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case ConfirmationTarget.Priority(priority) => log.debug("publishing {} with priority {}", cmd.desc, priority)
             }
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
-            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
+            val parentTx_opt = cmd.txInfo match {
+              case _: Transactions.ClaimLocalAnchorOutputTx if isLocalCommitAnchor => Some(cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx)
+              case _ => None
+            }
+            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, parentTx_opt, cmd.input, cmd.desc, tx.fee)
             wait(tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
@@ -287,7 +297,11 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // situation where we have one transaction in the mempool and wait for it to confirm.
   def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
+    val parentTx_opt = cmd.txInfo match {
+      case _: Transactions.ClaimLocalAnchorOutputTx if isLocalCommitAnchor => Some(cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx)
+      case _ => None
+    }
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, parentTx_opt, cmd.input, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {
