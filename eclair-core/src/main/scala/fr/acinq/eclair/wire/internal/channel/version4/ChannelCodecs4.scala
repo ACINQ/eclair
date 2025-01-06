@@ -115,21 +115,27 @@ private[channel] object ChannelCodecs4 {
 
     val scriptTreeAndInternalKey: Codec[ScriptTreeAndInternalKey] = (scriptTreeCodec :: xonlyPublicKey).as[ScriptTreeAndInternalKey]
 
-    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey], dummy: Boolean)
+    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey])
 
     // To support the change from redeemScript to "either redeem script or script tree" while remaining backwards-compatible with the previous version 4 codec, we use
     // the redeem script itself as a left/write indicator: empty -> right, not empty -> left
-    private val inputInfoExCodec: Codec[InputInfoEx] = (
+    private def scriptOrTreeCodec(redeemScript: ByteVector): Codec[Either[ByteVector, ScriptTreeAndInternalKey]] = either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)
+
+    private val inputInfoExCodec: Codec[InputInfoEx] = {
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript =>
-          ("redeemScriptOrScriptTree" | either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)) :: ("dummy" | provide(false))
-        })
-      ).as[InputInfoEx]
+        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript => scriptOrTreeCodec(redeemScript).hlist })
+    }.as[InputInfoEx]
 
     val inputInfoCodec: Codec[InputInfo] = inputInfoExCodec.xmap(
-      iex => InputInfo(iex.outPoint, iex.txOut, iex.redeemScriptOrScriptTree),
-      i => InputInfoEx(i.outPoint, i.txOut, i.redeemScriptOrScriptTree.swap.toOption.getOrElse(ByteVector.empty), i.redeemScriptOrScriptTree, false)
+      iex => iex.redeemScriptOrScriptTree match {
+        case Left(redeemScript) => InputInfo.SegwitInput(iex.outPoint, iex.txOut, redeemScript)
+        case Right(scriptTreeAndInternalKey) => InputInfo.TaprootInput(iex.outPoint, iex.txOut, scriptTreeAndInternalKey)
+      },
+      i => i match {
+        case InputInfo.SegwitInput(_, _, redeemScript) => InputInfoEx(i.outPoint, i.txOut, redeemScript, Left(redeemScript))
+        case InputInfo.TaprootInput(_, _, scriptTreeAndInternalKey) => InputInfoEx(i.outPoint, i.txOut, ByteVector.empty, Right(scriptTreeAndInternalKey))
+      }
     )
 
     val outputInfoCodec: Codec[OutputInfo] = (
