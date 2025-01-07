@@ -13,6 +13,12 @@ When `option_provide_storage` is enabled, eclair will store a small encrypted ba
 This backup is limited to 65kB and node operators should customize the `eclair.peer-storage` configuration section to match their desired SLAs.
 This is mostly intended for LSPs that serve mobile wallets to allow users to restore their channels when they switch phones.
 
+### New MPP splitting strategy
+
+Eclair can send large payments using multiple low-capacity routes by sending as much as it can through each route (if `randomize-route-selection = false`) or some random fraction (if `randomize-route-selection = true`).
+These splitting strategies are now specified using `mpp.splitting-strategy = "full-capacity"` or `mpp.splitting-strategy = "randomize"`.
+In addition, a new strategy is available: `mpp.splitting-strategy = "max-expected-amount"` will send through each route the amount that maximizes the expected delivered amount (amount sent times success probability).
+
 ### API changes
 
 <insert changes>
