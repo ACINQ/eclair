@@ -85,7 +85,7 @@ if "%JAVAOK%"=="false" (
   )
   echo.
   echo Please go to
-  echo https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot
+  echo https://adoptium.net/temurin/releases/?package=jdk&version=21
   echo and download a valid Java JDK and install before running @@APP_NAME@@.
   echo.
   echo If you think this message is in error, please check
