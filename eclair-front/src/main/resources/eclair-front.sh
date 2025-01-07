@@ -284,6 +284,7 @@ java_version_check() {
     echo
     echo No java installations was detected.
     echo Please go to 'https://adoptium.net/temurin/releases/?package=jre&version=21' and download
+    echo a valid Java Runtime and install before running eclair-front.
     echo
     exit 1
   else
@@ -291,10 +292,10 @@ java_version_check() {
     if [[ "$major" -eq "1" ]]; then
      local major=$(echo "$java_version" | cut -d'.' -f2)
     fi
-    if [[ "$major" -lt "8" ]]; then
+    if [[ "$major" -lt "21" ]]; then
       echo
       echo The java installation you have is not up to date, eclair-front requires
-      echo at least version 1.8+ \(version 11 recommended\) but you have version $java_version
+      echo at least version 21+ \(version 21 recommended\) but you have version $java_version
       echo
       echo Please go to 'https://adoptium.net/temurin/releases/?package=jre&version=21' and download
       echo a valid Java Runtime and install before running eclair-front.

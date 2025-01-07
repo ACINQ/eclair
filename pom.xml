@@ -150,7 +150,7 @@
                         <arg>-Werror</arg>
                         <arg>-unchecked</arg>
                         <arg>-deprecation</arg>
-                        <arg>-release:21</arg>
+                        <arg>-release:${maven.compiler.release}</arg>
                     </args>
                     <jvmArgs>
                         <jvmArg>-Xmx1024m</jvmArg>
