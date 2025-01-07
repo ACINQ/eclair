@@ -283,7 +283,7 @@ java_version_check() {
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to "https://adoptium.net/temurin/releases/?package=jdk&version=$min_java_version" and download
+    echo Please go to "https://adoptium.net/temurin/releases/?package=jre&version=$min_java_version" and download
     echo a valid Java Runtime and install before running eclair-front.
     echo
     exit 1
@@ -297,7 +297,7 @@ java_version_check() {
       echo The java installation you have is not up to date, eclair-front requires
       echo at least version ${min_java_version}+ \(version $min_java_version recommended\) but you have version $java_version
       echo
-      echo Please go to "https://adoptium.net/temurin/releases/?package=jdk&version=$min_java_version" and download
+      echo Please go to "https://adoptium.net/temurin/releases/?package=jre&version=$min_java_version" and download
       echo a valid Java Runtime and install before running eclair-front.
       echo
       exit 1
