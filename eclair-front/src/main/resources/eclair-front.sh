@@ -283,7 +283,7 @@ java_version_check() {
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to 'https://adoptium.net/temurin/releases/?package=jre&version=21' and download
+    echo Please go to "https://adoptium.net/temurin/releases/?package=jdk&version=$min_java_version" and download
     echo a valid Java Runtime and install before running eclair-front.
     echo
     exit 1
@@ -292,12 +292,12 @@ java_version_check() {
     if [[ "$major" -eq "1" ]]; then
      local major=$(echo "$java_version" | cut -d'.' -f2)
     fi
-    if [[ "$major" -lt "21" ]]; then
+    if [[ "$major" -lt "$min_java_version" ]]; then
       echo
       echo The java installation you have is not up to date, eclair-front requires
-      echo at least version 21+ \(version 21 recommended\) but you have version $java_version
+      echo at least version ${min_java_version}+ \(version $min_java_version recommended\) but you have version $java_version
       echo
-      echo Please go to 'https://adoptium.net/temurin/releases/?package=jre&version=21' and download
+      echo Please go to "https://adoptium.net/temurin/releases/?package=jdk&version=$min_java_version" and download
       echo a valid Java Runtime and install before running eclair-front.
       echo
       exit 1
@@ -352,6 +352,7 @@ declare -r lib_dir=("$app_home/lib")
 declare -r app_mainclass=("fr.acinq.eclair.Boot")
 declare -r app_entrypoint=$(ls $lib_dir | grep eclair-front) # TODO: improve this
 declare -r app_classpath=("$lib_dir:$lib_dir/$app_entrypoint")
+declare -ir min_java_version=21
 
 # java_cmd is overrode in process_args when -java-home is used
 declare java_cmd=$(get_java_cmd)
