@@ -1,6 +1,6 @@
 package fr.acinq.eclair.integration.basic.zeroconf
 
-import akka.actor.testkit.typed.scaladsl.{TestProbe => TypedProbe}
+import akka.actor.testkit.typed.scaladsl.TestProbe
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -100,7 +100,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
   private def createSelfRouteCarol(f: FixtureParam, scid_bc: ShortChannelId): Unit = {
     import f._
-    val sender = TypedProbe[PaymentRouteResponse]("sender")(system.toTyped)
+    val sender = TestProbe[PaymentRouteResponse]("sender")(system.toTyped)
     carol.router ! FinalizeRoute(sender.ref, PredefinedNodeRoute(50_000 msat, Seq(bob.nodeId, carol.nodeId)))
     val route = sender.expectMessageType[RouteResponse].routes.head
     assert(route.hops.length == 1)

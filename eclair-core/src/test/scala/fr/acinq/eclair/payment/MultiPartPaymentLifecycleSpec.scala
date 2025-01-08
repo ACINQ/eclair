@@ -82,7 +82,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
                          ignore: Ignore = Ignore.empty,
                          allowMultiPart: Boolean = false,
                          pendingPayments: Seq[Route] = Nil,
-                         paymentContext: Option[PaymentContext] = None): typed.ActorRef[PaymentRouteResponse] = {
+                         paymentContext: Option[PaymentContext] = None): RouteRequest = {
     val request = router.expectMsgType[RouteRequest]
     assert(request.source == source)
     assert(request.target == target)
@@ -91,7 +91,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(request.allowMultiPart == allowMultiPart)
     assert(request.pendingPayments == pendingPayments)
     assert(request.paymentContext == paymentContext)
-    request.replyTo
+    request
   }
 
   test("successful first attempt (single part)") { f =>
@@ -294,22 +294,24 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // If the router doesn't find routes, we will retry without ignoring the channel: it may work with a different split
     // of the amount to send.
-    expectRouteRequest(router,
+    val routeRequest1 = expectRouteRequest(router,
       nodeParams.nodeId,
       clearRecipient,
       routeParams.copy(randomize = true),
       Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
       pendingPayments = Seq(pendingRoute),
       allowMultiPart = true,
-      paymentContext = Some(cfg.paymentContext)) ! PaymentRouteNotFound(RouteNotFound)
-    expectRouteRequest(router,
+      paymentContext = Some(cfg.paymentContext))
+    routeRequest1.replyTo ! PaymentRouteNotFound(RouteNotFound)
+    val routeRequest2 = expectRouteRequest(router,
       nodeParams.nodeId,
       clearRecipient,
       routeParams.copy(randomize = true),
       ignore = Ignore.empty,
       pendingPayments = Seq(pendingRoute),
       allowMultiPart = true,
-      paymentContext = Some(cfg.paymentContext)) ! RouteResponse(Seq(Route(500_000 msat, hop_ac_1 :: hop_ce :: Nil, None)))
+      paymentContext = Some(cfg.paymentContext))
+    routeRequest2.replyTo ! RouteResponse(Seq(Route(500_000 msat, hop_ac_1 :: hop_ce :: Nil, None)))
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val result = fulfillPendingPayments(f, 2, e, finalAmount)
