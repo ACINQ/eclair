@@ -486,7 +486,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case fundingContributions: InteractiveTxFunder.FundingContributions =>
           val changeAmount = fundingContributions.outputs.collectFirst { case o: Output.Local.Change => o.amount }.getOrElse(0.sat)
           val maxChangeAmount = (fundingParams.localContribution * nodeParams.channelConf.interactiveTxConf.maxChangeRatio).max(0.sat)
-          if (fundingParams.localOutputs.isEmpty && changeAmount > maxChangeAmount) {
+          if (!purpose.isInstanceOf[SpliceTxRbf] && fundingParams.localOutputs.isEmpty && changeAmount > maxChangeAmount) {
             log.warn("invalid interactive tx: change amount is too large  (max={}, actual={})", maxChangeAmount, changeAmount)
             replyTo ! LocalFailure(ChannelFundingError(fundingParams.channelId))
             unlockAndStop(fundingContributions.inputs.map(_.outPoint).toSet)
