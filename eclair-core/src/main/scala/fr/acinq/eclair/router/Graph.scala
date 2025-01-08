@@ -30,10 +30,12 @@ import scala.collection.mutable
 
 object Graph {
 
-  sealed trait PathWeight {
+  sealed trait PathWeight extends Ordered[PathWeight] {
     def weight: Double
 
-    def isValidFor(edge: GraphEdge): Boolean
+    override def compare(that: PathWeight): Int = this.weight.compareTo(that.weight)
+
+    def canUseEdge(edge: GraphEdge): Boolean
   }
 
   /**
@@ -46,10 +48,8 @@ object Graph {
    * @param fees               total fees of the path
    * @param weight             cost multiplied by a factor based on heuristics (see [[PaymentWeightRatios]]).
    */
-  case class PaymentPathWeight(amount: MilliSatoshi, length: Int, cltv: CltvExpiryDelta, successProbability: Double, fees: MilliSatoshi, virtualFees: MilliSatoshi, weight: Double) extends PathWeight with Ordered[PaymentPathWeight] {
-    override def compare(that: PaymentPathWeight): Int = this.weight.compareTo(that.weight)
-
-    override def isValidFor(edge: GraphEdge): Boolean =
+  case class PaymentPathWeight(amount: MilliSatoshi, length: Int, cltv: CltvExpiryDelta, successProbability: Double, fees: MilliSatoshi, virtualFees: MilliSatoshi, weight: Double) extends PathWeight {
+    override def canUseEdge(edge: GraphEdge): Boolean =
       amount <= edge.capacity &&
         edge.balance_opt.forall(amount <= _) &&
         edge.params.htlcMaximum_opt.forall(amount <= _) &&
@@ -66,17 +66,15 @@ object Graph {
    * @param length number of edges in the path
    * @param weight cost multiplied by a factor based on heuristics (see [[PaymentWeightRatios]]).
    */
-  case class MessagePathWeight(length: Int, weight: Double) extends PathWeight with Ordered[MessagePathWeight] {
-    override def compare(that: MessagePathWeight): Int = this.weight.compareTo(that.weight)
-
-    override def isValidFor(edge: GraphEdge): Boolean = true
+  case class MessagePathWeight(length: Int, weight: Double) extends PathWeight {
+    override def canUseEdge(edge: GraphEdge): Boolean = true
   }
 
   object MessagePathWeight {
     def zero: MessagePathWeight = MessagePathWeight(0, 0.0)
   }
 
-  sealed trait WeightRatios[RichWeight] {
+  sealed trait WeightRatios[RichWeight <: PathWeight] {
     /**
      * Add the given edge to the path and compute the new weight.
      *
@@ -99,7 +97,6 @@ object Graph {
     require(cltvDeltaFactor >= 0.0, "ratio-cltv must be nonnegative")
     require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
     require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
-
 
     override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean): PaymentPathWeight = {
       val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
@@ -129,7 +126,7 @@ object Graph {
       val cltvFactor = normalize(edge.params.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
       // NB we're guaranteed to have weightRatios and factors > 0
-      val factor = baseFactor + (cltvFactor * cltvDeltaFactor) + (ageFactor * ageFactor) + (capFactor * capacityFactor)
+      val factor = baseFactor + (cltvFactor * this.cltvDeltaFactor) + (ageFactor * this.ageFactor) + (capFactor * this.capacityFactor)
       val totalWeight = prev.weight + (fee + hopCost).toLong * factor
       val richWeight = PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
       if (edge.desc.a == sender) {
@@ -205,19 +202,27 @@ object Graph {
       // Every edge is weighted by channel capacity, larger channels add less weight
       val capFactor = 1 - normalize(edge.capacity.toMilliSatoshi.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
-      val totalWeight = prev.weight + (baseFactor + (ageFactor * ageFactor) + (capFactor * capacityFactor))
+      val totalWeight = prev.weight + (baseFactor + (ageFactor * this.ageFactor) + (capFactor * this.capacityFactor))
       MessagePathWeight(prev.length + 1, totalWeight)
-
     }
   }
 
-  case class WeightedNode[W <: PathWeight](key: PublicKey, weight: W)
-
-  case class WeightedPath(path: Seq[GraphEdge], weight: PaymentPathWeight)
-
-  implicit object PathComparator extends Ordering[WeightedPath] {
-    override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight)
+  case class WeightedNode[W <: PathWeight](key: PublicKey, weight: W) extends Ordered[WeightedNode[W]] {
+    /**
+     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
+     * the same weight we distinguish them by their public key.
+     * See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
+     *
+     * This comparator is reversed to be used in a priority queue: low weight equals high priority.
+     */
+    override def compare(that: WeightedNode[W]): Int = {
+      val weightCmp = that.weight.compareTo(this.weight)
+      if (weightCmp == 0) this.key.toString().compareTo(that.key.toString())
+      else weightCmp
+    }
   }
+
+  case class WeightedPath[W <: PathWeight](path: Seq[GraphEdge], weight: W)
 
   case class InfiniteLoop(path: Seq[GraphEdge]) extends Exception
 
@@ -251,14 +256,14 @@ object Graph {
                         wr: WeightRatios[PaymentPathWeight],
                         currentBlockHeight: BlockHeight,
                         boundaries: PaymentPathWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
+                        includeLocalChannelCost: Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
     // find the shortest path (k = 0)
     val targetWeight = PaymentPathWeight(amount)
     dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
 
-        case class PathWithSpur(p: WeightedPath, spurIndex: Int)
+        case class PathWithSpur(p: WeightedPath[PaymentPathWeight], spurIndex: Int)
         implicit object PathWithSpurComparator extends Ordering[PathWithSpur] {
           override def compare(x: PathWithSpur, y: PathWithSpur): Int = y.p.weight.compare(x.p.weight)
         }
@@ -344,20 +349,7 @@ object Graph {
                                                              nodeFeatures: Features[NodeFeature],
                                                              currentBlockHeight: BlockHeight,
                                                              wr: WeightRatios[RichWeight],
-                                                             includeLocalChannelCost: Boolean)(implicit order: Ordering[RichWeight]): Option[Seq[GraphEdge]] = {
-    /**
-     * This comparator must be consistent with the "equals" behavior, thus for two weighted nodes with
-     * the same weight we distinguish them by their public key.
-     * See https://docs.oracle.com/javase/8/docs/api/java/util/Comparator.html
-     */
-    object NodeComparator extends Ordering[WeightedNode[RichWeight]] {
-      override def compare(x: WeightedNode[RichWeight], y: WeightedNode[RichWeight]): Int = {
-        val weightCmp = order.compare(x.weight, y.weight)
-        if (weightCmp == 0) x.key.toString().compareTo(y.key.toString())
-        else weightCmp
-      }
-    }
-
+                                                             includeLocalChannelCost: Boolean): Option[Seq[GraphEdge]] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -371,7 +363,7 @@ object Graph {
     val bestWeights = mutable.HashMap.newBuilder[PublicKey, RichWeight](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     // NB: we want the elements with smallest weight first, hence the `reverse`.
-    val toExplore = mutable.PriorityQueue.empty[WeightedNode[RichWeight]](NodeComparator.reverse)
+    val toExplore = mutable.PriorityQueue.empty[WeightedNode[RichWeight]]
     val visitedNodes = mutable.HashSet[PublicKey]()
 
     // initialize the queue and cost array with the initial weight
@@ -393,7 +385,7 @@ object Graph {
         }
         neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a
-          if (current.weight.isValidFor(edge) &&
+          if (current.weight.canUseEdge(edge) &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
             (neighbor == sourceNode || g.getVertexFeatures(neighbor).areSupported(nodeFeatures))) {
@@ -401,9 +393,9 @@ object Graph {
             // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = wr.addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, includeLocalChannelCost)
             if (boundaries(neighborWeight)) {
-              val previousNeighborWeight = bestWeights.getOrElse(neighbor, PaymentPathWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue))
+              val previousNeighborWeight = bestWeights.get(neighbor)
               // if this path between neighbor and the target has a shorter distance than previously known, we select it
-              if (neighborWeight.weight < previousNeighborWeight.weight) {
+              if (previousNeighborWeight.forall(_.weight > neighborWeight.weight)) {
                 // update the best edge for this vertex
                 bestEdges.put(neighbor, edge)
                 // add this updated node to the list for further exploration
@@ -456,8 +448,8 @@ object Graph {
                          pathsToFind: Int,
                          wr: WeightRatios[PaymentPathWeight],
                          currentBlockHeight: BlockHeight,
-                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath] = {
-    val paths = new mutable.ArrayBuffer[WeightedPath](pathsToFind)
+                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+    val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
     val verticesToIgnore = new mutable.HashSet[PublicKey]()
     verticesToIgnore.addAll(ignoredVertices)
     for (_ <- 1 to pathsToFind) {
