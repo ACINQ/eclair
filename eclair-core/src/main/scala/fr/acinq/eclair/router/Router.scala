@@ -242,9 +242,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: RouteRequest, d) =>
       stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
-    case Event(r: BlindedRouteRequest, d) =>
-      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r)
-
     case Event(r: MessageRouteRequest, d) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
@@ -603,14 +600,6 @@ object Router {
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
-
-  case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
-                                 source: PublicKey,
-                                 target: PublicKey,
-                                 amount: MilliSatoshi,
-                                 routeParams: RouteParams,
-                                 pathsToFind: Int,
-                                 ignore: Ignore = Ignore.empty)
 
   case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
                            route: PredefinedRoute,
