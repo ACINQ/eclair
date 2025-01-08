@@ -1,7 +1,5 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
-import fr.acinq.bitcoin.ScriptTree
-import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
@@ -111,32 +109,11 @@ private[channel] object ChannelCodecs4 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    val scriptTreeCodec: Codec[ScriptTree] = lengthDelimited(bytes.xmap(d => ScriptTree.read(new ByteArrayInput(d.toArray)), d => ByteVector.view(d.write())))
-
-    val scriptTreeAndInternalKey: Codec[ScriptTreeAndInternalKey] = (scriptTreeCodec :: xonlyPublicKey).as[ScriptTreeAndInternalKey]
-
-    private case class InputInfoEx(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector, redeemScriptOrScriptTree: Either[ByteVector, ScriptTreeAndInternalKey])
-
-    // To support the change from redeemScript to "either redeem script or script tree" while remaining backwards-compatible with the previous version 4 codec, we use
-    // the redeem script itself as a left/write indicator: empty -> right, not empty -> left
-    private def scriptOrTreeCodec(redeemScript: ByteVector): Codec[Either[ByteVector, ScriptTreeAndInternalKey]] = either(provide(redeemScript.isEmpty), provide(redeemScript), scriptTreeAndInternalKey)
-
-    private val inputInfoExCodec: Codec[InputInfoEx] = {
+    // all v4-encoded channels use segwit inputs, support for taproot inputs will be added later in v5 codecs
+    val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        (("redeemScript" | lengthDelimited(bytes)) >>:~ { redeemScript => scriptOrTreeCodec(redeemScript).hlist })
-    }.as[InputInfoEx]
-
-    val inputInfoCodec: Codec[InputInfo] = inputInfoExCodec.xmap(
-      iex => iex.redeemScriptOrScriptTree match {
-        case Left(redeemScript) => InputInfo.SegwitInput(iex.outPoint, iex.txOut, redeemScript)
-        case Right(scriptTreeAndInternalKey) => InputInfo.TaprootInput(iex.outPoint, iex.txOut, scriptTreeAndInternalKey)
-      },
-      i => i match {
-        case InputInfo.SegwitInput(_, _, redeemScript) => InputInfoEx(i.outPoint, i.txOut, redeemScript, Left(redeemScript))
-        case InputInfo.TaprootInput(_, _, scriptTreeAndInternalKey) => InputInfoEx(i.outPoint, i.txOut, ByteVector.empty, Right(scriptTreeAndInternalKey))
-      }
-    )
+        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo]
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

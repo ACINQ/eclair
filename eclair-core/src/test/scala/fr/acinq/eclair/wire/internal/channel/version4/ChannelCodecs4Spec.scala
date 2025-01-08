@@ -124,7 +124,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
 
   test("encode/decode rbf status") {
     val channelId = randomBytes32()
-    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Script.pay2wpkh(randomKey().publicKey))
+    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
     val fundingTx = SharedTransaction(
       sharedInput_opt = None,
       sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat, 0 msat),
@@ -230,9 +230,4 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     assert(originCodec.decode(trampolineRelayedBin.bits).require.value == trampolineRelayed)
   }
 
-  test("decode InputInfo backwards compatibility") {
-    val pub = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey
-    val nonreg = inputInfoCodec.decode(hex"0x241368efd75e267a7463c9f81bb2b6e6812f02ffc325f57b6fe4a6773f2ff0ce882a0000001f10a400000000000016001479b000887626b294a914501a4cd226b58b2359831976a91479b000887626b294a914501a4cd226b58b23598388ac".bits).require.value
-    assert(nonreg == InputInfo.SegwitInput(OutPoint(TxId(ByteVector32.fromValidHex("88cef02f3f77a6e46f7bf525c3ff022f81e6b6b21bf8c963747a265ed7ef6813")), 42), TxOut(Satoshi(42000), Script.pay2wpkh(pub)), Script.write(Script.pay2pkh(pub))))
-  }
 }

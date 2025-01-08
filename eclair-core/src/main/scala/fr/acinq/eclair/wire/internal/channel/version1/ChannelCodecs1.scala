@@ -97,7 +97,7 @@ private[channel] object ChannelCodecs1 {
       closingTx => closingTx.tx
     )
 
-    val inputInfoCodec: Codec[InputInfo] =  (
+    val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
         ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly

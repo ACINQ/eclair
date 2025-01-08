@@ -16,17 +16,16 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.InputInfo.SegwitInput
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
@@ -96,13 +95,6 @@ object Transactions {
   // @formatter:off
   case class OutputInfo(index: Long, amount: Satoshi, publicKeyScript: ByteVector)
 
-  /**
-   * to spend the output of a taproot transactions, we need to know the script tree and internal key used to build this output
-   */
-  case class ScriptTreeAndInternalKey(scriptTree: ScriptTree, internalKey: XonlyPublicKey) {
-    val publicKeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
-  }
-
   sealed trait InputInfo {
     val outPoint: OutPoint
     val txOut: TxOut
@@ -110,11 +102,13 @@ object Transactions {
 
   object InputInfo {
     case class SegwitInput(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector) extends InputInfo
-    case class TaprootInput(outPoint: OutPoint, txOut: TxOut, scriptTreeAndInternalKey: ScriptTreeAndInternalKey) extends InputInfo
+    case class TaprootInput(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree]) extends InputInfo {
+      val publicKeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree_opt))
+    }
 
     def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): SegwitInput = SegwitInput(outPoint, txOut, redeemScript)
     def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): SegwitInput = SegwitInput(outPoint, txOut, Script.write(redeemScript))
-    def apply(outPoint: OutPoint, txOut: TxOut, scriptTree: ScriptTreeAndInternalKey): TaprootInput = TaprootInput(outPoint, txOut, scriptTree)
+    def apply(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree]): TaprootInput = TaprootInput(outPoint, txOut, internalKey, scriptTree_opt)
   }
 
   /** Owner of a given transaction (local/remote). */
@@ -185,7 +179,7 @@ object Transactions {
    * The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
    * types right from the start.
    */
-  sealed trait HtlcTx /**/extends ReplaceableTransactionWithInputInfo {
+  sealed trait HtlcTx extends ReplaceableTransactionWithInputInfo {
     def htlcId: Long
     override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
       case DefaultCommitmentFormat => SIGHASH_ALL
