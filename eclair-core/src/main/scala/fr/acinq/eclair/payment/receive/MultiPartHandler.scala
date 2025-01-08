@@ -18,11 +18,11 @@ package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
 import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{ActorContext, ActorRef, PoisonPill, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import akka.pattern.ask
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
@@ -37,7 +37,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops, createBlindedRouteWithoutHops}
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams}
+import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, PaymentRouteResponse}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
@@ -376,8 +376,7 @@ object MultiPartHandler {
                 val paymentInfo = aggregatePaymentInfo(r.amount, dummyHops, nodeParams.channelConf.minFinalExpiryDelta)
                 Future.successful(PaymentBlindedRoute(contactInfo, paymentInfo))
               } else {
-                implicit val timeout: Timeout = 10.seconds
-                r.router.ask(Router.FinalizeRoute(Router.PredefinedNodeRoute(r.amount, route.nodes))).mapTo[Router.RouteResponse].map(routeResponse => {
+                r.router.toTyped.ask[PaymentRouteResponse](replyTo => Router.FinalizeRoute(replyTo, Router.PredefinedNodeRoute(r.amount, route.nodes)))(10.seconds, context.system.scheduler).mapTo[Router.RouteResponse].map(routeResponse => {
                   val clearRoute = routeResponse.routes.head
                   val blindedRoute = createBlindedRouteFromHops(clearRoute.hops ++ dummyHops, r.pathId, nodeParams.channelConf.htlcMinimum, route.maxFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight))
                   val contactInfo = route.shortChannelIdDir_opt match {

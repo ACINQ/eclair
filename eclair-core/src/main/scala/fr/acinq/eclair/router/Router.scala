@@ -39,7 +39,7 @@ import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
+import fr.acinq.eclair.router.Graph.MessageWeightRatios
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -352,7 +352,7 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             heuristics: Either[WeightRatios, HeuristicsConstants],
+                             heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
@@ -567,7 +567,7 @@ object Router {
 
   case class RouteParams(randomize: Boolean,
                          boundaries: SearchBoundaries,
-                         heuristics: Either[WeightRatios, HeuristicsConstants],
+                         heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                          mpp: MultiPartParams,
                          experimentName: String,
                          includeLocalChannelCost: Boolean) {
@@ -577,7 +577,7 @@ object Router {
     }
   }
 
-  case class MessageRouteParams(maxRouteLength: Int, ratios: MessagePath.WeightRatios)
+  case class MessageRouteParams(maxRouteLength: Int, ratios: MessageWeightRatios)
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
@@ -592,7 +592,8 @@ object Router {
     def empty: Ignore = Ignore(Set.empty, Set.empty)
   }
 
-  case class RouteRequest(source: PublicKey,
+  case class RouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                          source: PublicKey,
                           target: Recipient,
                           routeParams: RouteParams,
                           ignore: Ignore = Ignore.empty,
@@ -600,7 +601,8 @@ object Router {
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
 
-  case class FinalizeRoute(route: PredefinedRoute,
+  case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
+                           route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -661,9 +663,11 @@ object Router {
     }
   }
 
-  case class RouteResponse(routes: Seq[Route]) {
+  sealed trait PaymentRouteResponse
+  case class RouteResponse(routes: Seq[Route]) extends PaymentRouteResponse {
     require(routes.nonEmpty, "routes cannot be empty")
   }
+  case class PaymentRouteNotFound(error: Throwable) extends PaymentRouteResponse
 
   // @formatter:off
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */

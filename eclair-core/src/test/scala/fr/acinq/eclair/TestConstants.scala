@@ -28,7 +28,7 @@ import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNoti
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
+import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
@@ -206,20 +206,20 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2)),
+        messageRouteParams = MessageRouteParams(8, MessageWeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,
@@ -383,20 +383,20 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3)),
+        messageRouteParams = MessageRouteParams(9, MessageWeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
       ),
       socksProxy_opt = None,

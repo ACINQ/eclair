@@ -33,7 +33,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -450,20 +450,20 @@ object NodeParams extends Logging {
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
       heuristics = if (config.getBoolean("use-ratios")) {
-        Left(WeightRatios(
+        PaymentWeightRatios(
           baseFactor = config.getDouble("ratios.base"),
           cltvDeltaFactor = config.getDouble("ratios.cltv"),
           ageFactor = config.getDouble("ratios.channel-age"),
           capacityFactor = config.getDouble("ratios.channel-capacity"),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
-        ))
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
+        )
       } else {
-        Right(HeuristicsConstants(
+        HeuristicsConstants(
           lockedFundsRisk = config.getDouble("locked-funds-risk"),
-          failureCost = getRelayFees(config.getConfig("failure-cost")),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
+          failureFees = getRelayFees(config.getConfig("failure-cost")),
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
           useLogProbability = config.getBoolean("use-log-probability"),
-        ))
+        )
       },
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
@@ -482,7 +482,7 @@ object NodeParams extends Logging {
       val ratioBase = config.getDouble("ratios.base")
       val ratioAge = config.getDouble("ratios.channel-age")
       val ratioCapacity = config.getDouble("ratios.channel-capacity")
-      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity))
+      MessageRouteParams(maxRouteLength, Graph.MessageWeightRatios(ratioBase, ratioAge, ratioCapacity))
     }
 
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {

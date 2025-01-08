@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePathWeight, NegativeProbability, PaymentPathWeight, WeightedPath}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -77,12 +77,12 @@ object RouteCalculation {
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
               validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
-                case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
-                case Failure(f) => ctx.sender() ! Status.Failure(f)
+                case Success(route) => fr.replyTo ! RouteResponse(route :: Nil)
+                case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
               }
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
-              ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+              fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
         case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
@@ -106,11 +106,11 @@ object RouteCalculation {
               }
           }
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
-            ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
+            fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
             validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
-              case Success(route) => ctx.sender() ! RouteResponse(route :: Nil)
-              case Failure(f) => ctx.sender() ! Status.Failure(f)
+              case Success(route) => fr.replyTo ! RouteResponse(route :: Nil)
+              case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
             }
           }
       }
@@ -210,19 +210,19 @@ object RouteCalculation {
             // trampoline nodes).
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.hops.length))
-            ctx.sender() ! RouteResponse(routes)
+            r.replyTo ! RouteResponse(routes)
           case Failure(failure: InfiniteLoop) =>
             log.error(s"found infinite loop ${failure.path.map(edge => edge.desc).mkString(" -> ")}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
-            ctx.sender() ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
           case Failure(failure: NegativeProbability) =>
             log.error(s"computed negative probability: edge=${failure.edge}, weight=${failure.weight}, heuristicsConstants=${failure.heuristicsConstants}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
-            ctx.sender() ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-            ctx.sender() ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
         }
       }
       d
@@ -230,13 +230,13 @@ object RouteCalculation {
   }
 
   def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit log: DiagnosticLoggingAdapter): Data = {
-    val boundaries: MessagePath.RichWeight => Boolean = { weight =>
+    val boundaries: MessagePathWeight => Boolean = { weight =>
       weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
     }
     log.info("finding route for onion messages {} -> {}", r.source, r.target)
-    Graph.MessagePath.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
+    Graph.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
       case Some(path) =>
-        val intermediateNodes = path.map(_.a).drop(1)
+        val intermediateNodes = path.map(_.desc.a).drop(1)
         log.info("found route for onion messages {}", (r.source +: intermediateNodes :+ r.target).mkString(" -> "))
         r.replyTo ! MessageRoute(intermediateNodes, r.target)
       case None =>
@@ -312,7 +312,7 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[WeightedPath[PaymentPathWeight]]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
@@ -323,9 +323,9 @@ object RouteCalculation {
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.boundaries.maxCltv
 
-    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
+    val boundaries: PaymentPathWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
@@ -424,7 +424,7 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
     if (amount == 0.msat) {
       Right(selectedRoutes)
     } else if (paths.isEmpty) {

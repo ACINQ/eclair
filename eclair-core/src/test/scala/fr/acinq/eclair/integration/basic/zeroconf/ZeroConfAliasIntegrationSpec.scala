@@ -1,6 +1,7 @@
 package fr.acinq.eclair.integration.basic.zeroconf
 
-import akka.testkit.TestProbe
+import akka.actor.testkit.typed.scaladsl.TestProbe
+import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
@@ -11,7 +12,7 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.RouteNotFound
-import fr.acinq.eclair.router.Router.{FinalizeRoute, PredefinedNodeRoute, RouteResponse}
+import fr.acinq.eclair.router.Router.{FinalizeRoute, PaymentRouteResponse, PredefinedNodeRoute, RouteResponse}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.{FailureMessage, UnknownNextPeer, Update}
 import fr.acinq.eclair.{MilliSatoshiLong, RealShortChannelId, ShortChannelId}
@@ -99,9 +100,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
   private def createSelfRouteCarol(f: FixtureParam, scid_bc: ShortChannelId): Unit = {
     import f._
-    val sender = TestProbe("sender")
-    sender.send(carol.router, FinalizeRoute(PredefinedNodeRoute(50_000 msat, Seq(bob.nodeId, carol.nodeId))))
-    val route = sender.expectMsgType[RouteResponse].routes.head
+    val sender = TestProbe[PaymentRouteResponse]("sender")(system.toTyped)
+    carol.router ! FinalizeRoute(sender.ref, PredefinedNodeRoute(50_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMessageType[RouteResponse].routes.head
     assert(route.hops.length == 1)
     assert(route.hops.map(_.nodeId) == Seq(bob.nodeId))
     assert(route.hops.map(_.nextNodeId) == Seq(carol.nodeId))
