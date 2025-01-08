@@ -138,25 +138,21 @@ object Transactions {
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
     def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
-      // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
-      // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
       sign(key, sighash(txOwner, commitmentFormat))
     }
 
     def sign(key: PrivateKey, sighashType: Int): ByteVector64 = input match {
-      case _:InputInfo.TaprootInput => ByteVector64.Zeroes
+      case _: InputInfo.TaprootInput => ByteVector64.Zeroes
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
         // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
         val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
         val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sighashType, txOut.amount, SIGVERSION_WITNESS_V0, key)
-        val sig64 = Crypto.der2compact(sigDER)
-        sig64
+        Crypto.der2compact(sigDER)
     }
 
     def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = input match {
-
-      case _:InputInfo.TaprootInput => false
+      case _: InputInfo.TaprootInput => false
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         val sighash = this.sighash(txOwner, commitmentFormat)
         val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
@@ -189,7 +185,7 @@ object Transactions {
    * The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
    * types right from the start.
    */
-  sealed trait HtlcTx extends ReplaceableTransactionWithInputInfo {
+  sealed trait HtlcTx /**/extends ReplaceableTransactionWithInputInfo {
     def htlcId: Long
     override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
       case DefaultCommitmentFormat => SIGHASH_ALL
@@ -905,42 +901,42 @@ object Transactions {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, redeemScript)
       mainPenaltyTx.copy(tx = mainPenaltyTx.tx.updateWitness(0, witness))
-    case _ => mainPenaltyTx
+    case _: InputInfo.TaprootInput => mainPenaltyTx
   }
 
   def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector64, revocationPubkey: PublicKey): HtlcPenaltyTx = htlcPenaltyTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, redeemScript)
       htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
-    case _ => htlcPenaltyTx
+    case _: InputInfo.TaprootInput => htlcPenaltyTx
   }
 
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = htlcSuccessTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
       htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
-    case _ => htlcSuccessTx
+    case _: InputInfo.TaprootInput => htlcSuccessTx
   }
 
   def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = htlcTimeoutTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessHtlcTimeout(localSig, remoteSig, redeemScript, commitmentFormat)
       htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
-    case _ => htlcTimeoutTx
+    case _: InputInfo.TaprootInput => htlcTimeoutTx
   }
 
   def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: ByteVector64, paymentPreimage: ByteVector32): ClaimHtlcSuccessTx = claimHtlcSuccessTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, redeemScript)
       claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
-    case _ => claimHtlcSuccessTx
+    case _: InputInfo.TaprootInput => claimHtlcSuccessTx
   }
 
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: ByteVector64): ClaimHtlcTimeoutTx = claimHtlcTimeoutTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, redeemScript)
       claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
-    case _ => claimHtlcTimeoutTx
+    case _: InputInfo.TaprootInput => claimHtlcTimeoutTx
   }
 
   def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): ClaimP2WPKHOutputTx = {
@@ -952,35 +948,35 @@ object Transactions {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessClaimToRemoteDelayedFromCommitTx(localSig, redeemScript)
       claimRemoteDelayedOutputTx.copy(tx = claimRemoteDelayedOutputTx.tx.updateWitness(0, witness))
-    case _ => claimRemoteDelayedOutputTx
+    case _: InputInfo.TaprootInput => claimRemoteDelayedOutputTx
   }
 
   def addSigs(claimDelayedOutputTx: ClaimLocalDelayedOutputTx, localSig: ByteVector64): ClaimLocalDelayedOutputTx = claimDelayedOutputTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessToLocalDelayedAfterDelay(localSig, redeemScript)
       claimDelayedOutputTx.copy(tx = claimDelayedOutputTx.tx.updateWitness(0, witness))
-    case _ => claimDelayedOutputTx
+    case _: InputInfo.TaprootInput => claimDelayedOutputTx
   }
 
   def addSigs(htlcDelayedTx: HtlcDelayedTx, localSig: ByteVector64): HtlcDelayedTx = htlcDelayedTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessToLocalDelayedAfterDelay(localSig, redeemScript)
       htlcDelayedTx.copy(tx = htlcDelayedTx.tx.updateWitness(0, witness))
-    case _ => htlcDelayedTx
+    case _: InputInfo.TaprootInput => htlcDelayedTx
   }
 
   def addSigs(claimAnchorOutputTx: ClaimLocalAnchorOutputTx, localSig: ByteVector64): ClaimLocalAnchorOutputTx = claimAnchorOutputTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = witnessAnchor(localSig, redeemScript)
       claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.updateWitness(0, witness))
-    case _ => claimAnchorOutputTx
+    case _: InputInfo.TaprootInput => claimAnchorOutputTx
   }
 
   def addSigs(claimHtlcDelayedPenalty: ClaimHtlcDelayedOutputPenaltyTx, revocationSig: ByteVector64): ClaimHtlcDelayedOutputPenaltyTx = claimHtlcDelayedPenalty.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
       val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, redeemScript)
       claimHtlcDelayedPenalty.copy(tx = claimHtlcDelayedPenalty.tx.updateWitness(0, witness))
-    case _ => claimHtlcDelayedPenalty
+    case _: InputInfo.TaprootInput => claimHtlcDelayedPenalty
   }
 
   def addSigs(closingTx: ClosingTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): ClosingTx = {

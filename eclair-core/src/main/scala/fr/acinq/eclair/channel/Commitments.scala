@@ -1144,7 +1144,7 @@ case class Commitments(params: ChannelParams,
       val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
       commitment.commitInput match {
         case InputInfo.SegwitInput(_, _, redeemScript) => redeemScript == fundingScript
-        case _ => false
+        case _: InputInfo.TaprootInput => false
       }
     }
   }

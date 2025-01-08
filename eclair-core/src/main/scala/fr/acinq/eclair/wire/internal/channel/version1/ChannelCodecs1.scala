@@ -97,12 +97,10 @@ private[channel] object ChannelCodecs1 {
       closingTx => closingTx.tx
     )
 
-    private val legacyInputInfoCodec: Codec[InputInfo.SegwitInput] = (
+    val inputInfoCodec: Codec[InputInfo] =  (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].decodeOnly
-
-    val inputInfoCodec: Codec[InputInfo] = legacyInputInfoCodec.upcast[InputInfo]
+        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 

@@ -360,7 +360,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // We create a PSBT with the non-wallet input already signed:
     val witnessScript = locallySignedTx.txInfo.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => fr.acinq.bitcoin.Script.parse(redeemScript)
-      case _ => null
+      case _: InputInfo.TaprootInput => null
     }
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
       .updateWitnessInput(
