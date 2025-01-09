@@ -507,6 +507,10 @@ object Helpers {
           case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.remoteCommitIndex + 1) =>
             // they have acknowledged the last commit_sig we sent
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == commitments.remoteCommitIndex && remoteChannelReestablish.nextFundingTxId_opt.nonEmpty =>
+            // they haven't received the commit_sig we sent as part of signing a splice transaction
+            // we will retransmit it before exchanging tx_signatures
+            SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
           case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (commitments.remoteCommitIndex + 1) =>
             // they are behind
             SyncResult.RemoteLate
