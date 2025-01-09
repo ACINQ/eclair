@@ -12,7 +12,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, NodeInfo}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -264,9 +264,9 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress): Unit = {
-    runAsync(secondary.addOrUpdatePeer(nodeId, address))
-    primary.addOrUpdatePeer(nodeId, address)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeInfo: NodeInfo): Unit = {
+    runAsync(secondary.addOrUpdatePeer(nodeId, nodeInfo))
+    primary.addOrUpdatePeer(nodeId, nodeInfo)
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
@@ -274,12 +274,12 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
     primary.removePeer(nodeId)
   }
 
-  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeAddress] = {
+  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeInfo] = {
     runAsync(secondary.getPeer(nodeId))
     primary.getPeer(nodeId)
   }
 
-  override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
+  override def listPeers(): Map[Crypto.PublicKey, NodeInfo] = {
     runAsync(secondary.listPeers())
     primary.listPeers()
   }

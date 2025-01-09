@@ -45,7 +45,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
-import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, FailureReason, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, PeerStorageRetrieval, PeerStorageStore, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, FailureReason, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, NodeInfo, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, PeerStorageRetrieval, PeerStorageStore, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
 import scodec.bits.ByteVector
 
 /**
@@ -810,9 +810,9 @@ class Peer(val nodeParams: NodeParams,
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
     if (connectionReady.outgoing) {
-      // we store the node address upon successful outgoing connection, so we can reconnect later
-      // any previous address is overwritten
-      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address)
+      // We store the node address and features upon successful outgoing connection, so we can reconnect later.
+      // The previous address is overwritten: we don't need it since the current one works.
+      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(connectionReady.remoteInit.features, Some(connectionReady.address)))
     }
 
     // If we have some data stored from our peer, we send it to them before doing anything else.

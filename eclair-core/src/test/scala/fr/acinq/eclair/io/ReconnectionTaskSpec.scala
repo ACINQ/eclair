@@ -23,7 +23,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.{ChannelId, PeerStorage}
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement, RecommendedFeerates}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement, NodeInfo, RecommendedFeerates}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -112,7 +112,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val probe = TestProbe()
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
@@ -161,7 +161,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
@@ -189,7 +189,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
