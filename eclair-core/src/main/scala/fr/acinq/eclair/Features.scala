@@ -305,6 +305,12 @@ object Features {
     val mandatory = 54
   }
 
+  /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
+  case object WakeUpNotificationClient extends Feature with InitFeature {
+    val rfcName = "wake_up_notification_client"
+    val mandatory = 132
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -369,6 +375,7 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,

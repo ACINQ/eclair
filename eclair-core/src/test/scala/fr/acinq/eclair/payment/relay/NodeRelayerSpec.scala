@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.Status
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
@@ -115,6 +114,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
       .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(test.tags.contains(wakeUpEnabled))(_ + (Features.WakeUpNotificationClient -> FeatureSupport.Optional))
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val eventListener = TestProbe[PaymentEvent]("event-listener")
@@ -630,10 +630,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  // The two tests below are disabled by default, since there is no default mechanism to flag the next trampoline node
-  // as being a wallet node. Feature branches that support wallet software should restore those tests and flag the
-  // outgoing node_id as being a wallet node.
-  ignore("relay incoming multi-part payment with on-the-fly funding", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+  test("relay incoming multi-part payment with on-the-fly funding", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
     import f._
 
     val (peerReadyManager, switchboard) = createWakeUpActors()
@@ -641,6 +638,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive an upstream multi-part payment.
     val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
+
+    // We first check if the outgoing node is our peer and supports wake-up notifications.
+    val peerFeaturesRequest = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]]
+    assert(peerFeaturesRequest.nodeId == outgoingNodeId)
+    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty))
 
     // The remote node is a wallet node: we wake them up before relaying the payment.
     val wakeUp = peerReadyManager.expectMessageType[PeerReadyManager.Register]
@@ -676,7 +678,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     parent.expectMessageType[NodeRelayer.RelayComplete]
   }
 
-  ignore("relay incoming multi-part payment with on-the-fly funding (non-liquidity failure)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
+  test("relay incoming multi-part payment with on-the-fly funding (non-liquidity failure)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
     import f._
 
     val (peerReadyManager, switchboard) = createWakeUpActors()
@@ -684,6 +686,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive an upstream multi-part payment.
     val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
+
+    // We first check if the outgoing node is our peer and supports wake-up notifications.
+    val peerFeaturesRequest = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]]
+    assert(peerFeaturesRequest.nodeId == outgoingNodeId)
+    peerFeaturesRequest.message.replyTo.foreach(_ ! Peer.PeerInfo(TestProbe[Any]().ref.toClassic, outgoingNodeId, Peer.DISCONNECTED, Some(nodeParams.features.initFeatures()), None, Set.empty))
 
     // The remote node is a wallet node: we wake them up before relaying the payment.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 0)
