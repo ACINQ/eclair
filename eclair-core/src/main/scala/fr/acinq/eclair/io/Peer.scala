@@ -92,7 +92,9 @@ class Peer(val nodeParams: NodeParams,
       } else {
         None
       }
-      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(peerStorageData, written = true)) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      // When we restart, we will attempt to reconnect right away, but then we'll wait.
+      // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(peerStorageData, written = true), remoteFeatures_opt = None)
   }
 
   when(DISCONNECTED) {
@@ -154,7 +156,14 @@ class Peer(val nodeParams: NodeParams,
       if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
         startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
       }
-      stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
+      val remoteFeatures_opt = d.remoteFeatures_opt match {
+        case Some(remoteFeatures) if !remoteFeatures.written =>
+          // We have a channel, so we can write to the DB without any DoS risk.
+          nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(remoteFeatures.features, None))
+          Some(remoteFeatures.copy(written = true))
+        case _ => d.remoteFeatures_opt
+      }
+      stay() using d.copy(activeChannels = d.activeChannels + e.channelId, remoteFeatures_opt = remoteFeatures_opt)
 
     case Event(e: LocalChannelDown, d: DisconnectedData) =>
       stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
@@ -452,7 +461,11 @@ class Peer(val nodeParams: NodeParams,
         if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
           startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
         }
-        stay() using d.copy(activeChannels = d.activeChannels + e.channelId)
+        if (!d.remoteFeaturesWritten) {
+          // We have a channel, so we can write to the DB without any DoS risk.
+          nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(d.remoteFeatures, None))
+        }
+        stay() using d.copy(activeChannels = d.activeChannels + e.channelId, remoteFeaturesWritten = true)
 
       case Event(e: LocalChannelDown, d: ConnectedData) =>
         stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
@@ -497,7 +510,8 @@ class Peer(val nodeParams: NodeParams,
           stopPeer(d.peerStorage)
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
+          val lastRemoteFeatures = LastRemoteFeatures(d.remoteFeatures, d.remoteFeaturesWritten)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures))
         }
 
       case Event(ChannelTerminated(actor), d: ConnectedData) =>
@@ -600,12 +614,22 @@ class Peer(val nodeParams: NodeParams,
 
     case Event(r: GetPeerInfo, d) =>
       val replyTo = r.replyTo.getOrElse(sender().toTyped)
-      val peerInfo = d match {
-        case c: ConnectedData => PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
-        case _ => PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+      d match {
+        case c: ConnectedData =>
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
+          stay()
+        case d: DisconnectedData =>
+          // If we haven't reconnected since our last restart, we fetch the latest remote features from our DB.
+          val remoteFeatures_opt = d.remoteFeatures_opt match {
+            case Some(remoteFeatures) => Some(remoteFeatures)
+            case None => nodeParams.db.peers.getPeer(remoteNodeId).map(nodeInfo => LastRemoteFeatures(nodeInfo.features, written = true))
+          }
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, remoteFeatures_opt.map(_.features), None, d.channels.values.toSet)
+          stay() using d.copy(remoteFeatures_opt = remoteFeatures_opt)
+        case _ =>
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+          stay()
       }
-      replyTo ! peerInfo
-      stay()
 
     case Event(r: GetPeerChannels, d) =>
       if (d.channels.isEmpty) {
@@ -813,7 +837,13 @@ class Peer(val nodeParams: NodeParams,
       // We store the node address and features upon successful outgoing connection, so we can reconnect later.
       // The previous address is overwritten: we don't need it since the current one works.
       nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(connectionReady.remoteInit.features, Some(connectionReady.address)))
+    } else if (channels.nonEmpty) {
+      // If this is an incoming connection, we only store the peer details in our DB if we have channels with them.
+      // Otherwise nodes could DoS by simply connecting to us to force us to store data in our DB.
+      // We don't update the remote address, we don't know if we would successfully connect using the current one.
+      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(connectionReady.remoteInit.features, None))
     }
+    val remoteFeaturesWritten = connectionReady.outgoing || channels.nonEmpty
 
     // If we have some data stored from our peer, we send it to them before doing anything else.
     peerStorage.data.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
@@ -835,7 +865,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten)
   }
 
   /**
@@ -976,6 +1006,8 @@ object Peer {
 
   case class PeerStorage(data: Option[ByteVector], written: Boolean)
 
+  case class LastRemoteFeatures(features: Features[InitFeature], written: Boolean)
+
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
     def activeChannels: Set[ByteVector32] // channels that are available to process payments
@@ -986,8 +1018,8 @@ object Peer {
     override def activeChannels: Set[ByteVector32] = Set.empty
     override def peerStorage: PeerStorage = PeerStorage(None, written = true)
   }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage) extends Data {
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage, remoteFeatures_opt: Option[LastRemoteFeatures]) extends Data
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage, remoteFeaturesWritten: Boolean) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features

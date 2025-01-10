@@ -768,7 +768,7 @@ class PeerSpec extends FixtureSpec {
     channel.expectMsg(open)
   }
 
-  test("peer storage") { f =>
+  test("store remote peer storage once we have channels") { f =>
     import f._
 
     // We connect with a previous backup.
@@ -781,7 +781,6 @@ class PeerSpec extends FixtureSpec {
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
 
     // We disconnect and reconnect, sending the last backup we received.
-    peer ! Peer.Disconnect(f.remoteNodeId)
     val peerConnection2 = TestProbe()
     connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
     peerConnection2.send(peer, PeerStorageStore(hex"1111"))
@@ -799,6 +798,82 @@ class PeerSpec extends FixtureSpec {
     peerConnection3.send(peer, PeerStorageStore(hex"2222"))
     assert(!peer.isTimerActive("peer-storage-write"))
     assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
+  }
+
+  test("store remote features when channel confirms") { f =>
+    import f._
+
+    // When we make an outgoing connection, we store the peer details in our DB.
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    val Some(nodeInfo1) = nodeParams.db.peers.getPeer(remoteNodeId)
+    assert(nodeInfo1.features == TestConstants.Bob.nodeParams.features.initFeatures())
+    assert(nodeInfo1.address_opt.contains(fakeIPAddress))
+
+    // We disconnect and our peer connects to us: we don't have any channel, so we don't update the DB entry.
+    val peerConnection2 = TestProbe()
+    val address2 = Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 9735)
+    val remoteFeatures2 = Features(Features.ChannelType -> FeatureSupport.Mandatory).initFeatures()
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, address2, outgoing = false, protocol.Init(Features.empty), protocol.Init(remoteFeatures2)))
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].address.contains(address2))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo1))
+
+    // A channel is created, so we update the remote features in our DB.
+    // We don't update the address because this was an incoming connection.
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].features.contains(remoteFeatures2))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo1.copy(features = remoteFeatures2)))
+  }
+
+  test("store remote features when channel confirms while disconnected") { f =>
+    import f._
+
+    // When we receive an incoming connection, we don't store the peer details in our DB.
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+    switchboard.send(peer, Peer.Init(Set.empty, Map.empty))
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
+    val remoteInit = protocol.Init(TestConstants.Bob.nodeParams.features.initFeatures())
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+
+    // Our peer wants to open a channel to us, but we disconnect before we have a confirmed channel.
+    peer ! SpawnChannelNonInitiator(Left(createOpenChannelMessage()), ChannelConfig.standard, ChannelTypes.Standard(), None, localParams, peerConnection.ref)
+    peer ! Peer.ConnectionDown(peerConnection.ref)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+
+    // The channel confirms, so we store the remote features in our DB.
+    // We don't store the remote address because this was an incoming connection.
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(NodeInfo(remoteInit.features, None)))
+  }
+
+  test("get remote features from DB") { f =>
+    import f._
+
+    // We have information about one of our peers in our DB.
+    val nodeInfo = NodeInfo(TestConstants.Bob.nodeParams.features.initFeatures(), None)
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeInfo)
+
+    // We initialize ourselves after a restart, but our peer doesn't reconnect immediately to us.
+    switchboard.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
+    // When we request information about the peer, we will fetch it from the DB.
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    val peerInfo = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo.state == Peer.DISCONNECTED)
+    assert(peerInfo.address.isEmpty)
+    assert(peerInfo.features.contains(nodeInfo.features))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo))
   }
 
 }

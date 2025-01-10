@@ -38,8 +38,8 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   private val recommendedFeerates = RecommendedFeerates(Block.RegtestGenesisBlock.hash, TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw)
 
   private val PeerNothingData = Peer.Nothing
-  private val PeerDisconnectedData = Peer.DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(None, written = true))
-  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) }, activeChannels = Set.empty, recommendedFeerates, None, PeerStorage(None, written = true))
+  private val PeerDisconnectedData = Peer.DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(None, written = true), remoteFeatures_opt = None)
+  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) }, activeChannels = Set.empty, recommendedFeerates, None, PeerStorage(None, written = true), remoteFeaturesWritten = true)
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 
@@ -82,7 +82,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage(None, written = true))))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage(None, written = true), None)))
     monitor.expectNoMessage()
   }
 
@@ -205,7 +205,6 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerDisconnectedData, PeerConnectedData))
     // we cancel the reconnection and go to idle state
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
-
   }
 
   test("reconnect using the address from node_announcement") { f =>
@@ -232,15 +231,13 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val tor = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
 
     // NB: we don't test randomization here, but it makes tests unnecessary more complex for little value
-
     {
       // tor not supported: always return clearnet addresses
       nodeParams.socksProxy_opt returns None
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == None)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).isEmpty)
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(clearnet))
     }
-
     {
       // tor supported but not enabled for clearnet addresses: return clearnet addresses when available
       val socksParams = mock[Socks5ProxyParams]
@@ -248,11 +245,10 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       socksParams.useForIPv4 returns false
       socksParams.useForIPv6 returns false
       nodeParams.socksProxy_opt returns Some(socksParams)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == Some(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).contains(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(clearnet))
     }
-
     {
       // tor supported and enabled for clearnet addresses: return tor addresses when available
       val socksParams = mock[Socks5ProxyParams]
@@ -260,11 +256,10 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       socksParams.useForIPv4 returns true
       socksParams.useForIPv6 returns true
       nodeParams.socksProxy_opt returns Some(socksParams)
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)) == Some(clearnet))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)) == Some(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)) == Some(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).contains(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(tor))
     }
-
   }
 
 }
