@@ -159,7 +159,7 @@ class Peer(val nodeParams: NodeParams,
       val remoteFeatures_opt = d.remoteFeatures_opt match {
         case Some(remoteFeatures) if !remoteFeatures.written =>
           // We have a channel, so we can write to the DB without any DoS risk.
-          nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(remoteFeatures.features, None))
+          nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, remoteFeatures.features)
           Some(remoteFeatures.copy(written = true))
         case _ => d.remoteFeatures_opt
       }
@@ -463,7 +463,7 @@ class Peer(val nodeParams: NodeParams,
         }
         if (!d.remoteFeaturesWritten) {
           // We have a channel, so we can write to the DB without any DoS risk.
-          nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(d.remoteFeatures, None))
+          nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, d.remoteFeatures)
         }
         stay() using d.copy(activeChannels = d.activeChannels + e.channelId, remoteFeaturesWritten = true)
 
@@ -836,14 +836,8 @@ class Peer(val nodeParams: NodeParams,
     if (connectionReady.outgoing) {
       // We store the node address and features upon successful outgoing connection, so we can reconnect later.
       // The previous address is overwritten: we don't need it since the current one works.
-      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(connectionReady.remoteInit.features, Some(connectionReady.address)))
-    } else if (channels.nonEmpty) {
-      // If this is an incoming connection, we only store the peer details in our DB if we have channels with them.
-      // Otherwise nodes could DoS by simply connecting to us to force us to store data in our DB.
-      // We don't update the remote address, we don't know if we would successfully connect using the current one.
-      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(connectionReady.remoteInit.features, None))
+      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address, connectionReady.remoteInit.features)
     }
-    val remoteFeaturesWritten = connectionReady.outgoing || channels.nonEmpty
 
     // If we have some data stored from our peer, we send it to them before doing anything else.
     peerStorage.data.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
@@ -865,7 +859,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten = connectionReady.outgoing)
   }
 
   /**

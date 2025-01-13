@@ -12,8 +12,8 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, NodeInfo}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -264,9 +264,14 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeInfo: NodeInfo): Unit = {
-    runAsync(secondary.addOrUpdatePeer(nodeId, nodeInfo))
-    primary.addOrUpdatePeer(nodeId, nodeInfo)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeer(nodeId, address, features))
+    primary.addOrUpdatePeer(nodeId, address, features)
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeerFeatures(nodeId, features))
+    primary.addOrUpdatePeerFeatures(nodeId, features)
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {

@@ -60,24 +60,24 @@ class PeersDbSpec extends AnyFunSuite {
       val peer3 = TestCase(randomKey().publicKey, NodeInfo(Features.empty, Some(Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))))
 
       assert(db.listPeers().isEmpty)
-      db.addOrUpdatePeer(peer1a.nodeId, peer1a.nodeInfo)
+      db.addOrUpdatePeer(peer1a.nodeId, peer1a.nodeInfo.address_opt.get, peer1a.nodeInfo.features)
       assert(db.getPeer(peer1a.nodeId).contains(peer1a.nodeInfo))
       assert(db.getPeer(peer2a.nodeId).isEmpty)
-      db.addOrUpdatePeer(peer1a.nodeId, peer1a.nodeInfo) // duplicate is ignored
+      db.addOrUpdatePeer(peer1a.nodeId, peer1a.nodeInfo.address_opt.get, peer1a.nodeInfo.features) // duplicate is ignored
       assert(db.listPeers().size == 1)
-      db.addOrUpdatePeer(peer2a.nodeId, peer2a.nodeInfo)
-      db.addOrUpdatePeer(peer3.nodeId, peer3.nodeInfo)
+      db.addOrUpdatePeerFeatures(peer2a.nodeId, peer2a.nodeInfo.features)
+      db.addOrUpdatePeer(peer3.nodeId, peer3.nodeInfo.address_opt.get, peer3.nodeInfo.features)
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer1a, peer2a, peer3))
-      db.addOrUpdatePeer(peer2b.nodeId, peer2b.nodeInfo)
+      db.addOrUpdatePeer(peer2b.nodeId, peer2b.nodeInfo.address_opt.get, peer2b.nodeInfo.features)
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer1a, peer2b, peer3))
       db.removePeer(peer2b.nodeId)
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer1a, peer3))
       // The first peer updates its address without changing its features.
-      db.addOrUpdatePeer(peer1b.nodeId, peer1b.nodeInfo)
+      db.addOrUpdatePeer(peer1b.nodeId, peer1b.nodeInfo.address_opt.get, peer1b.nodeInfo.features)
       assert(db.getPeer(peer1b.nodeId).contains(peer1b.nodeInfo))
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer1b, peer3))
       // The first peer updates its features without an address: the previous address should be kept.
-      db.addOrUpdatePeer(peer1c.nodeId, peer1c.nodeInfo.copy(address_opt = None))
+      db.addOrUpdatePeerFeatures(peer1c.nodeId, peer1c.nodeInfo.features)
       assert(db.getPeer(peer1c.nodeId).contains(peer1c.nodeInfo))
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet == Set(peer1c, peer3))
     }
@@ -89,7 +89,7 @@ class PeersDbSpec extends AnyFunSuite {
       implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
       val Success(peerAddress) = NodeAddress.fromParts("127.0.0.1", 42000)
       val futures = for (_ <- 0 until 10000) yield {
-        Future(db.addOrUpdatePeer(randomKey().publicKey, NodeInfo(Features.empty, Some(peerAddress))))
+        Future(db.addOrUpdatePeer(randomKey().publicKey, peerAddress, Features.empty))
       }
       val res = Future.sequence(futures)
       Await.result(res, 60 seconds)
@@ -187,7 +187,7 @@ class PeersDbSpec extends AnyFunSuite {
             val postMigrationDb = new SqlitePeersDb(connection)
             assert(postMigrationDb.listPeers() == peerInfos)
             val updatedPeerInfo1 = peerInfos(peerId1).copy(features = Features(Features.DataLossProtect -> FeatureSupport.Mandatory))
-            postMigrationDb.addOrUpdatePeer(peerId1, updatedPeerInfo1.copy(address_opt = None))
+            postMigrationDb.addOrUpdatePeerFeatures(peerId1, updatedPeerInfo1.features)
             assert(postMigrationDb.getPeer(peerId1).contains(updatedPeerInfo1))
           }
         )
@@ -215,7 +215,7 @@ class PeersDbSpec extends AnyFunSuite {
             val postMigrationDb = dbs.peers
             assert(postMigrationDb.listPeers() == peerInfos)
             val updatedPeerInfo1 = peerInfos(peerId1).copy(features = Features(Features.ChannelType -> FeatureSupport.Optional))
-            postMigrationDb.addOrUpdatePeer(peerId1, updatedPeerInfo1.copy(address_opt = None))
+            postMigrationDb.addOrUpdatePeerFeatures(peerId1, updatedPeerInfo1.features)
             assert(postMigrationDb.getPeer(peerId1).contains(updatedPeerInfo1))
           }
         )

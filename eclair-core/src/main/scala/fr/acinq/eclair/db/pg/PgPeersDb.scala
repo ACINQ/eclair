@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, MilliSatoshi, TimestampSecond}
+import fr.acinq.eclair.{Features, InitFeature, MilliSatoshi, TimestampSecond}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -95,37 +95,38 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeInfo: NodeInfo): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
     withLock { pg =>
-      nodeInfo.address_opt match {
-        case Some(address) =>
-          val encodedAddress = CommonCodecs.nodeaddress.encode(address).require.toByteArray
-          val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(nodeInfo.features).require.toByteArray
-          using(pg.prepareStatement(
-            """
-              | INSERT INTO local.peers (node_id, node_address, node_features)
-              | VALUES (?, ?, ?)
-              | ON CONFLICT (node_id)
-              | DO UPDATE SET node_address = EXCLUDED.node_address, node_features = EXCLUDED.node_features
-              |""".stripMargin)) { statement =>
-            statement.setString(1, nodeId.value.toHex)
-            statement.setBytes(2, encodedAddress)
-            statement.setBytes(3, encodedFeatures)
-            statement.executeUpdate()
-          }
-        case None =>
-          val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(nodeInfo.features).require.toByteArray
-          using(pg.prepareStatement(
-            """
-              | INSERT INTO local.peers (node_id, node_address, node_features)
-              | VALUES (?, NULL, ?)
-              | ON CONFLICT (node_id)
-              | DO UPDATE SET node_features = EXCLUDED.node_features
-              |""".stripMargin)) { statement =>
-            statement.setString(1, nodeId.value.toHex)
-            statement.setBytes(2, encodedFeatures)
-            statement.executeUpdate()
-          }
+      val encodedAddress = CommonCodecs.nodeaddress.encode(address).require.toByteArray
+      val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+      using(pg.prepareStatement(
+        """
+          | INSERT INTO local.peers (node_id, node_address, node_features)
+          | VALUES (?, ?, ?)
+          | ON CONFLICT (node_id)
+          | DO UPDATE SET node_address = EXCLUDED.node_address, node_features = EXCLUDED.node_features
+          |""".stripMargin)) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.setBytes(2, encodedAddress)
+        statement.setBytes(3, encodedFeatures)
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
+    withLock { pg =>
+      val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+      using(pg.prepareStatement(
+        """
+          | INSERT INTO local.peers (node_id, node_address, node_features)
+          | VALUES (?, NULL, ?)
+          | ON CONFLICT (node_id)
+          | DO UPDATE SET node_features = EXCLUDED.node_features
+          |""".stripMargin)) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.setBytes(2, encodedFeatures)
+        statement.executeUpdate()
       }
     }
   }

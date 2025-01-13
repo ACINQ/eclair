@@ -18,15 +18,15 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{Features, InitFeature, MilliSatoshi, TimestampSecond}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{Features, InitFeature, MilliSatoshi, TimestampSecond}
 import grizzled.slf4j.Logging
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import java.sql.{Connection, Statement}
 
@@ -82,30 +82,35 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeInfo: NodeInfo): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
-    val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(nodeInfo.features).require.toByteArray
-    val encodedAddress_opt = nodeInfo.address_opt.map(address => CommonCodecs.nodeaddress.encode(address).require.toByteArray)
-    val unknownPeer = encodedAddress_opt match {
-      case Some(encodedAddress) =>
-        using(sqlite.prepareStatement("UPDATE peers SET node_address=?, node_features=? WHERE node_id=?")) { update =>
-          update.setBytes(1, encodedAddress)
-          update.setBytes(2, encodedFeatures)
-          update.setBytes(3, nodeId.value.toArray)
-          update.executeUpdate() == 0
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
+    val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+    val encodedAddress = CommonCodecs.nodeaddress.encode(address).require.toByteArray
+    using(sqlite.prepareStatement("UPDATE peers SET node_address=?, node_features=? WHERE node_id=?")) { update =>
+      update.setBytes(1, encodedAddress)
+      update.setBytes(2, encodedFeatures)
+      update.setBytes(3, nodeId.value.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(2, encodedAddress)
+          statement.setBytes(3, encodedFeatures)
+          statement.executeUpdate()
         }
-      case None =>
-        using(sqlite.prepareStatement("UPDATE peers SET node_features=? WHERE node_id=?")) { update =>
-          update.setBytes(1, encodedFeatures)
-          update.setBytes(2, nodeId.value.toArray)
-          update.executeUpdate() == 0
-        }
+      }
     }
-    if (unknownPeer) {
-      using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?, ?)")) { statement =>
-        statement.setBytes(1, nodeId.value.toArray)
-        statement.setBytes(2, encodedAddress_opt.orNull)
-        statement.setBytes(3, encodedFeatures)
-        statement.executeUpdate()
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
+    val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+    using(sqlite.prepareStatement("UPDATE peers SET node_features=? WHERE node_id=?")) { update =>
+      update.setBytes(1, encodedFeatures)
+      update.setBytes(2, nodeId.value.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, NULL, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(2, encodedFeatures)
+          statement.executeUpdate()
+        }
       }
     }
   }

@@ -862,7 +862,7 @@ class PeerSpec extends FixtureSpec {
 
     // We have information about one of our peers in our DB.
     val nodeInfo = NodeInfo(TestConstants.Bob.nodeParams.features.initFeatures(), None)
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, nodeInfo)
+    nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, nodeInfo.features)
 
     // We initialize ourselves after a restart, but our peer doesn't reconnect immediately to us.
     switchboard.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))

@@ -112,7 +112,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val probe = TestProbe()
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress, Features.empty)
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     probe.send(reconnectionTask, ReconnectionTask.TickReconnect)
@@ -161,7 +161,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress, Features.empty)
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
@@ -189,7 +189,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, NodeInfo(Features.empty, Some(fakeIPAddress)))
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress, Features.empty)
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
