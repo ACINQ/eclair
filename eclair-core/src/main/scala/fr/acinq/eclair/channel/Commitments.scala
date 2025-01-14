@@ -218,7 +218,19 @@ case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 case class PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce)
 
 /** We don't store the fully signed transaction, otherwise someone with read access to our database could force-close our channels. */
-case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: Either[ByteVector64, PartialSignatureWithNonce])
+sealed trait RemoteSignature
+object RemoteSignature {
+  case class FullSignature(sig: ByteVector64) extends RemoteSignature
+  case class PartialSignature(psig: PartialSignatureWithNonce) extends RemoteSignature
+
+  def apply(sig: ByteVector64): RemoteSignature = FullSignature(sig)
+}
+
+case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: RemoteSignature)
+
+object CommitTxAndRemoteSig {
+  def apply(commitTx: CommitTx, remoteSig: ByteVector64): CommitTxAndRemoteSig = CommitTxAndRemoteSig(commitTx, RemoteSignature(remoteSig))
+}
 
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
@@ -243,7 +255,7 @@ object LocalCommit {
         }
         HtlcTxAndRemoteSig(htlcTx, remoteSig)
     }
-    Right(LocalCommit(localCommitIndex, spec, CommitTxAndRemoteSig(localCommitTx, Left(commit.signature)), htlcTxsAndRemoteSigs))
+    Right(LocalCommit(localCommitIndex, spec, CommitTxAndRemoteSig(localCommitTx, RemoteSignature.FullSignature(commit.signature)), htlcTxsAndRemoteSigs))
   }
 }
 
@@ -666,7 +678,7 @@ case class Commitment(fundingTxIndex: Long,
   def fullySignedLocalCommitTx(params: ChannelParams, keyManager: ChannelKeyManager): CommitTx = {
     val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
     val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Local, params.commitmentFormat)
-    val Left(remoteSig) = localCommit.commitTxAndRemoteSig.remoteSig
+    val RemoteSignature.FullSignature(remoteSig) = localCommit.commitTxAndRemoteSig.remoteSig
     val commitTx = addSigs(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey, localSig, remoteSig)
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
     require(checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
@@ -1154,7 +1166,7 @@ case class Commitments(params: ChannelParams,
 
   /** This function should be used to ignore a commit_sig that we've already received. */
   def ignoreRetransmittedCommitSig(commitSig: CommitSig): Boolean = {
-    val Left(latestRemoteSig) = latest.localCommit.commitTxAndRemoteSig.remoteSig
+    val RemoteSignature.FullSignature(latestRemoteSig) = latest.localCommit.commitTxAndRemoteSig.remoteSig
     params.channelFeatures.hasFeature(Features.DualFunding) && commitSig.batchSize == 1 && latestRemoteSig == commitSig.signature
   }
 

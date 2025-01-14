@@ -2,7 +2,7 @@ package fr.acinq.eclair.wire.internal.channel.version4
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
@@ -183,20 +183,10 @@ private[channel] object ChannelCodecs4 {
     val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::
         ("remoteSig" | bytes64)).as[HtlcTxAndRemoteSig]
-
-    private case class CommitTxAndRemoteSigEx(commitTx: CommitTx, remoteSig: ByteVector64, partialSig: Either[ByteVector64, PartialSignatureWithNonce], dummy: Boolean)
-
-    // remoteSig is now either a signature or a partial signature with nonce. To retain compatibility with the previous codec, we use remoteSig as a left/right indicator,
-    // a value of all zeroes meaning right (a valid signature cannot be all zeroes)
-    private val commitTxAndRemoteSigExCodec: Codec[CommitTxAndRemoteSigEx] = (
+    
+    val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        (("remoteSig" | bytes64) >>:~ { remoteSig => either(provide(remoteSig == ByteVector64.Zeroes), provide(remoteSig), partialSignatureWithNonce) :: ("dummy" | provide(false)) })
-      ).as[CommitTxAndRemoteSigEx]
-
-    val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = commitTxAndRemoteSigExCodec.xmap(
-      ce => CommitTxAndRemoteSig(ce.commitTx, ce.partialSig),
-      c => CommitTxAndRemoteSigEx(c.commitTx, c.remoteSig.swap.toOption.getOrElse(fr.acinq.bitcoin.scalacompat.ByteVector64.Zeroes), c.remoteSig, false)
-    )
+        ("remoteSig" | bytes64.as[RemoteSignature.FullSignature].upcast[RemoteSignature])).as[CommitTxAndRemoteSig]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
