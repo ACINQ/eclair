@@ -2142,6 +2142,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
+    case Event(e: HtlcSettlementCommand, _) =>
+      log.debug("cannot settle htlc_id={}, channel is offline", e.id)
+      stay()
+
+    case Event(_: CMD_SIGN, _) => stay()
+
+    case Event(_: CMD_UPDATE_FEE, _) => stay()
+
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
@@ -2348,6 +2356,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
+
+    case Event(e: HtlcSettlementCommand, _) =>
+      log.debug("cannot settle htlc_id={}, channel is syncing", e.id)
+      stay()
+
+    case Event(_: CMD_SIGN, _) => stay()
+
+    case Event(_: CMD_UPDATE_FEE, _) => stay()
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
