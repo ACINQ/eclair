@@ -215,15 +215,17 @@ object CommitmentChanges {
 
 case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 
-case class PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce)
-
 /** We don't store the fully signed transaction, otherwise someone with read access to our database could force-close our channels. */
 sealed trait RemoteSignature
+
 object RemoteSignature {
   case class FullSignature(sig: ByteVector64) extends RemoteSignature
-  case class PartialSignature(psig: PartialSignatureWithNonce) extends RemoteSignature
+
+  case class PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce) extends RemoteSignature
 
   def apply(sig: ByteVector64): RemoteSignature = FullSignature(sig)
+
+  def apply(partialSig: ByteVector32, nonce: IndividualNonce): RemoteSignature = PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce)
 }
 
 case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: RemoteSignature)
@@ -1173,7 +1175,7 @@ case class Commitments(params: ChannelParams,
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
   }
-  
+
   def liquidityPurchase(fundingTxId: TxId): Option[LiquidityAds.PurchaseBasicInfo] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.liquidityPurchase_opt)
   }
