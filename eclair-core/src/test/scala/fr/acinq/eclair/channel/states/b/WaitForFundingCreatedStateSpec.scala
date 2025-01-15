@@ -86,7 +86,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    assert(watchConfirmed.minDepth == Alice.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth == Bob.nodeParams.channelConf.minDepthFunding)
   }
 
   test("recv FundingCreated (large channel)", Tag(LargeChannel)) { f =>
@@ -98,7 +98,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     // when we are fundee, we use a higher min depth for wumbo channels
-    assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepthBlocks)
+    assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepthFunding)
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>

@@ -314,9 +314,11 @@ object NodeParams extends Logging {
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
       // v0.8.0
       "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
-      // vx.x.x
+      // v0.9.0
       "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
-      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority",
+      // v0.12.0
+      "channel.mindepth-blocks" -> "channel.min-depth-funding-blocks",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -573,7 +575,8 @@ object NodeParams extends Logging {
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
-        minDepthBlocks = config.getInt("channel.mindepth-blocks"),
+        minDepthFunding = config.getInt("channel.min-depth-funding-blocks"),
+        minDepthClosing = config.getInt("channel.min-depth-closing-blocks"),
         expiryDelta = expiryDelta,
         maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
