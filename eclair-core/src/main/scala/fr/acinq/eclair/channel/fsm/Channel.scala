@@ -2469,7 +2469,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(_: BroadcastChannelUpdate, _) => stay()
 
     // we receive this when we tell the peer to disconnect
-    case Event("disconnecting", _) => stay()
+    case Event(_: Peer.DisconnectResponse, _) => stay()
 
     // funding tx was confirmed in time, let's just ignore this
     case Event(BITCOIN_FUNDING_TIMEOUT, _: PersistentChannelData) => stay()
