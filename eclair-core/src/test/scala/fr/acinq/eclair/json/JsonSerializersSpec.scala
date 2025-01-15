@@ -204,7 +204,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "localCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
-        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" }, "remoteSig": { "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" } },
+        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" },"remoteSig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
         |           "htlcTxsAndRemoteSigs": []
         |         },
         |         "remoteCommit": {
