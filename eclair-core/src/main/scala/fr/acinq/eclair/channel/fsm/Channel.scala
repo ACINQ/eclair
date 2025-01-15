@@ -2024,7 +2024,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(e: Error, d: DATA_CLOSING) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED | INPUT_RECONNECTED(_, _, _), _) => stay() // we don't really care at this point
+    case Event(_: Shutdown, _) =>
+      log.debug("ignoring shutdown, closing transaction already published")
+      stay()
+
+    case Event(_: ClosingSigned, _) =>
+      log.debug("ignoring closing_signed, closing transaction already published")
+      stay()
+
+    case Event(_: AnnouncementSignatures, _) =>
+      log.debug("ignoring announcement_signatures, channel is closing")
+      stay()
+
+    case Event(INPUT_DISCONNECTED | _: INPUT_RECONNECTED, _) => stay() // we don't really care at this point
   })
 
   when(CLOSED)(handleExceptions {
@@ -2045,10 +2057,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       stay()
 
     case Event(w: WatchTriggered, _) =>
-      log.warning("ignoring watch event, channel is closed (event={})", w)
+      log.debug("ignoring watch event, channel is closed (event={})", w)
       stay()
 
-    case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore
+    case Event(_: Shutdown, _) =>
+      log.debug("ignoring shutdown, channel is closed")
+      stay()
+
+    case Event(_: ClosingSigned, _) =>
+      log.debug("ignoring closing_signed, channel is closed")
+      stay()
+
+    case Event(_: AnnouncementSignatures, _) =>
+      log.debug("ignoring announcement_signatures, channel is closed")
+      stay()
+
+    case Event(INPUT_DISCONNECTED | _: INPUT_RECONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore
   })
 
   when(OFFLINE)(handleExceptions {
