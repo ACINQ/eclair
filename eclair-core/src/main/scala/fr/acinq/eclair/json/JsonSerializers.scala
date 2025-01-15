@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.RemoteSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
@@ -331,6 +332,17 @@ object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i => InputI
 object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
 })
+
+// @formatter:off
+private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
+private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: RemoteSignature.PartialSignatureWithNonce)
+object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
+  i => i.remoteSig match {
+    case f: RemoteSignature.FullSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
+    case p: RemoteSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
+    }
+)
+// @formatter:on
 
 // @formatter:off
 private sealed trait HopJson
@@ -711,6 +723,7 @@ object JsonSerializers {
     OpenChannelResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
+    CommitTxAndRemoteSigSerializer +
     ColorSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +
