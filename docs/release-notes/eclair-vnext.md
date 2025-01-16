@@ -4,7 +4,18 @@
 
 ## Major changes
 
-<insert changes>
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 28.1.
+Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+
+### Package relay
+
+With Bitcoin Core 28.1, eclair starts relying on the `submitpackage` RPC during channel force-close.
+When using anchor outputs, this allows replacing the remote commitment transaction with the local commitment transaction (and a CPFP child).
+This allows propagating our local commitment transaction to peers who are also running Bitcoin Core 28.x or newer, even if the commitment feerate is low (package relay).
+
+This removes the need for increasing the commitment feerate based on mempool conditions, which ensures that channels won't be force-closed anymore when nodes disagree on the current feerate.
 
 ### Peer storage
 

@@ -327,22 +327,32 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("remote commit tx published, not spending local anchor output") {
+  test("remote commit tx published, replacing it with local commit") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
       val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
-      val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
+      val (localCommit, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
       wallet.publishTransaction(remoteCommit.tx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommit.tx.txid)
 
-      setFeerate(FeeratePerKw(10_000 sat))
+      val targetFeerate = FeeratePerKw(10_000 sat)
+      setFeerate(targetFeerate)
       publisher ! Publish(probe.ref, anchorTx)
-      val result = probe.expectMsgType[TxRejected]
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(localCommit.tx.txid))
+      assert(!mempoolTxs.map(_.txid).contains(remoteCommit.tx.txid))
+
+      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+      generateBlocks(5)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
-      // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
-      // commit is then published.
-      assert(result.reason == TxSkipped(retryNextBlock = true))
+      assert(result.tx.txIn.map(_.outPoint.txid).contains(localCommit.tx.txid))
+      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
     }
   }
 
@@ -496,7 +506,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsg(commitTx.tx.txid)
       assert(getMempool().length == 1)
 
-      val maxFeerate = ReplaceableTxFunder.maxFeerate(anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val maxFeerate = ReplaceableTxFunder.maxFeerate(alice.underlyingActor.nodeParams.channelKeyManager, anchorTx.txInfo, anchorTx.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       val targetFeerate = FeeratePerKw(50_000 sat)
       assert(maxFeerate <= targetFeerate / 2)
       setFeerate(targetFeerate, blockTarget = 12)
@@ -1168,12 +1178,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 30, outgoingHtlcAmount = 5_000_000 msat, incomingHtlcAmount = 4_000_000 msat)
       setFeerate(targetFeerate, blockTarget = 12)
       assert(htlcSuccess.txInfo.fee == 0.sat)
-      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcSuccessMaxFeerate = ReplaceableTxFunder.maxFeerate(alice.underlyingActor.nodeParams.channelKeyManager, htlcSuccess.txInfo, htlcSuccess.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcSuccessMaxFeerate < targetFeerate / 2)
       val htlcSuccessTx = testPublishHtlcSuccess(f, commitTx, htlcSuccess, htlcSuccessMaxFeerate)
       assert(htlcSuccessTx.txIn.length > 1)
       assert(htlcTimeout.txInfo.fee == 0.sat)
-      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
+      val htlcTimeoutMaxFeerate = ReplaceableTxFunder.maxFeerate(alice.underlyingActor.nodeParams.channelKeyManager, htlcTimeout.txInfo, htlcTimeout.commitment, alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.nodeParams.onChainFeeConf)
       assert(htlcTimeoutMaxFeerate < targetFeerate / 2)
       val htlcTimeoutTx = testPublishHtlcTimeout(f, commitTx, htlcTimeout, htlcTimeoutMaxFeerate)
       assert(htlcTimeoutTx.txIn.length > 1)

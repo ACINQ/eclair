@@ -130,7 +130,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-    //  - the local or remote commit tx is in the mempool (otherwise we can't claim our anchor)
     val fundingOutpoint = cmd.commitment.commitInput.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
@@ -142,15 +141,13 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             if (remoteCommits.contains(localAnchorTx.input.outPoint.txid)) {
               // We're trying to bump the remote commit tx: we must make sure it is in our mempool first.
               bitcoinClient.getMempoolTx(localAnchorTx.input.outPoint.txid).map(_.txid).transformWith {
-                // We could improve this: we've seen the remote commit in our mempool at least once, so we could try to republish it ourselves.
+                // We could improve this: we've seen the remote commit in our mempool at least once, so we could republish it ourselves.
                 case Failure(_) => Future.failed(RemoteCommitTxNotInMempool)
                 case Success(remoteCommitTxId) => Future.successful(remoteCommitTxId)
               }
             } else {
-              // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-              // If it's already published, this call will be a no-op.
-              val commitTx = cmd.commitment.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
-              bitcoinClient.publishTransaction(commitTx)
+              // We're trying to bump the local commit tx: no need to do anything, we will publish it alongside the anchor transaction.
+              Future.successful(cmd.commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)
             }
         }
       case None =>
