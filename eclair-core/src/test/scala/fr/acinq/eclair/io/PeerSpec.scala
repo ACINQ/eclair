@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -76,6 +77,7 @@ class PeerSpec extends FixtureSpec {
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
       .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
+      .modify(_.channelConf.channelFundingTimeout).setToIf(testData.tags.contains("channel_funding_timeout"))(100 millis)
       .modify(_.autoReconnect).setToIf(testData.tags.contains("auto_reconnect"))(true)
 
     if (testData.tags.contains("with_node_announcement")) {
@@ -716,6 +718,17 @@ class PeerSpec extends FixtureSpec {
     val channelAborted = probe.expectMsgType[ChannelAborted]
     assert(channelAborted.remoteNodeId == remoteNodeId)
     assert(channelAborted.channelId == open.temporaryChannelId)
+  }
+
+  test("abort incoming channel after funding timeout", Tag(ChannelStateTestsTags.DualFunding), Tag("channel_funding_timeout")) { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    val open = createOpenDualFundedChannelMessage()
+    peerConnection.send(peer, open)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].dualFunded)
+    channel.expectMsg(open)
+    channel.expectMsg(Channel.TickChannelOpenTimeout)
   }
 
   test("kill peer with no channels if connection dies before receiving `ConnectionReady`") { f =>

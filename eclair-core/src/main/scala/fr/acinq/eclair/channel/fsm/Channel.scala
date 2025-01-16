@@ -102,6 +102,7 @@ object Channel {
                          channelOpenerWhitelist: Set[PublicKey],
                          maxPendingChannelsPerPeer: Int,
                          maxTotalPendingChannelsPrivateNodes: Int,
+                         channelFundingTimeout: FiniteDuration,
                          remoteRbfLimits: RemoteRbfLimits,
                          quiescenceTimeout: FiniteDuration,
                          balanceThresholds: Seq[BalanceThreshold],
