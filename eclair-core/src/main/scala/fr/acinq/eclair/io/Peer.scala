@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
-import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
+import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -103,11 +103,15 @@ class Peer(val nodeParams: NodeParams,
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
       gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
 
-    case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
-      // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-      val channelIds = d.channels.filter(_._2 == actor).keys
-      log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-      val channels1 = d.channels -- channelIds
+    case Event(ChannelTerminated(actor), d: DisconnectedData) =>
+      val channels1 = if (d.channels.values.toSet.contains(actor)) {
+        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+        val channelIds = d.channels.filter(_._2 == actor).keys
+        log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+        d.channels -- channelIds
+      } else {
+        d.channels
+      }
       if (channels1.isEmpty && canForgetPendingOnTheFlyFunding()) {
         log.info("that was the last open channel")
         context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
@@ -495,17 +499,21 @@ class Peer(val nodeParams: NodeParams,
           goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
         }
 
-      case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
-        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-        val channelIds = d.channels.filter(_._2 == actor).keys
-        log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-        val channels1 = d.channels -- channelIds
-        if (channels1.isEmpty) {
-          log.info("that was the last open channel, closing the connection")
-          context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
-          d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
+      case Event(ChannelTerminated(actor), d: ConnectedData) =>
+        if (d.channels.values.toSet.contains(actor)) {
+          // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+          val channelIds = d.channels.filter(_._2 == actor).keys
+          log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+          val channels1 = d.channels -- channelIds
+          if (channels1.isEmpty) {
+            log.info("that was the last open channel, closing the connection")
+            context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
+            d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
+          }
+          stay() using d.copy(channels = channels1)
+        } else {
+          stay()
         }
-        stay() using d.copy(channels = channels1)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.debug(s"got new connection, killing current one and switching")
@@ -843,7 +851,7 @@ class Peer(val nodeParams: NodeParams,
 
   private def spawnChannel(): ActorRef = {
     val channel = channelFactory.spawn(context, remoteNodeId)
-    context watch channel
+    context.watchWith(channel, ChannelTerminated(channel.ref))
     channel
   }
 
@@ -1087,6 +1095,9 @@ object Peer {
    * We could use watchWith on the peer-connection but it doesn't work with akka cluster when untrusted mode is enabled
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
+
+  /** A child channel actor has been terminated. */
+  case class ChannelTerminated(channel: ActorRef) extends RemoteTypes
 
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
 
