@@ -133,7 +133,7 @@ trait BitcoindService extends Logging {
     }))
   }
 
-  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onChainKeyManager) else None)
+  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, onChainKeyManager_opt = if (useEclairSigner) Some(onChainKeyManager) else None)
 
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging

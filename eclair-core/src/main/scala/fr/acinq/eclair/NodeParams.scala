@@ -90,7 +90,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
                       revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
-                      willFundRates_opt: Option[LiquidityAds.WillFundRates],
+                      liquidityAdsConfig: LiquidityAds.Config,
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
                       peerStorageConfig: PeerStorageConfig) {
@@ -683,7 +683,7 @@ object NodeParams extends Logging {
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
       ),
-      willFundRates_opt = willFundRates_opt,
+      liquidityAdsConfig = LiquidityAds.Config(willFundRates_opt, lockUtxos = config.getBoolean("liquidity-ads.lock-utxos-during-funding")),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
         enabled = config.getBoolean("peer-wake-up.enabled"),
         timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS),
