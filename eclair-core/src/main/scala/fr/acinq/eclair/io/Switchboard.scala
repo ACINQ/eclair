@@ -110,9 +110,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty, pendingOnTheFlyFunding = Map.empty)
       val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
-      // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
-      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && hasChannels)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync, nodeParams.liquidityAdsConfig.rates_opt)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, nodeParams.liquidityAdsConfig.rates_opt)
       if (!hasChannels && !authenticated.outgoing) {
         incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
       }

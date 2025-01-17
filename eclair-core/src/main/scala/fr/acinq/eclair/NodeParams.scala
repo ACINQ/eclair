@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, Re
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
+import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
@@ -66,7 +66,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       torAddress_opt: Option[NodeAddress],
                       features: Features[Feature],
                       private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
-                      syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
                       onChainFeeConf: OnChainFeeConf,
@@ -413,8 +412,6 @@ object NodeParams extends Logging {
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
-
     val socksProxy_opt = parseSocks5ProxyParams(config)
 
     val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
@@ -561,7 +558,6 @@ object NodeParams extends Logging {
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
       overrideInitFeatures = overrideInitFeatures,
-      syncWhitelist = syncWhitelist,
       channelConf = ChannelConf(
         channelFlags = channelFlags,
         dustLimit = dustLimitSatoshis,
@@ -659,10 +655,14 @@ object NodeParams extends Logging {
         watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
-        requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
-        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
+          channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+          channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+          peerLimit = config.getInt("router.sync.peer-limit"),
+          whitelist = config.getStringList("router.sync.whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+        ),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
         messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),

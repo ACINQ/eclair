@@ -60,7 +60,7 @@ private class IncomingConnectionsTracker(nodeParams: NodeParams, switchboard: Ac
     Metrics.IncomingConnectionsNoChannels.withoutTags().update(incomingConnections.size)
     Behaviors.receiveMessage {
       case TrackIncomingConnection(remoteNodeId) =>
-        if (nodeParams.syncWhitelist.contains(remoteNodeId)) {
+        if (nodeParams.routerConf.syncConf.whitelist.contains(remoteNodeId)) {
           Behaviors.same
         } else {
           if (incomingConnections.size >= nodeParams.peerConnectionConf.maxNoChannels) {

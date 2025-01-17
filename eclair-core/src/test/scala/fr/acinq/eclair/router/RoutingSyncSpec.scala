@@ -84,7 +84,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     }
     val srcId = src.underlyingActor.nodeParams.nodeId
     val tgtId = tgt.underlyingActor.nodeParams.nodeId
-    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, replacePrevious = true, extendedQueryFlags_opt))
+    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, isReconnection = true, extendedQueryFlags_opt))
     // src sends a query_channel_range to bob
     val qcr = pipe.expectMsgType[QueryChannelRange]
     pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, qcr))
@@ -134,7 +134,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   test("sync with standard channel queries") {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(Bob.nodeParams.nodeId)))), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
@@ -183,7 +183,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   def syncWithExtendedQueries(requestNodeAnnouncements: Boolean): Unit = {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestNodeAnnouncements)), watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(requestNodeAnnouncements = requestNodeAnnouncements, whitelist = Set(Bob.nodeParams.nodeId)))), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
@@ -251,7 +251,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
   }
 
   test("reset sync state on reconnection") {
-    val params = TestConstants.Alice.nodeParams
+    val params = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(Bob.nodeParams.nodeId))))
     val router = TestFSMRef(new Router(params, TestProbe().ref))
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
@@ -261,17 +261,17 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(!router.stateData.sync.contains(remoteNodeId))
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = true, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     // ask router to send another channel range query
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = false, None))
     sender.expectNoMessage(100 millis) // it's a duplicate and should be ignored
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
-    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.channelQueryChunkSize).keys.toList), None, None)
+    val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.syncConf.channelQueryChunkSize).keys.toList), None, None)
 
     // send first block
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, block1))
@@ -284,7 +284,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(sync.totalQueries == 1)
 
     // simulate a re-connection
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = true, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))

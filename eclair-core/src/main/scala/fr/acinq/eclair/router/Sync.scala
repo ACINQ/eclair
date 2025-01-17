@@ -42,13 +42,21 @@ object Sync {
   //   block almost never exceeds 2800 so this should very rarely be limiting
   val MAXIMUM_CHUNK_SIZE = 2700
 
-  def handleSendChannelQuery(d: Data, s: SendChannelQuery)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleSendChannelQuery(conf: SyncConf, d: Data, s: SendChannelQuery)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+    // TODO: check that s.remoteNodeId is eligible for sync
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     // we currently send query_channel_range when:
-    //  * we just (re)connected to a peer with whom we have channels
+    //  * we just reconnected to a peer with whom we have channels
     //  * we validate our first channel with a peer
-    // we must ensure we don't send a new query_channel_range while another query is still in progress
-    if (s.replacePrevious || !d.sync.contains(s.remoteNodeId)) {
+    val shouldSync = if (s.isReconnection) {
+      conf.whitelist.contains(s.remoteNodeId) || d.topCapacityPeers.contains(s.remoteNodeId)
+    } else if (d.sync.contains(s.remoteNodeId)) { // we must ensure we don't send a new query_channel_range while another query is still in progress
+      log.debug("not sending query_channel_range: sync already in progress")
+      false
+    } else {
+      true
+    }
+    if (shouldSync) {
       // ask for everything
       val query = QueryChannelRange(s.chainHash, firstBlock = BlockHeight(0), numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toSet))
       log.debug("sending query_channel_range={}", query)
@@ -64,7 +72,6 @@ object Sync {
       // reset our sync state for this peer: we create an entry to ensure we reject duplicate queries and unsolicited reply_channel_range
       d.copy(sync = d.sync + (s.remoteNodeId -> Syncing(Nil, 0)))
     } else {
-      log.debug("not sending query_channel_range: sync already in progress")
       d
     }
   }
@@ -77,7 +84,7 @@ object Sync {
     // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
     val shortChannelIds: SortedSet[RealShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
     log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.channelRangeChunkSize)
+    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
     chunks.zipWithIndex.foreach { case (chunk, i) =>
       val syncComplete = i == chunks.size - 1
@@ -111,7 +118,7 @@ object Sync {
           ids match {
             case Nil => acc.reverse
             case head :: tail =>
-              val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.requestNodeAnnouncements)
+              val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.syncConf.requestNodeAnnouncements)
               // 0 means nothing to query, just don't include it
               val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
               loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
@@ -144,7 +151,7 @@ object Sync {
 
         // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
         val replies = shortChannelIdAndFlags
-          .grouped(routerConf.channelQueryChunkSize)
+          .grouped(routerConf.syncConf.channelQueryChunkSize)
           .map(buildQuery)
           .toList
 
