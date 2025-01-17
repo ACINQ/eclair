@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment.offer
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.{MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -49,6 +50,7 @@ object OfferPaymentMetadata {
                                 createdAt: TimestampSecond,
                                 quantity: Long,
                                 amount: MilliSatoshi,
+                                hiddenFees: RelayFees,
                                 pluginData_opt: Option[ByteVector])
 
   /**
@@ -69,6 +71,7 @@ object OfferPaymentMetadata {
         ("createdAt" | timestampSecond) ::
         ("quantity" | uint64overflow) ::
         ("amount" | millisatoshi) ::
+        ("hiddenFees" | (millisatoshi :: int64).as[RelayFees]) ::
         ("pluginData" | optional(bitsRemaining, bytes))).as[MinimalInvoiceData]
 
     private val signedDataCodec: Codec[SignedMinimalInvoiceData] =

@@ -512,6 +512,11 @@ object Router {
       override val htlcMaximum_opt = extraHop.htlcMaximum_opt
     }
 
+    case class Dummy(relayFees: Relayer.RelayFees, cltvExpiryDelta: CltvExpiryDelta) extends HopRelayParams {
+      override val htlcMinimum: MilliSatoshi = 1 msat
+      override val htlcMaximum_opt: Option[MilliSatoshi] = None
+    }
+
     def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
@@ -531,6 +536,11 @@ object Router {
     override val cltvExpiryDelta = params.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     // @formatter:on
+  }
+
+  object ChannelHop {
+    def dummy(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelHop =
+      ChannelHop(ShortChannelId.toSelf, nodeId, nodeId, HopRelayParams.Dummy(Relayer.RelayFees(feeBase, feeProportionalMillionths), cltvExpiryDelta))
   }
 
   sealed trait FinalHop extends Hop

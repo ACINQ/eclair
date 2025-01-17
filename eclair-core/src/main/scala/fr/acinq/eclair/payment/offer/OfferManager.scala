@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, PaymentType}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
@@ -27,10 +28,13 @@ import fr.acinq.eclair.payment.MinimalBolt12Invoice
 import fr.acinq.eclair.payment.offer.OfferPaymentMetadata.MinimalInvoiceData
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.{CreateInvoiceActor, ReceivingRoute}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.BlindedRouteCreation.aggregatePaymentInfo
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, nodeFee, randomBytes32}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -61,7 +65,7 @@ object OfferManager {
 
   case class RequestInvoice(messagePayload: MessageOnion.InvoiceRequestPayload, blindedKey: PrivateKey, postman: ActorRef[Postman.SendMessage]) extends Command
 
-  case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded) extends Command
+  case class ReceivePayment(replyTo: ActorRef[MultiPartHandler.GetIncomingPaymentActor.Command], paymentHash: ByteVector32, payload: FinalPayload.Blinded, realAmount: MilliSatoshi) extends Command
 
   /**
    * Offer handlers must be implemented in separate plugins and respond to these two `HandlerCommand`.
@@ -89,15 +93,15 @@ object OfferManager {
 
   private case class RegisteredOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
-  def apply(nodeParams: NodeParams, router: akka.actor.ActorRef, paymentTimeout: FiniteDuration): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, paymentTimeout: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT))) {
-        new OfferManager(nodeParams, router, paymentTimeout, context).normal(Map.empty)
+        new OfferManager(nodeParams, paymentTimeout, context).normal(Map.empty)
       }
     }
   }
 
-  private class OfferManager(nodeParams: NodeParams, router: akka.actor.ActorRef, paymentTimeout: FiniteDuration, context: ActorContext[Command]) {
+  private class OfferManager(nodeParams: NodeParams, paymentTimeout: FiniteDuration, context: ActorContext[Command]) {
     def normal(registeredOffers: Map[ByteVector32, RegisteredOffer]): Behavior[Command] = {
       Behaviors.receiveMessage {
         case RegisterOffer(offer, nodeKey, pathId_opt, handler) =>
@@ -108,17 +112,19 @@ object OfferManager {
           registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
             case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
               context.log.debug("received valid invoice request for offerId={}", messagePayload.invoiceRequest.offer.offerId)
-              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey.getOrElse(blindedKey), router, messagePayload.replyPath, postman))
+              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey.getOrElse(blindedKey), messagePayload.replyPath, postman))
               child ! InvoiceRequestActor.RequestInvoice
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }
           Behaviors.same
-        case ReceivePayment(replyTo, paymentHash, payload) =>
+        case ReceivePayment(replyTo, paymentHash, payload, realAmount) =>
           MinimalInvoiceData.decode(payload.pathId) match {
             case Some(signed) =>
               registeredOffers.get(signed.offerId) match {
                 case Some(RegisteredOffer(offer, _, _, handler)) =>
                   MinimalInvoiceData.verify(nodeParams.nodeId, signed) match {
+                    case Some(metadata) if realAmount + nodeFee(metadata.hiddenFees, realAmount) < payload.amount =>
+                      replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(s"incorrect amount received for offer ${signed.offerId.toHex}: realAmount=$realAmount, hiddenFees=${metadata.hiddenFees}, virtualAmount=${payload.amount}")
                     case Some(metadata) if Crypto.sha256(metadata.preimage) == paymentHash =>
                       val child = context.spawnAnonymous(PaymentActor(nodeParams, replyTo, offer, metadata, paymentTimeout))
                       handler ! HandlePayment(child, signed.offerId, metadata.pluginData_opt)
@@ -145,15 +151,19 @@ object OfferManager {
      *
      * @param amount         Amount for the invoice (must be the same as the invoice request if it contained an amount).
      * @param routes         Routes to use for the payment.
+     * @param hideFees       If true, fees for the blinded route will be hidden to the payer and paid by the recipient.
      * @param pluginData_opt Some data for the handler by the handler. It will be sent to the handler when a payment is attempted.
      * @param additionalTlvs additional TLVs to add to the invoice.
      * @param customTlvs     custom TLVs to add to the invoice.
      */
     case class ApproveRequest(amount: MilliSatoshi,
-                              routes: Seq[ReceivingRoute],
+                              routes: Seq[Route],
+                              hideFees: Boolean,
                               pluginData_opt: Option[ByteVector] = None,
                               additionalTlvs: Set[InvoiceTlv] = Set.empty,
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
+
+    case class Route(hops: Seq[Router.ChannelHop], maxFinalExpiryDelta: CltvExpiryDelta, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None)
 
     /**
      * Sent by the offer handler to reject the request. For instance because stock has been exhausted.
@@ -168,7 +178,6 @@ object OfferManager {
               invoiceRequest: InvoiceRequest,
               offerHandler: ActorRef[HandleInvoiceRequest],
               nodeKey: PrivateKey,
-              router: akka.actor.ActorRef,
               pathToSender: RouteBlinding.BlindedRoute,
               postman: ActorRef[Postman.SendMessage]): Behavior[Command] = {
       Behaviors.setup { context =>
@@ -176,7 +185,7 @@ object OfferManager {
           Behaviors.receiveMessagePartial {
             case RequestInvoice =>
               offerHandler ! HandleInvoiceRequest(context.self, invoiceRequest)
-              new InvoiceRequestActor(nodeParams, invoiceRequest, nodeKey, router, pathToSender, postman, context).waitForHandler()
+              new InvoiceRequestActor(nodeParams, invoiceRequest, nodeKey, pathToSender, postman, context).waitForHandler()
           }
         }
       }
@@ -185,7 +194,6 @@ object OfferManager {
     private class InvoiceRequestActor(nodeParams: NodeParams,
                                       invoiceRequest: InvoiceRequest,
                                       nodeKey: PrivateKey,
-                                      router: akka.actor.ActorRef,
                                       pathToSender: RouteBlinding.BlindedRoute,
                                       postman: ActorRef[Postman.SendMessage],
                                       context: ActorContext[Command]) {
@@ -195,11 +203,17 @@ object OfferManager {
             context.log.debug("offer handler rejected invoice request: {}", error)
             postman ! Postman.SendMessage(OfferTypes.BlindedPath(pathToSender), OnionMessages.RoutingStrategy.FindRoute, TlvStream(OnionMessagePayloadTlv.InvoiceError(TlvStream(OfferTypes.Error(error)))), expectsReply = false, context.messageAdapter[Postman.OnionMessageResponse](WrappedOnionMessageResponse))
             waitForSent()
-          case ApproveRequest(amount, routes, pluginData_opt, additionalTlvs, customTlvs) =>
+          case ApproveRequest(amount, routes, hideFees, pluginData_opt, additionalTlvs, customTlvs) =>
             val preimage = randomBytes32()
-            val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, pluginData_opt)
-            val pathId = MinimalInvoiceData.encode(nodeParams.privateKey, invoiceRequest.offer.offerId, metadata)
-            val receivePayment = MultiPartHandler.ReceiveOfferPayment(context.messageAdapter[CreateInvoiceActor.Bolt12InvoiceResponse](WrappedInvoiceResponse), nodeKey, invoiceRequest, routes, router, preimage, pathId, additionalTlvs, customTlvs)
+            val receivingRoutes = routes.map(route => {
+              val paymentInfo = aggregatePaymentInfo(amount, route.hops, nodeParams.channelConf.minFinalExpiryDelta)
+              val hiddenFees = if (hideFees) RelayFees(paymentInfo.feeBase, paymentInfo.feeProportionalMillionths) else RelayFees.zero
+              val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, hiddenFees, pluginData_opt)
+              val pathId = MinimalInvoiceData.encode(nodeParams.privateKey, invoiceRequest.offer.offerId, metadata)
+              val paymentInfo1 = if (hideFees) paymentInfo.copy(feeBase = MilliSatoshi(0), feeProportionalMillionths = 0) else paymentInfo
+              ReceivingRoute(route.hops, pathId, route.maxFinalExpiryDelta, paymentInfo1, route.shortChannelIdDir_opt)
+            })
+            val receivePayment = MultiPartHandler.ReceiveOfferPayment(context.messageAdapter[CreateInvoiceActor.Bolt12InvoiceResponse](WrappedInvoiceResponse), nodeKey, invoiceRequest, receivingRoutes, preimage, additionalTlvs, customTlvs)
             val child = context.spawnAnonymous(CreateInvoiceActor(nodeParams))
             child ! CreateInvoiceActor.CreateBolt12Invoice(receivePayment)
             waitForInvoice()
@@ -253,7 +267,7 @@ object OfferManager {
           case AcceptPayment(additionalTlvs, customTlvs) =>
             val minimalInvoice = MinimalBolt12Invoice(offer, nodeParams.chainHash, metadata.amount, metadata.quantity, Crypto.sha256(metadata.preimage), metadata.payerKey, metadata.createdAt, additionalTlvs, customTlvs)
             val incomingPayment = IncomingBlindedPayment(minimalInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-            replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
+            replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment, metadata.hiddenFees)
             Behaviors.stopped
           case RejectPayment(reason) =>
             replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(reason)

@@ -114,4 +114,15 @@ class PackageSpec extends AnyFunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
+  test("node fees") {
+    val rng = new scala.util.Random()
+    for (_ <- 1 to 100) {
+      val amount = rng.nextLong(1_000_000_000_000L) msat
+      val baseFee = rng.nextLong(10_000) msat
+      val proportionalFee = rng.nextLong(5_000)
+      val amountWithFees = amount + nodeFee(baseFee, proportionalFee, amount)
+      assert(amountAfterFee(baseFee, proportionalFee, amountWithFees) == amount)
+    }
+  }
+
 }

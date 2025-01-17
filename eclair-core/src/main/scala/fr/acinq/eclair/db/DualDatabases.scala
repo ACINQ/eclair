@@ -319,14 +319,14 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.addIncomingPayment(pr, preimage, paymentType)
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = {
-    runAsync(secondary.receiveIncomingPayment(paymentHash, amount, receivedAt))
-    primary.receiveIncomingPayment(paymentHash, amount, receivedAt)
+  override def receiveIncomingPayment(paymentHash: ByteVector32, virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = {
+    runAsync(secondary.receiveIncomingPayment(paymentHash, virtualAmount, realAmount, receivedAt))
+    primary.receiveIncomingPayment(paymentHash, virtualAmount, realAmount, receivedAt)
   }
 
-  override def receiveIncomingOfferPayment(pr: MinimalBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = {
-    runAsync(secondary.receiveIncomingOfferPayment(pr, preimage, amount, receivedAt, paymentType))
-    primary.receiveIncomingOfferPayment(pr, preimage, amount, receivedAt, paymentType)
+  override def receiveIncomingOfferPayment(pr: MinimalBolt12Invoice, preimage: ByteVector32, virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, receivedAt: TimestampMilli, paymentType: String): Unit = {
+    runAsync(secondary.receiveIncomingOfferPayment(pr, preimage, virtualAmount, realAmount, receivedAt, paymentType))
+    primary.receiveIncomingOfferPayment(pr, preimage, virtualAmount, realAmount, receivedAt, paymentType)
   }
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = {

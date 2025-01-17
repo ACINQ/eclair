@@ -18,7 +18,7 @@ package fr.acinq.eclair.integration.basic.payment
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps}
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -33,9 +33,11 @@ import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
-import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceivingRoute}
+import fr.acinq.eclair.payment.offer.OfferManager.InvoiceRequestActor
 import fr.acinq.eclair.payment.send.OfferPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendSpontaneousPayment}
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
@@ -151,10 +153,10 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     }
   }
 
-  def offerHandler(amount: MilliSatoshi, routes: Seq[ReceivingRoute]): Behavior[OfferManager.HandlerCommand] = {
+  def offerHandler(amount: MilliSatoshi, routes: Seq[InvoiceRequestActor.Route], hideFees: Boolean): Behavior[OfferManager.HandlerCommand] = {
     Behaviors.receiveMessage {
       case OfferManager.HandleInvoiceRequest(replyTo, _) =>
-        replyTo ! OfferManager.InvoiceRequestActor.ApproveRequest(amount, routes)
+        replyTo ! InvoiceRequestActor.ApproveRequest(amount, routes, hideFees)
         Behaviors.same
       case OfferManager.HandlePayment(replyTo, _, _) =>
         replyTo ! OfferManager.PaymentActor.AcceptPayment()
@@ -162,12 +164,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     }
   }
 
-  def sendOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute], maxAttempts: Int = 1): (Offer, PaymentEvent) = {
+  def sendOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[InvoiceRequestActor.Route], maxAttempts: Int = 1, hideFees: Boolean = false): (Offer, PaymentEvent) = {
     import f._
 
     val sender = TestProbe("sender")
     val offer = Offer(None, Some("test"), recipient.nodeId, Features.empty, recipient.nodeParams.chainHash)
-    val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
+    val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes, hideFees))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, Some(recipient.nodeParams.privateKey), None, handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.register, payer.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts, payer.routeParams, blocking = true)
@@ -175,19 +177,18 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     (offer, sender.expectMsgType[PaymentEvent])
   }
 
-  def sendPrivateOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[ReceivingRoute], maxAttempts: Int = 1): (Offer, PaymentEvent) = {
+  def sendPrivateOfferPayment(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, amount: MilliSatoshi, routes: Seq[InvoiceRequestActor.Route], maxAttempts: Int = 1, hideFees: Boolean = false): (Offer, PaymentEvent) = {
     import f._
 
     val sender = TestProbe("sender")
     val recipientKey = randomKey()
     val pathId = randomBytes32()
     val offerPaths = routes.map(route => {
-      val ourNodeId = route.nodes.last
-      val intermediateNodes = route.nodes.dropRight(1).map(IntermediateNode(_)) ++ route.dummyHops.map(_ => IntermediateNode(ourNodeId))
-      buildRoute(randomKey(), intermediateNodes, Recipient(ourNodeId, Some(pathId))).route
+      val intermediateNodes = route.hops.map(hop => IntermediateNode(hop.nodeId))
+      buildRoute(randomKey(), intermediateNodes, Recipient(recipient.nodeId, Some(pathId))).route
     })
     val offer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, recipient.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(offerPaths)))
-    val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes))
+    val handler = recipient.system.spawnAnonymous(offerHandler(amount, routes, hideFees))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, Some(recipientKey), Some(pathId), handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.register, payer.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts, payer.routeParams, blocking = true)
@@ -195,13 +196,13 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     (offer, sender.expectMsgType[PaymentEvent])
   }
 
-  def sendOfferPaymentWithInvalidAmount(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, payerAmount: MilliSatoshi, recipientAmount: MilliSatoshi, routes: Seq[ReceivingRoute]): PaymentFailed = {
+  def sendOfferPaymentWithInvalidAmount(f: FixtureParam, payer: MinimalNodeFixture, recipient: MinimalNodeFixture, payerAmount: MilliSatoshi, recipientAmount: MilliSatoshi, routes: Seq[InvoiceRequestActor.Route], hideFees: Boolean = false): PaymentFailed = {
     import f._
 
     val sender = TestProbe("sender")
     val paymentInterceptor = TestProbe("payment-interceptor")
     val offer = Offer(None, Some("test"), recipient.nodeId, Features.empty, recipient.nodeParams.chainHash)
-    val handler = recipient.system.spawnAnonymous(offerHandler(recipientAmount, routes))
+    val handler = recipient.system.spawnAnonymous(offerHandler(recipientAmount, routes, hideFees))
     recipient.offerManager ! OfferManager.RegisterOffer(offer, Some(recipient.nodeParams.privateKey), None, handler)
     val offerPayment = payer.system.spawnAnonymous(OfferPayment(payer.nodeParams, payer.postman, payer.router, payer.register, paymentInterceptor.ref))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, payer.routeParams, blocking = true)
@@ -225,30 +226,80 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     val amount = 25_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
+  }
+
+  test("send blinded payment a->b->c, hidden fees") { f =>
+    import f._
+
+    val amount = 25_000_000 msat
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, hideFees = true)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length == 1)
+    assert(payment.parts.head.amount == amount)
+    assert(payment.parts.head.feesPaid == 0.msat)
   }
 
   test("send blinded multi-part payment a->b->c") { f =>
     import f._
 
     val amount = 125_000_000 msat
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val routes = Seq(
-      ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta),
-      ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta),
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
     )
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
   }
 
+  test("send blinded multi-part payment a->b->c, hidden fees") { f =>
+    import f._
+
+    val amount = 125_000_000 msat
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
+    )
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3, hideFees = true)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length == 2)
+    assert(payment.parts.forall(_.feesPaid == 0.msat))
+  }
+
   test("send blinded multi-part payment a->b->c (single channel a->b)", Tag(PrivateChannels)) { f =>
     import f._
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Carol advertises a single blinded path from Bob to herself.
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
 
     // We make a first set of payments to ensure channels have less than 50 000 sat on Bob's side.
     Seq(50_000_000 msat, 50_000_000 msat).foreach(amount => {
@@ -276,9 +327,13 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val channelId_bc_1 = openChannel(bob, carol, 250_000 sat).channelId
     waitForChannelCreatedBC(f, channelId_bc_1)
 
-    val route = ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta)
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount1 = 150_000_000 msat
-    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount1, Seq(route), maxAttempts = 3)
+    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount1, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount1, result)
     assert(payment.parts.length > 1)
   }
@@ -286,30 +341,72 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   test("send blinded payment a->b->c with dummy hops") { f =>
     import f._
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val amount = 125_000_000 msat
     val routes = Seq(
-      ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(150 msat, 0, CltvExpiryDelta(50)))),
-      ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(50 msat, 0, CltvExpiryDelta(20)), DummyBlindedHop(100 msat, 0, CltvExpiryDelta(30)))),
+      InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(carol.nodeId, 150 msat, 0, CltvExpiryDelta(50)), maxFinalExpiryDelta),
+      InvoiceRequestActor.Route(route.hops ++ Seq(ChannelHop.dummy(carol.nodeId, 50 msat, 0, CltvExpiryDelta(20)), ChannelHop.dummy(carol.nodeId, 100 msat, 0, CltvExpiryDelta(30))), maxFinalExpiryDelta),
     )
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
   }
 
+  test("send blinded payment a->b->c with dummy hops, hidden fees") { f =>
+    import f._
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val amount = 125_000_000 msat
+    val routes = Seq(
+      InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(carol.nodeId, 150 msat, 0, CltvExpiryDelta(50)), maxFinalExpiryDelta),
+      InvoiceRequestActor.Route(route.hops ++ Seq(ChannelHop.dummy(carol.nodeId, 50 msat, 0, CltvExpiryDelta(20)), ChannelHop.dummy(carol.nodeId, 100 msat, 0, CltvExpiryDelta(30))), maxFinalExpiryDelta),
+    )
+    val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, hideFees = true)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length == 2)
+    assert(payment.parts.forall(_.feesPaid == 0.msat))
+  }
+
   test("send blinded payment a->b->c through private channels", Tag(PrivateChannels)) { f =>
     import f._
 
     val amount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes)
     verifyPaymentSuccess(offer, amount, result)
+  }
+
+  test("send blinded payment a->b->c through private channels, hidden fees", Tag(PrivateChannels)) { f =>
+    import f._
+
+    val amount = 50_000_000 msat
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
+    val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes, hideFees = true)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.forall(_.feesPaid == 0.msat))
   }
 
   test("send blinded payment a->b") { f =>
     import f._
 
     val amount = 75_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(Nil, maxFinalExpiryDelta))
     val (offer, result) = sendOfferPayment(f, alice, bob, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
@@ -319,17 +416,33 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     val amount = 250_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(10 msat, 25, CltvExpiryDelta(24)), DummyBlindedHop(5 msat, 10, CltvExpiryDelta(36)))))
+    val routes = Seq(InvoiceRequestActor.Route(Seq(ChannelHop.dummy(bob.nodeId, 10 msat, 25, CltvExpiryDelta(24)), ChannelHop.dummy(bob.nodeId, 5 msat, 10, CltvExpiryDelta(36))), maxFinalExpiryDelta))
     val (offer, result) = sendOfferPayment(f, alice, bob, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
+  }
+
+  test("send blinded payment a->b with dummy hops, hidden fees") { f =>
+    import f._
+
+    val amount = 250_000_000 msat
+    val routes = Seq(InvoiceRequestActor.Route(Seq(ChannelHop.dummy(bob.nodeId, 10 msat, 25, CltvExpiryDelta(24)), ChannelHop.dummy(bob.nodeId, 5 msat, 10, CltvExpiryDelta(36))), maxFinalExpiryDelta))
+    val (offer, result) = sendOfferPayment(f, alice, bob, amount, routes, hideFees = true)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.length == 1)
+    assert(payment.parts.forall(_.feesPaid == 0.msat))
   }
 
   test("send fully blinded payment b->c") { f =>
     import f._
 
     val amount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val (offer, result) = sendOfferPayment(f, bob, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
@@ -342,8 +455,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val channelId_bc_1 = openChannel(bob, carol, 200_000 sat).channelId
     waitForChannelCreatedBC(f, channelId_bc_1)
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(50_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Carol creates a blinded path using that channel.
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
 
     // We make a payment to ensure that the channel contains less than 150 000 sat on Bob's side.
     assert(sendPayment(bob, carol, 50_000_000 msat).isRight)
@@ -363,7 +480,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     val amount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(25 msat, 250, CltvExpiryDelta(75)))))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(carol.nodeId, 25 msat, 250, CltvExpiryDelta(75)), maxFinalExpiryDelta))
     val (offer, result) = sendOfferPayment(f, bob, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
@@ -383,9 +505,13 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // We wait for Carol to receive information about the channel between Alice and Bob.
     waitForAllChannelUpdates(f, channelsCount = 2)
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(alice.nodeId, bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Carol receives a first payment through those channels.
     {
-      val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+      val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
       val amount1 = 100_000_000 msat
       val (offer, result) = sendOfferPayment(f, alice, carol, amount1, routes)
       val payment = verifyPaymentSuccess(offer, amount1, result)
@@ -401,7 +527,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     // Carol receives a second payment that requires using MPP.
     {
-      val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+      val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
       val amount2 = 200_000_000 msat
       val (offer, result) = sendOfferPayment(f, alice, carol, amount2, routes, maxAttempts = 3)
       val payment = verifyPaymentSuccess(offer, amount2, result)
@@ -425,8 +551,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // We wait for Carol to receive information about the channel between Alice and Bob.
     waitForAllChannelUpdates(f, channelsCount = 3)
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(alice.nodeId, bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Carol receives a payment that requires using MPP.
-    val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount = 300_000_000 msat
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
@@ -449,8 +579,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // We wait for Carol to receive information about the channel between Alice and Bob.
     waitForAllChannelUpdates(f, channelsCount = 3)
 
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(10_000_000 msat, Seq(alice.nodeId, bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Carol receives a payment that requires using MPP.
-    val routes = Seq(ReceivingRoute(Seq(alice.nodeId, bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount = 200_000_000 msat
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
@@ -470,6 +604,9 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     val sender = TestProbe("sender")
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(75_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     // Bob sends payments to Carol to reduce the liquidity on both of his channels.
     Seq(1, 2).foreach(_ => {
       sender.send(bob.paymentInitiator, SendSpontaneousPayment(50_000_000 msat, carol.nodeId, randomBytes32(), 1, routeParams = bob.routeParams))
@@ -477,7 +614,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       sender.expectMsgType[PaymentSent]
     })
     // Bob now doesn't have enough funds to relay the payment.
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val (_, result) = sendOfferPayment(f, alice, carol, 75_000_000 msat, routes)
     verifyBlindedFailure(result, bob.nodeId)
   }
@@ -485,7 +622,11 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   test("send blinded payment a->b->c using expired route") { f =>
     import f._
 
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), CltvExpiryDelta(-500)))
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(25_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, CltvExpiryDelta(-500)))
     val (_, result) = sendOfferPayment(f, alice, carol, 25_000_000 msat, routes)
     verifyBlindedFailure(result, bob.nodeId)
   }
@@ -495,7 +636,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payerAmount = 20_000_000 msat
     val recipientAmount = 25_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(recipientAmount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     // The amount is below what Carol expects.
     val payment = sendOfferPaymentWithInvalidAmount(f, alice, carol, payerAmount, recipientAmount, routes)
     verifyBlindedFailure(payment, bob.nodeId)
@@ -506,7 +652,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payerAmount = 25_000_000 msat
     val recipientAmount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta))
+    val routes = Seq(InvoiceRequestActor.Route(Nil, maxFinalExpiryDelta))
     // The amount is below what Bob expects: since he is both the introduction node and the final recipient, he sends
     // back a normal error.
     val payment = sendOfferPaymentWithInvalidAmount(f, alice, bob, payerAmount, recipientAmount, routes)
@@ -522,7 +668,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payerAmount = 25_000_000 msat
     val recipientAmount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(1 msat, 100, CltvExpiryDelta(48)))))
+    val routes = Seq(InvoiceRequestActor.Route(Seq(ChannelHop.dummy(bob.nodeId, 1 msat, 100, CltvExpiryDelta(48))), maxFinalExpiryDelta))
     // The amount is below what Bob expects: since he is both the introduction node and the final recipient, he sends
     // back a normal error.
     val payment = sendOfferPaymentWithInvalidAmount(f, alice, bob, payerAmount, recipientAmount, routes)
@@ -538,7 +684,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val payerAmount = 45_000_000 msat
     val recipientAmount = 50_000_000 msat
-    val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
+
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(recipientAmount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     // The amount is below what Carol expects.
     val payment = sendOfferPaymentWithInvalidAmount(f, bob, carol, payerAmount, recipientAmount, routes)
     assert(payment.failures.head.isInstanceOf[PaymentFailure])
@@ -559,8 +710,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val compactOffer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(compactBlindedRoute))))
     assert(compactOffer.toString.length < offer.toString.length)
 
-    val receivingRoute = ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta)
-    val handler = carol.system.spawnAnonymous(offerHandler(amount, Seq(receivingRoute)))
+    val sender = TestProbe()
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
+    val receivingRoute = InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta)
+    val handler = carol.system.spawnAnonymous(offerHandler(amount, Seq(receivingRoute), hideFees = false))
     carol.offerManager ! OfferManager.RegisterOffer(compactOffer, Some(recipientKey), Some(pathId), handler)
     val offerPayment = alice.system.spawnAnonymous(OfferPayment(alice.nodeParams, alice.postman, alice.router, alice.register, alice.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, alice.routeParams, blocking = true)
@@ -576,9 +731,12 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val pathId = randomBytes32()
     val amount = 25_000_000 msat
 
+    carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val offerPaths = Seq(OnionMessages.buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId)), Recipient(carol.nodeId, Some(pathId))).route)
     val offer = Offer.withPaths(None, Some("implicit node id"), offerPaths, Features.empty, carol.nodeParams.chainHash)
-    val handler = carol.system.spawnAnonymous(offerHandler(amount, Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))))
+    val handler = carol.system.spawnAnonymous(offerHandler(amount, Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta)), hideFees = false))
     carol.offerManager ! OfferManager.RegisterOffer(offer, None, Some(pathId), handler)
     val offerPayment = alice.system.spawnAnonymous(OfferPayment(alice.nodeParams, alice.postman, alice.router, alice.register, alice.paymentInitiator))
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(None, connectDirectly = false, maxAttempts = 1, alice.routeParams, blocking = true)

@@ -338,6 +338,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               // this is most likely a liquidity issue, we remove this edge for our next payment attempt
               data.recipient.extraEdges.filterNot(edge => edge.sourceNodeId == nodeId && edge.targetNodeId == hop.nextNodeId)
           }
+        case _: HopRelayParams.Dummy =>
+          log.error("received an update for a dummy hop, this should never happen")
+          data.recipient.extraEdges
       }
       case None =>
         log.error(s"couldn't find node=$nodeId in the route, this should never happen")

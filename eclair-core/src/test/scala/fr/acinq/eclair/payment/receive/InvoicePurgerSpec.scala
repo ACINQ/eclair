@@ -52,11 +52,11 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     // create paid invoices
     val receivedAt = TimestampMilli.now() + 1.milli
     val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18)))
-    val paidPayments = paidInvoices.map(invoice => IncomingStandardPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
+    val paidPayments = paidInvoices.map(invoice => IncomingStandardPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, 100 msat, receivedAt)))
     paidPayments.foreach(payment => {
       db.addIncomingPayment(payment.invoice, payment.paymentPreimage)
       // receive payment
-      db.receiveIncomingPayment(payment.invoice.paymentHash, 100 msat, receivedAt)
+      db.receiveIncomingPayment(payment.invoice.paymentHash, 100 msat, 100 msat, receivedAt)
     })
 
     val now = TimestampMilli.now()

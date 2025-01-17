@@ -71,6 +71,17 @@ package object eclair {
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
 
+  /**
+   * @param baseFee         fixed fee
+   * @param proportionalFee proportional fee (millionths)
+   * @param incomingAmount  incoming payment amount
+   * @return the amount that a node should forward after paying itself the base and proportional fees
+   */
+  def amountAfterFee(baseFee: MilliSatoshi, proportionalFee: Long, incomingAmount: MilliSatoshi): MilliSatoshi =
+    ((incomingAmount - baseFee).toLong * 1_000_000 + 1_000_000 + proportionalFee - 1).msat / (1_000_000 + proportionalFee)
+
+  def amountAfterFee(relayFees: RelayFees, incomingAmount: MilliSatoshi): MilliSatoshi = amountAfterFee(relayFees.feeBase, relayFees.feeProportionalMillionths, incomingAmount)
+
   implicit class MilliSatoshiLong(private val n: Long) extends AnyVal {
     def msat = MilliSatoshi(n)
   }
