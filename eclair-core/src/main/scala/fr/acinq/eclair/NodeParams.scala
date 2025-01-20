@@ -318,6 +318,7 @@ object NodeParams extends Logging {
       "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority",
       // v0.12.0
       "channel.mindepth-blocks" -> "channel.min-depth-funding-blocks",
+      "sync-whitelist" -> "router.sync.whitelist",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
