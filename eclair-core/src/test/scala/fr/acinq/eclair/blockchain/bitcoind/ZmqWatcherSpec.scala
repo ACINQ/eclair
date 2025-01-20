@@ -21,6 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOp
 import akka.actor.{ActorRef, Props, typed}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse}
@@ -71,13 +72,19 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
   case class Fixture(blockHeight: AtomicLong, bitcoinClient: BitcoinCoreClient, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withWatcher(testFun: Fixture => Any): Unit = {
+  private def withWatcher(testFun: Fixture => Any, scanPastBlock: Boolean = false): Unit = {
     val blockCount = new AtomicLong()
     val probe = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[CurrentBlockHeight])
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    val nodeParams = TestConstants.Alice.nodeParams.copy(chainHash = Block.RegtestGenesisBlock.hash)
+    val nodeParams = TestConstants.Alice.nodeParams
+      .modify(_.chainHash).setTo(Block.RegtestGenesisBlock.hash)
+      // We disable previous block scan by default.
+      .modify(_.channelConf.scanPreviousBlocksDepth).setToIf(!scanPastBlock)(0)
+      // We enable it and use a faster (randomized) delay when requested.
+      .modify(_.channelConf.scanPreviousBlocksDepth).setToIf(scanPastBlock)(6)
+      .modify(_.channelConf.maxBlockProcessingDelay).setToIf(scanPastBlock)(10 millis)
     val watcher = system.spawn(ZmqWatcher(nodeParams, blockCount, bitcoinClient), UUID.randomUUID().toString)
     try {
       testFun(Fixture(blockCount, bitcoinClient, watcher, probe, listener))
@@ -449,6 +456,37 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       listener.fishForMessage() { case m: NewTransaction => Set(tx1.txid, tx2.txid).contains(m.tx.txid) },
     ).map(_.asInstanceOf[NewTransaction].tx)
     assert(txs.toSet == Set(tx1, tx2))
+  }
+
+  test("scan transactions from previous blocks") {
+    withWatcher(f => {
+      import f._
+
+      val (priv, address) = createExternalAddress()
+      val tx = sendToAddress(address, Btc(1), probe)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+      watcher ! WatchFundingSpent(probe.ref, tx.txid, outputIndex, Set.empty)
+      probe.expectNoMessage(100 millis)
+
+      // The watch triggers when we see the spending transaction in the mempool.
+      val spendingTx = createSpendP2WPKH(tx, priv, priv.publicKey, 3_000 sat, 0xffffffffL, 0)
+      bitcoinClient.publishTransaction(spendingTx)
+      assert(probe.expectMsgType[WatchFundingSpentTriggered].spendingTx == spendingTx)
+
+      // But we may not have received it in our mempool, and may discover it directly in a confirmed block.
+      // We trigger the watch again when we receive the confirmed block.
+      // Note that we trigger it twice, because we have two mechanisms for redundancy:
+      //  - we should receive confirmed transactions through ZMQ, but this can be unreliable when using a remote bitcoind
+      //  - when we receive a new block, we iterate through a few past blocks to analyze their transactions
+      generateBlocks(3)
+      assert(probe.expectMsgType[WatchFundingSpentTriggered].spendingTx == spendingTx)
+      assert(probe.expectMsgType[WatchFundingSpentTriggered].spendingTx == spendingTx)
+      probe.expectNoMessage(100 millis)
+
+      // When receiving the next block, we ignore past blocks that we already analyzed to avoid needlessly firing watches.
+      generateBlocks(1)
+      probe.expectNoMessage(100 millis)
+    }, scanPastBlock = true)
   }
 
   test("stop watching when requesting actor dies") {

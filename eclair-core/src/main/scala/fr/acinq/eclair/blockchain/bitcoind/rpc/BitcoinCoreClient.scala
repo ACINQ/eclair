@@ -199,8 +199,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         // NB: bitcoind confusingly returns the blockId instead of the blockHash.
         case None => rpcClient.invoke("getbestblockhash").collect { case JString(blockId) => BlockId(ByteVector32.fromValidHex(blockId)) }
       }
-      // with a verbosity of 0, getblock returns the raw serialized block
-      block <- rpcClient.invoke("getblock", blockId, 0).collect { case JString(b) => Block.read(b) }
+      block <- getBlock(blockId)
       res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == KotlinUtils.scala2kmp(txid) && i.outPoint.index == outputIndex)) match {
         case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
         case None if limit > 0 => lookForSpendingTx(Some(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), txid, outputIndex, limit - 1)
@@ -669,10 +668,26 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       case JInt(count) => BlockHeight(count.toLong)
     }
 
+  def getBlockId(height: Int)(implicit ec: ExecutionContext): Future[BlockId] = {
+    rpcClient.invoke("getblockhash", height).collect {
+      // Even though the RPC mentions a block_hash, it is returned encoded as a block_id.
+      case JString(blockId) => BlockId(ByteVector32.fromValidHex(blockId))
+    }
+  }
+
+  def getBlock(blockId: BlockId)(implicit ec: ExecutionContext): Future[Block] = {
+    rpcClient.invoke("getblock", blockId.toString(), 0)
+      .collect { case JString(raw) => Block.read(raw) }
+      .flatMap {
+        case block if KotlinUtils.kmp2scala(block.blockId) != blockId => Future.failed(new IllegalArgumentException(s"invalid block returned by bitcoind: we requested $blockId, we got ${block.blockId}"))
+        case block => Future.successful(block)
+      }
+  }
+
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
     for {
-      blockId <- rpcClient.invoke("getblockhash", blockHeight.toInt).map(_.extractOpt[String].map(b => BlockId(ByteVector32.fromValidHex(b))).getOrElse(BlockId(ByteVector32.Zeroes)))
+      blockId <- getBlockId(blockHeight.toInt)
       txid <- rpcClient.invoke("getblock", blockId).map(json => Try {
         val JArray(txs) = json \ "tx"
         TxId.fromValidHex(txs(txIndex).extract[String])

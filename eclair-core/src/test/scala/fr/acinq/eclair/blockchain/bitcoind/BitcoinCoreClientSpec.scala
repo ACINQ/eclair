@@ -22,7 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, BtcDouble, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockId, Btc, BtcDouble, Crypto, DeterministicWallet, KotlinUtils, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
@@ -1020,6 +1020,29 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(mempoolTx3.fees == 7500.sat)
     assert(mempoolTx3.descendantFees == mempoolTx3.fees)
     assert(mempoolTx3.ancestorFees == mempoolTx1.fees + 12500.sat)
+  }
+
+  test("get blocks") {
+    val sender = TestProbe()
+    val address = getNewAddress(sender)
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    val tx1 = sendToAddress(address, 200_000 sat)
+    generateBlocks(1)
+    val tx2 = sendToAddress(address, 150_000 sat)
+    generateBlocks(1)
+
+    val currentHeight = currentBlockHeight(sender)
+    bitcoinClient.getBlockId(currentHeight.toInt).pipeTo(sender.ref)
+    val lastBlockId = sender.expectMsgType[BlockId]
+    bitcoinClient.getBlock(lastBlockId).pipeTo(sender.ref)
+    val lastBlock = sender.expectMsgType[fr.acinq.bitcoin.Block]
+    assert(lastBlock.tx.contains(KotlinUtils.scala2kmp(tx2)))
+
+    val previousBlockId = BlockId(KotlinUtils.kmp2scala(lastBlock.header.hashPreviousBlock))
+    bitcoinClient.getBlock(previousBlockId).pipeTo(sender.ref)
+    val previousBlock = sender.expectMsgType[fr.acinq.bitcoin.Block]
+    assert(previousBlock.tx.contains(KotlinUtils.scala2kmp(tx1)))
   }
 
   test("abandon transaction") {
