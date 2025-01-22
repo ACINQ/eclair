@@ -543,6 +543,10 @@ class Peer(val nodeParams: NodeParams,
         replyTo_opt.foreach(_ ! MessageRelay.Sent(messageId))
         stay()
 
+      case Event(msg: RecommendedFeerates, _) =>
+        log.info("our peer recommends the following feerates: funding={}, commitment={}", msg.fundingFeerate, msg.commitmentFeerate)
+        stay()
+
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
         stay()
@@ -622,10 +626,6 @@ class Peer(val nodeParams: NodeParams,
         case _ =>
           stay()
       }
-
-    case Event(msg: RecommendedFeerates, _) =>
-      log.info("our peer recommends the following feerates: funding={}, commitment={}", msg.fundingFeerate, msg.commitmentFeerate)
-      stay()
 
     case Event(current: CurrentBlockHeight, d) =>
       // If we have pending will_add_htlc that are timing out, it doesn't make any sense to keep them, even if we have
