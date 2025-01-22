@@ -319,4 +319,22 @@ class OfferTypesSpec extends AnyFunSuite {
       }
     }
   }
+
+  case class FormatTestVector(comment: String, valid: Boolean, string: String)
+
+  test("string format spec test vectors") {
+    implicit val formats: DefaultFormats.type = DefaultFormats
+
+    val src = Source.fromFile(new File(getClass.getResource(s"/format-string-test.json").getFile))
+    val testVectors = JsonMethods.parse(src.mkString).extract[Seq[FormatTestVector]]
+    src.close()
+    val canonical = testVectors.head.string
+    for (vector <- testVectors) {
+      if (vector.valid) {
+        assert(Offer.validateFormat(vector.string) == canonical, vector.comment)
+      } else {
+        assertThrows[IllegalArgumentException](Offer.validateFormat(vector.string))
+      }
+    }
+  }
 }

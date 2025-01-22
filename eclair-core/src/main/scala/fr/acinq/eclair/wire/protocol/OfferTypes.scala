@@ -314,8 +314,17 @@ object OfferTypes {
       Right(Offer(records))
     }
 
+    def validateFormat(s: String): String = {
+      val lowercase = s.toLowerCase
+      require(s == lowercase || s == s.toUpperCase)
+      require(lowercase.head == 'l')
+      require(Bech32.alphabet.contains(lowercase.last))
+      require(!lowercase.matches(".*\\+\\s*\\+.*"))
+      lowercase.replaceAll("\\+\\s*", "")
+    }
+
     def decode(s: String): Try[Offer] = Try {
-      val triple = Bech32.decodeBytes(s.toLowerCase, true)
+      val triple = Bech32.decodeBytes(validateFormat(s), true)
       val prefix = triple.getFirst
       val encoded = triple.getSecond
       val encoding = triple.getThird
