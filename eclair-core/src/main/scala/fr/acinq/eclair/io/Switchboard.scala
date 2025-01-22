@@ -20,7 +20,7 @@ import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnchainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -69,12 +69,17 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       }
       log.info("restoring {} peer(s) with {} channel(s) and {} peers with pending on-the-fly funding", peersWithChannels.size, channels.size, (peersWithOnTheFlyFunding.keySet -- peersWithChannels.keySet).size)
       unstashAll()
-      context.become(normal(peersWithChannels.keySet))
+      val peerCapacities = channels.map {
+        case channelData: ChannelDataWithoutCommitments => (channelData.remoteNodeId, 0L)
+        case channelData: ChannelDataWithCommitments => (channelData.remoteNodeId, channelData.commitments.capacity.toLong)
+      }.groupMapReduce[PublicKey, Long](_._1)(_._2)(_ + _)
+      val topCapacityPeers = peerCapacities.toSeq.sortWith { case ((_, c1), (_, c2)) => c1 > c2 }.take(nodeParams.routerConf.syncConf.peerLimit).map(_._1).toSet
+      context.become(normal(peersWithChannels.keySet, topCapacityPeers))
     case _ =>
       stash()
   }
 
-  def normal(peersWithChannels: Set[PublicKey]): Receive = {
+  def normal(peersWithChannels: Set[PublicKey], peersToSyncWith: Set[PublicKey]): Receive = {
 
     case Peer.Connect(publicKey, _, _, _) if publicKey == nodeParams.nodeId =>
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
@@ -110,14 +115,17 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty, pendingOnTheFlyFunding = Map.empty)
       val features = nodeParams.initFeaturesFor(authenticated.remoteNodeId)
       val hasChannels = peersWithChannels.contains(authenticated.remoteNodeId)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, nodeParams.liquidityAdsConfig.rates_opt)
+      val doSync = peersToSyncWith.contains(authenticated.remoteNodeId) || nodeParams.routerConf.syncConf.whitelist.contains(authenticated.remoteNodeId)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync, nodeParams.liquidityAdsConfig.rates_opt)
       if (!hasChannels && !authenticated.outgoing) {
         incomingConnectionsTracker ! TrackIncomingConnection(authenticated.remoteNodeId)
       }
 
-    case ChannelIdAssigned(_, remoteNodeId, _, _) => context.become(normal(peersWithChannels + remoteNodeId))
+    case ChannelIdAssigned(_, remoteNodeId, _, _) =>
+      val peersToSyncWith1 = if (peersToSyncWith.size < nodeParams.routerConf.syncConf.peerLimit) peersToSyncWith + remoteNodeId else peersToSyncWith
+      context.become(normal(peersWithChannels + remoteNodeId, peersToSyncWith1))
 
-    case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
+    case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId, peersToSyncWith - remoteNodeId))
 
     case GetPeers => sender() ! context.children.filterNot(_ == incomingConnectionsTracker.toClassic)
 

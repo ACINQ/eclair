@@ -104,6 +104,64 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     peer.expectMsg(Peer.Disconnect(remoteNodeId))
   }
 
+  def sendFeatures(nodeParams: NodeParams, channels: Seq[PersistentChannelData], remoteNodeId: PublicKey, expectedFeatures: Features[InitFeature], expectedSync: Boolean): Unit = {
+    val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(channels)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
+    val initConnection = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
+    assert(initConnection.chainHash == nodeParams.chainHash)
+    assert(initConnection.features == expectedFeatures)
+    assert(initConnection.doSync == expectedSync)
+  }
+
+  test("sync if no whitelist is defined and peer has channels") {
+    val nodeParams = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set.empty)))
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
+    sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
+  }
+
+  test("sync if no whitelist is defined and peer creates a channel") {
+    val nodeParams = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set.empty)))
+    val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(Nil)
+
+    // We have a channel with our peer, so we trigger a sync when connecting.
+    switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32(), randomBytes32())
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
+    val initConnection1 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
+    assert(initConnection1.chainHash == nodeParams.chainHash)
+    assert(initConnection1.features == nodeParams.features.initFeatures())
+    assert(initConnection1.doSync)
+
+    // We don't have channels with our peer, so we won't trigger a sync when connecting.
+    switchboard ! LastChannelClosed(peer.ref, remoteNodeId)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId, outgoing = true)
+    val initConnection2 = peerConnection.expectMsgType[PeerConnection.InitializeConnection]
+    assert(initConnection2.chainHash == nodeParams.chainHash)
+    assert(initConnection2.features == nodeParams.features.initFeatures())
+    assert(!initConnection2.doSync)
+  }
+
+  test("don't sync if no whitelist is defined and peer does not have channels") {
+    val nodeParams = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set.empty)))
+    sendFeatures(nodeParams, Nil, randomKey().publicKey, nodeParams.features.initFeatures(), expectedSync = false)
+  }
+
+  test("sync if whitelist contains peer") {
+    val remoteNodeId = randomKey().publicKey
+    val nodeParams = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(remoteNodeId, randomKey().publicKey, randomKey().publicKey))))
+    sendFeatures(nodeParams, Nil, remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
+  }
+
+  test("don't sync if whitelist doesn't contain peer") {
+    val nodeParams = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(peerLimit = 0, whitelist = Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))))
+    val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
+    sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = false)
+  }
+
   test("get peer info") {
     val (probe, peer) = (TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(Alice.nodeParams, FakePeerFactory(probe, peer)))

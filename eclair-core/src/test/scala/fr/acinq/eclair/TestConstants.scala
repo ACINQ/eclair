@@ -196,9 +196,9 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        encodingType = EncodingType.COMPRESSED_ZLIB,
         syncConf = Router.SyncConf(
           requestNodeAnnouncements = true,
+          encodingType = EncodingType.COMPRESSED_ZLIB,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
           peerLimit = 10,
@@ -378,9 +378,9 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        encodingType = EncodingType.UNCOMPRESSED,
         syncConf = Router.SyncConf(
           requestNodeAnnouncements = true,
+          encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
           peerLimit = 20,

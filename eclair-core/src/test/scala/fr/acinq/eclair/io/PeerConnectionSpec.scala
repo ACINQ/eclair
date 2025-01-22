@@ -68,19 +68,23 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
-  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), isPersistent: Boolean = true): Unit = {
+  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), doSync: Boolean = false, isPersistent: Boolean = true): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = isPersistent))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = true))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features.initFeatures(), doSync, None))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
     assert(localInit.networks == List(Block.RegtestGenesisBlock.hash))
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
-    router.expectMsgType[SendChannelQuery]
+    if (doSync) {
+      router.expectMsgType[SendChannelQuery]
+    } else {
+      router.expectNoMessage(1 second)
+    }
     peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
     assert(peerConnection.stateName == PeerConnection.CONNECTED)
   }
@@ -98,7 +102,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.send(peerConnection, incomingConnection)
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId, outgoing = false))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = false, None))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
     assert(localInit.remoteAddress_opt == Some(fakeIPAddress))
@@ -130,7 +134,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true, None))
     probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("initialization timed out"))
     peer.expectMsg(ConnectionDown(peerConnection))
@@ -143,7 +147,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
@@ -160,7 +164,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
@@ -177,7 +181,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
     // remote activated MPP but forgot payment secret
@@ -195,7 +199,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), None))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features.initFeatures(), doSync = true, None))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
     transport.send(peerConnection, protocol.Init(Bob.nodeParams.features.initFeatures(), TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SignetGenesisBlock.hash :: Nil))))
@@ -208,7 +212,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("sync when requested") { f =>
     import f._
     val remoteInit = protocol.Init(Features(ChannelRangeQueries -> Optional, VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, StaticRemoteKey -> Mandatory))
-    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 
   test("reply to ping") { f =>

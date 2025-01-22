@@ -86,16 +86,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     context.system.eventStream.publish(ChannelUpdatesReceived(channels.values.flatMap(pc => pc.update_1_opt ++ pc.update_2_opt ++ Nil)))
     context.system.eventStream.publish(NodesDiscovered(nodes))
 
-    val peerCapacities = channels.values.map(pc =>
-      if (pc.nodeId1 == nodeParams.nodeId) {
-        Some((pc.nodeId2, pc.capacity))
-      } else if (pc.nodeId2 == nodeParams.nodeId) {
-        Some((pc.nodeId1, pc.capacity))
-      } else {
-        None
-      }).flatten.groupMapReduce(_._1)(_._2)(_ + _)
-    val topCapacityPeers = peerCapacities.toSeq.sortWith { case ((_, c1), (_, c2)) => c1 > c2 }.take(nodeParams.routerConf.syncConf.peerLimit).map(_._1).toSet
-
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
     (channels.values ++ pruned.values).foreach { pc =>
@@ -124,8 +114,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
       sync = Map.empty,
-      spentChannels = Map.empty,
-      topCapacityPeers = topCapacityPeers)
+      spentChannels = Map.empty)
     startWith(NORMAL, data)
   }
 
@@ -308,7 +297,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Validation.handleAvailableBalanceChanged(d, e)
 
     case Event(s: SendChannelQuery, d) =>
-      stay() using Sync.handleSendChannelQuery(nodeParams.routerConf.syncConf, d, s)
+      stay() using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
@@ -380,6 +369,7 @@ object Router {
   }
 
   case class SyncConf(requestNodeAnnouncements: Boolean,
+                      encodingType: EncodingType,
                       channelRangeChunkSize: Int,
                       channelQueryChunkSize: Int,
                       peerLimit: Int,
@@ -391,7 +381,6 @@ object Router {
   case class RouterConf(watchSpentWindow: FiniteDuration,
                         channelExcludeDuration: FiniteDuration,
                         routerBroadcastInterval: FiniteDuration,
-                        encodingType: EncodingType,
                         syncConf: SyncConf,
                         pathFindingExperimentConf: PathFindingExperimentConf,
                         messageRouteParams: MessageRouteParams,
@@ -714,7 +703,7 @@ object Router {
   // @formatter:on
 
   // @formatter:off
-  case class SendChannelQuery(chainHash: BlockHash, remoteNodeId: PublicKey, to: ActorRef, isReconnection: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
+  case class SendChannelQuery(chainHash: BlockHash, remoteNodeId: PublicKey, to: ActorRef, replacePrevious: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
   case object GetRoutingState
   case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
   case object GetRoutingStateStreaming extends RemoteTypes
@@ -783,7 +772,6 @@ object Router {
                   graphWithBalances: GraphWithBalanceEstimates,
                   sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
                   spentChannels: Map[TxId, RealShortChannelId], // transactions that spend funding txs that are not yet deeply buried
-                  topCapacityPeers: Set[PublicKey],
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid

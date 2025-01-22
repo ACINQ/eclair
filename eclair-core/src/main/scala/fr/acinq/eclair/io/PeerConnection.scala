@@ -103,7 +103,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer, chainHash, localFeatures, fundingRates_opt), d: BeforeInitData) =>
+    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync, fundingRates_opt), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
@@ -120,7 +120,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
-      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, d.isPersistent)
+      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
 
     case Event(_: protocol.Init, _) =>
       log.debug("stashing remote init")
@@ -160,7 +160,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected(self, d.peer))
 
-          self ! DoSync(isReconnection = true)
+          if (d.doSync) {
+            self ! DoSync(replacePrevious = true)
+          } else {
+            log.info("not syncing with this peer")
+          }
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
           val rebroadcastDelay = Random.nextInt(conf.maxRebroadcastDelay.toSeconds.toInt).seconds
@@ -395,12 +399,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay() using d.copy(behavior = behavior1)
 
-      case Event(DoSync(isReconnection), d: ConnectedData) =>
+      case Event(DoSync(replacePrevious), d: ConnectedData) =>
         val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
           val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, isReconnection, flags_opt)
+          log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
         }
         stay()
 
@@ -531,7 +536,7 @@ object PeerConnection {
   case object SendPing
   case object KillIdle
   case object ResumeAnnouncements
-  case class DoSync(isReconnection: Boolean) extends RemoteTypes
+  case class DoSync(replacePrevious: Boolean) extends RemoteTypes
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
@@ -558,7 +563,7 @@ object PeerConnection {
   case object Nothing extends Data
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
-  case class InitializingData(chainHash: BlockHash, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, isPersistent: Boolean) extends Data with HasTransport
+  case class InitializingData(chainHash: BlockHash, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, isPersistent: Boolean) extends Data with HasTransport
   case class ConnectedData(chainHash: BlockHash, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, isPersistent: Boolean) extends Data with HasTransport
 
   case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
@@ -575,7 +580,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], fundingRates_opt: Option[LiquidityAds.WillFundRates]) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean, fundingRates_opt: Option[LiquidityAds.WillFundRates]) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes

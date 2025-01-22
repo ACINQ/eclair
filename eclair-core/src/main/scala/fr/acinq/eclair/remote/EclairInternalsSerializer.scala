@@ -99,6 +99,9 @@ object EclairInternalsSerializer {
 
   val syncConfCodec: Codec[Router.SyncConf] = (
     ("requestNodeAnnouncements" | bool(8)) ::
+      ("encodingType" | discriminated[EncodingType].by(uint8)
+        .typecase(0, provide(EncodingType.UNCOMPRESSED))
+        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
       ("peerLimit" | int32) ::
@@ -108,9 +111,6 @@ object EclairInternalsSerializer {
     ("watchSpentWindow" | finiteDurationCodec) ::
       ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("encodingType" | discriminated[EncodingType].by(uint8)
-        .typecase(0, provide(EncodingType.UNCOMPRESSED))
-        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("syncConf" | syncConfCodec) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
       ("messageRouteParams" | messageRouteParamsCodec) ::
@@ -161,6 +161,7 @@ object EclairInternalsSerializer {
     ("peer" | actorRefCodec(system)) ::
       ("chainHash" | blockHash) ::
       ("features" | variableSizeBytes(uint16, initFeaturesCodec)) ::
+      ("doSync" | bool(8)) ::
       ("fundingRates" | optional(bool(8), LiquidityAds.Codecs.willFundRates))).as[PeerConnection.InitializeConnection]
 
   def connectionReadyCodec(system: ExtendedActorSystem): Codec[PeerConnection.ConnectionReady] = (

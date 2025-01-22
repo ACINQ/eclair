@@ -20,14 +20,12 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Satoshi, Script, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.RealShortChannelId
-import fr.acinq.eclair.TestDatabases.sqliteInMemory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
@@ -86,7 +84,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     }
     val srcId = src.underlyingActor.nodeParams.nodeId
     val tgtId = tgt.underlyingActor.nodeParams.nodeId
-    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, isReconnection = true, extendedQueryFlags_opt))
+    sender.send(src, SendChannelQuery(src.underlyingActor.nodeParams.chainHash, tgtId, pipe.ref, replacePrevious = true, extendedQueryFlags_opt))
     // src sends a query_channel_range to bob
     val qcr = pipe.expectMsgType[QueryChannelRange]
     pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, qcr))
@@ -136,7 +134,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   test("sync with standard channel queries") {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(Bob.nodeParams.nodeId)))), watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
@@ -185,7 +183,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   def syncWithExtendedQueries(requestNodeAnnouncements: Boolean): Unit = {
     val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(requestNodeAnnouncements = requestNodeAnnouncements, whitelist = Set(Bob.nodeParams.nodeId)))), watcher))
+    val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(requestNodeAnnouncements = requestNodeAnnouncements))), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
@@ -253,7 +251,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
   }
 
   test("reset sync state on reconnection") {
-    val params = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(Bob.nodeParams.nodeId))))
+    val params = TestConstants.Alice.nodeParams
     val router = TestFSMRef(new Router(params, TestProbe().ref))
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
@@ -263,13 +261,13 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(!router.stateData.sync.contains(remoteNodeId))
 
     // ask router to send a channel range query
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = true, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     // ask router to send another channel range query
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = false, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
     sender.expectNoMessage(100 millis) // it's a duplicate and should be ignored
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
@@ -286,7 +284,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(sync.totalQueries == 1)
 
     // simulate a re-connection
-    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, isReconnection = true, None))
+    sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
     assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
@@ -329,47 +327,6 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
       .updated(nodeIdA, sync2(nodeIdA).copy(remainingQueries = List(req)))
       .updated(nodeIdB, sync2(nodeIdB).copy(remainingQueries = List(req)))
     assert(syncProgress(sync3) == SyncProgress(0.875D))
-  }
-
-  test("do not send channel query to unknown peer") {
-    val watcher = system.actorOf(Props(new YesWatcher()))
-    val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
-    val peerConnection = TestProbe()
-    alice ! SendChannelQuery(Alice.nodeParams.chainHash, Bob.nodeParams.nodeId, peerConnection.ref, isReconnection = true, None)
-    peerConnection.expectNoMessage()
-  }
-
-  test("send channel query to peer with top capacity but not to second best") {
-    // Adding a channel with Bob and a larger one with Carol
-    val carol = randomKey().publicKey
-    val connection = sqliteInMemory()
-    val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = None)
-    val sig = ByteVector64.Zeroes
-    val txid = TxId.fromValidHex("0001" * 16)
-    val cid1 = RealShortChannelId(Alice.nodeParams.currentBlockHeight, 1, 1)
-    val ann1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, cid1, Alice.nodeParams.nodeId, Bob.nodeParams.nodeId, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    dbs.network.addChannel(ann1, txid, Satoshi(123))
-    val cid2 = RealShortChannelId(Alice.nodeParams.currentBlockHeight, 1, 2)
-    val ann2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, cid2, Alice.nodeParams.nodeId, carol, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
-    dbs.network.addChannel(ann2, txid, Satoshi(4567))
-
-    val watcher = system.actorOf(Props(new YesWatcher()))
-    val onlyTopPeer = Alice.nodeParams.copy(db = dbs, routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(peerLimit = 1)))
-    val alice = TestFSMRef(new Router(onlyTopPeer, watcher))
-    val peerConnection = TestProbe()
-    alice ! SendChannelQuery(Alice.nodeParams.chainHash, Bob.nodeParams.nodeId, peerConnection.ref, isReconnection = true, None)
-    peerConnection.expectNoMessage()
-    alice ! SendChannelQuery(Alice.nodeParams.chainHash, carol, peerConnection.ref, isReconnection = true, None)
-    peerConnection.expectMsgType[QueryChannelRange]
-  }
-
-  test("send channel query to whitelisted peer") {
-    val watcher = system.actorOf(Props(new YesWatcher()))
-    val withWhitelistedBob = Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(syncConf = Alice.nodeParams.routerConf.syncConf.copy(whitelist = Set(Bob.nodeParams.nodeId))))
-    val alice = TestFSMRef(new Router(withWhitelistedBob, watcher))
-    val peerConnection = TestProbe()
-    alice ! SendChannelQuery(Alice.nodeParams.chainHash, Bob.nodeParams.nodeId, peerConnection.ref, isReconnection = true, None)
-    peerConnection.expectMsgType[QueryChannelRange]
   }
 }
 

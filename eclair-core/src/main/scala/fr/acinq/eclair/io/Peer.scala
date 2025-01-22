@@ -475,7 +475,7 @@ class Peer(val nodeParams: NodeParams,
         log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
         // we have our first channel with that peer: let's sync our routing table
         if (!d.channels.keys.exists(_.isInstanceOf[FinalChannelId])) {
-          d.peerConnection ! PeerConnection.DoSync(isReconnection = false)
+          d.peerConnection ! PeerConnection.DoSync(replacePrevious = false)
         }
         // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
         // we won't clean it up, but we won't remember the temporary id on channel termination
