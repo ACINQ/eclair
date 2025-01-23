@@ -314,8 +314,21 @@ object OfferTypes {
       Right(Offer(records))
     }
 
+    /**
+     * An offer string can be split with '+' to fit in places with a low character limit. This validates that the string adheres to the spec format to guard against copy-pasting errors.
+     * @return a lowercase string with '+' and whitespaces removed
+     */
+    private def validateFormat(s: String): String = {
+      val lowercase = s.toLowerCase
+      require(s == lowercase || s == s.toUpperCase)
+      require(lowercase.head == 'l')
+      require(Bech32.alphabet.contains(lowercase.last))
+      require(!lowercase.matches(".*\\+\\s*\\+.*"))
+      lowercase.replaceAll("\\+\\s*", "")
+    }
+
     def decode(s: String): Try[Offer] = Try {
-      val triple = Bech32.decodeBytes(s.toLowerCase, true)
+      val triple = Bech32.decodeBytes(validateFormat(s), true)
       val prefix = triple.getFirst
       val encoded = triple.getSecond
       val encoding = triple.getThird
