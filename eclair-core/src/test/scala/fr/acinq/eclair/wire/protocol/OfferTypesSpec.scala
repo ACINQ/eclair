@@ -328,13 +328,8 @@ class OfferTypesSpec extends AnyFunSuite {
     val src = Source.fromFile(new File(getClass.getResource(s"/format-string-test.json").getFile))
     val testVectors = JsonMethods.parse(src.mkString).extract[Seq[FormatTestVector]]
     src.close()
-    val canonical = testVectors.head.string
     for (vector <- testVectors) {
-      if (vector.valid) {
-        assert(Offer.validateFormat(vector.string) == canonical, vector.comment)
-      } else {
-        assertThrows[IllegalArgumentException](Offer.validateFormat(vector.string))
-      }
+      assert(Offer.decode(vector.string).isSuccess == vector.valid, vector.comment)
     }
   }
 }

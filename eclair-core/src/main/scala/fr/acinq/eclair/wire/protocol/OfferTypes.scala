@@ -318,7 +318,7 @@ object OfferTypes {
      * An offer string can be split with '+' to fit in places with a low character limit. This validates that the string adheres to the spec format to guard against copy-pasting errors.
      * @return a lowercase string with '+' and whitespaces removed
      */
-    def validateFormat(s: String): String = {
+    private def validateFormat(s: String): String = {
       val lowercase = s.toLowerCase
       require(s == lowercase || s == s.toUpperCase)
       require(lowercase.head == 'l')
