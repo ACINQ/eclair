@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, InputWeight}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
@@ -446,8 +445,8 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
     // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
     val txNotFunded = anchorTx.txInfo.tx.copy(txOut = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil)
-    val anchorWeight = Seq(InputWeight(anchorTx.txInfo.input.outPoint, anchorInputWeight))
-    bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate, inputWeights = anchorWeight), feeBudget_opt = None).flatMap { fundTxResponse =>
+    val anchorWeight = Map(anchorTx.txInfo.input.outPoint -> anchorInputWeight.toLong)
+    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, externalInputsWeight = anchorWeight).flatMap { fundTxResponse =>
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the anchor is the first input.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == anchorTx.txInfo.input.outPoint)
       // We merge our dummy change output with the one added by Bitcoin Core, if any.
@@ -467,11 +466,11 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def addInputs(htlcTx: HtlcWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(HtlcWithWitnessData, Satoshi)] = {
-    val htlcInputWeight = InputWeight(htlcTx.txInfo.input.outPoint, htlcTx.txInfo match {
-      case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessInputWeight
-      case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutInputWeight
-    })
-    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, FundTransactionOptions(targetFeerate, changePosition = Some(1), inputWeights = Seq(htlcInputWeight)), feeBudget_opt = None).map(fundTxResponse => {
+    val htlcInputWeight = htlcTx.txInfo match {
+      case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessInputWeight.toLong
+      case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutInputWeight.toLong
+    }
+    bitcoinClient.fundTransaction(htlcTx.txInfo.tx, targetFeerate, changePosition = Some(1), externalInputsWeight = Map(htlcTx.txInfo.input.outPoint -> htlcInputWeight)).map(fundTxResponse => {
       // Bitcoin Core may not preserve the order of inputs, we need to make sure the htlc is the first input.
       val fundedTx = fundTxResponse.tx.copy(txIn = htlcTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn.filterNot(_.outPoint == htlcTx.txInfo.input.outPoint))
       (htlcTx.updateTx(fundedTx), fundTxResponse.amountIn)

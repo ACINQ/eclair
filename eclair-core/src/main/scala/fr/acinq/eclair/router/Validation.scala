@@ -262,7 +262,7 @@ object Validation {
     // in case this was our first local channel, we make a node announcement
     if (!d.nodes.contains(nodeParams.nodeId) && isRelatedTo(ann, nodeParams.nodeId)) {
       log.info("first local channel validated, announcing local node")
-      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures(), fundingRates_opt = nodeParams.willFundRates_opt)
+      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures(), fundingRates_opt = nodeParams.liquidityAdsConfig.rates_opt)
       handleNodeAnnouncement(d1, nodeParams.db.network, Set(LocalGossip), nodeAnn)
     } else d1
   }

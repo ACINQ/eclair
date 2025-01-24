@@ -145,6 +145,7 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
+        channelFundingTimeout = 30 seconds,
         remoteRbfLimits = RemoteRbfLimits(5, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
@@ -239,7 +240,7 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      willFundRates_opt = Some(defaultLiquidityRates),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)
@@ -323,6 +324,7 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
+        channelFundingTimeout = 30 seconds,
         remoteRbfLimits = RemoteRbfLimits(10, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
@@ -417,7 +419,7 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      willFundRates_opt = Some(defaultLiquidityRates),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour)

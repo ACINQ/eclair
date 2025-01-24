@@ -564,7 +564,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(!init.localParams.isChannelOpener)
     assert(init.localParams.paysCommitTxFees)
-    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)))
+    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
 
     // The preimage was provided, so we fulfill upstream HTLCs.
     verifyFulfilledUpstream(upstream, preimage)
@@ -617,7 +617,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(!init.localParams.isChannelOpener)
     assert(init.localParams.paysCommitTxFees)
-    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)))
+    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
     assert(channel.expectMsgType[OpenDualFundedChannel].useFeeCredit_opt.contains(3_000_000 msat))
 
     // Once the funding transaction is signed, we remove the fee credit consumed.

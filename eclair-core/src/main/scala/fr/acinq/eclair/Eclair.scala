@@ -792,7 +792,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse] = {
-    appKit.nodeParams.willFundRates_opt match {
+    appKit.nodeParams.liquidityAdsConfig.rates_opt match {
       case Some(willFundRates) if willFundRates.paymentTypes.contains(LiquidityAds.PaymentType.FromFutureHtlc) =>
         appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
         Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))

@@ -1802,7 +1802,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
     val keyManager = new LocalOnChainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
-    val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
+    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnchainPubkeyCache {
       lazy val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]

@@ -198,7 +198,7 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
         val channel = spawnChannel()
-        c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
+        context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
@@ -252,6 +252,7 @@ class Peer(val nodeParams: NodeParams,
               stay()
             case accept: OnTheFlyFunding.ValidationResult.Accept =>
               val channel = spawnChannel()
+              context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
               log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
               open match {
                 case Left(open) =>

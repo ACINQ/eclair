@@ -209,7 +209,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       case None =>
         request.open.fold(_ => None, _.requestFunding_opt) match {
           case Some(requestFunding) if Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.OnTheFlyFunding) && localParams.paysCommitTxFees =>
-            val addFunding = LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)
+            val addFunding = LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)
             val accept = SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, Some(addFunding), localParams, request.peerConnection.toClassic)
             checkNoExistingChannel(request, accept)
           case _ =>
