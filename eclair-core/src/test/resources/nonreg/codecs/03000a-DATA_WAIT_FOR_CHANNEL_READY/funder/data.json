@@ -121,10 +121,7 @@
     "originChannels" : { }
   },
   "shortIds" : {
-    "real" : {
-      "status" : "temporary",
-      "realScid" : "400000x42x0"
-    },
+    "real" : "400000x42x0",
     "localAlias" : "0x3dab1f7dc6942fd"
   }
 }

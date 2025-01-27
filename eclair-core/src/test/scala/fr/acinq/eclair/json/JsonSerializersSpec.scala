@@ -139,7 +139,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
           ShaChain.init,
           Map.empty,
         ),
-        ShortIds(RealScidStatus.Unknown, Alias(42), None),
+        ShortIds(None, Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
         None, None, None, SpliceStatus.NoSplice
@@ -220,7 +220,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "remotePerCommitmentSecrets": null,
         |     "originChannels": {}
         |   },
-        |   "shortIds": { "real": { "status": "unknown" }, "localAlias": "0x2a" },
+        |   "shortIds": { "localAlias": "0x2a" },
         |   "channelUpdate": {
         |     "signature": "345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f",
         |     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
@@ -449,12 +449,10 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("serialize short ids") {
     val testCases = Map(
-      ShortIds(real = RealScidStatus.Unknown, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
-        """{"real":{"status":"unknown"},"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
-      ShortIds(real = RealScidStatus.Temporary(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
-      ShortIds(real = RealScidStatus.Final(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+      ShortIds(real_opt = None, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
+        """{"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
+      ShortIds(real_opt = Some(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
+        """{"real":"500000x42x1","localAlias":"0x4455"}""",
     )
     for ((obj, json) <- testCases) {
       JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json

@@ -112,10 +112,7 @@
     "originChannels" : { }
   },
   "shortIds" : {
-    "real" : {
-      "status" : "final",
-      "realScid" : "1513532x23x1"
-    },
+    "real" : "1513532x23x1",
     "localAlias" : "0x17183c0000170001"
   },
   "channelAnnouncement" : {

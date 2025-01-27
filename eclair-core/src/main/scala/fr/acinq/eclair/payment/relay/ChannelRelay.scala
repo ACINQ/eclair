@@ -137,7 +137,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     case Left(_) => None
     case Right(outgoingChannelId) => channels.collectFirst {
       case (channelId, channel) if channel.shortIds.localAlias == outgoingChannelId => channelId
-      case (channelId, channel) if channel.shortIds.real.toOption.contains(outgoingChannelId) => channelId
+      case (channelId, channel) if channel.shortIds.real_opt.contains(outgoingChannelId) => channelId
     }
   }
 

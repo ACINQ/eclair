@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -102,23 +102,23 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     }
   }
 
-  test("emit disabled channel update", Tag(ChannelStateTestsTags.ChannelsPublic)) { () =>
+  test("emit disabled channel update", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { () =>
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(setup, Set(ChannelStateTestsTags.ChannelsPublic))
+      reachNormal(setup, Set(ChannelStateTestsTags.ChannelsPublic, ChannelStateTestsTags.DoNotInterceptGossip))
 
       val aliceListener = TestProbe()
       systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
       val bobListener = TestProbe()
       systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
-
-      alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+      
       alice2bob.expectMsgType[AnnouncementSignatures]
       alice2bob.forward(bob)
-      bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400_000), 42, null)
+      alice2bob.expectMsgType[ChannelUpdate]
       bob2alice.expectMsgType[AnnouncementSignatures]
       bob2alice.forward(alice)
+      bob2alice.expectMsgType[ChannelUpdate]
       assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
       assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
 

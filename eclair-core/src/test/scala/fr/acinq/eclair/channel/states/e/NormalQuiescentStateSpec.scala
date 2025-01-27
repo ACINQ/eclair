@@ -76,8 +76,6 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
 
-    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
   }
@@ -189,7 +187,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
 
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
-      val cmd = c match {
+    val cmd = c match {
       case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage)
       case FailHtlc => CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(randomBytes(252)))
     }

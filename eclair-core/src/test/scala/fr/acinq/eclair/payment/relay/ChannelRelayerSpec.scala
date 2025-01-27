@@ -165,7 +165,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // reorg happens
     val realScid1AfterReorg = RealShortChannelId(111112)
-    val lcu2 = createLocalUpdate(channelId1).modify(_.shortIds.real).setTo(RealScidStatus.Final(realScid1AfterReorg))
+    val lcu2 = createLocalUpdate(channelId1).modify(_.shortIds.real_opt).setTo(Some(realScid1AfterReorg))
     val payload2 = ChannelRelay.Standard(realScid1AfterReorg, outgoingAmount, outgoingExpiry)
     val r2 = createValidIncomingPacket(payload2)
     channelRelayer ! WrappedLocalChannelUpdate(lcu2)
@@ -577,7 +577,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val channelId = randomBytes32()
       val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
       val commitments = PaymentPacketSpec.makeCommitments(channelId, availableBalanceForSend, testCapacity = capacity)
-      val shortIds = ShortIds(real = RealScidStatus.Final(shortChannelId), localAlias = ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+      val shortIds = ShortIds(real_opt = Some(shortChannelId), localAlias = ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
       LocalChannelUpdate(null, channelId, shortIds, remoteNodeId, None, update, commitments)
     }
 
@@ -761,8 +761,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
     val channelId_ab = randomBytes32()
     val channelId_bc = randomBytes32()
-    val shortIds_ab = ShortIds(RealScidStatus.Final(RealShortChannelId(channelUpdate_ab.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-    val shortIds_bc = ShortIds(RealScidStatus.Final(RealShortChannelId(channelUpdate_bc.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    val shortIds_ab = ShortIds(Some(RealShortChannelId(channelUpdate_ab.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    val shortIds_bc = ShortIds(Some(RealShortChannelId(channelUpdate_bc.shortChannelId.toLong)), ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
     val a = PaymentPacketSpec.a
 
     val sender = TestProbe[Relayer.OutgoingChannels]()
@@ -858,12 +858,12 @@ object ChannelRelayerSpec {
   def createShortIds(channelId: ByteVector32) = {
     val realScid = channelIds.collectFirst { case (realScid: RealShortChannelId, cid) if cid == channelId => realScid }.get
     val localAlias = channelIds.collectFirst { case (localAlias: Alias, cid) if cid == channelId => localAlias }.get
-    ShortIds(real = RealScidStatus.Final(realScid), localAlias, remoteAlias_opt = None)
+    ShortIds(real_opt = Some(realScid), localAlias, remoteAlias_opt = None)
   }
 
   def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 100_000_000 msat, capacity: Satoshi = 5_000_000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
     val shortIds = createShortIds(channelId)
-    val channelUpdateScid = channelUpdateScid_opt.getOrElse(shortIds.real.toOption.get)
+    val channelUpdateScid = channelUpdateScid_opt.getOrElse(shortIds.real_opt.get)
     val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, capacity.toMilliSatoshi)
     val features: Set[PermanentChannelFeature] = Set(
       if (optionScidAlias) Some(ScidAlias) else None,

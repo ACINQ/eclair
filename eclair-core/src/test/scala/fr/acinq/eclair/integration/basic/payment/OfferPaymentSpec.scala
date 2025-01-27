@@ -25,9 +25,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{KeySend, RouteBlinding}
-import fr.acinq.eclair.channel.{DATA_NORMAL, RealScidStatus}
+import fr.acinq.eclair.channel.{DATA_NORMAL, NORMAL}
 import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture
-import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelData, getPeerChannels, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendPayment, watcherAutopilot}
+import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{connect, getChannelState, getPeerChannels, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendPayment, watcherAutopilot}
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
@@ -117,8 +117,8 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelState(alice, channelId) == NORMAL)
+      assert(getChannelState(bob, channelId) == NORMAL)
     }
   }
 
@@ -126,8 +126,8 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     eventually {
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(carol, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelState(bob, channelId) == NORMAL)
+      assert(getChannelState(carol, channelId) == NORMAL)
       // Carol must have received Bob's alias to create usable blinded routes to herself.
       assert(getRouterData(carol).privateChannels.values.forall(_.shortIds.remoteAlias_opt.nonEmpty))
     }
@@ -554,7 +554,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val blindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId), IntermediateNode(carol.nodeId)), Recipient(carol.nodeId, Some(pathId))).route
     val offer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(blindedRoute))))
-    val scid_bc = getPeerChannels(bob, carol.nodeId).head.data.asInstanceOf[DATA_NORMAL].shortIds.real.toOption.get
+    val scid_bc = getPeerChannels(bob, carol.nodeId).head.data.asInstanceOf[DATA_NORMAL].shortIds.real_opt.get
     val compactBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(bob.nodeId, EncodedNodeId(bob.nodeId), Some(scid_bc)), IntermediateNode(carol.nodeId, EncodedNodeId(carol.nodeId), Some(ShortChannelId.toSelf))), Recipient(carol.nodeId, Some(pathId))).route
     val compactOffer = Offer(None, Some("test"), recipientKey.publicKey, Features.empty, carol.nodeParams.chainHash, additionalTlvs = Set(OfferPaths(Seq(compactBlindedRoute))))
     assert(compactOffer.toString.length < offer.toString.length)

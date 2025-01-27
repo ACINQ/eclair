@@ -45,7 +45,7 @@ case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: Act
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
 /** This event will be sent whenever a new scid is assigned to the channel, be it a real, local alias or remote alias. */
-case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey) extends ChannelEvent
+case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortIds: ShortIds, remoteNodeId: PublicKey, isAnnounced: Boolean) extends ChannelEvent
 
 /** This event will be sent if a channel was aborted before completing the opening flow. */
 case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
@@ -64,7 +64,7 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortI
   def scidsForRouting: Seq[ShortChannelId] = {
     val canUseRealScid = !commitments.params.channelFeatures.hasFeature(Features.ScidAlias)
     if (canUseRealScid) {
-      shortIds.real.toOption.toSeq :+ shortIds.localAlias
+      shortIds.real_opt.toSeq :+ shortIds.localAlias
     } else {
       Seq(shortIds.localAlias)
     }

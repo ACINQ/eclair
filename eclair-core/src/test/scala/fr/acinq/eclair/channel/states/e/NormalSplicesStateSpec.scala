@@ -60,7 +60,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding + ChannelStateTestsTags.FundingDeeplyBuried
+    val tags = test.tags + ChannelStateTestsTags.DualFunding
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -2000,7 +2000,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     rbfTx
   }
 
-  test("disconnect (RBF commit_sig not received)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
+  test("disconnect (RBF commit_sig not received)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -2046,7 +2046,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (RBF commit_sig received by alice)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
+  test("disconnect (RBF commit_sig received by alice)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -2093,7 +2093,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (RBF tx_signatures received by alice)", Tag(ChannelStateTestsTags.FundingDeeplyBuried)) { f =>
+  test("disconnect (RBF tx_signatures received by alice)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)

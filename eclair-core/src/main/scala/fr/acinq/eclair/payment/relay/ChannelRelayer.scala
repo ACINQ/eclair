@@ -95,7 +95,7 @@ object ChannelRelayer {
             Behaviors.same
 
           case WrappedLocalChannelUpdate(lcu@LocalChannelUpdate(_, channelId, shortIds, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId realScid=${shortIds.real} localAlias=${shortIds.localAlias} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+            context.log.debug(s"updating local channel info for channelId=$channelId realScid=${shortIds.real_opt} localAlias=${shortIds.localAlias} remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val prevChannelUpdate = channels.get(channelId).map(_.channelUpdate)
             val channel = Relayer.OutgoingChannel(shortIds, remoteNodeId, channelUpdate, prevChannelUpdate, commitments)
             val channels1 = channels + (channelId -> channel)
@@ -108,7 +108,7 @@ object ChannelRelayer {
           case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortIds, remoteNodeId)) =>
             context.log.debug(s"removed local channel info for channelId=$channelId localAlias=${shortIds.localAlias}")
             val channels1 = channels - channelId
-            val scid2Channels1 = scid2channels - shortIds.localAlias -- shortIds.real.toOption
+            val scid2Channels1 = scid2channels - shortIds.localAlias -- shortIds.real_opt
             val node2channels1 = node2channels.subtractOne(remoteNodeId, channelId)
             apply(nodeParams, register, channels1, scid2Channels1, node2channels1)
 

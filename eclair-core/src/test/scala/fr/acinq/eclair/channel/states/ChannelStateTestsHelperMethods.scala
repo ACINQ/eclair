@@ -47,8 +47,6 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 
 object ChannelStateTestsTags {
-  /** If set, the channel funding transaction will have more than 6 confirmations. */
-  val FundingDeeplyBuried = "funding_deeply_buried"
   /** If set, channels will not use option_support_large_channel. */
   val DisableWumbo = "disable_wumbo"
   /** If set, channels will use option_dual_fund. */
@@ -65,6 +63,8 @@ object ChannelStateTestsTags {
   val ShutdownAnySegwit = "shutdown_anysegwit"
   /** If set, channels will be public (otherwise we don't announce them by default). */
   val ChannelsPublic = "channels_public"
+  /** If set, initial announcement_signatures and channel_updates will not be intercepted and ignored. */
+  val DoNotInterceptGossip = "do_not_intercept_gossip"
   /** If set, no amount will be pushed when opening a channel (by default the initiator pushes a small amount). */
   val NoPushAmount = "no_push_amount"
   /** If set, the non-initiator will push a small amount when opening a dual-funded channel. */
@@ -232,8 +232,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     (aliceParams, bobParams, channelType)
   }
 
-  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty, interceptChannelUpdates: Boolean = true): Transaction = {
-
+  def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Transaction = {
     import setup._
 
     val channelConfig = ChannelConfig.standard
@@ -357,17 +356,14 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       fundingTx
     }
 
-    if (interceptChannelUpdates) {
+    if (!tags.contains(ChannelStateTestsTags.DoNotInterceptGossip)) {
+      if (tags.contains(ChannelStateTestsTags.ChannelsPublic) && !channelType.features.contains(Features.ZeroConf)) {
+        alice2bob.expectMsgType[AnnouncementSignatures]
+        bob2alice.expectMsgType[AnnouncementSignatures]
+      }
       // we don't forward the channel updates, in reality they would be processed by the router
       alice2bob.expectMsgType[ChannelUpdate]
       bob2alice.expectMsgType[ChannelUpdate]
-    }
-    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
-    if (tags.contains(ChannelStateTestsTags.FundingDeeplyBuried)) {
-      val fundingTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-      alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, fundingTx)
-      bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, fundingTx)
     }
     eventually(assert(alice.stateName == NORMAL))
     eventually(assert(bob.stateName == NORMAL))

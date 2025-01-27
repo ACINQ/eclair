@@ -416,27 +416,17 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
   }
 }
 
-sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
-object RealScidStatus {
-  /** The funding transaction has been confirmed but hasn't reached min_depth, we must be ready for a reorg. */
-  case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
-  /** The funding transaction has been deeply confirmed. */
-  case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
-  /** We don't know the status of the funding transaction. */
-  case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
-}
-
 /**
- * Short identifiers for the channel
+ * Short identifiers for the channel.
  *
- * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
+ * @param real_opt        the real scid of the latest announced (and thus confirmed) funding transaction.
  * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
  *                          - identify incoming [[ChannelUpdate]] at the connection level
  *                          - route outgoing payments to that channel
  * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
+case class ShortIds(real_opt: Option[RealShortChannelId], localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]

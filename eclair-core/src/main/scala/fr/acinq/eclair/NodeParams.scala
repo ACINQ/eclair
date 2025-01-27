@@ -360,6 +360,7 @@ object NodeParams extends Logging {
     require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
     val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
     require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "channel.min-final-expiry-delta-blocks must be strictly greater than channel.fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
+    require(config.getInt("channel.min-depth-funding-blocks") >= 6, "channel.min-depth-funding-blocks must be at least 6 to ensure that channels are safe from reorgs, otherwise funds can be stolen")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
