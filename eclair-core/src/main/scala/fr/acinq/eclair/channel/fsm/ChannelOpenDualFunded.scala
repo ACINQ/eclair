@@ -787,7 +787,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(channelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       val d1 = receiveChannelReady(d.shortIds, channelReady, d.commitments)
       val annSigs_opt = d.shortIds.real_opt match {
-        case Some(realScid) if d.commitments.announceChannel => Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
+        case Some(realScid) if d.commitments.announceChannel =>
+          announcementSigsSent += realScid
+          Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid))
         case _ => None
       }
       goto(NORMAL) using d1 storing() sending annSigs_opt.toSeq

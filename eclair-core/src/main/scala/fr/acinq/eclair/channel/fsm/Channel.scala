@@ -778,7 +778,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 // We generate a new channel_update because we can now use the scid of the announced funding transaction.
                 val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds.localAlias)
                 val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
-                announcementSigsSent += remoteAnnSigs.shortChannelId
                 // We use goto() instead of stay() because we want to fire transitions.
                 goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
               }
