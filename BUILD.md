@@ -3,13 +3,12 @@
 ## Requirements
 
 - [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21).
-- [Maven](https://maven.apache.org/download.cgi) 3.9.2 or newer
 
 ## Build
 
 Eclair is packaged as a compressed archive with a launcher script. The archives are built deterministically
 so it's possible to reproduce the build and verify its equality byte-by-byte. To build the exact same artifacts
-that we release, you must use the build environment (OS, JDK, maven...) that we specify in our release notes.
+that we release, you must use the build environment (OS, JDK...) that we specify in our release notes.
 
 To build the project and run the tests, simply run:
 
