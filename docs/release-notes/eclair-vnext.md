@@ -52,7 +52,6 @@ Eclair builds are deterministic. To reproduce our builds, please use the followi
 
 - Ubuntu 24.04.1
 - Adoptium OpenJDK 21.0.4
-- Maven 3.9.2
 
 Use the following command to generate the eclair-node package:
 
