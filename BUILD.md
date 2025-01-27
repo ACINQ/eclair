@@ -83,3 +83,12 @@ The API doc is generated via slate and hosted on github pages. To make a change 
 5. Push your commit to remote.
 6. Run `./deploy.sh`
 7. Wait a few minutes and the doc should be updated at [https://acinq.github.io/eclair](https://acinq.github.io/eclair)
+
+## Updating Eclair dependencies checksums
+
+Eclair dependencies (including maven plugins and their dependencies) are verified against a list of trusted checksums.
+Please not that dependencies are verified only if they are actually used in the build phase that is running, so you may be able to modify the checksum of a plugin dependency for example
+and still run a successful build phase that does not use them (for example you can modify the checksum of a `maven-deploy-plugin` dependency and still run `./mvnw test` successfully).
+To make local development and testing easier, SNAPSHOT dependencies are not verified.
+
+To upgrade a dependency or add a new one you must update this list by running maven with the following option: `-Daether.artifactResolver.postProcessor.trustedChecksums.record`.
