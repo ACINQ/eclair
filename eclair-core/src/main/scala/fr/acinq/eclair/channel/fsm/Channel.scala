@@ -216,6 +216,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   var sigStash = Seq.empty[CommitSig]
   // we stash announcement_signatures if we receive them earlier than expected
   var announcementSigsStash = Map.empty[RealShortChannelId, AnnouncementSignatures]
+  // we record the announcement_signatures messages we already sent to avoid unnecessary retransmission
+  var announcementSigsSent = Set.empty[RealShortChannelId]
 
   val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
 
@@ -754,18 +756,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
-    case Event(_: ChannelReady, d: DATA_NORMAL) =>
-      d.shortIds.real_opt match {
-        case Some(realScid) if d.channelAnnouncement.nonEmpty =>
-          // The channel hasn't been used yet, and our peer may be missing our announcement_signatures if:
-          //  - we received their announcement_signatures before sending ours
-          //  - then the funding transaction confirmed and we created the channel_announcement
-          //  - but we got disconnected before they received our announcement_signatures
-          log.debug("received channel_ready, retransmitting announcement_signatures")
-          val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid)
-          stay() sending localAnnSigs
-        case _ => stay()
-      }
+    case Event(_: ChannelReady, _: DATA_NORMAL) =>
+      // This happens on reconnection, because channel_ready is sent again if the channel hasn't been used yet,
+      // otherwise we cannot be sure that it was correctly received before disconnecting.
+      stay()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
@@ -784,12 +778,20 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 // We generate a new channel_update because we can now use the scid of the announced funding transaction.
                 val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds.localAlias)
                 val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
+                announcementSigsSent += remoteAnnSigs.shortChannelId
                 // We use goto() instead of stay() because we want to fire transitions.
                 goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
               }
             case Some(_) =>
-              log.debug("ignoring remote announcement_signatures for scid={}, channel is already announced", remoteAnnSigs.shortChannelId)
-              stay()
+              if (!announcementSigsSent.contains(remoteAnnSigs.shortChannelId)) {
+                log.info("re-sending announcement_signatures for scid={}", remoteAnnSigs.shortChannelId)
+                val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, remoteAnnSigs.shortChannelId)
+                announcementSigsSent += remoteAnnSigs.shortChannelId
+                stay() sending localAnnSigs
+              } else {
+                log.debug("ignoring remote announcement_signatures for scid={}, channel is already announced", remoteAnnSigs.shortChannelId)
+                stay()
+              }
           }
         case _ =>
           // The funding transaction doesn't have enough confirmations yet: we stash the remote message and will replay
@@ -1344,6 +1346,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             }
             // If we've already received the remote announcement_signatures, we're now ready to process them.
             announcementSigsStash.get(realScid).foreach(self ! _)
+            localAnnSigs_opt.foreach(_ => announcementSigsSent += realScid)
             stay() using d.copy(shortIds = shortIds1, commitments = commitments1) storing() sending localAnnSigs_opt.toSeq
           } else {
             val toSend = if (d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])) {
@@ -2279,6 +2282,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
               // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
               val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realShortChannelId)
+              announcementSigsSent += realShortChannelId
               sendQueue = sendQueue :+ localAnnSigs
             case _ => ()
           }
@@ -2698,6 +2702,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case _ -> OFFLINE =>
       sigStash = Nil
       announcementSigsStash = Map.empty
+      announcementSigsSent = Set.empty
   }
 
   /*

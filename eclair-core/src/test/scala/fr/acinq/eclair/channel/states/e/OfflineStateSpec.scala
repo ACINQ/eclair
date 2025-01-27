@@ -813,7 +813,45 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
   }
 
-  test("re-send channel_update at reconnection for unannounced channels") { f =>
+  test("re-send announcement_signatures on reconnection", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
+    import f._
+
+    // Alice receives Bob's announcement_signatures, but Bob doesn't receive Alice's.
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[ChannelUpdate]
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[ChannelUpdate]
+
+    // We simulate a disconnection / reconnection.
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+
+    // Alice and Bob exchange channel_reestablish and channel_ready again.
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+
+    // Bob retransmits his announcement_signatures since he hasn't received Alice's.
+    alice2bob.expectNoMessage(100 millis)
+    val annSigsBob = bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice, annSigsBob)
+    // Alice retransmits her announcement_signatures when receiving Bob's.
+    val annSigsAlice = alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob, annSigsAlice)
+    // Alice and Bob ignore redundant announcement_signatures.
+    alice2bob.forward(bob, annSigsAlice)
+    bob2alice.expectNoMessage(100 millis)
+    bob2alice.forward(alice, annSigsBob)
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("re-send channel_update on reconnection for unannounced channels") { f =>
     import f._
 
     // we simulate a disconnection / reconnection
