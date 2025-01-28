@@ -332,7 +332,9 @@ object Helpers {
     delay
   }
 
-  /** Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending payments that we can't relay.
+  /**
+   * Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending
+   * payments that we can't relay.
    */
   def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
     if (!commitments.announceChannel) {
@@ -346,9 +348,6 @@ object Helpers {
     }
     commitments.params.maxHtlcAmount
   }
-
-  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
-    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)

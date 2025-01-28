@@ -1322,7 +1322,7 @@ case class Commitments(params: ChannelParams,
           inactive.filter(c => c.fundingTxIndex < pruningIndex || (c.fundingTxIndex == lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId))
         } else {
           // We can prune all other commitments with the same or lower funding index.
-          inactive.filter(c => c.fundingTxId != lastConfirmed.fundingTxId && c.fundingTxIndex <= lastConfirmed.fundingTxIndex)
+          inactive.filter(c => c.fundingTxIndex <= lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId)
         }
         pruned.foreach(c => log.info("pruning commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(inactive = inactive diff pruned)
@@ -1342,10 +1342,7 @@ case class Commitments(params: ChannelParams,
 
   /** Find the corresponding commitment based on its short_channel_id (once funding transaction is confirmed). */
   def resolveCommitment(shortChannelId: RealShortChannelId): Option[Commitment] = {
-    all.find(c => c.localFundingStatus match {
-      case f: LocalFundingStatus.ConfirmedFundingTx => f.shortChannelId == shortChannelId
-      case _ => false
-    })
+    all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
 }
 
