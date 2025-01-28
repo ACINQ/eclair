@@ -104,8 +104,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, ChannelConfig.standard), 0)
     private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
-    private val nextLocalNonceA = nodeParamsA.channelKeyManager.verificationNonce(channelParamsA.localParams.fundingKeyPath, 0, nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, channelParamsA.channelConfig), 0)
-    private val nextLocalNonceB = nodeParamsB.channelKeyManager.verificationNonce(channelParamsB.localParams.fundingKeyPath, 0, nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, channelParamsB.channelConfig), 0)
+    val fundingPubkeyA = nodeParamsA.channelKeyManager.fundingPublicKey(channelParamsA.localParams.fundingKeyPath, 0).publicKey
+    val fundingPubkeyB = nodeParamsB.channelKeyManager.fundingPublicKey(channelParamsB.localParams.fundingKeyPath, 0).publicKey
+    private val nextLocalNonceA = nodeParamsA.channelKeyManager.verificationNonce(fundingPubkeyA, 0)
+    private val nextLocalNonceB = nodeParamsB.channelKeyManager.verificationNonce(fundingPubkeyB, 0)
     assert(channelParamsA.commitmentFormat == channelParamsB.commitmentFormat)
     val fundingPubkeyScript: ByteVector = if (channelParamsA.commitmentFormat.useTaproot) {
       Script.write(Scripts.musig2FundingScript(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey))

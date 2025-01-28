@@ -43,27 +43,24 @@ trait ChannelKeyManager {
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
 
   /**
-   * Create a deterministic verification nonce for a specific funding private key and commit tx index. The public nonce will be sent to our peer to create a partial signature
+   * Create a deterministic verification nonce for a specific funding public key and commit tx index. The public nonce will be sent to our peer to create a partial signature
    * of our commit tx, the private nonce is never shared (and never serialized or stored) and is used to create our local partial signature to be combined with our peer's.
    *
-   * @param fundingKeyPath funding key path
-   * @param fundingTxIndex funding tx index
-   * @param channelKeyPath channel key path
-   * @param index          commit tx index
+   * @param fundingPubKey funding public key
+   * @param commitIndex   commit tx index
    * @return a verification nonce that is used to create a partial musig2 signature for our commit tx.
    */
-  def verificationNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, channelKeyPath: DeterministicWallet.KeyPath, index: Long): (SecretNonce, IndividualNonce)
+  def verificationNonce(fundingPubKey: PublicKey, commitIndex: Long): (SecretNonce, IndividualNonce)
 
   /**
-   * Create a new, randomized singing nonce for a specific funding private key. These nonces are used to create a partial musig2 signature for our peer's commit tx and are sent
+   * Create a new, randomized singing nonce for a specific funding public key. These nonces are used to create a partial musig2 signature for our peer's commit tx and are sent
    * alongside the partial signature. They are created on the fly, and never stored.
    *
-   * @param fundingKeyPath funding key path
-   * @param fundingTxIndex funding tx index
-   * @return a signing nonce that can be used to create a musig2 signature with the funding private key that matches the provided key path and key index.
+   * @param fundingPubKey funding public key
+   * @return a signing nonce that can be used to create a musig2 signature with the funding private key that matches the provided key.
    *         Each call to this methode will return a different, randomized signing nonce.
    */
-  def signingNonce(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce)
+  def signingNonce(fundingPubKey: PublicKey): (SecretNonce, IndividualNonce)
 
   def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
     if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {

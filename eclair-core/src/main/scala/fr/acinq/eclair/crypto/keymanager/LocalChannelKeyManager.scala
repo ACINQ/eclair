@@ -17,7 +17,7 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, KeyAggCache, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Musig2, Transaction, TxOut}
@@ -103,17 +103,24 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
 
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
-  override def verificationNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long, channelKeyPath: KeyPath, index: Long): (SecretNonce, IndividualNonce) = {
-    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
-    val sessionId = Generators.perCommitSecret(nonceSeed(channelKeyPath), index).value
-    val nonce = Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+  private def generateNonce(sessionId: ByteVector32, publicKey: PublicKey): (SecretNonce, IndividualNonce) = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val keyAggCache = KeyAggCache.create(java.util.List.of(publicKey)).getSecond
+    val nonces = fr.acinq.bitcoin.crypto.musig2.SecretNonce.generate(sessionId, null, publicKey, null, keyAggCache, null)
+    nonces.getFirst -> nonces.getSecond
+  }
+
+  override def verificationNonce(fundingPubKey: PublicKey, index: Long): (SecretNonce, IndividualNonce) = {
+    val keyPath = ChannelKeyManager.keyPath(fundingPubKey)
+    val sessionId = Generators.perCommitSecret(nonceSeed(keyPath), index).value
+    val nonce = generateNonce(sessionId, fundingPubKey)
     nonce
   }
 
-  override def signingNonce(fundingKeyPath: KeyPath, fundingTxIndex: Long): (SecretNonce, IndividualNonce) = {
-    val fundingPrivateKey = privateKeys.get(internalKeyPath(fundingKeyPath, hardened(fundingTxIndex)))
+  override def signingNonce(fundingPubKey: PublicKey): (SecretNonce, IndividualNonce) = {
     val sessionId = randomBytes32()
-    Musig2.generateNonce(sessionId, fundingPrivateKey.privateKey, Seq(fundingPrivateKey.publicKey))
+    val nonce = generateNonce(sessionId, fundingPubKey)
+    nonce
   }
 
   /**

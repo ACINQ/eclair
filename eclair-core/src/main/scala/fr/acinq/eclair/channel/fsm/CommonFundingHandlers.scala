@@ -127,7 +127,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
     val tlvStream: TlvStream[ChannelReadyTlv] = if (params.commitmentFormat.useTaproot) {
-      val (_, nextLocalNonce) = keyManager.verificationNonce(params.localParams.fundingKeyPath, fundingTxIndex = 0, channelKeyPath, 1)
+      val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+      val (_, nextLocalNonce) = keyManager.verificationNonce(localFundingPubkey, 1)
       TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias), ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
     } else {
       TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias))

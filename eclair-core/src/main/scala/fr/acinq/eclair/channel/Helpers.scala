@@ -527,7 +527,10 @@ object Helpers {
         val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
         val tlvStream: TlvStream[RevokeAndAckTlv] = if (commitments.params.commitmentFormat.useTaproot) {
-          val nonces = commitments.active.map(c => keyManager.verificationNonce(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex, channelKeyPath, commitments.localCommitIndex + 1))
+          val nonces = commitments.active.map(c => {
+            val fundingPubkey = keyManager.fundingPublicKey(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
+            keyManager.verificationNonce(fundingPubkey, commitments.localCommitIndex + 1)
+          })
           TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
         } else {
           TlvStream.empty

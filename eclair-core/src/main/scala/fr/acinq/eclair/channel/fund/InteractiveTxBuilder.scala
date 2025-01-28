@@ -494,7 +494,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     case _ => Nil
   }
   private val localNonce = fundingParams.sharedInput_opt.collect {
-    case s: Musig2Input => keyManager.signingNonce(channelParams.localParams.fundingKeyPath, s.fundingTxIndex)
+    case s: Musig2Input => {
+      val localFundingPubKey1 = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, s.fundingTxIndex).publicKey
+      keyManager.signingNonce(localFundingPubKey1)
+    }
   }
   log.debug("creating local nonce {} for fundingTxIndex {}", localNonce, purpose.fundingTxIndex)
 
@@ -902,7 +905,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
         }
         val tlvStream: TlvStream[CommitSigTlv] = if (channelParams.commitmentFormat.useTaproot) {
-          val localNonce = keyManager.signingNonce(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
+          val localFundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
+          val localNonce = keyManager.signingNonce(localFundingPubKey)
           val Right(psig) = keyManager.partialSign(remoteCommitTx, fundingPubKey, fundingParams.remoteFundingPubKey, TxOwner.Remote, localNonce, nextRemoteNonce_opt.get)
           log.debug(s"signCommitTx: creating partial signature $psig for commit tx ${remoteCommitTx.tx.txid} with local nonce ${localNonce._2} remote nonce ${nextRemoteNonce_opt.get}")
           TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(PartialSignatureWithNonce(psig, localNonce._2)))
@@ -1194,12 +1198,7 @@ object InteractiveTxSigningSession {
         case Left(unsignedLocalCommit) =>
           val channelKeyPath = nodeParams.channelKeyManager.keyPath(channelParams.localParams, channelParams.channelConfig)
           val localPerCommitmentPoint = nodeParams.channelKeyManager.commitmentPoint(channelKeyPath, localCommitIndex)
-          val localNonce_opt = if (channelParams.commitmentFormat.useTaproot) {
-            Some(nodeParams.channelKeyManager.verificationNonce(channelParams.localParams.fundingKeyPath, fundingTxIndex, channelKeyPath, localCommitIndex))
-          } else {
-            None
-          }
-          LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint, localNonce_opt).map { signedLocalCommit =>
+          LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, nodeParams.currentBlockHeight, fundingParams, liquidityPurchase_opt)
               val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
