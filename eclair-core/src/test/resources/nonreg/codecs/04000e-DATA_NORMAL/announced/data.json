@@ -93,24 +93,7 @@
       "localFunding" : {
         "status" : "confirmed",
         "txid" : "38acfe71db109d8cfaf075497e39d9dafaec8abed0df97d7a6b00d7011aa80c3",
-        "shortChannelId" : "400000x42x0",
-        "announcement" : {
-          "nodeSignature1" : "c5a72f183a9fc823c5f5e28c2803d2042c563f291aafa2fb5e97b3cad51014b50aafbad94e32c6326bf2865a4a3d5f2cd57c9eff6173b4328dae116ed5a04e38",
-          "nodeSignature2" : "9d6e2543f51f5cee25d2bfdf2273f278362f09935f4749433cf81ca1b8004a223d7196b8c8e241f8b723d7e47124557d977b0cb40fffef57d8123d0a633e2452",
-          "bitcoinSignature1" : "9f91b0bacabbf1008077f58571453ba25bf9b1bf01c3511e255f533eb10776e34a04390a4ad8539825346f9a122016c3b3cc8e176ed5235e27ec1fa7ff0b3899",
-          "bitcoinSignature2" : "7fc5d33308e2a870ff1feb1cad3271801da93aed362fe13ea9f33f543e2a372a5f4de2566bba858b95e3df8d7ba9c10647a6acea455598a9b84d21a876525de9",
-          "features" : {
-            "activated" : { },
-            "unknown" : [ ]
-          },
-          "chainHash" : "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-          "shortChannelId" : "400000x42x0",
-          "nodeId1" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-          "nodeId2" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
-          "bitcoinKey1" : "029fbe1c2fe0d86e562a09aedaca23dabee01159d288ef3d6ea85ed107dd51db8a",
-          "bitcoinKey2" : "03613ca8550a9ce1252ed80d39dce2e56f5befdedd70019e195bc0e1448e48b4d6",
-          "tlvStream" : { }
-        }
+        "shortChannelId" : "400000x42x0"
       },
       "remoteFunding" : {
         "status" : "not-locked"
@@ -152,6 +135,23 @@
   "aliases" : {
     "localAlias" : "0x37ca53d75c1340",
     "remoteAlias" : "0x189a8cb29e4b168"
+  },
+  "lastAnnouncement_opt" : {
+    "nodeSignature1" : "c5a72f183a9fc823c5f5e28c2803d2042c563f291aafa2fb5e97b3cad51014b50aafbad94e32c6326bf2865a4a3d5f2cd57c9eff6173b4328dae116ed5a04e38",
+    "nodeSignature2" : "9d6e2543f51f5cee25d2bfdf2273f278362f09935f4749433cf81ca1b8004a223d7196b8c8e241f8b723d7e47124557d977b0cb40fffef57d8123d0a633e2452",
+    "bitcoinSignature1" : "9f91b0bacabbf1008077f58571453ba25bf9b1bf01c3511e255f533eb10776e34a04390a4ad8539825346f9a122016c3b3cc8e176ed5235e27ec1fa7ff0b3899",
+    "bitcoinSignature2" : "7fc5d33308e2a870ff1feb1cad3271801da93aed362fe13ea9f33f543e2a372a5f4de2566bba858b95e3df8d7ba9c10647a6acea455598a9b84d21a876525de9",
+    "features" : {
+      "activated" : { },
+      "unknown" : [ ]
+    },
+    "chainHash" : "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "shortChannelId" : "400000x42x0",
+    "nodeId1" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+    "nodeId2" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+    "bitcoinKey1" : "029fbe1c2fe0d86e562a09aedaca23dabee01159d288ef3d6ea85ed107dd51db8a",
+    "bitcoinKey2" : "03613ca8550a9ce1252ed80d39dce2e56f5befdedd70019e195bc0e1448e48b4d6",
+    "tlvStream" : { }
   },
   "channelUpdate" : {
     "signature" : "61051293e9bb63a6e2182bce3dba766e0b0f69d546dcc059aee70e81fac8db1e56d2b10e4ecee3b99aaad8751fd396dbe9a6ba68d8c153dbc5e862afafd31daa",

@@ -1028,7 +1028,7 @@ class RouterSpec extends BaseRouterSpec {
       // When HTLCs are relayed through the channel, balance changes are sent to the router.
       val commitments = CommitmentsSpec.makeCommitments(channel_ab.capacity - 55_000_000.msat, 55_000_000 msat, a, b, announcement_opt = Some(chan_ab))
       val balances = Set(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
-      sender.send(router, AvailableBalanceChanged(sender.ref, null, scids_ab, commitments))
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, scids_ab, commitments, lastAnnouncement_opt = Some(chan_ab)))
       sender.send(router, GetRoutingState)
       val channel_ab1 = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab1.meta_opt.map(_.balance1), channel_ab1.meta_opt.map(_.balance2)).flatten == balances)
@@ -1046,7 +1046,7 @@ class RouterSpec extends BaseRouterSpec {
       sender.send(router, GetRouterData)
       val channel_ag = sender.expectMsgType[Data].privateChannels(channelId_ag_private)
       val commitments = CommitmentsSpec.makeCommitments(channel_ag.meta.balance1 + 10_000_000.msat, channel_ag.meta.balance2 - 10_000_000.msat, a, g, announcement_opt = None)
-      sender.send(router, AvailableBalanceChanged(sender.ref, channelId_ag_private, scids_ab, commitments))
+      sender.send(router, AvailableBalanceChanged(sender.ref, channelId_ag_private, scids_ab, commitments, lastAnnouncement_opt = None))
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
       val channel_ag1 = data.privateChannels(channelId_ag_private)
@@ -1100,8 +1100,8 @@ class RouterSpec extends BaseRouterSpec {
     }
 
     // The second channel is announced and moves from the private channels to the public channels.
-    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Transaction(2, Nil, TxOut(100_000 sat, Nil) :: Nil, 0), scid2, Some(announcement2), None, None)
-    val commitments3 = commitments2.updateLocalFundingStatus(commitments2.latest.fundingTxId, fundingConfirmed)(akka.event.NoLogging).toOption.get._1
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Transaction(2, Nil, TxOut(100_000 sat, Nil) :: Nil, 0), scid2, None, None)
+    val commitments3 = commitments2.updateLocalFundingStatus(commitments2.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
     assert(commitments3.channelId == commitments2.channelId)
     sender.send(router, LocalChannelUpdate(sender.ref, commitments3.channelId, aliases2, x.publicKey, Some(AnnouncedCommitment(commitments3.latest.commitment, announcement2)), update2, commitments3))
     sender.send(router, GetRouterData)

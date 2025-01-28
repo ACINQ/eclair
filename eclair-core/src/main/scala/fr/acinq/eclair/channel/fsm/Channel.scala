@@ -452,7 +452,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -467,7 +467,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFulfill(c) match {
         case Right((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -492,7 +492,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case None => d.commitments.sendFail(c, nodeParams.privateKey) match {
           case Right((commitments1, fail)) =>
             if (c.commit) self ! CMD_SIGN()
-            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
             handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
           case Left(cause) =>
             // we acknowledge the command right away in case of failure
@@ -504,7 +504,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFailMalformed(c) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -527,7 +527,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFee(c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fee
         case Left(cause) => handleCommandError(cause, c)
       }
@@ -620,7 +620,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   }
                   if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
                     // we send this event only when our balance changes
-                    context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1))
+                    context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
                   }
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
                   // If we're now quiescent, we may send our stfu message.
@@ -778,7 +778,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Some(c) if d.lastAnnouncedCommitment_opt.exists(_.fundingTxIndex > c.fundingTxIndex) =>
           log.info("ignoring remote announcement_signatures for scid={} with fundingTxIndex={}, we have a more recent announcement with scid={} and fundingTxIndex={}", remoteAnnSigs.shortChannelId, c.fundingTxIndex, d.lastAnnouncement_opt.map(_.shortChannelId), d.lastAnnouncedCommitment_opt.map(_.fundingTxIndex))
           stay()
-        case Some(c) if c.announcement_opt.nonEmpty =>
+        case Some(c) if d.lastAnnouncement_opt.exists(_.shortChannelId == remoteAnnSigs.shortChannelId) =>
           if (!announcementSigsSent.contains(remoteAnnSigs.shortChannelId)) {
             log.info("re-sending announcement_signatures for scid={}", remoteAnnSigs.shortChannelId)
             val localAnnSigs_opt = c.signAnnouncement(nodeParams, d.commitments.params)
@@ -798,12 +798,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
               } else {
                 // We generate a new channel_update because we can now use the scid of the announced funding transaction.
-                val commitments1 = d.commitments.addAnnouncement(channelAnn)
                 val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.aliases.localAlias)
-                val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments1, d.channelUpdate.relayFees)
+                val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
                 context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, Some(channelAnn), d.aliases, remoteNodeId))
                 // We use goto() instead of stay() because we want to fire transitions.
-                goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate) storing()
+                goto(NORMAL) using d.copy(lastAnnouncement_opt = Some(channelAnn), channelUpdate = channelUpdate) storing()
               }
             case None =>
               log.warning("cannot generate announcement_signatures for scid={} with fundingTxIndex={}", remoteAnnSigs.shortChannelId, c.fundingTxIndex)
@@ -1298,7 +1297,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
             case Right(fundingTx) =>
               val dfu1 = dfu.copy(sharedTx = fundingTx)
-              d.commitments.updateLocalFundingStatus(msg.txId, dfu1) match {
+              d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedCommitment_opt) match {
                 case Right((commitments1, _)) =>
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
                   Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
@@ -1333,10 +1332,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedCommitment_opt) match {
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
-          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1)
+          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
         case Left(_) => stay()
@@ -1357,7 +1356,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // If we've already received the remote announcement_signatures, we're now ready to process them.
           localAnnSigs_opt.flatMap(ann => announcementSigsStash.get(ann.shortChannelId)).foreach(self ! _)
           if (commitment.fundingTxIndex > 0) {
-            maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1)
+            maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
             maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           }
           stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ localAnnSigs_opt.toSeq
@@ -1365,14 +1364,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
-      d.commitments.updateRemoteFundingStatus(msg.fundingTxId) match {
+      d.commitments.updateRemoteFundingStatus(msg.fundingTxId, d.lastAnnouncedCommitment_opt) match {
         case Right((commitments1, commitment)) =>
           // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
           val localAnnSigs_opt = if (d.commitments.announceChannel) commitment.signAnnouncement(nodeParams, commitments1.params) else None
           localAnnSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
           // If we've already received the remote announcement_signatures, we're now ready to process them.
           localAnnSigs_opt.flatMap(ann => announcementSigsStash.get(ann.shortChannelId)).foreach(self ! _)
-          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1)
+          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending localAnnSigs_opt.toSeq
         case Left(_) => stay()
@@ -2315,7 +2314,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           }
 
           d.commitments.all.find(_.fundingTxIndex == 0) match {
-            case Some(c) if d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && c.announcement_opt.isEmpty =>
+            case Some(c) if d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty =>
               // The funding transaction is confirmed, so we've already sent our announcement_signatures.
               // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
               // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
@@ -2527,7 +2526,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         stay()
       } else {
         val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+        val lastAnnouncedCommitment_opt = d match {
+          case d: DATA_NORMAL => d.lastAnnouncedCommitment_opt
+          case _ => None
+        }
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedCommitment_opt) match {
           case Right((commitments1, _)) =>
             log.info("zero-conf funding txid={} has been published", w.tx.txid)
             watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
@@ -2915,10 +2918,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   /** Splices change balances and capacity, we send events to notify other actors (router, relayer) */
-  private def maybeEmitEventsPostSplice(aliases: ShortIdAliases, oldCommitments: Commitments, newCommitments: Commitments): Unit = {
+  private def maybeEmitEventsPostSplice(aliases: ShortIdAliases, oldCommitments: Commitments, newCommitments: Commitments, lastAnnouncement_opt: Option[ChannelAnnouncement]): Unit = {
     // NB: we consider the send and receive balance, because router tracks both
     if (oldCommitments.availableBalanceForSend != newCommitments.availableBalanceForSend || oldCommitments.availableBalanceForReceive != newCommitments.availableBalanceForReceive) {
-      context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, aliases, newCommitments))
+      context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, aliases, newCommitments, lastAnnouncement_opt))
     }
     if (oldCommitments.active.size != newCommitments.active.size) {
       // Some commitments have been deactivated, which means our available balance changed, which may allow forwarding

@@ -642,7 +642,7 @@ object Validation {
   }
 
   def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged)(implicit log: LoggingAdapter): Data = {
-    val (publicChannels1, graphWithBalances1) = e.commitments.lastAnnouncement_opt.map(_.shortChannelId).flatMap(d.channels.get) match {
+    val (publicChannels1, graphWithBalances1) = e.lastAnnouncement_opt.map(_.shortChannelId).flatMap(d.channels.get) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("public channel balance updated: {}", pc1)

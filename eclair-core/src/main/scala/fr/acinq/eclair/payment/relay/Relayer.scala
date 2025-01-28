@@ -165,9 +165,9 @@ object Relayer extends Logging {
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(aliases: ShortIdAliases, nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], commitments: Commitments) extends OutgoingChannelParams {
+  case class OutgoingChannel(aliases: ShortIdAliases, nextNodeId: PublicKey, channelUpdate: ChannelUpdate, prevChannelUpdate: Option[ChannelUpdate], lastAnnouncement: Option[ChannelAnnouncement], commitments: Commitments) extends OutgoingChannelParams {
     override val channelId: ByteVector32 = commitments.channelId
-    val realScid_opt: Option[RealShortChannelId] = commitments.lastAnnouncement_opt.map(_.shortChannelId)
+    val realScid_opt: Option[RealShortChannelId] = lastAnnouncement.map(_.shortChannelId)
     def toChannelBalance: ChannelBalance = ChannelBalance(
       remoteNodeId = nextNodeId,
       realScid = realScid_opt,

@@ -37,11 +37,11 @@ private[channel] object ChannelTypes4 {
                             spliceStatus: SpliceStatus) {
     def migrate(): DATA_NORMAL = {
       val commitments1 = commitments.copy(
-        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, channelAnnouncement)),
-        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, channelAnnouncement)),
+        active = commitments.active.map(c => setScidIfMatches(c, shortIds)),
+        inactive = commitments.inactive.map(c => setScidIfMatches(c, shortIds)),
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
-      DATA_NORMAL(commitments1, aliases, channelUpdate, localShutdown, remoteShutdown, closingFeerates, spliceStatus)
+      DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, spliceStatus)
     }
   }
 
@@ -56,8 +56,8 @@ private[channel] object ChannelTypes4 {
   case class DATA_WAIT_FOR_CHANNEL_READY_0b(commitments: Commitments, shortIds: ShortIds) {
     def migrate(): DATA_WAIT_FOR_CHANNEL_READY = {
       val commitments1 = commitments.copy(
-        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
-        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+        active = commitments.active.map(c => setScidIfMatches(c, shortIds)),
+        inactive = commitments.inactive.map(c => setScidIfMatches(c, shortIds)),
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
       DATA_WAIT_FOR_CHANNEL_READY(commitments1, aliases)
@@ -75,8 +75,8 @@ private[channel] object ChannelTypes4 {
   case class DATA_WAIT_FOR_DUAL_FUNDING_READY_0d(commitments: Commitments, shortIds: ShortIds) {
     def migrate(): DATA_WAIT_FOR_DUAL_FUNDING_READY = {
       val commitments1 = commitments.copy(
-        active = commitments.active.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
-        inactive = commitments.inactive.map(c => setAnnouncementAndScidIfMatches(c, shortIds, None)),
+        active = commitments.active.map(c => setScidIfMatches(c, shortIds)),
+        inactive = commitments.inactive.map(c => setScidIfMatches(c, shortIds)),
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, aliases)
@@ -91,14 +91,14 @@ private[channel] object ChannelTypes4 {
     }
   }
 
-  private def setAnnouncementAndScidIfMatches(c: Commitment, shortIds: ShortIds, announcement_opt: Option[ChannelAnnouncement]): Commitment = {
+  private def setScidIfMatches(c: Commitment, shortIds: ShortIds): Commitment = {
     c.localFundingStatus match {
-      // We didn't support splicing on public channels in this version: the scid and announcement (if any) are for the
-      // initial funding transaction. For private channels we don't care about the real scid, it will be set correctly
-      // after the next splice.
+      // We didn't support splicing on public channels in this version: the scid (if available) is for the initial
+      // funding transaction. For private channels we don't care about the real scid, it will be set correctly after
+      // the next splice.
       case f: ConfirmedFundingTx if c.fundingTxIndex == 0 =>
         val scid = shortIds.real_opt.getOrElse(f.shortChannelId)
-        c.copy(localFundingStatus = f.copy(shortChannelId = scid, announcement_opt = announcement_opt))
+        c.copy(localFundingStatus = f.copy(shortChannelId = scid))
       case _ => c
     }
   }

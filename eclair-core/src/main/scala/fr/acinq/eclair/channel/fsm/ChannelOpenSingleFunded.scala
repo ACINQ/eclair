@@ -392,7 +392,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(w: WatchPublishedTriggered, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, None, None)
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnounced_opt = None) match {
         case Right((commitments1, _)) =>
           log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
           // we still watch the funding tx for confirmation even if we can use the zero-conf channel right away
