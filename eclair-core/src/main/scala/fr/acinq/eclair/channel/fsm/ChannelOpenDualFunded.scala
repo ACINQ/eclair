@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -533,7 +534,14 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfFeerate(d.channelId, cmd.targetFeerate, minNextFeerate))
               stay()
             } else {
-              val localNonces = d.commitments.generateLocalNonces(keyManager, d.commitments.latest.fundingTxIndex, d.commitments.localCommitIndex, d.commitments.localCommitIndex + 1)
+              val localNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+                List(
+                  keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), d.commitments.localCommitIndex)._2,
+                  keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), d.commitments.localCommitIndex + 1)._2,
+                )
+              } else {
+                List.empty[IndividualNonce]
+              }
               val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, d.latestFundingTx.fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt, localNonces)
               stay() using d.copy(status = DualFundingStatus.RbfRequested(cmd)) sending txInitRbf
             }
@@ -604,7 +612,14 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                     wallet,
                     msg.firstRemoteNonce))
                   txBuilder ! InteractiveTxBuilder.Start(self)
-                  val nextLocalNonces = d.commitments.generateLocalNonces(keyManager, d.commitments.latest.fundingTxIndex, d.commitments.localCommitIndex, d.commitments.localCommitIndex + 1)
+                  val nextLocalNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+                    List(
+                      keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), d.commitments.localCommitIndex)._2,
+                      keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), d.commitments.localCommitIndex + 1)._2,
+                    )
+                  } else {
+                    List.empty[IndividualNonce]
+                  }
                   setRemoteNextLocalNonces("received TxInitRbf", msg.secondRemoteNonce.toList)
                   val toSend = Seq(
                     Some(TxAckRbf(d.channelId, fundingParams.localContribution, d.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund), nextLocalNonces)),

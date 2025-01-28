@@ -1042,7 +1042,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey, d.commitments.latest.params.commitmentFormat)
-            val nextLocalNonces = d.commitments.generateLocalNonces(keyManager, parentCommitment.fundingTxIndex + 1, parentCommitment.localCommit.index, parentCommitment.localCommit.index + 1)
+            val nextLocalNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+              List(
+                keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), parentCommitment.localCommit.index)._2,
+                keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), parentCommitment.localCommit.index + 1)._2,
+              )
+            } else {
+              List.empty[IndividualNonce]
+            }
             val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
               Musig2Input(parentCommitment)
             } else {
@@ -1199,7 +1206,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   // Otherwise we keep the same contribution we made to the previous funding transaction.
                   val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
                   log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
-                  val localNonces = d.commitments.generateLocalNonces(keyManager, rbf.parentCommitment.fundingTxIndex + 1, rbf.localCommitIndex, rbf.localCommitIndex + 1)
+                  val localNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+                    List(
+                      keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, rbf.parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), rbf.localCommitIndex)._2,
+                      keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, rbf.parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), rbf.localCommitIndex + 1)._2,
+                    )
+                  } else {
+                    List.empty[IndividualNonce]
+                  }
                   val txAckRbf = TxAckRbf(d.channelId, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund), localNonces)
                   val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
                     Musig2Input(rbf.parentCommitment)
@@ -3219,7 +3233,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       Left(InvalidSpliceRequest(d.channelId))
     } else {
       log.info(s"initiating splice with local.in.amount=${cmd.additionalLocalFunding} local.in.push=${cmd.pushAmount} local.out.amount=${cmd.spliceOut_opt.map(_.amount).sum}")
-      val nextLocalNonces = d.commitments.generateLocalNonces(keyManager, parentCommitment.fundingTxIndex + 1, parentCommitment.localCommit.index, parentCommitment.localCommit.index + 1)
+      val nextLocalNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+        List(
+          keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), parentCommitment.localCommit.index)._2,
+          keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), parentCommitment.localCommit.index + 1)._2,
+        )
+      } else {
+        List.empty[IndividualNonce]
+      }
       val spliceInit = SpliceInit(d.channelId,
         fundingContribution = fundingContribution,
         lockTime = nodeParams.currentBlockHeight.toLong,
@@ -3247,7 +3268,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         log.warning(s"cannot do rbf: insufficient funds (commitTxFees=$commitTxFees reserve=${rbf.parentCommitment.localChannelReserve(d.commitments.params)})")
         Left(InvalidSpliceRequest(d.channelId))
       } else {
-        val nextLocalNonces = d.commitments.generateLocalNonces(keyManager, rbf.parentCommitment.fundingTxIndex + 1, rbf.localCommitIndex, rbf.localCommitIndex + 1)
+        val nextLocalNonces = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+          List(
+            keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, rbf.parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), rbf.localCommitIndex)._2,
+            keyManager.verificationNonce(d.commitments.params.localParams.fundingKeyPath, rbf.parentCommitment.fundingTxIndex + 1, keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig), rbf.localCommitIndex + 1)._2,
+          )
+        } else {
+          List.empty[IndividualNonce]
+        }
         val txInitRbf = TxInitRbf(d.channelId, cmd.lockTime, cmd.targetFeerate, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, cmd.requestFunding_opt, nextLocalNonces)
         Right(txInitRbf)
       }
