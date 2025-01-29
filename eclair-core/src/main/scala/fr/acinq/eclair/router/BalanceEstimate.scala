@@ -333,7 +333,8 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
   }
 
   def routeCouldRelay(route: Route)(implicit log: LoggingAdapter): GraphWithBalanceEstimates = {
-    val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
+    // We drop the first hop which is a local channel, we already have perfect balance information for local channels.
+    val (balances1, _) = route.hops.drop(1).foldRight((balances, route.amount)) {
       case (hop, (balances, amount)) =>
         (balances.channelCouldSend(hop, amount), amount + hop.fee(amount))
     }
@@ -341,7 +342,8 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
   }
 
   def routeDidRelay(route: Route)(implicit log: LoggingAdapter): GraphWithBalanceEstimates = {
-    val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
+    // We drop the first hop which is a local channel, we already have perfect balance information for local channels.
+    val (balances1, _) = route.hops.drop(1).foldRight((balances, route.amount)) {
       case (hop, (balances, amount)) =>
         (balances.channelDidSend(hop, amount), amount + hop.fee(amount))
     }
