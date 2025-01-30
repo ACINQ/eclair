@@ -67,13 +67,13 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       (peersWithOnTheFlyFunding -- peersWithChannels.keySet).foreach {
         case (remoteNodeId, pending) => createOrGetPeer(remoteNodeId, Set.empty, pending)
       }
-      log.info("restoring {} peer(s) with {} channel(s) and {} peers with pending on-the-fly funding", peersWithChannels.size, channels.size, (peersWithOnTheFlyFunding.keySet -- peersWithChannels.keySet).size)
-      unstashAll()
       val peerCapacities = channels.map {
         case channelData: ChannelDataWithoutCommitments => (channelData.remoteNodeId, 0L)
         case channelData: ChannelDataWithCommitments => (channelData.remoteNodeId, channelData.commitments.capacity.toLong)
       }.groupMapReduce[PublicKey, Long](_._1)(_._2)(_ + _)
-      val topCapacityPeers = peerCapacities.toSeq.sortWith { case ((_, c1), (_, c2)) => c1 > c2 }.take(nodeParams.routerConf.syncConf.peerLimit).map(_._1).toSet
+      val topCapacityPeers = peerCapacities.toSeq.sortBy(_._2).takeRight(nodeParams.routerConf.syncConf.peerLimit).map(_._1).toSet
+      log.info("restoring {} peer(s) with {} channel(s) and {} peers with pending on-the-fly funding", peersWithChannels.size, channels.size, (peersWithOnTheFlyFunding.keySet -- peersWithChannels.keySet).size)
+      unstashAll()
       context.become(normal(peersWithChannels.keySet, topCapacityPeers))
     case _ =>
       stash()
