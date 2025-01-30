@@ -1297,7 +1297,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
             case Right(fundingTx) =>
               val dfu1 = dfu.copy(sharedTx = fundingTx)
-              d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedCommitment_opt) match {
+              d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedFundingTxId_opt) match {
                 case Right((commitments1, _)) =>
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
                   Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
@@ -1332,7 +1332,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedCommitment_opt) match {
+      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
           maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
@@ -1368,7 +1368,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
-      d.commitments.updateRemoteFundingStatus(msg.fundingTxId, d.lastAnnouncedCommitment_opt) match {
+      d.commitments.updateRemoteFundingStatus(msg.fundingTxId, d.lastAnnouncedFundingTxId_opt) match {
         case Right((commitments1, commitment)) =>
           // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
           val localAnnSigs_opt = if (d.commitments.announceChannel) commitment.signAnnouncement(nodeParams, commitments1.params) else None
@@ -2537,11 +2537,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         stay()
       } else {
         val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-        val lastAnnouncedCommitment_opt = d match {
-          case d: DATA_NORMAL => d.lastAnnouncedCommitment_opt
+        val lastAnnouncedFundingTxId_opt = d match {
+          case d: DATA_NORMAL => d.lastAnnouncedFundingTxId_opt
           case _ => None
         }
-        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedCommitment_opt) match {
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt) match {
           case Right((commitments1, _)) =>
             log.info("zero-conf funding txid={} has been published", w.tx.txid)
             watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)

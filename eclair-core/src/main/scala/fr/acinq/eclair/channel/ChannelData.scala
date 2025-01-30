@@ -632,6 +632,7 @@ final case class DATA_NORMAL(commitments: Commitments,
                              closingFeerates: Option[ClosingFeerates],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
   val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
+  val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }

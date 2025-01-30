@@ -45,14 +45,6 @@ private[channel] object ChannelTypes4 {
     }
   }
 
-  object DATA_NORMAL_0e {
-    // shouldn't be used since we only decode old data and never encode it
-    def from(d: DATA_NORMAL): DATA_NORMAL_0e = {
-      val shortIds = ShortIds(d.lastAnnouncement_opt.map(_.shortChannelId), d.aliases.localAlias, d.aliases.remoteAlias_opt)
-      DATA_NORMAL_0e(d.commitments, shortIds, d.lastAnnouncement_opt, d.channelUpdate, d.localShutdown, d.remoteShutdown, d.closingFeerates, d.spliceStatus)
-    }
-  }
-
   case class DATA_WAIT_FOR_CHANNEL_READY_0b(commitments: Commitments, shortIds: ShortIds) {
     def migrate(): DATA_WAIT_FOR_CHANNEL_READY = {
       val commitments1 = commitments.copy(
@@ -64,14 +56,6 @@ private[channel] object ChannelTypes4 {
     }
   }
 
-  object DATA_WAIT_FOR_CHANNEL_READY_0b {
-    // shouldn't be used since we only decode old data and never encode it
-    def from(d: DATA_WAIT_FOR_CHANNEL_READY): DATA_WAIT_FOR_CHANNEL_READY_0b = {
-      val shortIds = ShortIds(None, d.aliases.localAlias, d.aliases.remoteAlias_opt)
-      DATA_WAIT_FOR_CHANNEL_READY_0b(d.commitments, shortIds)
-    }
-  }
-
   case class DATA_WAIT_FOR_DUAL_FUNDING_READY_0d(commitments: Commitments, shortIds: ShortIds) {
     def migrate(): DATA_WAIT_FOR_DUAL_FUNDING_READY = {
       val commitments1 = commitments.copy(
@@ -80,14 +64,6 @@ private[channel] object ChannelTypes4 {
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, aliases)
-    }
-  }
-
-  object DATA_WAIT_FOR_DUAL_FUNDING_READY_0d {
-    // shouldn't be used since we only decode old data and never encode it
-    def from(d: DATA_WAIT_FOR_DUAL_FUNDING_READY): DATA_WAIT_FOR_DUAL_FUNDING_READY_0d = {
-      val shortIds = ShortIds(None, d.aliases.localAlias, d.aliases.remoteAlias_opt)
-      DATA_WAIT_FOR_DUAL_FUNDING_READY_0d(d.commitments, shortIds)
     }
   }
 

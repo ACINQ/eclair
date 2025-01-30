@@ -92,11 +92,11 @@ trait CommonFundingHandlers extends CommonHandlers {
         // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
         // clean-up the htlc data that we were storing for the matching penalty transactions.
         context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = c.firstRemoteCommitIndex))
-        val lastAnnouncedCommitment_opt = d match {
-          case d: DATA_NORMAL => d.lastAnnouncedCommitment_opt
+        val lastAnnouncedFundingTxId_opt = d match {
+          case d: DATA_NORMAL => d.lastAnnouncedFundingTxId_opt
           case _ => None
         }
-        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedCommitment_opt).map {
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt).map {
           case (commitments1, commitment) =>
             // First of all, we watch the funding tx that is now confirmed.
             // Children splice transactions may already spend that confirmed funding transaction.

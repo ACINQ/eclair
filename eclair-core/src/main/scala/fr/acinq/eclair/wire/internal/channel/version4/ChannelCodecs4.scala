@@ -652,7 +652,7 @@ private[channel] object ChannelCodecs4 {
       ("real_opt" | optional(bool8, realshortchannelid)) ::
         ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) ::
         ("remoteAlias_opt" | optional(bool8, alias))
-      ).as[ChannelTypes4.ShortIds]
+      ).as[ChannelTypes4.ShortIds].decodeOnly
 
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
@@ -668,11 +668,11 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].xmap(d => d.migrate(), d => ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b.from(d))
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_0b_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].xmap(d => d.migrate(), d => ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b.from(d))
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_15_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -714,11 +714,11 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_03_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].xmap(d => d.migrate(), d => ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d.from(d))
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0d_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].xmap(d => d.migrate(), d => ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d.from(d))
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_16_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -732,7 +732,7 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].xmap(d => d.migrate(), d => ChannelTypes4.DATA_NORMAL_0e.from(d))
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
 
     val DATA_NORMAL_0e_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -742,7 +742,7 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].xmap(d => d.migrate(), d => ChannelTypes4.DATA_NORMAL_0e.from(d))
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
 
     val DATA_NORMAL_14_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::

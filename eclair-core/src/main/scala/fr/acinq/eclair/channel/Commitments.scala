@@ -1225,7 +1225,7 @@ case class Commitments(params: ChannelParams,
    * @param updateMethod This method is tricky: it passes the fundingTxIndex of the commitment corresponding to the
    *                     fundingTxId, because in the remote case we may update several commitments.
    */
-  private def updateFundingStatus(fundingTxId: TxId, lastAnnounced_opt: Option[AnnouncedCommitment], updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
+  private def updateFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId], updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
     all.find(_.fundingTxId == fundingTxId) match {
       case Some(commitment) =>
         val commitments1 = copy(
@@ -1233,7 +1233,7 @@ case class Commitments(params: ChannelParams,
           inactive = inactive.map(updateMethod(commitment.fundingTxIndex))
         )
         val commitment1 = commitments1.all.find(_.fundingTxId == fundingTxId).get // NB: this commitment might be pruned at the next line
-        val commitments2 = commitments1.deactivateCommitments().pruneCommitments(lastAnnounced_opt)
+        val commitments2 = commitments1.deactivateCommitments().pruneCommitments(lastAnnouncedFundingTxId_opt)
         Right(commitments2, commitment1)
       case None =>
         log.warning(s"fundingTxId=$fundingTxId doesn't match any of our funding txs")
@@ -1241,16 +1241,16 @@ case class Commitments(params: ChannelParams,
     }
   }
 
-  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus, lastAnnounced_opt: Option[AnnouncedCommitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, lastAnnounced_opt, _ => {
+  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, _ => {
       case c if c.fundingTxId == fundingTxId =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
         c.copy(localFundingStatus = status)
       case c => c
     })
 
-  def updateRemoteFundingStatus(fundingTxId: TxId, lastAnnounced_opt: Option[AnnouncedCommitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, lastAnnounced_opt, fundingTxIndex => {
+  def updateRemoteFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, fundingTxIndex => {
       // all funding older than this one are considered locked
       case c if c.fundingTxId == fundingTxId || c.fundingTxIndex < fundingTxIndex =>
         log.info(s"setting remoteFundingStatus=${RemoteFundingStatus.Locked.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
@@ -1300,12 +1300,12 @@ case class Commitments(params: ChannelParams,
    * We can prune commitments in two cases:
    *  - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
    *  - their funding tx has been permanently spent by a splice tx
-   *  
+   *
    * But we need to keep our last announced commitment if the channel is public, even if it has been permanently spent
    * by a newer splice tx that hasn't been announced yet, otherwise we won't know which short_channel_id to use when
    * creating channel_updates.
    */
-  private def pruneCommitments(lastAnnounced_opt: Option[AnnouncedCommitment])(implicit log: LoggingAdapter): Commitments = {
+  private def pruneCommitments(lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Commitments = {
     all
       .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       .sortBy(_.fundingTxIndex)
@@ -1317,7 +1317,8 @@ case class Commitments(params: ChannelParams,
           // If the most recently confirmed commitment isn't announced yet, we cannot prune the last commitment we
           // announced, because our channel updates are based on its announcement (and its short_channel_id).
           // If we never announced the channel, we don't need to announce old commitments, we will directly announce the last one.
-          val pruningIndex = lastAnnounced_opt.map(_.fundingTxIndex).getOrElse(lastConfirmed.fundingTxIndex)
+          val lastAnnouncedFundingTxIndex_opt = lastAnnouncedFundingTxId_opt.flatMap(txId => all.find(_.fundingTxId == txId).map(_.fundingTxIndex))
+          val pruningIndex = lastAnnouncedFundingTxIndex_opt.getOrElse(lastConfirmed.fundingTxIndex)
           // We can prune all RBF candidates, and commitments that came before the last announced one.
           inactive.filter(c => c.fundingTxIndex < pruningIndex || (c.fundingTxIndex == lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId))
         } else {
