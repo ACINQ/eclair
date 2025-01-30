@@ -6,7 +6,7 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ScidAlias, ZeroConf}
-import fr.acinq.eclair.channel.DATA_NORMAL
+import fr.acinq.eclair.channel.{DATA_NORMAL, LocalFundingStatus}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -72,7 +72,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     if (useHint) {
       val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
       // due to how node ids are built, bob < carol so carol is always the node 2
-      val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.shortIds.localAlias
+      val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
       // the hint is always using the alias
       assert(carolHint.shortChannelId == bobAlias)
       List(carolHint.modify(_.shortChannelId).setToIfDefined(overrideHintScid_opt))
@@ -126,9 +126,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFlags.announceChannel == bcPublic)
       if (confirm) {
-        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
+        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       } else {
-        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty)
+        assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.isEmpty)
       }
     }
 
@@ -153,14 +153,14 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
     paymentWithRealScidHint_opt.foreach { paymentWithRealScidHint =>
       eventually {
-        sendPaymentAliceToCarol(f, paymentWithRealScidHint, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.value))
+        sendPaymentAliceToCarol(f, paymentWithRealScidHint, useHint = true, overrideHintScid_opt = Some(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.value))
       }
     }
 
     eventually {
       if (confirm) {
-        val scidsBob = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds
-        val scid_bc = if (bcPublic) scidsBob.real_opt.get else scidsBob.localAlias
+        val channelDataBob = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL]
+        val scid_bc = if (bcPublic) channelDataBob.commitments.latest.shortChannelId_opt.value else channelDataBob.aliases.localAlias
         createSelfRouteCarol(f, scid_bc)
       }
     }
@@ -174,7 +174,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       bcScidAlias = false,
       paymentWithoutHint = Left(Left(RouteNotFound)), // alice can't find a route to carol because bob-carol isn't announced
       paymentWithHint_opt = Some(Right(Ok)), // with a routing hint the payment works (and it will use the alias, even if the feature isn't enabled)
-      paymentWithRealScidHint_opt = Some(Right(Ok)) // if alice uses the real scid instead of the bob-carol alias, it still works
+      paymentWithRealScidHint_opt = Some(Left(Right(UnknownNextPeer()))) // if alice uses the real scid instead of the bob-carol alias, it doesn't work: peers must use option_scid_alias
     )
   }
 
@@ -263,12 +263,12 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     eventually {
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ZeroConf))
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ScidAlias))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.isEmpty)
       assert(getRouterData(bob).privateChannels.values.exists(_.nodeId2 == carol.nodeParams.nodeId))
     }
 
     val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-    val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.shortIds.localAlias
+    val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
     assert(carolHint.shortChannelId == bobAlias)
 
     // We make sure Bob won't have enough liquidity to relay another payment.

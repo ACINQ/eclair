@@ -296,17 +296,17 @@ object Helpers {
     channelAnnouncement_opt.map(_.shortChannelId).getOrElse(localAlias)
   }
 
-  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.channelAnnouncement, d.shortIds.localAlias)
+  def scidForChannelUpdate(d: DATA_NORMAL): ShortChannelId = scidForChannelUpdate(d.lastAnnouncement_opt, d.aliases.localAlias)
 
   /**
    * If our peer sent us an alias, that's what we must use in the channel_update we send them to ensure they're able to
    * match this update with the corresponding local channel. If they didn't send us an alias, it means we're not using
    * 0-conf and we'll use the real scid.
    */
-  def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, shortIds: ShortIds): ChannelUpdate = {
-    shortIds.remoteAlias_opt match {
+  def channelUpdateForDirectPeer(nodeParams: NodeParams, channelUpdate: ChannelUpdate, realScid_opt: Option[RealShortChannelId], aliases: ShortIdAliases): ChannelUpdate = {
+    aliases.remoteAlias_opt match {
       case Some(remoteAlias) => Announcements.updateScid(nodeParams.privateKey, channelUpdate, remoteAlias)
-      case None => shortIds.real_opt match {
+      case None => realScid_opt match {
         case Some(realScid) => Announcements.updateScid(nodeParams.privateKey, channelUpdate, realScid)
         // This case is a spec violation: this is a 0-conf channel, so our peer MUST send their alias.
         // They won't be able to match our channel_update with their local channel, too bad for them.
@@ -332,7 +332,9 @@ object Helpers {
     delay
   }
 
-  /** Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending payments that we can't relay.
+  /**
+   * Computes a maximum HTLC amount adapted to the current balance to reduce chances that other nodes will try sending
+   * payments that we can't relay.
    */
   def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
     if (!commitments.announceChannel) {
@@ -345,26 +347,6 @@ object Helpers {
       }
     }
     commitments.params.maxHtlcAmount
-  }
-
-  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean = true): ChannelUpdate =
-    Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, commitments.params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount(nodeParams, commitments), isPrivate = !commitments.announceChannel, enable)
-
-  def makeAnnouncementSignatures(nodeParams: NodeParams, channelParams: ChannelParams, remoteFundingPubKey: PublicKey, shortChannelId: RealShortChannelId): AnnouncementSignatures = {
-    val features = Features.empty[Feature] // empty features for now
-    val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, fundingTxIndex = 0) // TODO: public announcements are not yet supported with splices
-    val witness = Announcements.generateChannelAnnouncementWitness(
-      nodeParams.chainHash,
-      shortChannelId,
-      nodeParams.nodeKeyManager.nodeId,
-      channelParams.remoteParams.nodeId,
-      fundingPubKey.publicKey,
-      remoteFundingPubKey,
-      features
-    )
-    val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
-    val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
-    AnnouncementSignatures(channelParams.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {

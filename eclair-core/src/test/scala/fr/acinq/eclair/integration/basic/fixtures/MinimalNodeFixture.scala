@@ -213,8 +213,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
 
     val data1After = getChannelData(node1, channelId).asInstanceOf[DATA_NORMAL]
     val data2After = getChannelData(node2, channelId).asInstanceOf[DATA_NORMAL]
-    val realScid1 = data1After.shortIds.real_opt.get
-    val realScid2 = data2After.shortIds.real_opt.get
+    val realScid1 = data1After.commitments.latest.shortChannelId_opt.get
+    val realScid2 = data2After.commitments.latest.shortChannelId_opt.get
     assert(realScid1 == realScid2)
     realScid1
   }

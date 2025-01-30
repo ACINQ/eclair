@@ -220,6 +220,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   // we record the announcement_signatures messages we already sent to avoid unnecessary retransmission
   var announcementSigsSent = Set.empty[RealShortChannelId]
 
+  private def trimAnnouncementSigsStashIfNeeded(): Unit = {
+    if (announcementSigsStash.size >= 10) {
+      // We shouldn't store an unbounded number of announcement_signatures for scids that we don't have in our
+      // commitments, otherwise it can be used as a DoS vector.
+      val oldestScid = announcementSigsStash.keys.minBy(ShortChannelId.blockHeight(_))
+      log.warning("too many pending announcement_signatures: dropping scid={}", oldestScid)
+      announcementSigsStash -= oldestScid
+    }
+  }
+
   val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
 
   // this will be used to detect htlc timeouts
@@ -357,7 +367,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
-          context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.shortIds, remoteNodeId, normal.channelAnnouncement.nonEmpty))
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.lastAnnouncement_opt, normal.aliases, remoteNodeId))
 
           // we check the configuration because the values for channel_update may have changed while eclair was down
           val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
@@ -442,7 +452,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -457,7 +467,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFulfill(c) match {
         case Right((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -482,7 +492,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case None => d.commitments.sendFail(c, nodeParams.privateKey) match {
           case Right((commitments1, fail)) =>
             if (c.commit) self ! CMD_SIGN()
-            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
             handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
           case Left(cause) =>
             // we acknowledge the command right away in case of failure
@@ -494,7 +504,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFailMalformed(c) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
@@ -517,7 +527,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       d.commitments.sendFee(c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
-          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+          context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fee
         case Left(cause) => handleCommandError(cause, c)
       }
@@ -610,7 +620,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   }
                   if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
                     // we send this event only when our balance changes
-                    context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortIds, commitments1))
+                    context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
                   }
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
                   // If we're now quiescent, we may send our stfu message.
@@ -762,55 +772,56 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // otherwise we cannot be sure that it was correctly received before disconnecting.
       stay()
 
+    // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
-      // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
-      d.shortIds.real_opt match {
-        case Some(realScid) if remoteAnnSigs.shortChannelId == realScid =>
-          d.channelAnnouncement match {
-            case None =>
-              log.info("announcing channelId={} on the network with shortChannelId={}", d.channelId, realScid)
-              // We already sent our announcement_signatures but we don't store them so we need to recompute them.
-              val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realScid)
-              val fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, fundingTxIndex = 0) // TODO: public announcements are not yet supported with splices
-              val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, d.commitments.params.remoteParams.nodeId, fundingPubKey.publicKey, d.commitments.latest.remoteFundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
+      d.commitments.resolveCommitment(remoteAnnSigs.shortChannelId) match {
+        case Some(c) if d.lastAnnouncedCommitment_opt.exists(_.fundingTxIndex > c.fundingTxIndex) =>
+          log.info("ignoring remote announcement_signatures for scid={} with fundingTxIndex={}, we have a more recent announcement with scid={} and fundingTxIndex={}", remoteAnnSigs.shortChannelId, c.fundingTxIndex, d.lastAnnouncement_opt.map(_.shortChannelId), d.lastAnnouncedCommitment_opt.map(_.fundingTxIndex))
+          stay()
+        case Some(c) if d.lastAnnouncement_opt.exists(_.shortChannelId == remoteAnnSigs.shortChannelId) =>
+          if (!announcementSigsSent.contains(remoteAnnSigs.shortChannelId)) {
+            log.info("re-sending announcement_signatures for scid={}", remoteAnnSigs.shortChannelId)
+            val localAnnSigs_opt = c.signAnnouncement(nodeParams, d.commitments.params)
+            localAnnSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
+            stay() sending localAnnSigs_opt.toSeq
+          } else {
+            log.debug("ignoring remote announcement_signatures for scid={} with fundingTxIndex={}, channel is already announced and announcement_signatures was sent since we last reconnected", remoteAnnSigs.shortChannelId, c.fundingTxIndex)
+            stay()
+          }
+        case Some(c) =>
+          c.signAnnouncement(nodeParams, d.commitments.params) match {
+            case Some(localAnnSigs) =>
+              val fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, c.fundingTxIndex)
+              val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteNodeId, fundingPubKey.publicKey, c.remoteFundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
               if (!Announcements.checkSigs(channelAnn)) {
                 handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
               } else {
+                log.info("announcing channelId={} on the network with shortChannelId={} for fundingTxIndex={}", d.channelId, localAnnSigs.shortChannelId, c.fundingTxIndex)
                 // We generate a new channel_update because we can now use the scid of the announced funding transaction.
-                val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.shortIds.localAlias)
-                val channelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments, d.channelUpdate.relayFees)
+                val scidForChannelUpdate = Helpers.scidForChannelUpdate(Some(channelAnn), d.aliases.localAlias)
+                val channelUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, d.commitments.params, d.channelUpdate.relayFees, Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = true)
+                context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, Some(channelAnn), d.aliases, remoteNodeId))
                 // We use goto() instead of stay() because we want to fire transitions.
-                goto(NORMAL) using d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate) storing()
+                goto(NORMAL) using d.copy(lastAnnouncement_opt = Some(channelAnn), channelUpdate = channelUpdate) storing()
               }
-            case Some(_) =>
-              if (!announcementSigsSent.contains(remoteAnnSigs.shortChannelId)) {
-                log.info("re-sending announcement_signatures for scid={}", remoteAnnSigs.shortChannelId)
-                val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, remoteAnnSigs.shortChannelId)
-                announcementSigsSent += remoteAnnSigs.shortChannelId
-                stay() sending localAnnSigs
-              } else {
-                log.debug("ignoring remote announcement_signatures for scid={}, channel is already announced", remoteAnnSigs.shortChannelId)
-                stay()
-              }
+            case None =>
+              log.warning("cannot generate announcement_signatures for scid={} with fundingTxIndex={}", remoteAnnSigs.shortChannelId, c.fundingTxIndex)
+              trimAnnouncementSigsStashIfNeeded()
+              announcementSigsStash += (remoteAnnSigs.shortChannelId -> remoteAnnSigs)
+              stay()
           }
-        case _ =>
+        case None =>
           // The funding transaction doesn't have enough confirmations yet: we stash the remote message and will replay
           // it when we receive WatchFundingConfirmedTriggered. We don't need to persist this message, it will be
           // retransmitted on reconnection.
           log.debug("received remote announcement signatures for scid={}, delaying", remoteAnnSigs.shortChannelId)
-          if (announcementSigsStash.size >= 10) {
-            // We shouldn't store an unbounded number of announcement_signatures for scids that we don't have in our
-            // commitments, otherwise it can be used as a DoS vector.
-            val oldestScid = announcementSigsStash.keys.minBy(ShortChannelId.blockHeight(_))
-            log.warning("too many pending announcement_signatures: dropping scid={}", oldestScid)
-            announcementSigsStash -= oldestScid
-          }
+          trimAnnouncementSigsStashIfNeeded()
           announcementSigsStash += (remoteAnnSigs.shortChannelId -> remoteAnnSigs)
           stay()
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths))
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments.params, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = true)
       log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
@@ -819,7 +830,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = TimestampSecond.now() - d.channelUpdate.timestamp
-      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees)
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments.params, d.channelUpdate.relayFees, Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = true)
       reason match {
         case Reconnected if d.commitments.announceChannel && Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
@@ -1286,7 +1297,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
             case Right(fundingTx) =>
               val dfu1 = dfu.copy(sharedTx = fundingTx)
-              d.commitments.updateLocalFundingStatus(msg.txId, dfu1) match {
+              d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedFundingTxId_opt) match {
                 case Right((commitments1, _)) =>
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
                   Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
@@ -1321,10 +1332,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
         case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
-          maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
         case Left(_) => stay()
@@ -1333,42 +1344,45 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, commitment)) =>
-          // We only announce the channel creation, announcing splice transactions isn't supported yet.
-          if (commitment.fundingTxIndex == 0) {
-            val realScid = RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt)
-            val shortIds1 = d.shortIds.copy(real_opt = Some(realScid))
-            context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortIds1, remoteNodeId, d.channelAnnouncement.nonEmpty))
-            // If the channel is public we need to send our announcement_signatures in order to generate the channel_announcement.
-            val localAnnSigs_opt = if (d.commitments.announceChannel) {
-              Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, commitment.remoteFundingPubKey, realScid))
-            } else {
-              None
-            }
-            // If we've already received the remote announcement_signatures, we're now ready to process them.
-            announcementSigsStash.get(realScid).foreach(self ! _)
-            localAnnSigs_opt.foreach(_ => announcementSigsSent += realScid)
-            stay() using d.copy(shortIds = shortIds1, commitments = commitments1) storing() sending localAnnSigs_opt.toSeq
-          } else {
-            val toSend = if (d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])) {
-              // this commitment just moved from NotLocked to Locked
-              Some(SpliceLocked(d.channelId, w.tx.txid))
-            } else {
-              // this was a zero-conf splice and we already sent our splice_locked
-              None
-            }
-            maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
-            maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-            stay() using d.copy(commitments = commitments1) storing() sending toSend.toSeq
+          // We check if this commitment was already locked before receiving the event (which happens when using 0-conf
+          // or for the initial funding transaction). If it was previously not locked, we must send splice_locked now.
+          val previouslyNotLocked = d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])
+          val spliceLocked_opt = if (previouslyNotLocked) Some(SpliceLocked(d.channelId, w.tx.txid)) else None
+          // If the channel is public and we've received the remote splice_locked, we send our announcement_signatures
+          // in order to generate the channel_announcement.
+          val remoteLocked = commitment.fundingTxIndex == 0 || d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.remoteFundingStatus == RemoteFundingStatus.Locked)
+          val localAnnSigs_opt = if (d.commitments.announceChannel && remoteLocked) commitment.signAnnouncement(nodeParams, commitments1.params) else None
+          localAnnSigs_opt match {
+            case Some(localAnnSigs) =>
+              announcementSigsSent += localAnnSigs.shortChannelId
+              // If we've already received the remote announcement_signatures, we're now ready to process them.
+              announcementSigsStash.get(localAnnSigs.shortChannelId).foreach(self ! _)
+            case None => // The channel is private or the commitment isn't locked on the remote side.
           }
+          if (commitment.fundingTxIndex > 0) {
+            maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
+            maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
+          }
+          stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ localAnnSigs_opt.toSeq
         case Left(_) => stay()
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
-      d.commitments.updateRemoteFundingStatus(msg.fundingTxId) match {
-        case Right((commitments1, _)) =>
-          maybeEmitEventsPostSplice(d.shortIds, d.commitments, commitments1)
+      d.commitments.updateRemoteFundingStatus(msg.fundingTxId, d.lastAnnouncedFundingTxId_opt) match {
+        case Right((commitments1, commitment)) =>
+          // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
+          val localAnnSigs_opt = if (d.commitments.announceChannel) commitment.signAnnouncement(nodeParams, commitments1.params) else None
+          localAnnSigs_opt match {
+            case Some(localAnnSigs) =>
+              // The commitment was locked on our side and we were waiting to receive the remote splice_locked before sending our announcement_signatures.
+              announcementSigsSent += localAnnSigs.shortChannelId
+              // If we've already received the remote announcement_signatures, we're now ready to process them.
+              announcementSigsStash.get(localAnnSigs.shortChannelId).foreach(self ! _)
+            case None => // The channel is private or the commitment isn't locked on our side.
+          }
+          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          stay() using d.copy(commitments = commitments1) storing()
+          stay() using d.copy(commitments = commitments1) storing() sending localAnnSigs_opt.toSeq
         case Left(_) => stay()
       }
 
@@ -1385,7 +1399,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       if (d.commitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
-        val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+        val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments.params, d.channelUpdate.relayFees, Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = false)
         // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.changes.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
@@ -2205,12 +2219,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channelReady")
-      val channelReady = createChannelReady(d.shortIds, d.commitments.params)
+      val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       log.debug("re-sending channelReady")
-      val channelReady = createChannelReady(d.shortIds, d.commitments.params)
+      val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
@@ -2308,14 +2322,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               sendQueue = sendQueue :+ localShutdown
           }
 
-          d.shortIds.real_opt match {
-            case Some(realShortChannelId) if d.commitments.announceChannel && d.channelAnnouncement.isEmpty =>
+          // Retransmission of local announcement_signatures for splices are done when receiving splice_locked, no need
+          // to retransmit here.
+          d.commitments.all.find(_.fundingTxIndex == 0) match {
+            case Some(c) if d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty =>
               // The funding transaction is confirmed, so we've already sent our announcement_signatures.
               // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
               // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
-              val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments.params, d.commitments.latest.remoteFundingPubKey, realShortChannelId)
-              announcementSigsSent += realShortChannelId
-              sendQueue = sendQueue :+ localAnnSigs
+              val localAnnSigs_opt = c.signAnnouncement(nodeParams, d.commitments.params)
+              localAnnSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
+              sendQueue = sendQueue ++ localAnnSigs_opt.toSeq
             case _ => ()
           }
 
@@ -2334,7 +2350,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // we send it (if needed) when reconnected.
           val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
           if (d.commitments.params.localParams.paysCommitTxFees && !shutdownInProgress) {
-            // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
             val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
             val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.params.commitmentFormat, d.commitments.latest.capacity)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
@@ -2517,19 +2532,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
       // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
       // trigger and rewrite the funding status again.
-      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case LocalFundingStatus.ConfirmedFundingTx(tx, _, _) => tx }.exists(_.txid == w.tx.txid)
+      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case f: LocalFundingStatus.ConfirmedFundingTx => f.tx }.exists(_.txid == w.tx.txid)
       if (alreadyConfirmed) {
         stay()
       } else {
         val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus) match {
+        val lastAnnouncedFundingTxId_opt = d match {
+          case d: DATA_NORMAL => d.lastAnnouncedFundingTxId_opt
+          case _ => None
+        }
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt) match {
           case Right((commitments1, _)) =>
             log.info("zero-conf funding txid={} has been published", w.tx.txid)
             watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepthFunding), delay_opt = None)
             val d1 = d match {
               // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
-              case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds = createShortIds(d.channelId, None))
-              case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds = createShortIds(d.channelId, None))
+              case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_WAIT_FOR_CHANNEL_READY(commitments1, aliases = createShortIdAliases(d.channelId))
+              case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, aliases = createShortIdAliases(d.channelId))
               case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
               case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments1)
               case d: DATA_NORMAL => d.copy(commitments = commitments1)
@@ -2545,25 +2564,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(w: WatchFundingConfirmedTriggered, d: ChannelDataWithCommitments) =>
       acceptFundingTxConfirmed(w, d) match {
-        case Right((commitments1, commitment)) =>
+        case Right((commitments1, _)) =>
           log.info("funding txid={} has been confirmed", w.tx.txid)
-          val realScid = RealShortChannelId(w.blockHeight, w.txIndex, commitment.commitInput.outPoint.index.toInt)
           val d1 = d match {
             // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
-            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds = createShortIds(d.channelId, Some(realScid)))
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds = createShortIds(d.channelId, Some(realScid)))
-            // No need to emit ShortChannelIdAssigned, we will emit it when receiving the remote channel_ready.
-            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(shortIds = d.shortIds.copy(real_opt = Some(realScid)), commitments = commitments1)
-            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(shortIds = d.shortIds.copy(real_opt = Some(realScid)), commitments = commitments1)
-            case d: DATA_NORMAL =>
-              if (commitment.fundingTxIndex == 0) {
-                val shortIds1 = d.shortIds.copy(real_opt = Some(realScid))
-                context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortIds1, remoteNodeId, d.channelAnnouncement.nonEmpty))
-                d.copy(shortIds = shortIds1, commitments = commitments1)
-              } else {
-                // We don't support announcing splice transactions yet, so we don't update our scid.
-                d.copy(commitments = commitments1)
-              }
+            case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_WAIT_FOR_CHANNEL_READY(commitments1, aliases = createShortIdAliases(d.channelId))
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, aliases = createShortIdAliases(d.channelId))
+            case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments1)
+            case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments1)
+            case d: DATA_NORMAL => d.copy(commitments = commitments1)
             case d: DATA_SHUTDOWN => d.copy(commitments = commitments1)
             case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
             case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
@@ -2651,29 +2660,32 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val emitEvent_opt: Option[EmitLocalChannelEvent] = (state, nextState, stateData, nextStateData) match {
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("restore", d, sendToPeer = false))
         case (WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, _, d: DATA_NORMAL) => Some(EmitLocalChannelUpdate("initial", d, sendToPeer = true))
-        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.shortIds.real_opt != d2.shortIds.real_opt || d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty && d1.channelUpdate != d2.channelUpdate))
-        case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.channelAnnouncement.isEmpty))
-        case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("normal->offline", d2, sendToPeer = false))
-        case (OFFLINE, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.channelAnnouncement != d2.channelAnnouncement => Some(EmitLocalChannelUpdate("offline->offline", d2, sendToPeer = false))
+        case (NORMAL, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("normal->normal", d2, sendToPeer = d2.lastAnnouncement_opt.isEmpty && d1.channelUpdate != d2.channelUpdate))
+        case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.lastAnnouncement_opt.isEmpty))
+        case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("normal->offline", d2, sendToPeer = false))
+        case (OFFLINE, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("offline->offline", d2, sendToPeer = false))
         case (NORMAL | SYNCING | OFFLINE, SHUTDOWN | NEGOTIATING | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
         case _ => None
       }
       emitEvent_opt.foreach {
         case EmitLocalChannelUpdate(reason, d, sendToPeer) =>
-          log.debug(s"emitting channel update event: reason=$reason enabled=${d.channelUpdate.channelFlags.isEnabled} sendToPeer=$sendToPeer realScid=${d.shortIds.real_opt} channel_update={} channel_announcement={}", d.channelUpdate, d.channelAnnouncement.map(_ => "yes").getOrElse("no"))
-          val lcu = LocalChannelUpdate(self, d.channelId, d.shortIds, remoteNodeId, d.channelAnnouncement, d.channelUpdate, d.commitments)
+          log.debug("emitting channel update event: reason={} sendToPeer={} channel_update={} channel_announcement={}", reason, sendToPeer, d.channelUpdate, d.lastAnnouncement_opt)
+          val lcu = LocalChannelUpdate(self, d.channelId, d.aliases, remoteNodeId, d.lastAnnouncedCommitment_opt, d.channelUpdate, d.commitments)
           context.system.eventStream.publish(lcu)
           if (sendToPeer) {
-            send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, d.shortIds))
+            // We may need a real scid to fallback to if our peer didn't send us an alias, even if we're using a private
+            // channel, otherwise they won't be able to match our update to a channel.
+            val realScid_opt = d.lastAnnouncement_opt.map(_.shortChannelId).orElse(d.commitments.all.flatMap(_.shortChannelId_opt).headOption)
+            send(Helpers.channelUpdateForDirectPeer(nodeParams, d.channelUpdate, realScid_opt, d.aliases))
           }
         case EmitLocalChannelDown(d) =>
           log.debug("emitting channel down event")
-          if (d.channelAnnouncement.nonEmpty) {
+          if (d.lastAnnouncement_opt.nonEmpty) {
             // We tell the rest of the network that this channel shouldn't be used anymore.
-            val disabledUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, Helpers.scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
-            context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.shortIds, remoteNodeId, d.channelAnnouncement, disabledUpdate, d.commitments))
+            val disabledUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, Helpers.scidForChannelUpdate(d), d.commitments.params, d.channelUpdate.relayFees, Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = false)
+            context.system.eventStream.publish(LocalChannelUpdate(self, d.channelId, d.aliases, remoteNodeId, d.lastAnnouncedCommitment_opt, disabledUpdate, d.commitments))
           }
-          val lcd = LocalChannelDown(self, d.channelId, d.shortIds, remoteNodeId)
+          val lcd = LocalChannelDown(self, d.channelId, d.commitments.all.flatMap(_.shortChannelId_opt), d.aliases, remoteNodeId)
           context.system.eventStream.publish(lcd)
       }
 
@@ -2770,7 +2782,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
-    // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.params.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
@@ -2796,7 +2807,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
    * @return
    */
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
-    // TODO: all active commitments use the same feerate, but may have a different channel capacity: how should we compute networkFeeratePerKw?
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.params.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
@@ -2864,7 +2874,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     if (d.channelUpdate.channelFlags.isEnabled) {
       // if the channel isn't disabled we generate a new channel_update
       log.debug("updating channel_update announcement (reason=disabled)")
-      val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments.params, d.channelUpdate.relayFees, Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = false)
       // then we update the state and replay the request
       self forward c
       // we use goto() to fire transitions
@@ -2877,7 +2887,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
-    val channelUpdate1 = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false)
+    val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate(d), d.commitments.params, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), Helpers.maxHtlcAmount(nodeParams, d.commitments), enable = false)
     log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, d.channelId)
@@ -2919,10 +2929,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   }
 
   /** Splices change balances and capacity, we send events to notify other actors (router, relayer) */
-  private def maybeEmitEventsPostSplice(shortIds: ShortIds, oldCommitments: Commitments, newCommitments: Commitments): Unit = {
+  private def maybeEmitEventsPostSplice(aliases: ShortIdAliases, oldCommitments: Commitments, newCommitments: Commitments, lastAnnouncement_opt: Option[ChannelAnnouncement]): Unit = {
     // NB: we consider the send and receive balance, because router tracks both
     if (oldCommitments.availableBalanceForSend != newCommitments.availableBalanceForSend || oldCommitments.availableBalanceForReceive != newCommitments.availableBalanceForReceive) {
-      context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, shortIds, newCommitments))
+      context.system.eventStream.publish(AvailableBalanceChanged(self, newCommitments.channelId, aliases, newCommitments, lastAnnouncement_opt))
     }
     if (oldCommitments.active.size != newCommitments.active.size) {
       // Some commitments have been deactivated, which means our available balance changed, which may allow forwarding

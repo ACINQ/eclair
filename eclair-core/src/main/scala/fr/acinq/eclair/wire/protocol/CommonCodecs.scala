@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelFlags, ShortIds}
+import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import org.apache.commons.codec.binary.Base32
@@ -146,11 +146,11 @@ object CommonCodecs {
 
   val alias: Codec[Alias] = shortchannelid.narrow[Alias](scid => Attempt.successful(Alias(scid.toLong)), scid => scid)
 
-  val shortids: Codec[ShortIds] = (
-    ("real_opt" | optional(bool8, realshortchannelid)) ::
-      ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) :: // forward-compatible with listOfN(uint16, aliashortchannelid) in case we want to store a list of local aliases later
+  val aliases: Codec[ShortIdAliases] = (
+    // forward-compatible with listOfN(uint16, alias) in case we want to store a list of local aliases later
+    ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) ::
       ("remoteAlias_opt" | optional(bool8, alias))
-    ).as[ShortIds]
+    ).as[ShortIdAliases]
 
   val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
     (priv: PrivateKey) => bytes(32).encode(priv.value),

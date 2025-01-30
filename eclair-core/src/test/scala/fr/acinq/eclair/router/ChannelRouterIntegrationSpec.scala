@@ -55,11 +55,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(privateChannel.update_1_opt.isDefined)
     assert(privateChannel.update_2_opt.isEmpty)
     // Alice will only have a real scid if this is not a zeroconf channel.
-    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real_opt.isEmpty == testTags.contains(ChannelStateTestsTags.ZeroConf))
-    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.remoteAlias_opt.isDefined)
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.isEmpty == testTags.contains(ChannelStateTestsTags.ZeroConf))
+    assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].aliases.remoteAlias_opt.isDefined)
     // Alice uses her alias for her internal channel update.
     val aliceInitialChannelUpdate = privateChannel.update_1_opt.value
-    assert(aliceInitialChannelUpdate.shortChannelId == privateChannel.shortIds.localAlias)
+    assert(aliceInitialChannelUpdate.shortChannelId == privateChannel.aliases.localAlias)
 
     // If the channel is public and confirmed, announcement signatures are sent.
     val (annSigsA_opt, annSigsB_opt) = if (testTags.contains(ChannelStateTestsTags.ChannelsPublic) && !testTags.contains(ChannelStateTestsTags.ZeroConf)) {
@@ -74,8 +74,8 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
     val bobChannelUpdate1 = channels.bob2alice.expectMsgType[ChannelUpdate]
     // Alice's channel_update uses bob's alias, and vice versa.
-    assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
-    assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.localAlias)
+    assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
+    assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
     // The channel_updates are handled by the peer connection and sent to the router.
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, bobNodeId, bobChannelUpdate1)
@@ -115,14 +115,14 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       // Alice and Bob won't send their channel_update directly to each other because the channel has been announced
       // but we can get the update from their data
       awaitAssert {
-        assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
-        assert(channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.isDefined)
+        assert(channels.alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isDefined)
+        assert(channels.bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isDefined)
       }
       val aliceChannelUpdate2 = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
       val bobChannelUpdate2 = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
       // Channel updates now use the real scid because the channel has been announced.
-      val aliceAnn = channels.alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
-      val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.get
+      val aliceAnn = channels.alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+      val bobAnn = channels.bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
       assert(aliceAnn == bobAnn)
       assert(aliceChannelUpdate2.shortChannelId == aliceAnn.shortChannelId)
       assert(!aliceChannelUpdate2.dontForward)

@@ -13,10 +13,11 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, payment}
 import scodec.bits.ByteVector
 
 /** Static channel parameters shared by all commitments. */
@@ -295,6 +296,11 @@ case class Commitment(fundingTxIndex: Long,
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: TxId = commitInput.outPoint.txid
   val capacity: Satoshi = commitInput.txOut.amount
+  /** Once the funding transaction is confirmed, short_channel_id matching this transaction. */
+  val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
+    case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
+    case _ => None
+  }
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity, fundingTxIndex > 0)
@@ -381,6 +387,28 @@ case class Commitment(fundingTxIndex: Long,
         val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
         (balanceNoFees - amountToReserve1).max(0 msat)
       }
+    }
+  }
+
+  /** Sign the announcement for this commitment, if the funding transaction is confirmed. */
+  def signAnnouncement(nodeParams: NodeParams, params: ChannelParams): Option[AnnouncementSignatures] = {
+    localFundingStatus match {
+      case funding: LocalFundingStatus.ConfirmedFundingTx if params.announceChannel =>
+        val features = Features.empty[Feature] // empty features for now
+        val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
+        val witness = Announcements.generateChannelAnnouncementWitness(
+          nodeParams.chainHash,
+          funding.shortChannelId,
+          nodeParams.nodeKeyManager.nodeId,
+          params.remoteParams.nodeId,
+          fundingPubKey.publicKey,
+          remoteFundingPubKey,
+          features
+        )
+        val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
+        val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
+        Some(AnnouncementSignatures(params.channelId, funding.shortChannelId, localNodeSig, localBitcoinSig))
+      case _ => None
     }
   }
 
@@ -749,6 +777,13 @@ object Commitment {
   }
 }
 
+/** A commitment for which a channel announcement has been created. */
+case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnnouncement) {
+  val shortChannelId: RealShortChannelId = announcement.shortChannelId
+  val fundingTxId: TxId = commitment.fundingTxId
+  val fundingTxIndex: Long = commitment.fundingTxIndex
+}
+
 /** Subset of Commitments when we want to work with a single, specific commitment. */
 case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           fundingTxIndex: Long,
@@ -757,6 +792,10 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val channelId = params.channelId
+  val shortChannelId_opt = localFundingStatus match {
+    case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
+    case _ => None
+  }
   val localParams = params.localParams
   val remoteParams = params.remoteParams
   val commitInput = localCommit.commitTxAndRemoteSig.commitTx.input
@@ -827,10 +866,10 @@ case class Commitments(params: ChannelParams,
   lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
   lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
 
+  val all: Seq[Commitment] = active ++ inactive
+
   // We always use the last commitment that was created, to make sure we never go back in time.
   val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
-
-  val all: Seq[Commitment] = active ++ inactive
 
   def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
 
@@ -1186,7 +1225,7 @@ case class Commitments(params: ChannelParams,
    * @param updateMethod This method is tricky: it passes the fundingTxIndex of the commitment corresponding to the
    *                     fundingTxId, because in the remote case we may update several commitments.
    */
-  private def updateFundingStatus(fundingTxId: TxId, updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
+  private def updateFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId], updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
     all.find(_.fundingTxId == fundingTxId) match {
       case Some(commitment) =>
         val commitments1 = copy(
@@ -1194,7 +1233,7 @@ case class Commitments(params: ChannelParams,
           inactive = inactive.map(updateMethod(commitment.fundingTxIndex))
         )
         val commitment1 = commitments1.all.find(_.fundingTxId == fundingTxId).get // NB: this commitment might be pruned at the next line
-        val commitments2 = commitments1.deactivateCommitments().pruneCommitments()
+        val commitments2 = commitments1.deactivateCommitments().pruneCommitments(lastAnnouncedFundingTxId_opt)
         Right(commitments2, commitment1)
       case None =>
         log.warning(s"fundingTxId=$fundingTxId doesn't match any of our funding txs")
@@ -1202,16 +1241,16 @@ case class Commitments(params: ChannelParams,
     }
   }
 
-  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, _ => {
+  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, _ => {
       case c if c.fundingTxId == fundingTxId =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
         c.copy(localFundingStatus = status)
       case c => c
     })
 
-  def updateRemoteFundingStatus(fundingTxId: TxId)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, fundingTxIndex => {
+  def updateRemoteFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, fundingTxIndex => {
       // all funding older than this one are considered locked
       case c if c.fundingTxId == fundingTxId || c.fundingTxIndex < fundingTxIndex =>
         log.info(s"setting remoteFundingStatus=${RemoteFundingStatus.Locked.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
@@ -1259,19 +1298,33 @@ case class Commitments(params: ChannelParams,
 
   /**
    * We can prune commitments in two cases:
-   * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
-   * - their funding tx has been permanently spent by a splice tx
+   *  - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
+   *  - their funding tx has been permanently spent by a splice tx
+   *
+   * But we need to keep our last announced commitment if the channel is public, even if it has been permanently spent
+   * by a newer splice tx that hasn't been announced yet, otherwise we won't know which short_channel_id to use when
+   * creating channel_updates.
    */
-  private def pruneCommitments()(implicit log: LoggingAdapter): Commitments = {
+  private def pruneCommitments(lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Commitments = {
     all
       .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       .sortBy(_.fundingTxIndex)
       .lastOption match {
       case Some(lastConfirmed) =>
-        // We can prune all other commitments with the same or lower funding index.
         // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer
         // may not yet be aware of it, and will expect us to send commit_sig.
-        val pruned = inactive.filter(c => c.fundingTxId != lastConfirmed.fundingTxId && c.fundingTxIndex <= lastConfirmed.fundingTxIndex)
+        val pruned = if (params.announceChannel) {
+          // If the most recently confirmed commitment isn't announced yet, we cannot prune the last commitment we
+          // announced, because our channel updates are based on its announcement (and its short_channel_id).
+          // If we never announced the channel, we don't need to announce old commitments, we will directly announce the last one.
+          val lastAnnouncedFundingTxIndex_opt = lastAnnouncedFundingTxId_opt.flatMap(txId => all.find(_.fundingTxId == txId).map(_.fundingTxIndex))
+          val pruningIndex = lastAnnouncedFundingTxIndex_opt.getOrElse(lastConfirmed.fundingTxIndex)
+          // We can prune all RBF candidates, and commitments that came before the last announced one.
+          inactive.filter(c => c.fundingTxIndex < pruningIndex || (c.fundingTxIndex == lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId))
+        } else {
+          // We can prune all other commitments with the same or lower funding index.
+          inactive.filter(c => c.fundingTxIndex <= lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId)
+        }
         pruned.foreach(c => log.info("pruning commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(inactive = inactive diff pruned)
       case _ =>
@@ -1286,6 +1339,11 @@ case class Commitments(params: ChannelParams,
    */
   def resolveCommitment(spendingTx: Transaction): Option[Commitment] = {
     all.find(c => spendingTx.txIn.map(_.outPoint).contains(c.commitInput.outPoint))
+  }
+
+  /** Find the corresponding commitment based on its short_channel_id (once funding transaction is confirmed). */
+  def resolveCommitment(shortChannelId: RealShortChannelId): Option[Commitment] = {
+    all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
 }
 

@@ -40,8 +40,8 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     confirmChannel(alice, bob, channelId, BlockHeight(420_000), 21)
-    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
-    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
+    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
   }
 
   test("open multiple channels alice-bob") { f =>
@@ -64,8 +64,8 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real_opt.nonEmpty)
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
     }
   }
 

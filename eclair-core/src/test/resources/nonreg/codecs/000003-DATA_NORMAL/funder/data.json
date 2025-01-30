@@ -111,8 +111,7 @@
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
   },
-  "shortIds" : {
-    "real" : "1413373x969x0",
+  "aliases" : {
     "localAlias" : "0x1590fd0003c90000"
   },
   "channelUpdate" : {

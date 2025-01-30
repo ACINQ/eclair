@@ -1349,6 +1349,165 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
+  test("recv announcement_signatures", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
+    import f._
+
+    val aliceListener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ShortChannelIdAssigned])
+    val bobListener = TestProbe()
+    bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
+
+    // Alice and Bob announce the initial funding transaction.
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[ChannelUpdate]
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty))
+    val ann = alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(ann))
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(ann))
+
+    // Alice and Bob create a first splice transaction.
+    val spliceTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx1.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx1.txid)
+    // Alice sees the splice transaction confirm.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(1105), 37, spliceTx1)
+    alice2blockchain.expectWatchFundingSpent(spliceTx1.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx1.txid)
+    alice2bob.forward(bob)
+    bob2alice.expectNoMessage(100 millis)
+    // Bob sees the splice transaction confirm and receives Alice's announcement_signatures.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(1105), 37, spliceTx1)
+    bob2blockchain.expectWatchFundingSpent(spliceTx1.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx1.txid)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    val bobAnnSigs1 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != ann)))
+    val spliceAnn1 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+    assert(spliceAnn1.shortChannelId != ann.shortChannelId)
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn1))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(ann))
+    aliceListener.expectNoMessage(100 millis)
+    // Bob can prune previous commitments, but Alice cannot because she hasn't created the announcement yet.
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 1)
+    awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.isEmpty)
+
+    // Alice and Bob create a second splice transaction.
+    val spliceTx2 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(100_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx2.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx2.txid)
+    // Alice sees the splice transaction confirm.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(1729), 27, spliceTx2)
+    alice2blockchain.expectWatchFundingSpent(spliceTx2.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx2.txid)
+    alice2bob.forward(bob)
+    // Bob sees the splice transaction confirm.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(1729), 27, spliceTx2)
+    bob2blockchain.expectWatchFundingSpent(spliceTx2.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx2.txid)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    val bobAnnSigs2 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != spliceAnn1)))
+    val spliceAnn2 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+    assert(spliceAnn2.shortChannelId != spliceAnn1.shortChannelId)
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn2))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(ann))
+    aliceListener.expectNoMessage(100 millis)
+    // Bob can prune previous commitments, but Alice cannot because she hasn't created the announcement yet.
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 2)
+    awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.isEmpty)
+
+    // Alice receives Bob's announcement_signatures.
+    bob2alice.forward(alice, bobAnnSigs2)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn2))
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(spliceAnn2)))
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
+    awaitAssert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.isEmpty)
+
+    // Alice receives Bob's previous announcement_signatures.
+    bob2alice.forward(alice, bobAnnSigs1)
+    alice2bob.expectNoMessage(100 millis)
+    aliceListener.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(spliceAnn2))
+  }
+
+  test("recv announcement_signatures (after restart)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
+    import f._
+
+    val aliceListener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(aliceListener.ref, classOf[ShortChannelIdAssigned])
+    val bobListener = TestProbe()
+    bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
+
+    // Alice and Bob want to announce the initial funding transaction, but the messages are dropped.
+    val shortChannelId = alice2bob.expectMsgType[AnnouncementSignatures].shortChannelId
+    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[ChannelUpdate]
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
+
+    // Alice and Bob create a splice transaction.
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(250_000 sat)))
+    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
+    // Alice sees the splice transaction confirm.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(1105), 37, spliceTx)
+    alice2blockchain.expectWatchFundingSpent(spliceTx.txid)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    alice2bob.forward(bob)
+    // Bob sees the splice transaction confirm and receives Alice's announcement_signatures.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(1105), 37, spliceTx)
+    bob2blockchain.expectWatchFundingSpent(spliceTx.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
+    val spliceAnn = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
+    assert(spliceAnn.shortChannelId != shortChannelId)
+    assert(bobListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
+    aliceListener.expectNoMessage(100 millis)
+
+    // Alice restarts.
+    disconnect(f)
+    val aliceDataBeforeRestart = alice.stateData.asInstanceOf[DATA_NORMAL]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(aliceDataBeforeRestart)
+    alice2blockchain.expectMsgType[SetChannelId]
+    alice2blockchain.expectWatchFundingSpent(spliceTx.txid)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.isEmpty)
+    awaitAssert(assert(alice.stateName == OFFLINE))
+
+    // Alice and Bob reconnect.
+    reconnect(f)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    bob2alice.forward(alice)
+    assert(bob2alice.expectMsgType[AnnouncementSignatures].shortChannelId == spliceAnn.shortChannelId)
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+    assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn))
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(spliceAnn)))
+    awaitAssert(assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.all.size == 1))
+    awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.all.size == 1))
+  }
+
   test("recv CMD_ADD_HTLC with multiple commitments") { f =>
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))

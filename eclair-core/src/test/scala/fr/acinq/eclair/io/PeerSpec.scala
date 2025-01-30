@@ -795,7 +795,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     // Our channel closes, so we stop storing backups for that peer.
-    peer ! LocalChannelDown(ActorRef.noSender, channel.channelId, channel.shortIds, channel.remoteNodeId)
+    peer ! LocalChannelDown(ActorRef.noSender, channel.channelId, channel.lastAnnouncement_opt.map(_.shortChannelId).toSeq, channel.aliases, channel.remoteNodeId)
     peerConnection3.send(peer, PeerStorageStore(hex"2222"))
     assert(!peer.isTimerActive("peer-storage-write"))
     assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))

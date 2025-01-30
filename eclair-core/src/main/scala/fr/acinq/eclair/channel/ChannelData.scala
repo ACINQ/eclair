@@ -417,16 +417,15 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 }
 
 /**
- * Short identifiers for the channel.
+ * Short identifiers for the channel that aren't related to the on-chain utxo.
  *
- * @param real_opt        the real scid of the latest announced (and thus confirmed) funding transaction.
  * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
  *                          - identify incoming [[ChannelUpdate]] at the connection level
  *                          - route outgoing payments to that channel
  * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortIds(real_opt: Option[RealShortChannelId], localAlias: Alias, remoteAlias_opt: Option[Alias])
+case class ShortIdAliases(localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]
@@ -457,7 +456,7 @@ object LocalFundingStatus {
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -589,7 +588,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends ChannelDataWithCommitments {
   def fundingTx_opt: Option[Transaction] = commitments.latest.localFundingStatus.signedTx_opt
 }
-final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
@@ -622,16 +621,18 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
   def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortIds: ShortIds,
-                             channelAnnouncement: Option[ChannelAnnouncement],
+                             aliases: ShortIdAliases,
+                             lastAnnouncement_opt: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+  val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
+  val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }

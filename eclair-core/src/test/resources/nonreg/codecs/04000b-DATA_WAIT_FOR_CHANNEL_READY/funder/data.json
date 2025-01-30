@@ -1,0 +1,138 @@
+{
+  "type" : "DATA_WAIT_FOR_CHANNEL_READY",
+  "commitments" : {
+    "params" : {
+      "channelId" : "7d975ecb75e1497076150f745b83dace95a189eecb6172c20a9a4fe0f91b8d1d",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ "option_static_remotekey" ],
+      "localParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "fundingKeyPath" : [ 222163200, 3836794389, 3217943953, 1565449417, 2862146275, 3633046910, 2547274215, 4050695153, 2147483649 ],
+        "dustLimit" : 1100,
+        "maxHtlcValueInFlightMsat" : 500000000,
+        "initialRequestedChannelReserve_opt" : 10000,
+        "htlcMinimum" : 0,
+        "toSelfDelay" : 144,
+        "maxAcceptedHtlcs" : 100,
+        "isChannelOpener" : true,
+        "paysCommitTxFees" : true,
+        "walletStaticPaymentBasepoint" : "028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12",
+        "initFeatures" : {
+          "activated" : {
+            "option_support_large_channel" : "optional",
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "dustLimit" : 1000,
+        "maxHtlcValueInFlightMsat" : 1000000000,
+        "initialRequestedChannelReserve_opt" : 20000,
+        "htlcMinimum" : 1000,
+        "toSelfDelay" : 144,
+        "maxAcceptedHtlcs" : 30,
+        "revocationBasepoint" : "0201dd773d2108f3ed8f59669240c7f098d3083963bef5b36ebf940f4bc40724c8",
+        "paymentBasepoint" : "028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12",
+        "delayedPaymentBasepoint" : "0243f77d02fbb07f25d6fe14f9c7ee904e1a19442a4aea0dc1ce959d5d2caea9b4",
+        "htlcBasepoint" : "02e3ae52529ae89f6d7ab478474e0ebe1845d3f7a36967209caad616b0d43353f5",
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "mandatory",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 0,
+      "remoteNextHtlcId" : 0
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingTx" : {
+        "outPoint" : "1d8d1bf9e04f9a0ac27261cbee89a195ceda835b740f15767049e175cb5e977d:0",
+        "amountSatoshis" : 1000000
+      },
+      "localFunding" : {
+        "status" : "confirmed",
+        "txid" : "1d8d1bf9e04f9a0ac27261cbee89a195ceda835b740f15767049e175cb5e977d",
+        "shortChannelId" : "400000x42x0"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 10000,
+          "toLocal" : 800000000,
+          "toRemote" : 200000000
+        },
+        "commitTxAndRemoteSig" : {
+          "commitTx" : {
+            "txid" : "ad28d946d13d331539d08da9d131311d1bec7308ddf072a59b07b2dc22779c3f",
+            "tx" : "02000000017d975ecb75e1497076150f745b83dace95a189eecb6172c20a9a4fe0f91b8d1d000000000036a2ab8002400d030000000000160014761879f7b274ce995f87150a02e75cc0c037e8e3b8180c000000000022002029b18fc4cf2f2b4634802a1b950d9e27e93b9be9ce638351143432fd0db09163ac678920"
+          },
+          "remoteSig" : "8d3c57514dd1c01073b3d3704eddcfd8ca6ac3bb58f145f2c2dd921b77f238e842dce706a711b69b250e9ec3b827a9d9e144720a41fadce820bb18280667bffd"
+        },
+        "htlcTxsAndRemoteSigs" : [ ]
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 10000,
+          "toLocal" : 200000000,
+          "toRemote" : 800000000
+        },
+        "txid" : "d873d760728d9cf12d61c43360c383ab83799c9153f38c6012d9d6f6e6026df1",
+        "remotePerCommitmentPoint" : "026b84590050c242d572dd2a45b873ce1e108303e1a54a6492e641f3ec1a70a7aa"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : "02449092e08f529ffd0b45361f70f877e865f045b23b80e7658d050690c2280125",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
+  },
+  "aliases" : {
+    "localAlias" : "0x1955fc8674b7616"
+  }
+}

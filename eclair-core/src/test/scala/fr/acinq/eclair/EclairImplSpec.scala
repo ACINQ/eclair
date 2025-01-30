@@ -363,16 +363,15 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       channel1.shortChannelId -> PublicChannel(channel1, TxId(ByteVector32.Zeroes), 100_000 sat, None, None, None),
       channel2.shortChannelId -> PublicChannel(channel2, TxId(ByteVector32.Zeroes), 150_000 sat, None, None, None),
     )
-    val (channelId3, shortIds3) = (randomBytes32(), ShortIds(None, Alias(13), None))
-    val (channelId4, shortIds4) = (randomBytes32(), ShortIds(Some(RealShortChannelId(4)), Alias(14), None))
+    val (channelId3, aliases3) = (randomBytes32(), ShortIdAliases(Alias(13), None))
+    val (channelId4, aliases4) = (randomBytes32(), ShortIdAliases(Alias(14), None))
     val privateChannels = Map(
-      channelId3 -> PrivateChannel(channelId3, shortIds3, a, b, None, None, Router.ChannelMeta(25_000 msat, 50_000 msat)),
-      channelId4 -> PrivateChannel(channelId4, shortIds4, a, c, None, None, Router.ChannelMeta(75_000 msat, 10_000 msat)),
+      channelId3 -> PrivateChannel(channelId3, aliases3, a, b, None, None, Router.ChannelMeta(25_000 msat, 50_000 msat)),
+      channelId4 -> PrivateChannel(channelId4, aliases4, a, c, None, None, Router.ChannelMeta(75_000 msat, 10_000 msat)),
     )
     val scidMapping = Map(
-      shortIds3.localAlias.toLong -> channelId3,
-      shortIds4.localAlias.toLong -> channelId4,
-      shortIds4.real_opt.get.toLong -> channelId4,
+      aliases3.localAlias.toLong -> channelId3,
+      aliases4.localAlias.toLong -> channelId4,
     )
     val g = GraphWithBalanceEstimates(DirectedGraph(Nil), 1 hour)
     val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty, Map.empty)
@@ -384,7 +383,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val unknownNodeId = randomKey().publicKey
     val unknownScid = Alias(42)
-    eclair.findRoute(c, 250_000 msat, None, ignoreNodeIds = Seq(b, unknownNodeId), ignoreShortChannelIds = Seq(channel1.shortChannelId, shortIds3.localAlias, shortIds4.real_opt.get, unknownScid))
+    eclair.findRoute(c, 250_000 msat, None, ignoreNodeIds = Seq(b, unknownNodeId), ignoreShortChannelIds = Seq(channel1.shortChannelId, aliases3.localAlias, unknownScid))
     router.expectMsg(Router.GetRouterData)
     router.reply(routerData)
     val routeRequest2 = router.expectMsgType[RouteRequest]
@@ -393,10 +392,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(routeRequest2.ignore.channels == Set(
       Router.ChannelDesc(channel1.shortChannelId, a, b),
       Router.ChannelDesc(channel1.shortChannelId, b, a),
-      Router.ChannelDesc(shortIds3.localAlias, a, b),
-      Router.ChannelDesc(shortIds3.localAlias, b, a),
-      Router.ChannelDesc(shortIds4.real_opt.get, a, c),
-      Router.ChannelDesc(shortIds4.real_opt.get, c, a),
+      Router.ChannelDesc(aliases3.localAlias, a, b),
+      Router.ChannelDesc(aliases3.localAlias, b, a),
     ))
   }
 
