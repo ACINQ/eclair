@@ -231,6 +231,42 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     }
   }
 
+  def addChannel(router: ActorRef, watcher: TestProbe, scid: RealShortChannelId, priv1: PrivateKey, priv2: PrivateKey, priv_funding1: PrivateKey, priv_funding2: PrivateKey): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate) = {
+    val channelAnnoucement = channelAnnouncement(scid, priv1, priv2, priv_funding1, priv_funding2)
+    val pub1 = priv1.publicKey
+    val pub2 = priv2.publicKey
+    val update1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv1, pub2, scid, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+    val update2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, pub1, scid, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum)
+    val pub_funding1 = priv_funding1.publicKey
+    val pub_funding2 = priv_funding2.publicKey
+    assert(ChannelDesc(update1, channelAnnoucement) == ChannelDesc(channelAnnoucement.shortChannelId, pub1, pub2))
+    val sender1 = TestProbe()
+    val peerConnection = TestProbe()
+    peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelAnnoucement))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update1))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update2))
+    assert(watcher.expectMsgType[ValidateRequest].ann == channelAnnoucement)
+    watcher.send(router, ValidateResult(channelAnnoucement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(pub_funding1, pub_funding2)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == scid)
+    peerConnection.expectMsgAllOf(
+      GossipDecision.Accepted(channelAnnoucement),
+      GossipDecision.Accepted(update1),
+      GossipDecision.Accepted(update2)
+    )
+    peerConnection.expectNoMessage()
+    awaitCond({
+      sender1.send(router, GetNodes)
+      val nodes = sender1.expectMsgType[Iterable[NodeAnnouncement]]
+      sender1.send(router, GetChannels)
+      val channels = sender1.expectMsgType[Iterable[ChannelAnnouncement]]
+      sender1.send(router, GetChannelUpdates)
+      val updates = sender1.expectMsgType[Iterable[ChannelUpdate]]
+      nodes.size == 8 && channels.size == 6 && updates.size == 14
+    }, max = 10 seconds, interval = 1 second)
+    (channelAnnoucement, update1, update2)
+  }
+
 }
 
 object BaseRouterSpec {

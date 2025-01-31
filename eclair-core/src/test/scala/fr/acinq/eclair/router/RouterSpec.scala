@@ -326,11 +326,11 @@ class RouterSpec extends BaseRouterSpec {
 
   def spendingTx(node1: PublicKey, node2: PublicKey, capacity: Satoshi = publicChannelCapacity): Transaction = {
     val fundingScript = write(pay2wsh(Scripts.multiSig2of2(node1, node2)))
-    val nextFundingTx = Transaction(version = 0, txIn = TxIn(OutPoint(fundingTx(node1, node2, capacity), 0), fundingScript, 0) :: Nil, txOut = TxOut(capacity, fundingScript) :: Nil, lockTime = 0)
+    val nextFundingTx = Transaction(version = 2, txIn = TxIn(OutPoint(fundingTx(node1, node2, capacity), 0), fundingScript, 0) :: Nil, txOut = TxOut(capacity, fundingScript) :: Nil, lockTime = 0)
     nextFundingTx
   }
 
-  def batchSpendingTx(spendingTxs: Seq[Transaction]): Transaction = Transaction(version = 0, txIn = spendingTxs.flatMap(_.txIn), txOut = spendingTxs.flatMap(_.txOut), lockTime = 0)
+  def batchSpendingTx(spendingTxs: Seq[Transaction]): Transaction = Transaction(version = 2, txIn = spendingTxs.flatMap(_.txIn), txOut = spendingTxs.flatMap(_.txOut), lockTime = 0)
 
   test("properly announce lost channels and nodes") { fixture =>
     import fixture._
@@ -1155,12 +1155,39 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
+  def processSpliceChannelAnnouncement(fixture: FixtureParam, parentScid: RealShortChannelId, channelAnnouncement: ChannelAnnouncement, spliceTx: Transaction, newCapacity: Satoshi): Unit = {
+    import fixture._
+    // A splice of the channel is announced and validated.
+    val peerConnection = TestProbe()
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelAnnouncement))
+    peerConnection.expectNoMessage(100 millis)
+    assert(watcher.expectMsgType[ValidateRequest].ann == channelAnnouncement)
+    watcher.send(router, ValidateResult(channelAnnouncement, Right(spliceTx, UtxoStatus.Unspent)))
+    assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == channelAnnouncement.shortChannelId)
+    watcher.expectMsgType[UnwatchExternalChannelSpent] // unwatch the parent channel
+    peerConnection.expectMsg(TransportHandler.ReadAck(channelAnnouncement))
+    peerConnection.expectMsg(GossipDecision.Accepted(channelAnnouncement))
+    assert(peerConnection.sender() == router)
+
+    // And the graph should be updated too.
+    val sender = TestProbe()
+    sender.send(router, Router.GetRouterData)
+    inside(sender.expectMsgType[Data]) { routerData =>
+      val g = routerData.graphWithBalances.graph
+      val edge_ab = g.getEdge(ChannelDesc(channelAnnouncement.shortChannelId, channelAnnouncement.nodeId1, channelAnnouncement.nodeId2)).get
+      val edge_ba = g.getEdge(ChannelDesc(channelAnnouncement.shortChannelId, channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)).get
+      assert(g.getEdge(ChannelDesc(parentScid, channelAnnouncement.nodeId1, channelAnnouncement.nodeId2)).isEmpty)
+      assert(g.getEdge(ChannelDesc(parentScid, channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)).isEmpty)
+      assert(newCapacity == spliceTx.txOut(channelAnnouncement.shortChannelId.outputIndex).amount)
+      assert(edge_ab.capacity == newCapacity && edge_ba.capacity == newCapacity)
+    }
+  }
+
   test("update an existing channel after a splice") { fixture =>
     import fixture._
 
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
-    val peerConnection = TestProbe()
 
     // Channel ab is spent by a splice tx.
     val capacity1 = publicChannelCapacity - 100_000.sat
@@ -1173,8 +1200,8 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectNoMessage(100 millis)
 
     // Channel ab is spent and confirmed by an RBF of splice tx.
-    val capacity2 = publicChannelCapacity - 100_000.sat - 1000.sat
-    val spliceTx2 = spendingTx(funding_a, funding_b, capacity2)
+    val newCapacity = publicChannelCapacity - 100_000.sat - 1000.sat
+    val spliceTx2 = spendingTx(funding_a, funding_b, newCapacity)
     router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx2)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == spliceTx2.txid)
@@ -1185,30 +1212,7 @@ class RouterSpec extends BaseRouterSpec {
     // The splice of channel ab is announced.
     val spliceScid = RealShortChannelId(BlockHeight(450000), 1, 0)
     val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, spliceAnn))
-    peerConnection.expectNoMessage(100 millis)
-    assert(watcher.expectMsgType[ValidateRequest].ann == spliceAnn)
-    watcher.send(router, ValidateResult(spliceAnn, Right(spliceTx2, UtxoStatus.Unspent)))
-    peerConnection.expectMsg(TransportHandler.ReadAck(spliceAnn))
-    peerConnection.expectMsg(GossipDecision.Accepted(spliceAnn))
-    assert(peerConnection.sender() == router)
-
-    // And the graph should be updated too.
-    val sender = TestProbe()
-    sender.send(router, Router.GetRouterData)
-    val g = sender.expectMsgType[Data].graphWithBalances.graph
-    val edge_ab = g.getEdge(ChannelDesc(spliceScid, a, b)).get
-    val edge_ba = g.getEdge(ChannelDesc(spliceScid, b, a)).get
-    assert(g.getEdge(ChannelDesc(scid_ab, a, b)).isEmpty)
-    assert(g.getEdge(ChannelDesc(scid_ab, b, a)).isEmpty)
-    assert(edge_ab.capacity == capacity2 && edge_ba.capacity == capacity2)
-
-    // The channel update for the splice is confirmed and the channel is updated.
-    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spliceTx2)
-    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn, capacity2, None, None) :: Nil))
-    eventListener.expectMsg(ChannelLost(scid_ab))
-    peerConnection.expectNoMessage(100 millis)
-    eventListener.expectNoMessage(100 millis)
+    processSpliceChannelAnnouncement(fixture, scid_ab, spliceAnn, spliceTx2, newCapacity)
 
     // The router no longer tracks the parent scids.
     val probe = TestProbe()
@@ -1220,49 +1224,64 @@ class RouterSpec extends BaseRouterSpec {
     })
   }
 
-  test("update two existing channels with a batch splice") { fixture =>
+  test("update multiple existing channels with a batch splice") { fixture =>
     import fixture._
+
+    // add second b-c channel
+    val scid_bc2 = RealShortChannelId(BlockHeight(420000), 7, 0)
+    addChannel(fixture.router, fixture.watcher, scid_bc2, priv_b, priv_c, priv_funding_b, priv_funding_c)
 
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
-    val peerConnection = TestProbe()
 
-    // Channel ab1 and ab2 will both be spent by the same splice tx.
-    val spliceTx1 = spendingTx(funding_a, funding_b, publicChannelCapacity - 100_000.sat)
-    val spliceTx2 = spendingTx(funding_b, funding_c, publicChannelCapacity + 50_000.sat)
-    val batchSpliceTx = batchSpendingTx(Seq(spliceTx1, spliceTx2))
+    val newCapacity_ab = publicChannelCapacity - 100_000.sat
+    val newCapacity_bc = publicChannelCapacity + 50_000.sat
+    val spliceTx_ab = spendingTx(funding_a, funding_b, newCapacity_ab)
+    val spliceTx_bc = spendingTx(funding_b, funding_c, newCapacity_bc)
+    val spliceTx_bc2 = spendingTx(funding_b, funding_c)
+    val batchSpliceTx = batchSpendingTx(Seq(spliceTx_ab, spliceTx_bc, spliceTx_bc2))
 
-    // Channel ab is spent by a splice tx1.
-    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx1)
+    // Channel ab is spent by a splice tx.
+    router ! WatchExternalChannelSpentTriggered(scid_ab, spliceTx_ab)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
-      assert(w.txId == spliceTx1.txid)
+      assert(w.txId == spliceTx_ab.txid)
       assert(w.minDepth == 12)
     }
 
-    // Channel bc is spent by a splice tx2.
-    router ! WatchExternalChannelSpentTriggered(scid_bc, spliceTx2)
+    // Channel bc is spent by a splice tx.
+    router ! WatchExternalChannelSpentTriggered(scid_bc, spliceTx_bc)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
-      assert(w.txId == spliceTx2.txid)
+      assert(w.txId == spliceTx_bc.txid)
       assert(w.minDepth == 12)
     }
 
-    // Channel ab is spent by the batch splice tx.
+    // Channel bc2 is spent by a splice tx.
+    router ! WatchExternalChannelSpentTriggered(scid_bc2, spliceTx_bc2)
+    inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == spliceTx_bc2.txid)
+      assert(w.minDepth == 12)
+    }
+
+    // Channels ab, bc and bc2 are all spent by the same batch splice tx.
     router ! WatchExternalChannelSpentTriggered(scid_ab, batchSpliceTx)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx.txid)
       assert(w.minDepth == 12)
     }
-
-    // Channel bc is also spent by the batch splice tx.
     router ! WatchExternalChannelSpentTriggered(scid_bc, batchSpliceTx)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx.txid)
       assert(w.minDepth == 12)
     }
+    router ! WatchExternalChannelSpentTriggered(scid_bc2, batchSpliceTx)
+    inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == batchSpliceTx.txid)
+      assert(w.minDepth == 12)
+    }
 
-    // Channels ab and bc are also both spent by an RBF of the batch splice tx.
-    val capacityAB_RBF = publicChannelCapacity - 100_000.sat - 1000.sat
-    val batchSpliceTx_RBF = batchSpendingTx(Seq(spendingTx(funding_a, funding_b, capacityAB_RBF), spliceTx2))
+    // Channels ab, bc and bc2 are also all spent by an RBF of the batch splice tx.
+    val newCapacity_ab_RBF = newCapacity_ab - 1000.sat
+    val batchSpliceTx_RBF = batchSpendingTx(Seq(spendingTx(funding_a, funding_b, newCapacity_ab_RBF), spliceTx_bc, spliceTx_bc2))
     router ! WatchExternalChannelSpentTriggered(scid_ab, batchSpliceTx_RBF)
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx_RBF.txid)
@@ -1273,69 +1292,99 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == batchSpliceTx_RBF.txid)
       assert(w.minDepth == 12)
     }
+    router ! WatchExternalChannelSpentTriggered(scid_bc2, batchSpliceTx_RBF)
+    inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
+      assert(w.txId == batchSpliceTx_RBF.txid)
+      assert(w.minDepth == 12)
+    }
 
-    // The router tracks the possible spending txs for scid ab and scid bc.
-    awaitAssert({
-      val probe = TestProbe()
-      probe.send(router, GetRouterData)
-      val routerData = probe.expectMsgType[Data]
-      assert(routerData.spentChannels(spliceTx1.txid) == Set(scid_ab))
-      assert(routerData.spentChannels(spliceTx2.txid) == Set(scid_bc))
-      assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_ab, scid_bc))
-      assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_ab, scid_bc))
-    })
-
-    // The splice of channel ab is announced.
-    val spliceScid = RealShortChannelId(BlockHeight(450000), 1, 0)
-    val spliceAnn = channelAnnouncement(spliceScid, priv_a, priv_b, priv_funding_a, priv_funding_b)
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, spliceAnn))
-    peerConnection.expectNoMessage(100 millis)
-    assert(watcher.expectMsgType[ValidateRequest].ann == spliceAnn)
-    watcher.send(router, ValidateResult(spliceAnn, Right(batchSpliceTx_RBF, UtxoStatus.Unspent)))
-    peerConnection.expectMsg(TransportHandler.ReadAck(spliceAnn))
-    peerConnection.expectMsg(GossipDecision.Accepted(spliceAnn))
-    assert(peerConnection.sender() == router)
-
-    // And the graph should be updated too.
+    // The router tracks the possible spending txs for channels ab, bc and bc2.
     val sender = TestProbe()
-    sender.send(router, Router.GetRouterData)
-    val routerData = sender.expectMsgType[Data]
-    val g = routerData.graphWithBalances.graph
-    val edge_ab = g.getEdge(ChannelDesc(spliceScid, a, b)).get
-    val edge_ba = g.getEdge(ChannelDesc(spliceScid, b, a)).get
-    assert(g.getEdge(ChannelDesc(scid_ab, a, b)).isEmpty)
-    assert(g.getEdge(ChannelDesc(scid_ab, b, a)).isEmpty)
-    assert(edge_ab.capacity == capacityAB_RBF && edge_ba.capacity == capacityAB_RBF)
+    sender.send(router, GetRouterData)
+    inside(sender.expectMsgType[Data]) { routerData =>
+      awaitAssert({
+        assert(routerData.spentChannels(spliceTx_ab.txid) == Set(scid_ab))
+        assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
+        assert(routerData.spentChannels(spliceTx_bc2.txid) == Set(scid_bc2))
+        assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_ab, scid_bc, scid_bc2))
+        assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_ab, scid_bc, scid_bc2))
+      })
+    }
 
-    // The router still tracks the possible spending txs for scid bc, but not scid ab.
-    awaitAssert({
-      val probe = TestProbe()
-      probe.send(router, GetRouterData)
-      val routerData = probe.expectMsgType[Data]
-      assert(!routerData.spentChannels.contains(spliceTx1.txid))
-      assert(routerData.spentChannels(spliceTx2.txid) == Set(scid_bc))
-      assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc))
-      assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc))
-    })
+    // The splice of channel ab is announced, verified and added to the graph; the parent channel is removed from the graph.
+    val spliceScid_ab = RealShortChannelId(BlockHeight(450000), 1, 0)
+    val spliceAnn_ab = channelAnnouncement(spliceScid_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
+    processSpliceChannelAnnouncement(fixture, scid_ab, spliceAnn_ab, batchSpliceTx_RBF, newCapacity_ab_RBF)
+    assert(watcher.expectMsgType[UnwatchTxConfirmed].txId == spliceTx_ab.txid)
 
-    // The splice channel update for the scid ab splice confirms and the channel is updated.
-    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, batchSpliceTx_RBF)
-    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn, capacityAB_RBF, None, None) :: Nil))
+    // The router still tracks the possible spending txs for channels bc and bc2.
+    sender.send(router, GetRouterData)
+    inside(sender.expectMsgType[Data]) { routerData =>
+      awaitAssert({
+          assert(!routerData.spentChannels.contains(spliceTx_ab.txid))
+          assert(routerData.spentChannels.contains(spliceTx_bc.txid))
+          assert(routerData.spentChannels.contains(spliceTx_bc2.txid))
+          assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
+          assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc, scid_bc2))
+          assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc, scid_bc2))
+      })
+    }
+
+    // The splice of channel bc is announced, verified and added to the graph; the parent channel is removed from the graph.
+    val spliceScid_bc = RealShortChannelId(BlockHeight(450000), 1, 1)
+    val spliceAnn_bc = channelAnnouncement(spliceScid_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
+    processSpliceChannelAnnouncement(fixture, scid_bc, spliceAnn_bc, batchSpliceTx_RBF, newCapacity_bc)
+    assert(watcher.expectMsgType[UnwatchTxConfirmed].txId == spliceTx_bc.txid)
+
+    // The router still tracks the possible spending txs for channel bc or bc2 - either could be considered the parent of scid_bc.
+    sender.send(router, GetRouterData)
+    inside(sender.expectMsgType[Data]) { routerData =>
+      awaitAssert({
+         if (routerData.spentChannels.contains(spliceTx_bc.txid)) {
+          assert(!routerData.spentChannels.contains(spliceTx_bc2.txid))
+          assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
+          assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc))
+          assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc))
+        }
+        else {
+          assert(routerData.spentChannels.contains(spliceTx_bc2.txid))
+          assert(routerData.spentChannels(spliceTx_bc2.txid) == Set(scid_bc2))
+          assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc2))
+          assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc2))
+        }
+      })
+    }
+
+    // Splice channel updates received for ab and bc add new channels to and remove the parent channels from the graph.
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn_ab, newCapacity_ab_RBF, None, None) :: Nil))
     eventListener.expectMsg(ChannelLost(scid_ab))
-    // No splice channel update for scid bc was received yet so it is removed.
+    eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn_bc, newCapacity_bc, None, None) :: Nil))
     eventListener.expectMsg(ChannelLost(scid_bc))
-    peerConnection.expectNoMessage(100 millis)
+
+    // No splice channel update for channel bc2 was received before the batch splice tx confirms so channel bc2 is removed.
+    sender.send(router, GetRouterData)
+    val fundingTxId_bc2 = sender.expectMsgType[Data].channels(scid_bc2).fundingTxId
+    router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, batchSpliceTx_RBF)
+    assert(watcher.expectMsgType[UnwatchExternalChannelSpent].txId == fundingTxId_bc2)
+    eventListener.expectMsg(ChannelLost(scid_bc2))
     eventListener.expectNoMessage(100 millis)
 
+    // Alternative spending transactions in the mempool are now unspendable and need not be watched.
+    assert((1 to 2).map(_ => watcher.expectMsgType[UnwatchTxConfirmed].txId).toSet == Set(spliceTx_bc2.txid, batchSpliceTx.txid))
+    watcher.expectNoMessage(100 millis)
+
     // The router no longer tracks the parent scids.
-    awaitAssert({
-      val probe = TestProbe()
-      probe.send(router, GetRouterData)
-      val routerData = probe.expectMsgType[Data]
-      assert(routerData.spentChannels.isEmpty)
-      assert(!routerData.channels.contains(scid_ab))
-      assert(!routerData.channels.contains(scid_bc))
-    })
+    sender.send(router, GetRouterData)
+    inside(sender.expectMsgType[Data]) { routerData =>
+      awaitAssert({
+        assert(routerData.spentChannels.isEmpty)
+        assert(!routerData.channels.contains(scid_ab))
+        assert(!routerData.channels.contains(scid_bc))
+        assert(!routerData.channels.contains(scid_bc2))
+        assert(routerData.channels.contains(spliceScid_ab))
+        assert(routerData.channels.contains(spliceScid_bc))
+      })
+    }
   }
 
 }
