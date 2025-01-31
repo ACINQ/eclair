@@ -123,7 +123,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         // We're changing our composite index to two distinct indices to improve performance.
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
-        statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
+        statement.executeUpdate("DROP INDEX IF EXISTS local.htlc_infos_idx")
       }
 
       getVersion(statement, DB_NAME) match {
