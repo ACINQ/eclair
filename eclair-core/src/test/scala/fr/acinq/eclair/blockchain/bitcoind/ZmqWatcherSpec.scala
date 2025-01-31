@@ -28,7 +28,6 @@ import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, NewTransaction}
@@ -350,6 +349,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     withWatcher(f => {
       import f._
 
+      val sender = TestProbe()
       val (priv, address) = createExternalAddress()
       val tx1 = sendToAddress(address, 250_000 sat, probe)
       val outputIndex1 = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
@@ -364,13 +364,15 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! UnwatchExternalChannelSpent(randomTxId(), outputIndex1) // ignored
 
       // When publishing the transaction, the watch triggers immediately.
-      bitcoinClient.publishTransaction(spendingTx1)
+      bitcoinClient.publishTransaction(spendingTx1).pipeTo(sender.ref)
+      sender.expectMsg(spendingTx1.txid)
       probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), spendingTx1))
       probe.expectNoMessage(100 millis)
 
       // If we unwatch the transaction, we will ignore when it's published.
       watcher ! UnwatchExternalChannelSpent(tx2.txid, outputIndex2)
-      bitcoinClient.publishTransaction(spendingTx2)
+      bitcoinClient.publishTransaction(spendingTx2).pipeTo(sender.ref)
+      sender.expectMsg(spendingTx2.txid)
       probe.expectNoMessage(100 millis)
 
       // If we watch again, this will trigger immediately because the transaction is in the mempool.
@@ -381,11 +383,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // We make the transactions confirm while we're not watching.
       watcher ! UnwatchExternalChannelSpent(tx1.txid, outputIndex1)
       watcher ! UnwatchExternalChannelSpent(tx2.txid, outputIndex2)
-      bitcoinClient.getBlockHeight().pipeTo(probe.ref)
-      val initialBlockHeight = probe.expectMsgType[BlockHeight]
-      system.eventStream.subscribe(probe.ref, classOf[CurrentBlockHeight])
+      bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+      val initialBlockHeight = sender.expectMsgType[BlockHeight]
+      system.eventStream.subscribe(sender.ref, classOf[CurrentBlockHeight])
       generateBlocks(1)
-      awaitCond(probe.expectMsgType[CurrentBlockHeight].blockHeight >= initialBlockHeight + 1)
+      awaitCond(sender.expectMsgType[CurrentBlockHeight].blockHeight >= initialBlockHeight + 1)
 
       // If we watch again after confirmation, the watch instantly triggers.
       watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, outputIndex1, RealShortChannelId(3))
