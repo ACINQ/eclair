@@ -165,19 +165,12 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = false)
   }
 
-  def dummyDataNormal(capacity: Satoshi, remoteNodeId: PublicKey): DATA_NORMAL = {
-    val channelFeatures = ChannelFeatures(Features.DualFunding)
-    val localParams = LocalParams(nodeId = null, fundingKeyPath = null, dustLimit = null, maxHtlcValueInFlightMsat = 1000 msat, initialRequestedChannelReserve_opt = None, htlcMinimum = null, toSelfDelay = null, maxAcceptedHtlcs = 1, isChannelOpener = true, paysCommitTxFees = true, upfrontShutdownScript_opt = null, walletStaticPaymentBasepoint = None, initFeatures = null)
-    val remoteParams = RemoteParams(nodeId = remoteNodeId, dustLimit = null, maxHtlcValueInFlightMsat = UInt64(1000), initialRequestedChannelReserve_opt = None, htlcMinimum = null, toSelfDelay = null, maxAcceptedHtlcs = 1, revocationBasepoint = null, paymentBasepoint = null, delayedPaymentBasepoint = null, htlcBasepoint = null, initFeatures = null, upfrontShutdownScript_opt = null)
-    val channelFlags = ChannelFlags(announceChannel = true)
-    val params = ChannelParams(channelId = null, channelConfig = null, channelFeatures = channelFeatures, localParams = localParams, remoteParams = remoteParams, channelFlags = channelFlags)
-    val commitTx = CommitTx(input = InputInfo(outPoint = OutPoint(hash= TxHash(ByteVector32.Zeroes), index = 0), txOut = TxOut(amount = capacity, publicKeyScript = ByteVector.empty), redeemScript = ByteVector.empty), tx = null)
-    val commitTxAndRemoteSig = CommitTxAndRemoteSig(commitTx, ByteVector64.Zeroes)
-    val localCommit = LocalCommit(index = 0, spec = null, commitTxAndRemoteSig = commitTxAndRemoteSig, htlcTxsAndRemoteSigs = null)
-    val remoteCommit = RemoteCommit(index = 0, spec = null, txid = null, remotePerCommitmentPoint = null)
-    val active = Commitment(fundingTxIndex = 0, firstRemoteCommitIndex = 0, remoteFundingPubKey = null, localFundingStatus = null, remoteFundingStatus = null, localCommit = localCommit, remoteCommit = remoteCommit, nextRemoteCommit_opt = null)
-    val commitments = Commitments(params = params, changes = null, active = List(active), inactive = Nil, remoteNextCommitInfo = null, remotePerCommitmentSecrets = null, originChannels = null, remoteChannelData_opt = null)
-    DATA_NORMAL(commitments = commitments, aliases = null, lastAnnouncement_opt = None, channelUpdate = null, localShutdown = null, remoteShutdown = null, closingFeerates = null, spliceStatus = NoSplice)
+  def dummyDataNormal(remoteNodeId: PublicKey, capacity: Satoshi): DATA_NORMAL = {
+    val data = ChannelCodecsSpec.normal.modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
+      .modify(_.commitments.active).apply(_.map(_.modify(_.localCommit.commitTxAndRemoteSig.commitTx.input.txOut.amount).setTo(capacity)))
+    assert(data.remoteNodeId == remoteNodeId)
+    assert(data.commitments.capacity == capacity)
+    data
   }
 
   test("only sync with top peers if no whitelist") {
@@ -186,10 +179,10 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! Switchboard.Init(List(
-      dummyDataNormal(Satoshi(500), alice),
-      dummyDataNormal(Satoshi(600), alice),
-      dummyDataNormal(Satoshi(1000), bob),
-      dummyDataNormal(Satoshi(2000), carol),
+      dummyDataNormal(alice, Satoshi(500)),
+      dummyDataNormal(alice, Satoshi(600)),
+      dummyDataNormal(bob, Satoshi(1000)),
+      dummyDataNormal(carol, Satoshi(2000)),
     ))
 
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, alice, outgoing = true)
@@ -211,10 +204,10 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
     switchboard ! Switchboard.Init(List(
-      dummyDataNormal(Satoshi(500), alice),
-      dummyDataNormal(Satoshi(600), alice),
-      dummyDataNormal(Satoshi(1000), bob),
-      dummyDataNormal(Satoshi(2000), carol),
+      dummyDataNormal(alice, Satoshi(500)),
+      dummyDataNormal(alice, Satoshi(600)),
+      dummyDataNormal(bob, Satoshi(1000)),
+      dummyDataNormal(carol, Satoshi(2000)),
     ))
 
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, alice, outgoing = true)
