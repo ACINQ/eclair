@@ -368,19 +368,23 @@ object Router {
     )
   }
 
-  case class RouterConf(watchSpentWindow: FiniteDuration,
-                        channelExcludeDuration: FiniteDuration,
-                        routerBroadcastInterval: FiniteDuration,
-                        requestNodeAnnouncements: Boolean,
-                        encodingType: EncodingType,
-                        channelRangeChunkSize: Int,
-                        channelQueryChunkSize: Int,
-                        pathFindingExperimentConf: PathFindingExperimentConf,
-                        messageRouteParams: MessageRouteParams,
-                        balanceEstimateHalfLife: FiniteDuration) {
+  case class SyncConf(requestNodeAnnouncements: Boolean,
+                      encodingType: EncodingType,
+                      channelRangeChunkSize: Int,
+                      channelQueryChunkSize: Int,
+                      peerLimit: Int,
+                      whitelist: Set[PublicKey]) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }
+
+  case class RouterConf(watchSpentWindow: FiniteDuration,
+                        channelExcludeDuration: FiniteDuration,
+                        routerBroadcastInterval: FiniteDuration,
+                        syncConf: SyncConf,
+                        pathFindingExperimentConf: PathFindingExperimentConf,
+                        messageRouteParams: MessageRouteParams,
+                        balanceEstimateHalfLife: FiniteDuration)
 
   // @formatter:off
   case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){

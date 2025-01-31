@@ -24,7 +24,11 @@ There are many organisations that package Java runtimes and development kits, fo
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
+#### Gossip sync limits
+
+On reconnection, eclair now only synchronizes its routing table with a small number of top peers instead of synchronizing with every peer.
+If you already use `sync-whitelist`, the default behavior has been modified and you must set `router.sync.peer-limit = 0` to keep preventing any synchronization with other nodes.
+You must also use `router.sync.whitelist` instead of `sync-whitelist`.
 
 ## Verifying signatures
 

@@ -29,7 +29,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
+import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
@@ -114,7 +114,6 @@ object TestConstants {
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -197,10 +196,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.COMPRESSED_ZLIB,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.COMPRESSED_ZLIB,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 10,
+          whitelist = Set.empty
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
@@ -293,7 +296,6 @@ object TestConstants {
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1000 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -376,10 +378,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.UNCOMPRESSED,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 20,
+          whitelist = Set.empty
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(

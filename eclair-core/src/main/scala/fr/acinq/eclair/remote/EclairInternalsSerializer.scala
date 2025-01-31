@@ -97,16 +97,21 @@ object EclairInternalsSerializer {
       ("ageFactor" | double) ::
       ("capacityFactor" | double)).as[Graph.MessageWeightRatios]).as[MessageRouteParams]
 
-  val routerConfCodec: Codec[RouterConf] = (
-    ("watchSpentWindow" | finiteDurationCodec) ::
-      ("channelExcludeDuration" | finiteDurationCodec) ::
-      ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("requestNodeAnnouncements" | bool(8)) ::
+  val syncConfCodec: Codec[Router.SyncConf] = (
+    ("requestNodeAnnouncements" | bool(8)) ::
       ("encodingType" | discriminated[EncodingType].by(uint8)
         .typecase(0, provide(EncodingType.UNCOMPRESSED))
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
+      ("peerLimit" | int32) ::
+      ("whitelist" | listOfN(uint16, publicKey).xmap[Set[PublicKey]](_.toSet, _.toList))).as[Router.SyncConf]
+
+  val routerConfCodec: Codec[RouterConf] = (
+    ("watchSpentWindow" | finiteDurationCodec) ::
+      ("channelExcludeDuration" | finiteDurationCodec) ::
+      ("routerBroadcastInterval" | finiteDurationCodec) ::
+      ("syncConf" | syncConfCodec) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
       ("messageRouteParams" | messageRouteParamsCodec) ::
       ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
