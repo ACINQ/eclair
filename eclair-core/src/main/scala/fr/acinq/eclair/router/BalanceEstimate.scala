@@ -284,6 +284,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
   )
 
   def channelCouldSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelCouldSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
@@ -292,6 +293,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
   }
 
   def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelCouldNotSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelayFailure(estimatedProbability)
@@ -300,6 +302,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
   }
 
   def channelDidSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelDidSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
