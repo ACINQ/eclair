@@ -185,6 +185,7 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val lastFundingLocked_opt: Option[ChannelReestablishTlv.LastFundingLockedTlv] = tlvStream.get[ChannelReestablishTlv.LastFundingLockedTlv]
 }
 
 case class OpenChannel(chainHash: BlockHash,

@@ -1347,6 +1347,23 @@ case class Commitments(params: ChannelParams,
   def resolveCommitment(shortChannelId: RealShortChannelId): Option[Commitment] = {
     all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
+
+  def lastFundingLockedTlv: Set[ChannelReestablishTlv] =
+    if (params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+      // When no remote funding tx is locked, there is a special case for the initial funding tx which only
+      // requires a local lock because channel_ready doesn't explicitly reference a funding tx.
+      val yourLast_opt = active.filter(c => c.fundingTxIndex == 0 || c.remoteFundingStatus == RemoteFundingStatus.Locked)
+        .sortBy(_.fundingTxIndex)
+        .lastOption
+        .map(_.fundingTxId)
+      val myCurrent_opt = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).map(_.fundingTxId)
+      (yourLast_opt, myCurrent_opt) match {
+        case (Some(yourLast), Some(myCurrent)) => Set(ChannelReestablishTlv.LastFundingLockedTlv(yourLast, myCurrent))
+        case _ => Set.empty
+      }
+    } else {
+      Set.empty
+    }
 }
 
 object Commitments {
