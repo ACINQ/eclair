@@ -1345,8 +1345,7 @@ class RouterSpec extends BaseRouterSpec {
           assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
           assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc))
           assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc))
-        }
-        else {
+        } else {
           assert(routerData.spentChannels.contains(spliceTx_bc2.txid))
           assert(routerData.spentChannels(spliceTx_bc2.txid) == Set(scid_bc2))
           assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc2))
@@ -1370,7 +1369,11 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectNoMessage(100 millis)
 
     // Alternative spending transactions in the mempool are now unspendable and need not be watched.
-    assert((1 to 2).map(_ => watcher.expectMsgType[UnwatchTxConfirmed].txId).toSet == Set(spliceTx_bc2.txid, batchSpliceTx.txid))
+    val unwatchedTxs = Set(
+      watcher.expectMsgType[UnwatchTxConfirmed].txId,
+      watcher.expectMsgType[UnwatchTxConfirmed].txId,
+    )
+    assert(unwatchedTxs == Set(spliceTx_bc2.txid, batchSpliceTx.txid))
     watcher.expectNoMessage(100 millis)
 
     // The router no longer tracks the parent scids.
