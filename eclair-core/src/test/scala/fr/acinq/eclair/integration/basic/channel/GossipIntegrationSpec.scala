@@ -59,7 +59,8 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
       // Wait for Alice to receive both initial local channel updates.
       inside(getRouterData(alice)) { routerData =>
         val channel_ab = routerData.channels(scid_ab)
-        Seq(channel_ab.update_1_opt, channel_ab.update_2_opt).flatten.foreach(u => assert(u.shortChannelId == scid_ab))
+        val receivedUpdates = Seq(channel_ab.update_1_opt, channel_ab.update_2_opt).flatten
+        assert(receivedUpdates.count(_.shortChannelId == scid_ab) == 2)
       }
       scid_ab
     }
