@@ -47,8 +47,7 @@
                             <url>${bitcoind.url}</url>
                             <unpack>true</unpack>
                             <outputDirectory>${project.build.directory}</outputDirectory>
-                            <md5>${bitcoind.md5}</md5>
-                            <sha1>${bitcoind.sha1}</sha1>
+                            <sha256>${bitcoind.sha256}</sha256>
                         </configuration>
                     </execution>
                 </executions>
@@ -89,8 +88,7 @@
             </activation>
             <properties>
                 <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-27.2/bitcoin-27.2-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.md5>c6dcec7ce5c43dafa48fe459911a8049</bitcoind.md5>
-                <bitcoind.sha1>4342a03bbcc98d81fca2c4fb404f96d5dbae4e10</bitcoind.sha1>
+                <bitcoind.sha256>acc223af46c178064c132b235392476f66d486453ddbd6bca6f1f8411547da78</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -102,8 +100,7 @@
             </activation>
             <properties>
                 <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-27.2/bitcoin-27.2-x86_64-apple-darwin.tar.gz</bitcoind.url>
-                <bitcoind.md5>25857522febc428160bc4eedf46eb6db</bitcoind.md5>
-                <bitcoind.sha1>574d753359ef2b5c1bc0ef1e028d516da86392af</bitcoind.sha1>
+                <bitcoind.sha256>6ebc56ca1397615d5a6df2b5cf6727b768e3dcac320c2d5c2f321dcaabc7efa2</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -115,8 +112,7 @@
             </activation>
             <properties>
                 <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-27.2/bitcoin-27.2-win64.zip</bitcoind.url>
-                <bitcoind.md5>1a05b7880a01c0437e5e0b7e13a02635</bitcoind.md5>
-                <bitcoind.sha1>84c0b8d1a02d3c024881a180e8a3c670c1e0073a</bitcoind.sha1>
+                <bitcoind.sha256>82e18f768aa5962b3c002d7f5d6ec9338896804f48406af4b5054c927575dbdf</bitcoind.sha256>
             </properties>
         </profile>
     </profiles>
