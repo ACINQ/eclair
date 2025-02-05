@@ -24,12 +24,12 @@
         </encoder>
     </appender>
 
-    <appender name="CONSOLE_NOTIFICATIONS" class="ch.qos.logback.core.ConsoleAppender">
+    <!--appender name="CONSOLE_NOTIFICATIONS" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
             <pattern>%d %highlight(%-5level)- %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
     <!--
     Logging from tests are silenced by this appender. When there is a test failure
