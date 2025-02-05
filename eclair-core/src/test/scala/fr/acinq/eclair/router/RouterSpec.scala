@@ -1300,16 +1300,16 @@ class RouterSpec extends BaseRouterSpec {
 
     // The router tracks the possible spending txs for channels ab, bc and bc2.
     val sender = TestProbe()
-    sender.send(router, GetRouterData)
-    inside(sender.expectMsgType[Data]) { routerData =>
-      awaitAssert({
+    awaitAssert({
+      sender.send(router, GetRouterData)
+      inside(sender.expectMsgType[Data]) { routerData =>
         assert(routerData.spentChannels(spliceTx_ab.txid) == Set(scid_ab))
         assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
         assert(routerData.spentChannels(spliceTx_bc2.txid) == Set(scid_bc2))
         assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_ab, scid_bc, scid_bc2))
         assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_ab, scid_bc, scid_bc2))
-      })
-    }
+      }
+    })
 
     // The splice of channel ab is announced, verified and added to the graph; the parent channel is removed from the graph.
     val spliceScid_ab = RealShortChannelId(BlockHeight(450000), 1, 0)
@@ -1318,17 +1318,17 @@ class RouterSpec extends BaseRouterSpec {
     assert(watcher.expectMsgType[UnwatchTxConfirmed].txId == spliceTx_ab.txid)
 
     // The router still tracks the possible spending txs for channels bc and bc2.
-    sender.send(router, GetRouterData)
-    inside(sender.expectMsgType[Data]) { routerData =>
-      awaitAssert({
-          assert(!routerData.spentChannels.contains(spliceTx_ab.txid))
-          assert(routerData.spentChannels.contains(spliceTx_bc.txid))
-          assert(routerData.spentChannels.contains(spliceTx_bc2.txid))
-          assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
-          assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc, scid_bc2))
-          assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc, scid_bc2))
-      })
-    }
+    awaitAssert({
+      sender.send(router, GetRouterData)
+      inside(sender.expectMsgType[Data]) { routerData =>
+        assert(!routerData.spentChannels.contains(spliceTx_ab.txid))
+        assert(routerData.spentChannels.contains(spliceTx_bc.txid))
+        assert(routerData.spentChannels.contains(spliceTx_bc2.txid))
+        assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
+        assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc, scid_bc2))
+        assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc, scid_bc2))
+      }
+    })
 
     // The splice of channel bc is announced, verified and added to the graph; the parent channel is removed from the graph.
     val spliceScid_bc = RealShortChannelId(BlockHeight(450000), 1, 1)
@@ -1337,10 +1337,10 @@ class RouterSpec extends BaseRouterSpec {
     assert(watcher.expectMsgType[UnwatchTxConfirmed].txId == spliceTx_bc.txid)
 
     // The router still tracks the possible spending txs for channel bc or bc2 - either could be considered the parent of scid_bc.
-    sender.send(router, GetRouterData)
-    inside(sender.expectMsgType[Data]) { routerData =>
-      awaitAssert({
-         if (routerData.spentChannels.contains(spliceTx_bc.txid)) {
+    awaitAssert({
+      sender.send(router, GetRouterData)
+      inside(sender.expectMsgType[Data]) { routerData =>
+        if (routerData.spentChannels.contains(spliceTx_bc.txid)) {
           assert(!routerData.spentChannels.contains(spliceTx_bc2.txid))
           assert(routerData.spentChannels(spliceTx_bc.txid) == Set(scid_bc))
           assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc))
@@ -1351,8 +1351,8 @@ class RouterSpec extends BaseRouterSpec {
           assert(routerData.spentChannels(batchSpliceTx.txid) == Set(scid_bc2))
           assert(routerData.spentChannels(batchSpliceTx_RBF.txid) == Set(scid_bc2))
         }
-      })
-    }
+      }
+    })
 
     // Splice channel updates received for ab and bc add new channels to and remove the parent channels from the graph.
     eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(spliceAnn_ab, newCapacity_ab_RBF, None, None) :: Nil))
@@ -1377,17 +1377,17 @@ class RouterSpec extends BaseRouterSpec {
     watcher.expectNoMessage(100 millis)
 
     // The router no longer tracks the parent scids.
-    sender.send(router, GetRouterData)
-    inside(sender.expectMsgType[Data]) { routerData =>
-      awaitAssert({
+    awaitAssert({
+      sender.send(router, GetRouterData)
+      inside(sender.expectMsgType[Data]) { routerData =>
         assert(routerData.spentChannels.isEmpty)
         assert(!routerData.channels.contains(scid_ab))
         assert(!routerData.channels.contains(scid_bc))
         assert(!routerData.channels.contains(scid_bc2))
         assert(routerData.channels.contains(spliceScid_ab))
         assert(routerData.channels.contains(spliceScid_bc))
-      })
-    }
+      }
+    })
   }
 
 }
