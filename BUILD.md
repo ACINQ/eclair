@@ -91,4 +91,9 @@ Please note that dependencies are verified only if they are actually used in the
 and still run a successful build phase that does not use them (for example you can modify the checksum of a `maven-deploy-plugin` dependency and still run `./mvnw test` successfully).
 To make local development and testing easier, SNAPSHOT dependencies are not verified.
 
-To upgrade a dependency or add a new one you must update this list by running maven with the following option: `-Daether.artifactResolver.postProcessor.trustedChecksums.record`.
+To re-create the trusted checksums file, run:
+
+```shell
+$ rm ~/.m2/wrapper ~/.sbt -rf
+$ ./mvnw clean install scoverage:report -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.record
+```
