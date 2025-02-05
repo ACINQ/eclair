@@ -1251,7 +1251,7 @@ object OnTheFlyFundingSpec {
   }
 
   def createSpliceMessage(channelId: ByteVector32, requestFunding: LiquidityAds.RequestFunding): SpliceInit = {
-    SpliceInit(channelId, 0 sat, 0, TestConstants.feeratePerKw, randomKey().publicKey, 0 msat, requireConfirmedInputs = false, Some(requestFunding))
+    SpliceInit(channelId, 0 sat, 0, TestConstants.feeratePerKw, randomKey().publicKey, 0 msat, requireConfirmedInputs = false, Some(requestFunding), Nil)
   }
 
 }
