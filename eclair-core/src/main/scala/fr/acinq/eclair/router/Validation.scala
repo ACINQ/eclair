@@ -113,18 +113,16 @@ object Validation {
             log.debug("validation successful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            d0.spentChannels.get(tx.txid) match {
-              case Some(parentScid) =>
-                d0.channels.get(parentScid) match {
-                  case Some(parentChannel) =>
-                    Some(updateSplicedPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, parentChannel))
-                  case None =>
-                    log.error("spent parent channel shortChannelId={} not found for splice shortChannelId={}", parentScid, c.shortChannelId)
-                    val spendingTxs = d0.spentChannels.filter(_._2 == parentScid).keySet
-                    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
-                    val d1 = d0.copy(spentChannels = d0.spentChannels -- spendingTxs)
-                    Some(addPublicChannel(d1, nodeParams, watcher, c, tx.txid, capacity, None))
-                }
+            // A single transaction may splice multiple channels (batching), in which case we have multiple parent
+            // channels. We cannot know which parent channel this announcement corresponds to, but it doesn't matter.
+            // We only need to update one of the parent channels between the same set of nodes to correctly update
+            // our graph.
+            val parentChannel_opt = d0.spentChannels
+              .getOrElse(tx.txid, Set.empty)
+              .flatMap(d0.channels.get)
+              .find(parent => parent.nodeId1 == c.nodeId1 && parent.nodeId2 == c.nodeId2)
+            parentChannel_opt match {
+              case Some(parentChannel) => Some(updateSplicedPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, parentChannel))
               case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
             }
           }
@@ -191,9 +189,12 @@ object Validation {
     // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
     log.debug("updating the graph for shortChannelId={}", newPubChan.shortChannelId)
     val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
-    val spendingTxs = d.spentChannels.filter(_._2 == parentChannel.shortChannelId).keySet
-    spendingTxs.foreach(txId => watcher ! UnwatchTxConfirmed(txId))
-    val spentChannels1 = d.spentChannels -- spendingTxs
+    val spentChannels1 = d.spentChannels.collect {
+      case (txId, parentScids) if (parentScids - parentChannel.shortChannelId).nonEmpty =>
+        txId -> (parentScids - parentChannel.shortChannelId)
+    }
+    // No need to keep watching transactions that have been removed from spentChannels.
+    (d.spentChannels.keySet -- spentChannels1.keys).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
     d.copy(
       // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
       channels = d.channels + (newPubChan.shortChannelId -> newPubChan) - parentChannel.shortChannelId,
@@ -267,34 +268,42 @@ object Validation {
     } else d1
   }
 
-  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId: TxId, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId: TxId, shortChannelIds: Set[RealShortChannelId])(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get
-    log.info("funding tx for channelId={} was spent", shortChannelId)
+    val lostChannels = shortChannelIds.flatMap(shortChannelId => d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)))
+    log.info("funding tx for channelIds={} was spent", shortChannelIds.mkString(","))
     // we need to remove nodes that aren't tied to any channels anymore
-    val channels1 = d.channels - shortChannelId
-    val prunedChannels1 = d.prunedChannels - shortChannelId
-    val lostNodes = Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values))
+    val channels1 = d.channels -- shortChannelIds
+    val prunedChannels1 = d.prunedChannels -- shortChannelIds
+    val lostNodes = lostChannels.flatMap(lostChannel => Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values)))
     // let's clean the db and send the events
-    log.info("pruning shortChannelId={} (spent)", shortChannelId)
-    db.removeChannel(shortChannelId) // NB: this also removes channel updates
+      log.info("pruning shortChannelIds={} (spent)", shortChannelIds.mkString(","))
+    shortChannelIds.foreach(db.removeChannel(_)) // NB: this also removes channel updates
     // we also need to remove updates from the graph
-    val graphWithBalances1 = d.graphWithBalances
-      .removeChannel(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+    val graphWithBalances1 = lostChannels.foldLeft(d.graphWithBalances) { (graph, lostChannel) =>
+      graph.removeChannel(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+    }
     // we notify front nodes
-    ctx.system.eventStream.publish(ChannelLost(shortChannelId))
+    shortChannelIds.foreach(shortChannelId => ctx.system.eventStream.publish(ChannelLost(shortChannelId)))
     lostNodes.foreach {
       nodeId =>
         log.info("pruning nodeId={} (spent)", nodeId)
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    // we no longer need to track this or alternative transactions that spent the parent channel
-    // either this channel was really closed, or it was spliced and the announcement was not received in time
-    // we will re-add a spliced channel as a new channel later when we receive the announcement
-    watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
-    val spendingTxs = d.spentChannels.filter(_._2 == shortChannelId).keySet
-    // stop watching the spending txs that will never confirm, we already got confirmations for this spending tx
+    lostChannels.foreach {
+      lostChannel =>
+        // we no longer need to track this or alternative transactions that spent the parent channel
+        // either this channel was really closed, or it was spliced and the announcement was not received in time
+        // we will re-add a spliced channel as a new channel later when we receive the announcement
+        watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
+    }
+
+    // We may have received RBF candidates for this splice: we can find them by looking at transactions that spend one
+    // of the channels we're removing (note that they may spend a slightly different set of channels).
+    // Those transactions cannot confirm anymore (they have been double-spent by the current one), so we should stop
+    // watching them.
+    val spendingTxs = d.spentChannels.filter(_._2.intersect(shortChannelIds).nonEmpty).keySet
     (spendingTxs - spendingTxId).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
     val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
@@ -599,7 +608,14 @@ object Validation {
             log.debug("this is a known pruned local channel, processing channel_update for channelId={} scid={}", lcu.channelId, ann.shortChannelId)
             handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
           case Some(ann) =>
-            val d1 = d.spentChannels.get(ann.fundingTxId).flatMap(parentScid => d.channels.get(parentScid)) match {
+            // A single transaction may splice multiple channels (batching), in which case we have multiple parent
+            // channels. We cannot know which parent channel this announcement corresponds to, but it doesn't matter.
+            // We only need to update one of the parent channels between the same set of nodes to correctly update
+            // our graph.
+            val d1 = d.spentChannels
+              .getOrElse(ann.fundingTxId, Set.empty)
+              .flatMap(d.channels.get)
+              .find(parent => parent.nodeId1 == ann.announcement.nodeId1 && parent.nodeId2 == ann.announcement.nodeId2) match {
               case Some(parentChannel) =>
                 // This is a splice for which we haven't processed the (local) channel_announcement yet.
                 log.debug("processing channel_announcement for local splice with fundingTxId={} channelId={} scid={} (previous={})", ann.fundingTxId, lcu.channelId, ann.shortChannelId, parentChannel.shortChannelId)

@@ -52,13 +52,20 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val channels = getPeerChannels(alice, bob.nodeId) ++ getPeerChannels(bob, carol.nodeId)
     assert(channels.map(_.data.channelId).toSet == Set(channelId_ab, channelId_bc))
 
-    eventually {
+    val scid_ab = eventually {
       assert(getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+      val scid_ab = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.get
+      // Wait for Alice to receive both initial local channel updates.
+      inside(getRouterData(alice)) { routerData =>
+        val channel_ab = routerData.channels(scid_ab)
+        val receivedUpdates = Seq(channel_ab.update_1_opt, channel_ab.update_2_opt).flatten
+        assert(receivedUpdates.count(_.shortChannelId == scid_ab) == 2)
+      }
+      scid_ab
     }
 
     // We splice in to increase the capacity of the alice->bob channel.
-    val scid_ab = getChannelData(alice, channelId_ab).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.get
     val spliceTxId = spliceIn(alice, channelId_ab, 100_000 sat, None).asInstanceOf[RES_SPLICE].fundingTxId
 
     // The announcement for the splice transaction and the corresponding channel updates are broadcast.
@@ -73,10 +80,12 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
       val splice_scid_ab = channelData_alice.commitments.latest.shortChannelId_opt.get
       assert(splice_scid_ab != scid_ab)
       assert(channelData_bob.commitments.latest.shortChannelId_opt.contains(splice_scid_ab))
+      val scid_bc = getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.get
 
       // Alice creates a channel_announcement for the splice transaction and updates the graph.
       val spliceAnn = inside(getRouterData(alice)) { routerData =>
-        assert(routerData.channels.contains(splice_scid_ab))
+        assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
+        assert(routerData.spentChannels.isEmpty)
         val channel_ab = routerData.channels(splice_scid_ab)
         assert(channel_ab.capacity == 200_000.sat)
         assert(channel_ab.update_1_opt.nonEmpty && channel_ab.update_2_opt.nonEmpty)
@@ -91,6 +100,8 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
       // Bob also creates a channel_announcement for the splice transaction and updates the graph.
       inside(getRouterData(bob)) { routerData =>
+        assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
+        assert(routerData.spentChannels.isEmpty)
         assert(routerData.channels.get(splice_scid_ab).map(_.ann).contains(spliceAnn))
         routerData.channels.get(splice_scid_ab).foreach(c => {
           assert(c.capacity == 200_000.sat)
@@ -106,6 +117,8 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
       // The channel_announcement for the splice propagates to Carol.
       inside(getRouterData(carol)) { routerData =>
+        assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
+        assert(routerData.spentChannels.isEmpty)
         assert(routerData.channels.get(splice_scid_ab).map(_.ann).contains(spliceAnn))
         routerData.channels.get(splice_scid_ab).foreach(c => {
           assert(c.capacity == 200_000.sat)
