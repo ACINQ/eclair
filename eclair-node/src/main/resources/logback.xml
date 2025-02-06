@@ -17,14 +17,6 @@
 
 <configuration>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.out</target>
-        <withJansi>false</withJansi>
-        <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId} - %msg%ex{12}%n</pattern>
-        </encoder>
-    </appender>
-
     <appender name="ROLLING" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${eclair.datadir:-${user.home}/.eclair}/eclair.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -56,8 +48,10 @@
     <if condition='isDefined("eclair.printToConsole")'>
         <then>
             <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+                <target>System.out</target>
+                <withJansi>false</withJansi>
                 <encoder>
-                    <pattern>%d %-5level %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId} - %msg%ex{24}%n</pattern>
+                    <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId} - %msg%ex{12}%n</pattern>
                 </encoder>
             </appender>
             <root>
