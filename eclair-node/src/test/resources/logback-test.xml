@@ -15,21 +15,21 @@
   ~ limitations under the License.
   -->
 
-<configuration scan="true" debug="false">
+<configuration>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <!--appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%.-9X{nodeId}%.-11X{channelId}%.-11X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId}%.-11X{txPublishId}%.-11X{nodeAlias} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
-    <appender name="CONSOLE_NOTIFICATIONS" class="ch.qos.logback.core.ConsoleAppender">
+    <!--appender name="CONSOLE_NOTIFICATIONS" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
             <pattern>%d %highlight(%-5level)- %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
     <logger level="INFO" name="notifications">
         <!--<appender-ref ref="CONSOLE_NOTIFICATIONS"/>-->
