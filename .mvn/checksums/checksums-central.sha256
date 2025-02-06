@@ -23,6 +23,7 @@
 048b0d2662db59d192b528cc7860757f24739e5e7183f9fc19ad9759e2cf3386  org/apache/maven/maven/3.8.2/maven-3.8.2.pom
 04fd7a32335a7898272c1b543da116f93be684a13920c8a64f7ec7df88a85860  org/apache/maven/surefire/surefire-extensions-api/3.1.2/surefire-extensions-api-3.1.2.jar
 0515626f5abaa0bdb5ad87d291953eae358b97e2d10d6ecab84aca0d486063bf  org/codehaus/plexus/plexus-utils/3.4.2/plexus-utils-3.4.2.pom
+0566048ec825cdf28758620af64d9e14ae38a9cd8748dd6fafa6df4a4194c279  org/slf4j/slf4j-bom/2.0.16/slf4j-bom-2.0.16.pom
 05779149872544a527ee8a38558a9170979532f4806f4fe3cf893a10768a8fb2  com/fasterxml/jackson/core/jackson-databind/2.12.7.1/jackson-databind-2.12.7.1.pom
 06242d1c9a37bb85f2119b7354c1c9760759a350b60e041438205467f4092efb  com/softwaremill/sttp/model/core_2.13/1.5.5/core_2.13-1.5.5.jar
 06411cc68ddad00308cfe759ef6dd78ca1f10633de93aae4f1ba256928026599  org/apache/maven/maven/3.8.6/maven-3.8.6.pom
@@ -33,13 +34,13 @@
 06f3c3ddad57b30bfe88655456a04731e56a78ad0dd909e65c71881003b96479  com/google/inject/guice/4.2.2/guice-4.2.2.pom
 07522240db7dd10dcba8897780c08bc4a00cfe71ff9e35be249695bf4a735601  org/apache/commons/commons-parent/57/commons-parent-57.pom
 079f1ce924197890598b651f515b8337261cb37a0714341ed5ff5b312736b316  org/apache/maven/plugins/maven-surefire-plugin/3.1.2/maven-surefire-plugin-3.1.2.jar
-07b1586faf220c05821d0f3ed8e2e417e214c83f40641f76e8a90b134c31ff6b  ch/qos/logback/logback-core/1.2.13/logback-core-1.2.13.jar
 0859ba0d5cfeefb13964e5862c036faa48a0bccff4932638fb13fe3445df33f7  org/objenesis/objenesis-parent/3.2/objenesis-parent-3.2.pom
 0868e3c558341f627c40130886b30eb816440ecb3083ab3ccce4f8ded0c53276  org/mockito/mockito-scala_2.13/1.17.5/mockito-scala_2.13-1.17.5.jar
 093be1b03331bce2932d6825c37e98272d7621e6a9e9fb93289a002518b8dd5a  org/tukaani/xz/1.9/xz-1.9.pom
 093fea360752de55afcb80cf713403eb1a66cb7dc0d529955b6f4a96f975df5c  commons-collections/commons-collections/3.2/commons-collections-3.2.jar
 0973e876682bc72016919be4569e1b1bfc462429cc4e0c937f54e3cee075c155  com/typesafe/akka/akka-parsing_2.13/10.2.7/akka-parsing_2.13-10.2.7.jar
 0987adf8d5201d5db0dce8deef9d325701eb341e306a624e5a9870fbab5b6da5  org/json4s/json4s-ast_2.13/4.0.3/json4s-ast_2.13-4.0.3.pom
+09a0b4cc814d7274616c9b16d4c0fd9aaf1ecc813334de5131e547271b1982e5  org/slf4j/slf4j-parent/2.0.16/slf4j-parent-2.0.16.pom
 09b999a969e73525a6cc3ad2868ea744766e1d93b25c6c656d61a5ff9c881da9  org/codehaus/plexus/plexus/1.0.10/plexus-1.0.10.pom
 09c95ce9300bb535bc1c5ec0548b95d44ff9f67509f46a8c713ad10a235e031f  org/scalatest/scalatest_2.13/3.2.16/scalatest_2.13-3.2.16.pom
 09d992752c32b279e152481cc700296f6fc8a7d7395f68eef7a581da51915328  com/typesafe/akka/akka-coordination_2.13/2.6.20/akka-coordination_2.13-2.6.20.jar
@@ -299,6 +300,7 @@
 3e66146707bc76e9d5b6cd8c98cf77d931c0894e7955a8e7f104f6790769abf1  org/apache/maven/maven-parent/25/maven-parent-25.pom
 3e765d552d3b7181c110492b78edb2a2837f15d0ca2e118ed4b52fd97bdfe8f6  io/netty/netty-transport-native-kqueue/4.1.94.Final/netty-transport-native-kqueue-4.1.94.Final.pom
 3e7ad7bfd076665abbc3422fb8693b2755e585548ed0f983f3b79c8fe41dbb6c  com/fasterxml/jackson/core/jackson-databind/2.12.6/jackson-databind-2.12.6.pom
+3eba45037056b4a3b07f1130be25d7a5dd4d4691feb939466f316cecf9664e68  ch/qos/logback/logback-parent/1.5.16/logback-parent-1.5.16.pom
 3ecf8b2c602314341f5a2ace171ed04fc86f2d4ddf762180656e9b71134ae68f  com/googlecode/javaewah/JavaEWAH/1.1.7/JavaEWAH-1.1.7.jar
 3f15e680aba5f9740e9cb0be20a7258ae3b7d06160f7856d2ccc4397bd28f4d7  org/scalatest/scalatest-funspec_2.13/3.2.16/scalatest-funspec_2.13-3.2.16.jar
 3f1f0ed88c854f5fc2744e590b70712279c8a540fbfc8b256bf947db30a6cb7b  io/kamon/kamon-scala-future_2.13/2.7.4/kamon-scala-future_2.13-2.7.4.pom
@@ -462,6 +464,7 @@
 67543f0736fc422ae927ed0e504b98bc5e269fda0d3500579337cb713da28412  com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar
 675bb023c9beedde3232949979b9742a5fea946280a55a1b462d4ca7801088cd  org/apache/commons/commons-compress/1.21/commons-compress-1.21.pom
 679be8f12aa2864f7c286f7f5bcbac8365851c01821de5b99a12d6f772f521e6  org/apache-extras/beanshell/bsh/2.0b6/bsh-2.0b6.pom
+67a9f90f798691dcd5776c5193a6ff4126ba945b03462bfaedd657a146762195  ch/qos/logback/logback-core/1.5.16/logback-core-1.5.16.pom
 6837efc919adb95f863bba8d62b9ed2707b716b6632b0fdbd78f2726fa2ad9f7  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.21.0/bitcoin-kmp-jvm-0.21.0.jar
 684cd63e5388483ca1a1ab38b729bb94cfd35f3d78f899cfec17751e97da4c60  org/scala-lang/scala-compiler/2.13.8/scala-compiler-2.13.8.pom
 687d05a9521ecb8e319e6beb46abcf53e0e61be647f1c7642a86e22f46814336  org/codehaus/plexus/plexus-utils/1.4.5/plexus-utils-1.4.5.pom
@@ -472,7 +475,6 @@
 693b94a4f8375988f53afb057f30008190bdff3adb9f93f2b8f3c70173a29282  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm/0.16.0/secp256k1-kmp-jni-jvm-0.16.0.pom
 69c0097c6383c3cc79e2df713e8b432e0f691a766b175f096ca6203bb4db2378  org/lmdbjava/lmdbjava/0.7.0/lmdbjava-0.7.0.pom
 69efe4a2aee864de1887e3071489074a133d0d9f8b681414352f8f1ee40ee1b4  fr/acinq/bitcoin-lib_2.13/0.35/bitcoin-lib_2.13-0.35.pom
-6a1402ecf487bb827315da679e1306e357b2aed2448578a8de058d5af39de9be  ch/qos/logback/logback-core/1.2.13/logback-core-1.2.13.pom
 6a17cfbfffe6bb87215ad38bcaac716383e552ec2ba7b204e2673ee66a2afaaa  org/codehaus/plexus/plexus-utils/2.0.4/plexus-utils-2.0.4.jar
 6a46ed9b333857e8b5ea668bb254ed8e47dacd1116bf53ade9467aa4ae8f1818  org/scala-lang/scala-reflect/2.13.11/scala-reflect-2.13.11.jar
 6a58eb24291600f75ce0fe369b73fe6700f575ace4b664724d3cd0a6b85b63ee  org/apache/maven/shared/maven-shared-components/15/maven-shared-components-15.pom
@@ -640,7 +642,6 @@
 8fb24d48d8eac64529f45e8761dd959ef6830e7b982dce308bded72160c9a941  io/zonky/test/postgres/embedded-postgres-binaries-darwin-amd64/14.5.0/embedded-postgres-binaries-darwin-amd64-14.5.0.pom
 8fbd2e95abec6155b60ed3c9c1600ed4e17ffe3f053cd5a40677d879c0af961f  io/netty/netty-codec-http2/4.1.94.Final/netty-codec-http2-4.1.94.Final.jar
 8fddd20c8b5107aafeaf901042ac6fc252d32b160722fd89f45b625e5cd0266f  com/typesafe/akka/akka-coordination_2.13/2.6.20/akka-coordination_2.13-2.6.20.pom
-901aa9a2b52aa5fb14c853fabcdd66090c915306b623c41e91e43c11ec85f301  ch/qos/logback/logback-classic/1.2.13/logback-classic-1.2.13.pom
 902ad97f07a0957b08661e4d3a27073275aef90d4413bed267a9ba0157ee3c0d  org/apache/maven/surefire/surefire-logger-api/3.1.2/surefire-logger-api-3.1.2.jar
 90bed67ed2fa9ee9d6083ca85d99c0c3d2774a1013b1ca103ee2ab5b5cf0f843  io/netty/netty-codec-redis/4.1.94.Final/netty-codec-redis-4.1.94.Final.pom
 90e0890168bcf53e8039d9c376c37c2a91caa7c34a071f61cab86f3fa65ef378  io/kamon/kamon-akka_2.13/2.7.4/kamon-akka_2.13-2.7.4.pom
@@ -657,7 +658,6 @@
 92f1c78b5b6775430e3ad4ca3bc5ea0fe862f28b1ee69fa293e2d1b33be977da  org/scalatest/scalatest-wordspec_2.13/3.2.16/scalatest-wordspec_2.13-3.2.16.jar
 930f23cb1386d71ef771d7cc18d1a792755f555aad69e0de05fcadc5768caf8f  org/apache/maven/plugins/maven-wrapper-plugin/3.3.2/maven-wrapper-plugin-3.3.2.pom
 934171640fbd3d2495c50b79b0d9adb11e2c83e65bad157df8fe34bcac0ff798  org/sonatype/plexus/plexus-build-api/0.0.7/plexus-build-api-0.0.7.jar
-937afb220b91d8a394d78befdbf587c71aeed289d582e2a91e72a7d92172371d  ch/qos/logback/logback-classic/1.2.13/logback-classic-1.2.13.jar
 943e12b100627804638fa285805a0ab788a680266531e650921ebfe4621a8bfa  javax/inject/javax.inject/1/javax.inject-1.pom
 94b367a52d136cc675909c6527a8cc03c43595ee9660167c89c911cba7b68d2d  org/scala-sbt/util-control_2.13/1.8.0/util-control_2.13-1.8.0.pom
 94d5aedb3c46023265396527cf8ce7fc944b7bd79e4ebab907386418eb5a08d7  org/codehaus/plexus/plexus-containers/2.1.0/plexus-containers-2.1.0.pom
@@ -715,6 +715,7 @@
 9ffc02a1bc3d846293ad9f889db9f42d0920e953acc4c4825726ff031405a7d0  org/ow2/asm/asm-analysis/5.0.3/asm-analysis-5.0.3.pom
 a07ee27454a0a0421a293cc9867bf6ab5d2e1c8b3de12e164fcb94d7600f8b18  org/scala-sbt/util-relation_2.13/1.8.0/util-relation_2.13-1.8.0.pom
 a0882b82514190c2bac7d1a459872a75f005fc0f3e88b2bc0390367146e35db7  org/scala-lang/scala-library/2.13.8/scala-library-2.13.8.jar
+a12578dde1ba00bd9b816d388a0b879928d00bab3c83c240f7013bf4196c579a  org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar
 a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26  com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar
 a17955976070c0573235ee662f2794a78082758b61accffce8d3f8aedcd91047  org/apache-extras/beanshell/bsh/2.0b6/bsh-2.0b6.jar
 a1a922d0d9b6d183ed3800dfac01d1e1eb159f0e8c6f94736931c1def54a941f  javax/annotation/jsr250-api/1.0/jsr250-api-1.0.jar
@@ -786,6 +787,7 @@ b14291c5a7604a911593fc035570304744d11386384b4a75b0bf8b57c03bebd7  com/typesafe/a
 b144cff9b1c6259fec4fee5bdfc0f360d69c23abd4ea6e544533a949b69e3582  org/codehaus/plexus/plexus-utils/3.4.1/plexus-utils-3.4.1.pom
 b1587c577a8f244aff37bc1418443e01ffbf4291536483de6ecd0054aa460679  com/typesafe/akka/akka-actor-typed_2.13/2.6.20/akka-actor-typed_2.13-2.6.20.jar
 b163c1cfc8fc1fd58b457a00d586c04c46e986d75904e9ca54c03a97d65b496c  org/junit/junit-bom/5.9.1/junit-bom-5.9.1.pom
+b1a00f5b1c4dbe62b805d65d23911a6f77063889d7cb1e86fe8389d6190473f7  org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.pom
 b1a163d1c94c0e922f49ce58932e28c12c78b7ea4bb164052694a01b47f9e895  io/netty/netty-codec-haproxy/4.1.94.Final/netty-codec-haproxy-4.1.94.Final.pom
 b248cb6f390ee8bceb912af3da471146fdf003702a173d750f986b1d4a3362e6  org/scala-lang/scala-compiler/2.13.8/scala-compiler-2.13.8.jar
 b2b0fc69e22a650c3892f1c366d77076f29575c6738df4c7a70a44844484cdf9  org/apache/apache/27/apache-27.pom
@@ -885,6 +887,7 @@ c9f70e161dc5194536831729605eb0ffdfabe0d01f199e6234f8dd26ccef4ddf  org/scala-sbt/
 c9fa3c4799615ebf299f616e4817efd16dcff341e1ee04e51e741d8add68bb43  org/json4s/json4s-ast_2.13/4.0.6/json4s-ast_2.13-4.0.6.jar
 cb49812dc1bfb0ea4f20f398bcae1a88c6406e213e67f7524fb10d4f8ad9347b  org/apache/commons/commons-exec/1.3/commons-exec-1.3.jar
 cb8d84a3e63aea90d0d7a333a02e50ac751d2b05db55745d981b5eff893f647b  io/netty/netty-common/4.1.94.Final/netty-common-4.1.94.Final.jar
+cbbc96b250008d587a067377c736b017a7c1a82c5280687c2a90860c1e2eb987  ch/qos/logback/logback-classic/1.5.16/logback-classic-1.5.16.pom
 cc713d1ec533d89c3709a15be471a8fb6823bee1b33cf6b3ce7fb6787340db15  org/apache/maven/maven-core/3.8.6/maven-core-3.8.6.pom
 cce2f15285ec8078a37746b57308a054042dd5cc25420c43f73b7857c2468f03  org/jetbrains/kotlin/kotlin-stdlib/1.9.22/kotlin-stdlib-1.9.22.pom
 cced467175f4257833f6cb07510ff97b3c75a06e1a58d882a39d79853d51c602  org/reactivestreams/reactive-streams/1.0.3/reactive-streams-1.0.3.pom
@@ -1017,6 +1020,7 @@ efaa4fc4832aad9703df46b89cb02845dbf4db6f6ac88534b7824c4956a3a5fb  org/apache/mav
 f02a95fa1a5e95edb3ed859fd0fb7df709d121a35290eff8b74dce2ab7f4d6ed  com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar
 f094f01c1b5bd2a28d27063291a6dc20ea99d8209c037c990264396bcc08f7cd  com/thoughtworks/paranamer/paranamer-parent/2.8/paranamer-parent-2.8.pom
 f0c98c571e93a7cb4dd18df0fa308f0963e7a0620ac2d4244e61e709d03ad6be  com/google/j2objc/j2objc-annotations/1.1/j2objc-annotations-1.1.pom
+f15e206b98ca25294506d2dadfe5ce2a6da9df9cf7c85d8e7191f99a422df3c9  ch/qos/logback/logback-core/1.5.16/logback-core-1.5.16.jar
 f15e2f3d20cafc94823c76c621dd26c9c4a58a874340c284f5d490a99db5f912  fr/acinq/bitcoin-lib_2.13/0.35/bitcoin-lib_2.13-0.35.jar
 f1a709cd489f23498a0b6b3dfbfc0d21d4f15904791446dec7f8a58a7da5bd6a  commons-lang/commons-lang/2.1/commons-lang-2.1.pom
 f1c07cff218cb7f834ab5218671f996d188d07210bd425e1a31c6e57bb662399  org/apache/maven/doxia/doxia-sitetools/1.0/doxia-sitetools-1.0.pom
@@ -1044,8 +1048,8 @@ f877d304660ac2a142f3865badfc971dec7ed73c747c7f8d5d2f5139ca736513  commons-io/com
 f938136aff2758c4bfe2758d73287d70639af2ebcbc0fecb4bb30688518d1407  org/scala-sbt/util-control_2.13/1.8.0/util-control_2.13-1.8.0.jar
 f957f13604ea1686de805801862f339dbbb6eab9a66f9cc7e4a5c5b27e4fcecc  org/codehaus/plexus/plexus-utils/3.4.2/plexus-utils-3.4.2.jar
 f96112f6b94c68d95af54ebf257e8acc25a912287a6a891cd6576bba861297b7  net/java/dev/jna/jna/5.12.0/jna-5.12.0.jar
+f985a33a68d900badec5b0c3c613ab9db66415d2cf378987357ded9da5370e32  ch/qos/logback/logback-classic/1.5.16/logback-classic-1.5.16.jar
 f9a7ee475f7f31777a372c825b4f9e70004bed6010337c4251e1f44370407e77  org/clapper/grizzled-slf4j_2.13/1.3.4/grizzled-slf4j_2.13-1.3.4.jar
-fa08315e836e63f337ad9d252194086aff541cdbd787a8b7903515ac3469364f  ch/qos/logback/logback-parent/1.2.13/logback-parent-1.2.13.pom
 fa379e205f615be4bc78d33d934071b35c5afc5b6b4cb65027bd897ec81143e6  org/scala-lang/scala-library/2.13.11/scala-library-2.13.11.pom
 fa4c953376461efd10d462d07276007f196432405afa56b35475ed1324b40132  com/typesafe/akka/akka-cluster_2.13/2.6.20/akka-cluster_2.13-2.6.20.jar
 fa4efbdc62b7e885a8ee35b23bd71a3b0c08f7fc7d2da878795042ede9f7dc48  org/apache/maven/doxia/doxia-site-renderer/1.0/doxia-site-renderer-1.0.pom
