@@ -556,7 +556,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val sender = TestProbe()
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(20000 sat)))
     bob2alice.expectNoMessage(100 millis) // we don't close because the commitment doesn't contain any HTLC
 
@@ -569,7 +569,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMessage(100 millis) // we don't close the channel, we can simply avoid using it while we disagree on feerate
 
     // we now agree on feerate so we can send HTLCs
-    bob.setFeerate(FeeratePerKw(11000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(11000 sat))
     bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     bob2alice.expectNoMessage(100 millis)
     bob ! add
@@ -801,8 +801,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(Alice.nodeParams.channelConf.dustLimit > Bob.nodeParams.channelConf.dustLimit)
     // and a low feerate to avoid messing with dust exposure limits
     val currentFeerate = FeeratePerKw(2500 sat)
-    alice.setFeerate(currentFeerate)
-    bob.setFeerate(currentFeerate)
+    alice.setBitcoinCoreFeerate(currentFeerate)
+    bob.setBitcoinCoreFeerate(currentFeerate)
     updateFee(currentFeerate, alice, bob, alice2bob, bob2alice)
     // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
     // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
@@ -2119,8 +2119,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     // We start with a low feerate.
     val initialFeerate = FeeratePerKw(500 sat)
-    alice.setFeerate(initialFeerate)
-    bob.setFeerate(initialFeerate)
+    alice.setBitcoinCoreFeerate(initialFeerate)
+    bob.setBitcoinCoreFeerate(initialFeerate)
     updateFee(initialFeerate, alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
@@ -2151,8 +2151,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A feerate increase makes these HTLCs become dust in one of the commitments but not the other.
     val cmd = CMD_UPDATE_FEE(updatedFeerate, replyTo_opt = Some(sender.ref))
-    alice.setFeerate(updatedFeerate)
-    bob.setFeerate(updatedFeerate)
+    alice.setBitcoinCoreFeerate(updatedFeerate)
+    bob.setBitcoinCoreFeerate(updatedFeerate)
     alice ! cmd
     if (higherDustLimit == aliceCommitments.params.localParams.dustLimit) {
       sender.expectMsg(RES_FAILURE(cmd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000 sat, 29600000 msat)))
@@ -2240,7 +2240,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.setFeerate(fee.feeratePerKw)
+    bob.setBitcoinCoreFeerate(fee.feeratePerKw)
     bob ! fee
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == CannotAffordFees(channelId(bob), missing = 71620000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
@@ -2344,7 +2344,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-closes:
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! UpdateFee(channelId(bob), FeeratePerKw(20000 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == LocalDustHtlcExposureTooHigh(channelId(bob), 30000 sat, 40500000 msat).getMessage)
@@ -2373,7 +2373,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-close:
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! UpdateFee(channelId(bob), FeeratePerKw(20000 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == LocalDustHtlcExposureTooHigh(channelId(bob), 30000 sat, 40500000 msat).getMessage)
@@ -2386,8 +2386,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     // We start with a low feerate.
     val initialFeerate = FeeratePerKw(500 sat)
-    alice.setFeerate(initialFeerate)
-    bob.setFeerate(initialFeerate)
+    alice.setBitcoinCoreFeerate(initialFeerate)
+    bob.setBitcoinCoreFeerate(initialFeerate)
     updateFee(initialFeerate, alice, bob, alice2bob, bob2alice)
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitments = initialState.commitments
@@ -2419,7 +2419,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A feerate increase makes these HTLCs become dust in one of the commitments but not the other.
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob.setFeerate(updatedFeerate)
+    bob.setBitcoinCoreFeerate(updatedFeerate)
     bob ! UpdateFee(channelId(bob), updatedFeerate)
     val error = bob2alice.expectMsgType[Error]
     // NB: we don't need to distinguish local and remote, the error message is exactly the same.
@@ -2978,7 +2978,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
   }
@@ -2988,13 +2988,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event1 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event1.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event1.feeratesPerKw)
     alice ! event1
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
     alice2bob.expectMsgType[CommitSig]
     // The configured maximum feerate is bypassed if it's below the propagation threshold.
     val event2 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = TestConstants.anchorOutputsFeeratePerKw))
-    alice.setFeerates(event2.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event2.feeratesPerKw)
     alice ! event2
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw * 1.25))
   }
@@ -3002,7 +3002,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -3012,7 +3012,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -3020,7 +3020,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(500 millis)
   }
@@ -3032,7 +3032,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx] // commit tx
@@ -3045,8 +3045,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     // We start with a feerate lower than the 10 sat/byte threshold.
-    alice.setFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
-    bob.setFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
+    alice.setBitcoinCoreFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
+    bob.setBitcoinCoreFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
     alice ! CMD_UPDATE_FEE(TestConstants.anchorOutputsFeeratePerKw / 2)
     alice2bob.expectMsgType[UpdateFee]
     alice2bob.forward(bob)
@@ -3056,7 +3056,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // The network fees spike, but Bob doesn't close the channel because we're using anchor outputs.
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 10))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis)
     assert(bob.stateName == NORMAL)
@@ -3066,7 +3066,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis) // we don't close because the commitment doesn't contain any HTLC
 

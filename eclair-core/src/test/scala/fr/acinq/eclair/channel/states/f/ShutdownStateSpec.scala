@@ -596,7 +596,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.setFeerate(fee.feeratePerKw)
+    bob.setBitcoinCoreFeerate(fee.feeratePerKw)
     bob ! fee
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == CannotAffordFees(channelId(bob), missing = 72120000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
@@ -663,7 +663,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
   }
@@ -673,7 +673,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
   }
@@ -681,7 +681,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -691,7 +691,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -699,7 +699,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(500 millis)
   }
@@ -707,7 +707,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(25000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx] // commit tx

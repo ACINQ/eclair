@@ -693,7 +693,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
-    alice.setFeerates(networkFeerates)
+    alice.setBitcoinCoreFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     if (shouldClose) {
       assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
@@ -720,7 +720,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
-    alice.setFeerates(networkFeerates)
+    alice.setBitcoinCoreFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     alice2blockchain.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
@@ -737,7 +737,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // Alice ignores feerate changes while offline
-    alice.setFeerates(networkFeerates)
+    alice.setBitcoinCoreFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     alice2blockchain.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
@@ -804,7 +804,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee
-    bob.setFeerates(networkFeerates)
+    bob.setBitcoinCoreFeerates(networkFeerates)
     bob ! CurrentFeerates.BitcoinCore(networkFeerates)
     if (shouldClose) {
       assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
