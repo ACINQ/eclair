@@ -755,7 +755,7 @@ object BitcoinCoreClient {
   case class OutpointArg(txid: TxId, vout: Long)
 
   case class Utxo(txid: TxId, outputIndex: Long, amount: MilliBtc, ancestorCount_opt: Option[Int], confirmations: Long, safe: Boolean, label_opt: Option[String]) {
-    lazy val outPoint = OutPoint(txid, outputIndex)
+    val outPoint = OutPoint(txid, outputIndex)
   }
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)

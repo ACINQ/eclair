@@ -286,12 +286,12 @@ object CheckBalance {
   }
 
   case class CorrectedOnChainBalance(details: DetailedOnChainBalance) {
-    val confirmed: Btc = (details.confirmed ++ details.confirmedSwapIn).values.map(_.toSatoshi).sum
+    val confirmed: Btc = details.confirmed.values.map(_.toSatoshi).sum
     val unconfirmed: Btc = details.unconfirmed.values.map(_.toSatoshi).sum
     val total: Btc = confirmed + unconfirmed
   }
 
-  case class DetailedOnChainBalance(confirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, confirmedSwapIn: Map[OutPoint, Btc] = Map.empty, unconfirmedSwapIn: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo])
+  case class DetailedOnChainBalance(confirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo])
 
   /**
    * Returns the on-chain balance, but discards the unconfirmed incoming swap-in transactions, because they may be RBF-ed.

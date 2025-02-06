@@ -46,6 +46,11 @@ private class BalanceActor(context: ActorContext[Command],
 
   private val log = context.log
 
+  /**
+   * @param refBalance_opt the reference balance computed once at startup, useful for telling if we are making of losing money overall
+   * @param previousBalance_opt the last computed balance, it is useful to make a detailed diff between two successive balance checks
+   * @return
+   */
   def apply(refBalance_opt: Option[GlobalBalance], previousBalance_opt: Option[GlobalBalance]): Behavior[Command] = Behaviors.receiveMessage {
     case TickBalance =>
       log.debug("checking balance...")
@@ -58,7 +63,7 @@ private class BalanceActor(context: ActorContext[Command],
     case WrappedGlobalBalanceWithChannels(res, channelsCount) =>
       res match {
         case Success(balance) =>
-          log.info("--------- balance results --------")
+          log.info("--------- balance details --------")
           // utxos metrics
           val utxos = balance.onChain.details.utxos
           val filteredByStatus: Map[String, Seq[Utxo]] = Map(
@@ -79,8 +84,8 @@ private class BalanceActor(context: ActorContext[Command],
           previousBalance_opt match {
             case Some(previousBalance) =>
               log.info("on-chain diff={}", balance.onChain.total - previousBalance.onChain.total)
-              val utxosBefore = previousBalance.onChain.details.confirmed ++ previousBalance.onChain.details.unconfirmed ++ previousBalance.onChain.details.confirmedSwapIn ++ previousBalance.onChain.details.unconfirmedSwapIn
-              val utxosAfter = balance.onChain.details.confirmed ++ balance.onChain.details.unconfirmed ++ balance.onChain.details.confirmedSwapIn ++ balance.onChain.details.unconfirmedSwapIn
+              val utxosBefore = previousBalance.onChain.details.confirmed ++ previousBalance.onChain.details.unconfirmed
+              val utxosAfter = balance.onChain.details.confirmed ++ balance.onChain.details.unconfirmed
               val utxosAdded = utxosAfter -- utxosBefore.keys
               val utxosRemoved = utxosBefore -- utxosAfter.keys
               utxosAdded.foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
