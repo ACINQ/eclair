@@ -47,7 +47,7 @@ private class BalanceActor(context: ActorContext[Command],
   private val log = context.log
 
   /**
-   * @param refBalance_opt the reference balance computed once at startup, useful for telling if we are making of losing money overall
+   * @param refBalance_opt the reference balance computed once at startup, useful for telling if we are making or losing money overall
    * @param previousBalance_opt the last computed balance, it is useful to make a detailed diff between two successive balance checks
    * @return
    */
