@@ -65,7 +65,7 @@ private class BalanceActor(context: ActorContext[Command],
         case Success(balance) =>
           log.info("--------- balance details --------")
           // utxos metrics
-          val utxos = balance.onChain.details.utxos
+          val utxos = balance.onChain.utxos
           val filteredByStatus: Map[String, Seq[Utxo]] = Map(
             Monitoring.Tags.UtxoStatuses.Confirmed -> utxos.filter(utxo => utxo.confirmations > 0),
             // We cannot create chains of unconfirmed transactions with more than 25 elements, so we ignore such utxos.
@@ -84,8 +84,8 @@ private class BalanceActor(context: ActorContext[Command],
           previousBalance_opt match {
             case Some(previousBalance) =>
               log.info("on-chain diff={}", balance.onChain.total - previousBalance.onChain.total)
-              val utxosBefore = previousBalance.onChain.details.confirmed ++ previousBalance.onChain.details.unconfirmed
-              val utxosAfter = balance.onChain.details.confirmed ++ balance.onChain.details.unconfirmed
+              val utxosBefore = previousBalance.onChain.confirmed ++ previousBalance.onChain.unconfirmed
+              val utxosAfter = balance.onChain.confirmed ++ balance.onChain.unconfirmed
               val utxosAdded = utxosAfter -- utxosBefore.keys
               val utxosRemoved = utxosBefore -- utxosAfter.keys
               utxosAdded.foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
@@ -105,16 +105,16 @@ private class BalanceActor(context: ActorContext[Command],
             case None => ()
           }
 
-          log.info("current balance: total={} onchain.confirmed={} onchain.unconfirmed={} offchain={}", balance.total.toDouble, balance.onChain.confirmed.toDouble, balance.onChain.unconfirmed.toDouble, balance.offChain.total.toDouble)
+          log.info("current balance: total={} onchain.confirmed={} onchain.unconfirmed={} offchain={}", balance.total.toDouble, balance.onChain.totalConfirmed.toDouble, balance.onChain.totalUnconfirmed.toDouble, balance.offChain.total.toDouble)
           log.debug("current balance details: {}", balance)
           // This is a very rough estimation of the fee we would need to pay for a force-close with 5 pending HTLCs at 100 sat/byte.
           val perChannelFeeBumpingReserve = 50_000.sat
           // Instead of scaling this linearly with the number of channels we have, we use sqrt(channelsCount) to reflect
           // the fact that if you have channels with many peers, only a subset of these peers will likely be malicious.
           val estimatedFeeBumpingReserve = perChannelFeeBumpingReserve * Math.sqrt(channelsCount)
-          if (balance.onChain.confirmed < estimatedFeeBumpingReserve) {
+          if (balance.onChain.totalConfirmed < estimatedFeeBumpingReserve) {
             val message =
-              s"""On-chain confirmed balance is low (${balance.onChain.confirmed.toMilliBtc}): eclair may not be able to guarantee funds safety in case channels force-close.
+              s"""On-chain confirmed balance is low (${balance.onChain.totalConfirmed.toMilliBtc}): eclair may not be able to guarantee funds safety in case channels force-close.
                  |You have $channelsCount channels, which could cost $estimatedFeeBumpingReserve in fees if some of these channels are malicious.
                  |Please note that the value above is a very arbitrary estimation: the real cost depends on the feerate and the number of malicious channels.
                  |You should add more utxos to your bitcoin wallet to guarantee funds safety.
@@ -122,8 +122,8 @@ private class BalanceActor(context: ActorContext[Command],
             context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, message))
           }
           Metrics.GlobalBalance.withoutTags().update(balance.total.toMilliBtc.toDouble)
-          Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainConfirmed).update(balance.onChain.confirmed.toMilliBtc.toDouble)
-          Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainUnconfirmed).update(balance.onChain.unconfirmed.toMilliBtc.toDouble)
+          Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainConfirmed).update(balance.onChain.totalConfirmed.toMilliBtc.toDouble)
+          Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainUnconfirmed).update(balance.onChain.totalUnconfirmed.toMilliBtc.toDouble)
           Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.Offchain).withTag(Tags.OffchainState, Tags.OffchainStates.waitForFundingConfirmed).update(balance.offChain.waitForFundingConfirmed.toMilliBtc.toDouble)
           Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.Offchain).withTag(Tags.OffchainState, Tags.OffchainStates.waitForChannelReady).update(balance.offChain.waitForChannelReady.toMilliBtc.toDouble)
           Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.Offchain).withTag(Tags.OffchainState, Tags.OffchainStates.normal).update(balance.offChain.normal.total.toMilliBtc.toDouble)

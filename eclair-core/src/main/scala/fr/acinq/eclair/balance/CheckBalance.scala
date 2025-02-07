@@ -285,28 +285,26 @@ object CheckBalance {
     }
   }
 
-  case class CorrectedOnChainBalance(details: DetailedOnChainBalance) {
-    val confirmed: Btc = details.confirmed.values.map(_.toSatoshi).sum
-    val unconfirmed: Btc = details.unconfirmed.values.map(_.toSatoshi).sum
-    val total: Btc = confirmed + unconfirmed
+  case class DetailedOnChainBalance(confirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo]) {
+    val totalConfirmed: Btc = confirmed.values.map(_.toSatoshi).sum
+    val totalUnconfirmed: Btc = unconfirmed.values.map(_.toSatoshi).sum
+    val total: Btc = totalConfirmed + totalUnconfirmed
   }
-
-  case class DetailedOnChainBalance(confirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo])
 
   /**
    * Returns the on-chain balance, but discards the unconfirmed incoming swap-in transactions, because they may be RBF-ed.
    * Confirmed swap-in transactions are counted, because we can spend them, but we keep track of what we still owe to our
    * users.
    */
-  def computeOnChainBalance(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[CorrectedOnChainBalance] = for {
+  def computeOnChainBalance(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
     detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos)) {
       case (total, utxo) if utxo.confirmations == 0 => total.modify(_.unconfirmed).using(_ + (utxo.outPoint -> utxo.amount))
       case (total, utxo) => total.modify(_.confirmed).using(_ + (utxo.outPoint -> utxo.amount))
     }
-  } yield CorrectedOnChainBalance(detailed)
+  } yield detailed
 
-  case class GlobalBalance(onChain: CorrectedOnChainBalance, offChain: OffChainBalance, channels: Map[ByteVector32, PersistentChannelData], knownPreimages: Set[(ByteVector32, Long)]) {
+  case class GlobalBalance(onChain: DetailedOnChainBalance, offChain: OffChainBalance, channels: Map[ByteVector32, PersistentChannelData], knownPreimages: Set[(ByteVector32, Long)]) {
     val total: Btc = onChain.total + offChain.total
   }
 

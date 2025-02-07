@@ -20,7 +20,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
-import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
+import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
@@ -564,10 +564,9 @@ object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => Comm
 // @formatter:on
 
 // @formatter:off
-private case class DetailedOnChainBalanceJson(confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
-private case class CorrectedOnChainBalanceJson(total: Btc, details: DetailedOnChainBalanceJson)
-object CorrectedOnChainBalanceSerializer extends ConvertClassSerializer[CorrectedOnChainBalance](b => CorrectedOnChainBalanceJson(b.total, DetailedOnChainBalanceJson(confirmed = b.details.confirmed, unconfirmed = b.details.unconfirmed)))
-private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
+private case class DetailedOnChainBalanceJson(total: Btc, confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
+object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, confirmed = b.confirmed, unconfirmed = b.unconfirmed))
+private case class GlobalBalanceJson(total: Btc, onChain: DetailedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[String], channels: Int)
@@ -730,7 +729,7 @@ object JsonSerializers {
     OriginSerializer +
     ByteVector32KeySerializer +
     TxIdKeySerializer +
-    CorrectedOnChainBalanceSerializer +
+    DetailedOnChainBalanceSerializer +
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
