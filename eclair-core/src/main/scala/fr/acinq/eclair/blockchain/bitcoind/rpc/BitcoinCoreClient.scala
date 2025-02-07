@@ -692,6 +692,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   def listUnspent()(implicit ec: ExecutionContext): Future[Seq[Utxo]] = rpcClient.invoke("listunspent", /* minconf */ 0).collect {
     case JArray(values) => values.map(utxo => {
+      val JInt(vout) = utxo \ "vout"
+      val ancestorcount = utxo \ "ancestorcount" match {
+        case JInt(ancestorcount) => Some(ancestorcount)
+        case _ => None
+      }
       val JInt(confirmations) = utxo \ "confirmations"
       val JBool(safe) = utxo \ "safe"
       val JDecimal(amount) = utxo \ "amount"
@@ -700,7 +705,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         case JString(label) => Some(label)
         case _ => None
       }
-      Utxo(TxId.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+      Utxo(
+        txid = TxId.fromValidHex(txid),
+        outputIndex = vout.toLong,
+        amount = (amount.doubleValue * 1000).millibtc,
+        ancestorCount_opt = ancestorcount.map(_.toInt),
+        confirmations = confirmations.toLong,
+        safe = safe,
+        label_opt = label
+      )
     })
   }
 
@@ -741,7 +754,9 @@ object BitcoinCoreClient {
   /** Outpoint used as RPC argument. */
   case class OutpointArg(txid: TxId, vout: Long)
 
-  case class Utxo(txid: TxId, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
+  case class Utxo(txid: TxId, outputIndex: Long, amount: MilliBtc, ancestorCount_opt: Option[Int], confirmations: Long, safe: Boolean, label_opt: Option[String]) {
+    val outPoint = OutPoint(txid, outputIndex)
+  }
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
