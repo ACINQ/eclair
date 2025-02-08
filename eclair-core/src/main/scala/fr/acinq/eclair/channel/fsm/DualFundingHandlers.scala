@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.BITCOIN_FUNDING_DOUBLE_SPENT
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
-import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.wire.protocol.{ChannelReady, Error}
 
 import scala.concurrent.Future
@@ -116,6 +116,13 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * bitcoind when transactions are published. But if we couldn't publish those transactions (e.g. because our peer
    * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
+  def rollbackOpenAttempt(fundingContributions: InteractiveTxFunder.FundingContributions): Unit = {
+    val inputs = fundingContributions.inputs.map(i => TxIn(i.outPoint, Nil, 0))
+    if (inputs.nonEmpty) {
+      wallet.rollback(Transaction(2, inputs, Nil, 0))
+    }
+  }
+
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
     val inputs = txs.flatMap(sharedTx => sharedTx.tx.localInputs ++ sharedTx.tx.sharedInput_opt.toSeq).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
     if (inputs.nonEmpty) {
