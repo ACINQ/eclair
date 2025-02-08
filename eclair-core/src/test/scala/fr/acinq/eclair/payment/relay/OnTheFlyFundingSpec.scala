@@ -49,13 +49,13 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     Features.StaticRemoteKey -> FeatureSupport.Optional,
     Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
     Features.DualFunding -> FeatureSupport.Optional,
-    Features.SplicePrototype -> FeatureSupport.Optional,
+    Features.Splicing -> FeatureSupport.Optional,
     Features.OnTheFlyFunding -> FeatureSupport.Optional,
   )
 
   val remoteFeaturesWithFeeCredit = Features(
     Features.DualFunding -> FeatureSupport.Optional,
-    Features.SplicePrototype -> FeatureSupport.Optional,
+    Features.Splicing -> FeatureSupport.Optional,
     Features.OnTheFlyFunding -> FeatureSupport.Optional,
     Features.FundingFeeCredit -> FeatureSupport.Optional,
   )
@@ -181,7 +181,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val nodeParams = TestConstants.Alice.nodeParams
       .modify(_.features.activated).using(_ + (Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional))
       .modify(_.features.activated).using(_ + (Features.DualFunding -> FeatureSupport.Optional))
-      .modify(_.features.activated).using(_ + (Features.SplicePrototype -> FeatureSupport.Optional))
+      .modify(_.features.activated).using(_ + (Features.Splicing -> FeatureSupport.Optional))
       .modify(_.features.activated).using(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
       .modify(_.features.activated).usingIf(test.tags.contains(withFeeCredit))(_ + (Features.FundingFeeCredit -> FeatureSupport.Optional))
     val remoteNodeId = randomKey().publicKey
