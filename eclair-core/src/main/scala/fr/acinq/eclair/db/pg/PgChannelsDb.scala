@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 9
+  val CURRENT_VERSION = 10
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -118,6 +118,13 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       def migration89(statement: Statement): Unit = {
         statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
       }
+      
+      def migration910(statement: Statement): Unit = {
+        // We're changing our composite index to two distinct indices to improve performance.
+        statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
+        statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
+        statement.executeUpdate("DROP INDEX IF EXISTS local.htlc_infos_idx")
+      }
 
       getVersion(statement, DB_NAME) match {
         case None =>
@@ -129,8 +136,11 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
-          statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
+          // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
+          // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
+          statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
+          statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -152,6 +162,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 9) {
             migration89(statement)
+          }
+          if (v < 10) {
+            migration910(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
