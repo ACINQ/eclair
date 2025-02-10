@@ -277,11 +277,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         context.self ! AnalyzeBlockId(BlockId(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), remaining - 1)
         // We update our list of analyzed blocks, while ensuring that it doesn't grow unbounded.
         val maxCacheSize = nodeParams.channelConf.scanPreviousBlocksDepth * 3
-        val analyzedBlocks1 = if (analyzedBlocks.size >= maxCacheSize) {
-          (KotlinUtils.kmp2scala(block.blockId) +: analyzedBlocks).dropRight(analyzedBlocks.size - maxCacheSize + 1)
-        } else {
-          KotlinUtils.kmp2scala(block.blockId) +: analyzedBlocks
-        }
+        val analyzedBlocks1 = (KotlinUtils.kmp2scala(block.blockId) +: analyzedBlocks).take(maxCacheSize)
         watching(watches, watchedUtxos, analyzedBlocks1)
 
       case TickBlockTimeout =>
