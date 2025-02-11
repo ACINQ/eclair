@@ -105,7 +105,6 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelFlags: ChannelFlags,
                                         channelConfig: ChannelConfig,
                                         channelType: SupportedChannelType,
-                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default,
                                         replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
@@ -710,11 +709,5 @@ case class ChannelFlags(nonInitiatorPaysCommitFees: Boolean, announceChannel: Bo
 
 object ChannelFlags {
   def apply(announceChannel: Boolean): ChannelFlags = ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = announceChannel)
-}
-
-/** Information about what triggered the opening of the channel */
-sealed trait ChannelOrigin
-object ChannelOrigin {
-  case object Default extends ChannelOrigin
 }
 // @formatter:on
