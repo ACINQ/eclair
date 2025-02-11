@@ -95,6 +95,7 @@ object Channel {
                          maxRestartWatchDelay: FiniteDuration,
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
+                         scanPreviousBlocksDepth: Int,
                          maxChannelSpentRescanBlocks: Int,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
