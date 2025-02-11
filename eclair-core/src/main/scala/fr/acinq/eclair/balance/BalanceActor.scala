@@ -3,7 +3,7 @@ package fr.acinq.eclair.balance
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, MilliBtc, SatoshiLong}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.balance.BalanceActor._
@@ -75,12 +75,11 @@ private class BalanceActor(context: ActorContext[Command],
           )
           filteredByStatus.foreach {
             case (status, filteredUtxos) =>
-              val amount = filteredUtxos.map(_.amount.toDouble).sum
+              val amount = filteredUtxos.map(_.amount).fold(MilliBtc(0))(_ + _)
               log.info(s"we have ${filteredUtxos.length} $status utxos ($amount mBTC)")
               Monitoring.Metrics.UtxoCount.withTag(Monitoring.Tags.UtxoStatus, status).update(filteredUtxos.length)
-              Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount)
+              Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount.toDouble)
           }
-
           previousBalance_opt match {
             case Some(previousBalance) =>
               log.info("on-chain diff={}", balance.onChain.total - previousBalance.onChain.total)
@@ -88,20 +87,23 @@ private class BalanceActor(context: ActorContext[Command],
               val utxosAfter = balance.onChain.confirmed ++ balance.onChain.unconfirmed
               val utxosAdded = utxosAfter -- utxosBefore.keys
               val utxosRemoved = utxosBefore -- utxosAfter.keys
-              utxosAdded.foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
-              utxosRemoved.foreach { case (outPoint, amount) => log.info("- utxo={} amount={}", outPoint, amount) }
+              utxosAdded.toList.sortBy(-_._2).foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
+              utxosRemoved.toList.sortBy(-_._2).foreach { case (outPoint, amount) => log.info("- utxo={} amount={}", outPoint, amount) }
 
               log.info("off-chain diff={}", balance.offChain.total - previousBalance.offChain.total)
               val offchainBalancesBefore = previousBalance.channels.view.mapValues(computeOffChainBalance(previousBalance.knownPreimages, _).total)
               val offchainBalancesAfter = balance.channels.view.mapValues(computeOffChainBalance(balance.knownPreimages, _).total)
-              offchainBalancesAfter
-                .map { case (channelId, balanceAfter) => (channelId, offchainBalancesBefore.getOrElse(channelId, Btc(0)), balanceAfter) }
-                .filter { case (_, balanceBefore, balanceAfter) => balanceAfter > balanceBefore }
-                .foreach { case (channelId, balanceBefore, balanceAfter) => log.info("+ channelId={} amount={}", channelId, balanceAfter - balanceBefore) }
-              offchainBalancesBefore
-                .map { case (channelId, balanceBefore) => (channelId, balanceBefore, offchainBalancesAfter.getOrElse(channelId, Btc(0))) }
-                .filter { case (_, balanceBefore, balanceAfter) => balanceBefore > balanceAfter }
-                .foreach { case (channelId, balanceBefore, balanceAfter) => log.info("- channelId={} amount={}", channelId, balanceBefore - balanceAfter) }
+              val offChainBalanceDiff = offchainBalancesAfter
+                .map { case (channelId, balanceAfter) => (channelId, balanceAfter - offchainBalancesBefore.getOrElse(channelId, Btc(0))) }
+                .toList
+              offChainBalanceDiff
+                .filter { case (_, diff) => diff > 0.sat }
+                .sortBy(-_._2)
+                .foreach { case (channelId, diff) => log.info("+ channelId={} amount={}", channelId, diff) }
+              offChainBalanceDiff
+                .filter { case (_, diff) => diff < 0.sat }
+                .sortBy(_._2)
+                .foreach { case (channelId, diff) => log.info("- channelId={} amount={}", channelId, -diff) }
             case None => ()
           }
 
