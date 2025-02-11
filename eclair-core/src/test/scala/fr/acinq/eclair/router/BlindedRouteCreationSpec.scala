@@ -30,7 +30,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
   test("create blinded route without hops") {
     val a = randomKey()
     val pathId = randomBytes32()
-    val route = createBlindedRouteWithoutHops(a.publicKey, pathId, 1 msat, CltvExpiry(500))
+    val route = createBlindedRouteFromHops(Nil, a.publicKey, pathId, 1 msat, CltvExpiry(500))
     assert(route.route.firstNodeId == EncodedNodeId(a.publicKey))
     assert(route.route.encryptedPayloads.length == 1)
     assert(route.route.firstPathKey == route.lastPathKey)
@@ -47,7 +47,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
       ChannelHop(scid1, a.publicKey, b.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid1, a.publicKey, b.publicKey, 10 msat, 300, cltvDelta = CltvExpiryDelta(200)))),
       ChannelHop(scid2, b.publicKey, c.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid2, b.publicKey, c.publicKey, 20 msat, 150, cltvDelta = CltvExpiryDelta(600)))),
     )
-    val route = createBlindedRouteFromHops(hops, pathId, 1 msat, CltvExpiry(500))
+    val route = createBlindedRouteFromHops(hops, c.publicKey, pathId, 1 msat, CltvExpiry(500))
     assert(route.route.firstNodeId == EncodedNodeId(a.publicKey))
     assert(route.route.encryptedPayloads.length == 3)
     val Right(decoded1) = RouteBlindingEncryptedDataCodecs.decode(a, route.route.firstPathKey, route.route.encryptedPayloads(0))
@@ -103,7 +103,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
       ChannelHop(scid4, d.publicKey, e.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid4, d.publicKey, e.publicKey, 100000 msat, 100000, cltvDelta = CltvExpiryDelta(60000)))),
       ChannelHop(scid5, e.publicKey, f.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid5, e.publicKey, f.publicKey, 999999999 msat, 999999999, cltvDelta = CltvExpiryDelta(65000)))),
     )
-    val route = createBlindedRouteFromHops(hops, randomBytes32(), 0 msat, CltvExpiry(0))
+    val route = createBlindedRouteFromHops(hops, f.publicKey, randomBytes32(), 0 msat, CltvExpiry(0))
     assert(route.route.encryptedPayloads.dropRight(1).forall(_.length == 54))
   }
 

@@ -309,7 +309,7 @@ object BaseRouterSpec {
     val offer = Offer(None, Some("Bolt12 r0cks"), recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, amount, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoutes = paths.map(hops => {
-      val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(hops, pathId, 1 msat, routeExpiry).route
+      val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(hops, hops.last.nextNodeId, pathId, 1 msat, routeExpiry).route
       val paymentInfo = BlindedRouteCreation.aggregatePaymentInfo(amount, hops, Channel.MIN_CLTV_EXPIRY_DELTA)
       PaymentBlindedRoute(blindedRoute, paymentInfo)
     })

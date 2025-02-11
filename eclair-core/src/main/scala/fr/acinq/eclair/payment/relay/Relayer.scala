@@ -134,6 +134,10 @@ object Relayer extends Logging {
     require(feeProportionalMillionths >= 0.0, "feeProportionalMillionths must be nonnegative")
   }
 
+  object RelayFees {
+    val zero: RelayFees = RelayFees(MilliSatoshi(0), 0)
+  }
+
   case class AsyncPaymentsParams(holdTimeoutBlocks: Int, cancelSafetyBeforeTimeout: CltvExpiryDelta)
 
   case class RelayParams(publicChannelFees: RelayFees,

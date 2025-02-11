@@ -66,8 +66,8 @@ class AuditDbSpec extends AnyFunSuite {
 
       val now = TimestampMilli.now()
       val e1 = PaymentSent(ZERO_UUID, randomBytes32(), randomBytes32(), 40000 msat, randomKey().publicKey, PaymentSent.PartialPayment(ZERO_UUID, 42000 msat, 1000 msat, randomBytes32(), None) :: Nil)
-      val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32())
-      val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32())
+      val pp2a = PaymentReceived.PartialPayment(42000 msat, 42000 msat,randomBytes32())
+      val pp2b = PaymentReceived.PartialPayment(42100 msat, 42100 msat,randomBytes32())
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
       val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32(), now - 3.seconds, now)
       val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")

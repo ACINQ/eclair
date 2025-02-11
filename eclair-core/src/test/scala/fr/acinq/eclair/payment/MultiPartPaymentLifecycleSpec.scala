@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorContext, ActorRef, Status, typed}
+import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, SatoshiLong}
