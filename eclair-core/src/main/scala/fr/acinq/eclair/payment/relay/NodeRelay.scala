@@ -247,14 +247,14 @@ class NodeRelay private(nodeParams: NodeParams,
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
         val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt)
         context.log.debug("forwarding payment to the next trampoline node {}", recipient.nodeId)
-        checkIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt)
+        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt)
       case payloadOut: IntermediatePayload.NodeRelay.ToNonTrampoline =>
         val paymentSecret = payloadOut.paymentSecret
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
         val extraEdges = payloadOut.invoiceRoutingInfo.flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
         val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata)
         context.log.debug("forwarding payment to non-trampoline recipient {}", recipient.nodeId)
-        checkIfRecipientIsWallet(upstream, recipient, nextPayload, None)
+        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, None)
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
         // Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to
         // resolve that to a nodeId in order to reach that introduction node and use the blinded path.
@@ -273,7 +273,7 @@ class NodeRelay private(nodeParams: NodeParams,
               resolved.head.route match {
                 case BlindedPathsResolver.PartialBlindedRoute(walletNodeId: EncodedNodeId.WithPublicKey.Wallet, _, _) if nodeParams.peerWakeUpConfig.enabled =>
                   context.log.debug("forwarding payment to blinded peer {}", walletNodeId.publicKey)
-                  waitForPeerReady(upstream, walletNodeId.publicKey, recipient, nextPayload, nextPacket_opt)
+                  attemptWakeUp(upstream, walletNodeId.publicKey, recipient, nextPayload, nextPacket_opt)
                 case _ =>
                   context.log.debug("forwarding payment to blinded recipient {}", recipient.nodeId)
                   relay(upstream, recipient, None, None, nextPayload, nextPacket_opt)
@@ -284,7 +284,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   /** The next node may be a mobile wallet directly connected to us: in that case, we'll need to wake them up before relaying the payment. */
-  private def checkIfRecipientIsWallet(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def attemptWakeUpIfRecipientIsWallet(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     if (nodeParams.peerWakeUpConfig.enabled) {
       val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.GetPeerInfo]](_ => WrappedPeerInfo(isPeer = false, remoteFeatures_opt = None))
       val peerInfoAdapter = context.messageAdapter[Peer.PeerInfoResponse] {
@@ -296,7 +296,7 @@ class NodeRelay private(nodeParams: NodeParams,
         rejectExtraHtlcPartialFunction orElse {
           case info: WrappedPeerInfo =>
             if (info.isPeer && info.remoteFeatures_opt.exists(_.hasFeature(Features.WakeUpNotificationClient))) {
-              waitForPeerReady(upstream, recipient.nodeId, recipient, nextPayload, nextPacket_opt)
+              attemptWakeUp(upstream, recipient.nodeId, recipient, nextPayload, nextPacket_opt)
             } else {
               relay(upstream, recipient, None, None, nextPayload, nextPacket_opt)
             }
@@ -311,7 +311,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * The next node is the payment recipient. They are directly connected to us and may be offline. We try to wake them
    * up and will relay the payment once they're connected and channels are reestablished.
    */
-  private def waitForPeerReady(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def attemptWakeUp(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
     context.log.info("trying to wake up next peer (nodeId={})", walletNodeId)
     val notifier = context.spawnAnonymous(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
