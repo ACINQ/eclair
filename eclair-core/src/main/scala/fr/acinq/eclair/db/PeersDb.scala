@@ -17,20 +17,25 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.wire.protocol.NodeAddress
+import fr.acinq.eclair.wire.protocol.{NodeAddress, NodeInfo}
+import fr.acinq.eclair.{Features, InitFeature, TimestampSecond}
 import scodec.bits.ByteVector
 
+/** The PeersDb contains information about our direct peers, with whom we have or had channels. */
 trait PeersDb {
 
-  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress): Unit
+  /** Update our DB with a verified address and features for the given peer. */
+  def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit
+
+  /** Update our DB with the features for the given peer, without updating its address. */
+  def addOrUpdatePeerFeatures(nodeId: PublicKey, features: Features[InitFeature]): Unit
 
   def removePeer(nodeId: PublicKey): Unit
 
-  def getPeer(nodeId: PublicKey): Option[NodeAddress]
+  def getPeer(nodeId: PublicKey): Option[NodeInfo]
 
-  def listPeers(): Map[PublicKey, NodeAddress]
+  def listPeers(): Map[PublicKey, NodeInfo]
 
   def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit
 

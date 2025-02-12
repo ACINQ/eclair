@@ -509,6 +509,8 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def hos
 case class DnsHostname(dnsHostname: String, port: Int) extends IPAddress {override def host: String = dnsHostname}
 // @formatter:on
 
+case class NodeInfo(features: Features[InitFeature], address_opt: Option[NodeAddress])
+
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features[Feature],
                             timestamp: TimestampSecond,
