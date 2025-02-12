@@ -62,14 +62,14 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     def migration45(statement: Statement): Unit = {
       statement.executeUpdate("ALTER TABLE local.peers RENAME COLUMN data TO node_address")
       statement.executeUpdate("ALTER TABLE local.peers ALTER COLUMN node_address DROP NOT NULL")
-      statement.executeUpdate("ALTER TABLE local.peers ADD COLUMN node_features BYTEA")
+      statement.executeUpdate("ALTER TABLE local.peers ADD COLUMN init_features BYTEA")
     }
 
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
-          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, node_address BYTEA, node_features BYTEA)")
+          statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, node_address BYTEA, init_features BYTEA)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.peer_storage (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL, removed_peer_at TIMESTAMP WITH TIME ZONE)")
 
@@ -101,10 +101,10 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
       val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local.peers (node_id, node_address, node_features)
+          | INSERT INTO local.peers (node_id, node_address, init_features)
           | VALUES (?, ?, ?)
           | ON CONFLICT (node_id)
-          | DO UPDATE SET node_address = EXCLUDED.node_address, node_features = EXCLUDED.node_features
+          | DO UPDATE SET node_address = EXCLUDED.node_address, init_features = EXCLUDED.init_features
           |""".stripMargin)) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.setBytes(2, encodedAddress)
@@ -119,10 +119,10 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
       val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local.peers (node_id, node_address, node_features)
+          | INSERT INTO local.peers (node_id, node_address, init_features)
           | VALUES (?, NULL, ?)
           | ON CONFLICT (node_id)
-          | DO UPDATE SET node_features = EXCLUDED.node_features
+          | DO UPDATE SET init_features = EXCLUDED.init_features
           |""".stripMargin)) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.setBytes(2, encodedFeatures)
@@ -156,11 +156,11 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
 
   override def getPeer(nodeId: PublicKey): Option[NodeInfo] = withMetrics("peers/get", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT node_address, node_features FROM local.peers WHERE node_id=?")) { statement =>
+      using(pg.prepareStatement("SELECT node_address, init_features FROM local.peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeQuery().map { rs =>
           val nodeAddress_opt = rs.getBitVectorOpt("node_address").map(CommonCodecs.nodeaddress.decode(_).require.value)
-          val nodeFeatures_opt = rs.getBitVectorOpt("node_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
+          val nodeFeatures_opt = rs.getBitVectorOpt("init_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
           NodeInfo(nodeFeatures_opt.getOrElse(Features.empty), nodeAddress_opt)
         }.headOption
       }
@@ -169,12 +169,12 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
 
   override def listPeers(): Map[PublicKey, NodeInfo] = withMetrics("peers/list", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT node_id, node_address, node_features FROM local.peers")) { statement =>
+      using(pg.prepareStatement("SELECT node_id, node_address, init_features FROM local.peers")) { statement =>
         statement.executeQuery()
           .map { rs =>
             val nodeId = PublicKey(rs.getByteVectorFromHex("node_id"))
             val nodeAddress_opt = rs.getBitVectorOpt("node_address").map(CommonCodecs.nodeaddress.decode(_).require.value)
-            val nodeFeatures_opt = rs.getBitVectorOpt("node_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
+            val nodeFeatures_opt = rs.getBitVectorOpt("init_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
             nodeId -> NodeInfo(nodeFeatures_opt.getOrElse(Features.empty), nodeAddress_opt)
           }.toMap
       }
