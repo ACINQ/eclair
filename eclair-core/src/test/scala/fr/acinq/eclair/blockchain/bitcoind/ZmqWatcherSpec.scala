@@ -335,12 +335,12 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! StopWatching(probe.ref)
 
       // We should still find tx2 if the provided hint is wrong
-      watcher ! WatchOutputSpent(probe.ref, tx1.txid, 0, Set(randomTxId()))
+      watcher ! WatchOutputSpent(probe.ref, tx1.txid, 0, tx1.txOut(0).amount, Set(randomTxId()))
       probe.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx2.txid }
       watcher ! StopWatching(probe.ref)
 
       // We should find txs that have already been confirmed
-      watcher ! WatchOutputSpent(probe.ref, tx.txid, outputIndex, Set.empty)
+      watcher ! WatchOutputSpent(probe.ref, tx.txid, outputIndex, tx.txOut(outputIndex).amount, Set.empty)
       probe.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx1.txid }
       watcher ! StopWatching(probe.ref)
 
@@ -500,16 +500,16 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 2)
       watcher ! WatchFundingConfirmed(actor1.ref, txid, 3)
       watcher ! WatchFundingConfirmed(actor1.ref, TxId(txid.value.reverse), 3)
-      watcher ! WatchOutputSpent(actor1.ref, txid, 0, Set.empty)
-      watcher ! WatchOutputSpent(actor1.ref, txid, 1, Set.empty)
+      watcher ! WatchOutputSpent(actor1.ref, txid, 0, 0 sat, Set.empty)
+      watcher ! WatchOutputSpent(actor1.ref, txid, 1, 0 sat, Set.empty)
       watcher ! ListWatches(actor1.ref)
       val watches1 = actor1.expectMsgType[Set[Watch[_]]]
       assert(watches1.size == 5)
 
       watcher ! WatchFundingConfirmed(actor2.ref, txid, 2)
       watcher ! WatchFundingConfirmed(actor2.ref, TxId(txid.value.reverse), 3)
-      watcher ! WatchOutputSpent(actor2.ref, txid, 0, Set.empty)
-      watcher ! WatchOutputSpent(actor2.ref, txid, 1, Set.empty)
+      watcher ! WatchOutputSpent(actor2.ref, txid, 0, 0 sat, Set.empty)
+      watcher ! WatchOutputSpent(actor2.ref, txid, 1, 0 sat, Set.empty)
       watcher ! ListWatches(actor2.ref)
       val watches2 = actor2.expectMsgType[Set[Watch[_]]]
       assert(watches2.size == 9)

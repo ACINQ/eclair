@@ -198,10 +198,10 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       ))
 
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
-    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx4 = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx4 = alice2blockchain.expectMsgType[PublishFinalTx]
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // main-delayed
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
@@ -212,11 +212,11 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // 3rd-stage txs are published when htlc-timeout txs confirm
     val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTimeoutTx =>
-      alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
-      val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.txid)
+      alice ! WatchOutputSpentTriggered(htlcTimeoutTx.amount, htlcTimeoutTx.tx)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
+      val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx]
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.tx.txid)
       claimHtlcDelayedTx
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 4)
@@ -224,7 +224,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeLocalCloseBalance(commitments.changes, LocalClose(commitments.active.last.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), commitments.originChannels, knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(OutPoint(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid, 0) -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimHtlcDelayedTxs.map(claimTx => OutPoint(claimTx.txid, 0) -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcs = claimHtlcDelayedTxs.map(claimTx => OutPoint(claimTx.tx.txid, 0) -> claimTx.tx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = 0.sat
       ))
   }

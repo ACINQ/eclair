@@ -133,8 +133,8 @@ object ZmqWatcher {
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
-  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
-  case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
+  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, amount: Satoshi, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
+  case class WatchOutputSpentTriggered(amount: Satoshi, spendingTx: Transaction) extends WatchSpentTriggered
 
   /** Waiting for a wallet transaction to be published guarantees that bitcoind won't double-spend it in the future, unless we explicitly call abandontransaction. */
   case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: TxId) extends Watch[WatchPublishedTriggered]
@@ -233,7 +233,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           .foreach {
             case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, tx))
             case w: WatchFundingSpent => context.self ! TriggerEvent(w.replyTo, w, WatchFundingSpentTriggered(tx))
-            case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
+            case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(w.amount, tx))
             case _: WatchPublished => // nothing to do
             case _: WatchConfirmed[_] => // nothing to do
           }

@@ -80,12 +80,13 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    *
+   * @param amount amount we are claiming with this transaction.
    * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
    *            which case it must be set to zero here).
    */
-  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
+  case class PublishFinalTx(tx: Transaction, input: OutPoint, amount: Satoshi, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
   object PublishFinalTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.amountIn, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment) extends PublishTx {

@@ -30,7 +30,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
-import scala.util.Try
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 15/12/2016.
@@ -270,6 +270,27 @@ object Transactions {
    * @return the fee rate (in Satoshi/Kw) for this tx
    */
   def fee2rate(fee: Satoshi, weight: Int): FeeratePerKw = FeeratePerKw((fee * 1000L) / weight)
+
+  /** As defined in https://github.com/lightning/bolts/blob/master/03-transactions.md#dust-limits */
+  def dustLimit(scriptPubKey: ByteVector): Satoshi = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => 546.sat
+      case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => 540.sat
+      case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => 294.sat
+      case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => 330.sat
+      case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => 354.sat
+      case Success(OP_RETURN :: _) => 0.sat // OP_RETURN is never dust
+      case _ => 546.sat
+    }
+  }
+
+  /** When an output is using OP_RETURN, we usually want to make sure its amount is 0, otherwise bitcoind won't accept it. */
+  def isOpReturn(scriptPubKey: ByteVector): Boolean = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_RETURN :: _) => true
+      case _ => false
+    }
+  }
 
   /** Offered HTLCs below this amount will be trimmed. */
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
@@ -852,6 +873,77 @@ object Transactions {
       lockTime = 0))
     val toLocalOutput = findPubKeyScriptIndex(tx, localScriptPubKey).map(index => OutputInfo(index, toLocalAmount, localScriptPubKey)).toOption
     ClosingTx(commitTxInput, tx, toLocalOutput)
+  }
+
+  // @formatter:off
+  /** We always create multiple versions of each closing transaction, where fees are either paid by us or by our peer. */
+  sealed trait SimpleClosingTxFee
+  object SimpleClosingTxFee {
+    case class PaidByUs(fee: Satoshi) extends SimpleClosingTxFee
+    case class PaidByThem(fee: Satoshi) extends SimpleClosingTxFee
+  }
+  // @formatter:on
+
+  /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
+  case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {
+    /** Preferred closing transaction for this closing attempt. */
+    val preferred_opt: Option[ClosingTx] = localAndRemote_opt.orElse(localOnly_opt).orElse(remoteOnly_opt)
+    val all: Seq[ClosingTx] = Seq(localAndRemote_opt, localOnly_opt, remoteOnly_opt).flatten
+
+    override def toString: String = s"localAndRemote=${localAndRemote_opt.map(_.tx.toString()).getOrElse("n/a")}, localOnly=${localOnly_opt.map(_.tx.toString()).getOrElse("n/a")}, remoteOnly=${remoteOnly_opt.map(_.tx.toString()).getOrElse("n/a")}"
+  }
+
+  def makeSimpleClosingTxs(input: InputInfo, spec: CommitmentSpec, fee: SimpleClosingTxFee, lockTime: Long, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector): ClosingTxs = {
+    require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
+
+    val txNoOutput = Transaction(2, Seq(TxIn(input.outPoint, ByteVector.empty, sequence = 0xFFFFFFFDL)), Nil, lockTime)
+
+    // We compute the remaining balance for each side after paying the closing fees.
+    // This lets us decide whether outputs can be included in the closing transaction or not.
+    val (toLocalAmount, toRemoteAmount) = fee match {
+      case SimpleClosingTxFee.PaidByUs(fee) => (spec.toLocal.truncateToSatoshi - fee, spec.toRemote.truncateToSatoshi)
+      case SimpleClosingTxFee.PaidByThem(fee) => (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - fee)
+    }
+
+    // An OP_RETURN script may be provided, but only when burning all of the peer's balance to fees.
+    val toLocalOutput_opt = if (toLocalAmount >= dustLimit(localScriptPubKey)) {
+      val amount = if (isOpReturn(localScriptPubKey)) 0.sat else toLocalAmount
+      Some(TxOut(amount, localScriptPubKey))
+    } else {
+      None
+    }
+    val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit(remoteScriptPubKey)) {
+      val amount = if (isOpReturn(remoteScriptPubKey)) 0.sat else toRemoteAmount
+      Some(TxOut(amount, remoteScriptPubKey))
+    } else {
+      None
+    }
+
+    // We may create multiple closing transactions based on which outputs may be included.
+    (toLocalOutput_opt, toRemoteOutput_opt) match {
+      case (Some(toLocalOutput), Some(toRemoteOutput)) =>
+        val txLocalAndRemote = LexicographicalOrdering.sort(txNoOutput.copy(txOut = Seq(toLocalOutput, toRemoteOutput)))
+        val Right(toLocalOutputInfo) = findPubKeyScriptIndex(txLocalAndRemote, localScriptPubKey).map(index => OutputInfo(index, toLocalOutput.amount, localScriptPubKey))
+        ClosingTxs(
+          localAndRemote_opt = Some(ClosingTx(input, txLocalAndRemote, Some(toLocalOutputInfo))),
+          // We also provide a version of the transaction without the remote output, which they may want to omit if not economical to spend.
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalOutput.amount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (Some(toLocalOutput), None) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toLocalOutput)), Some(OutputInfo(0, toLocalOutput.amount, localScriptPubKey)))),
+          remoteOnly_opt = None
+        )
+      case (None, Some(toRemoteOutput)) =>
+        ClosingTxs(
+          localAndRemote_opt = None,
+          localOnly_opt = None,
+          remoteOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toRemoteOutput)), None))
+        )
+      case (None, None) => ClosingTxs(None, None, None)
+    }
   }
 
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteVector): Either[TxGenerationSkipped, Int] = {

@@ -262,12 +262,12 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     waitForTxBroadcastOrConfirmed(localCommit.commitTx.txid, bitcoinClient, sender)
     // we generate a few blocks to get the commit tx confirmed
-    generateBlocks(3, Some(minerAddress))
+    generateBlocks(6, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
     assert(localCommit.htlcTxs.size == 1)
     waitForOutputSpent(localCommit.htlcTxs.keys.head, bitcoinClient, sender)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
-    generateBlocks(3, Some(minerAddress))
+    generateBlocks(6, Some(minerAddress))
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](max = 60 seconds)
     assert(failed.id == paymentId)
@@ -323,7 +323,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(remoteCommit.claimHtlcTxs.size == 1)
     waitForOutputSpent(remoteCommit.claimHtlcTxs.keys.head, bitcoinClient, sender)
     // and we generate blocks for the claim-htlc-timeout to reach enough confirmations
-    generateBlocks(3, Some(minerAddress))
+    generateBlocks(6, Some(minerAddress))
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](max = 60 seconds)
     assert(failed.id == paymentId)
@@ -491,7 +491,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
   }
 
   test("open a wumbo channel C <-> F, wait for longer than the default min_depth, then close") {
-    // we open a 5BTC channel and check that we scale `min_depth` up to 13 confirmations
+    // we open a 5BTC channel and check that we scale `min_depth` up to 17 confirmations
     val funder = nodes("C")
     val fundee = nodes("F")
     val tempChannelId = connect(funder, fundee, 5 btc, 100000000000L msat).channelId
@@ -510,9 +510,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_CHANNEL_READY
     })
 
-    generateBlocks(2)
-
     // after 8 blocks the fundee is still waiting for more confirmations
+    generateBlocks(2)
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_STATE(ActorRef.noSender))
     assert(sender.expectMsgType[RES_GET_CHANNEL_STATE].state == WAIT_FOR_FUNDING_CONFIRMED)
 
@@ -576,18 +575,22 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
-    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
+    awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NEGOTIATING_SIMPLE, max = 60 seconds)
     // and close the channel
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
       sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid == fundingOutpoint.txid)
     }, max = 20 seconds, interval = 1 second)
+    // we generate more blocks than the default min depth, but are still waiting for more confirmations
+    generateBlocks(10)
+    stateListener.expectNoMessage(100 millis)
+
     // we generate enough blocks for the channel to be deeply confirmed
-    generateBlocks(12)
+    generateBlocks(10)
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
 
-    bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt, limit = 12).pipeTo(sender.ref)
+    bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt, limit = 25).pipeTo(sender.ref)
     val closingTx = sender.expectMsgType[Transaction]
     assert(closingTx.txOut.map(_.publicKeyScript).toSet == Set(finalPubKeyScriptC, finalPubKeyScriptF))
     awaitAnnouncements(1)

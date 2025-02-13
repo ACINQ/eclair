@@ -50,6 +50,7 @@ object ReplaceableTxPrePublisher {
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
   private case object RemoteCommitTxNotInMempool extends RuntimeException with Command
   private case object LocalCommitTxConfirmed extends Command
+  private case object LocalCommitTxPublished extends Command
   private case object RemoteCommitTxConfirmed extends Command
   private case object RemoteCommitTxPublished extends Command
   private case object HtlcOutputAlreadySpent extends Command
@@ -211,7 +212,8 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    */
   private def checkHtlcOutput(commitment: FullCommitment, htlcTx: HtlcTx): Future[Command] = {
     getRemoteCommitConfirmations(commitment).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthClosing => Future.successful(RemoteCommitTxConfirmed)
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthScaled(commitment.capacity) => Future.successful(RemoteCommitTxConfirmed)
+      case Some(_) => Future.successful(RemoteCommitTxPublished)
       case _ => bitcoinClient.isTransactionOutputSpent(htlcTx.input.outPoint.txid, htlcTx.input.outPoint.index.toInt).map {
         case true => HtlcOutputAlreadySpent
         case false => ParentTxOk
@@ -231,6 +233,11 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
+        Behaviors.stopped
+      case RemoteCommitTxPublished =>
+        log.info("cannot publish {}: remote commit has been published", cmd.desc)
+        // We keep retrying until the remote commit reaches min-depth to protect against reorgs.
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case RemoteCommitTxConfirmed =>
         log.warn("cannot publish {}: remote commit has been confirmed", cmd.desc)
@@ -289,7 +296,8 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    */
   private def checkClaimHtlcOutput(commitment: FullCommitment, claimHtlcTx: ClaimHtlcTx): Future[Command] = {
     bitcoinClient.getTxConfirmations(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthClosing => Future.successful(LocalCommitTxConfirmed)
+      case Some(depth) if depth >= nodeParams.channelConf.minDepthScaled(commitment.capacity) => Future.successful(LocalCommitTxConfirmed)
+      case Some(_) => Future.successful(LocalCommitTxPublished)
       case _ => bitcoinClient.isTransactionOutputSpent(claimHtlcTx.input.outPoint.txid, claimHtlcTx.input.outPoint.index.toInt).map {
         case true => HtlcOutputAlreadySpent
         case false => ParentTxOk
@@ -309,6 +317,11 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
           case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
+        Behaviors.stopped
+      case LocalCommitTxPublished =>
+        log.info("cannot publish {}: local commit has been published", cmd.desc)
+        // We keep retrying until the local commit reaches min-depth to protect against reorgs.
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case LocalCommitTxConfirmed =>
         log.warn("cannot publish {}: local commit has been confirmed", cmd.desc)

@@ -305,6 +305,11 @@ object Features {
     val mandatory = 54
   }
 
+  case object SimpleClose extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_simple_close"
+    val mandatory = 60
+  }
+
   /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
   case object WakeUpNotificationClient extends Feature with InitFeature {
     val rfcName = "wake_up_notification_client"
@@ -375,6 +380,7 @@ object Features {
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    SimpleClose,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -393,6 +399,7 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
+    SimpleClose -> (ShutdownAnySegwit :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

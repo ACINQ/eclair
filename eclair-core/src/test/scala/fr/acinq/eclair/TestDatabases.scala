@@ -79,11 +79,12 @@ object TestDatabases {
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
           .modify(_.spliceStatus).using {
-          case s: SpliceStatus.SpliceWaitingForSigs => s
-          case _ => SpliceStatus.NoSplice
-        }
+            case s: SpliceStatus.SpliceWaitingForSigs => s
+            case _ => SpliceStatus.NoSplice
+          }
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 
@@ -132,6 +133,7 @@ object TestDatabases {
   }
 
   object TestPgDatabases {
+
     import _root_.io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 
     /** single instance */
