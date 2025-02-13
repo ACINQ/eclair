@@ -62,13 +62,18 @@ object TxRemoveOutputTlv {
 sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
-  /** musig2 nonces for musig2 swap-in inputs, ordered by serial id */
-  case class Nonces(nonces: List[IndividualNonce]) extends TxCompleteTlv
+  case class FundingNonces(nonces: List[IndividualNonce]) extends TxCompleteTlv
+  object FundingNonces {
+    val codec: Codec[FundingNonces] = list(publicNonce).xmap(l => FundingNonces(l), _.nonces.toList)
+  }
 
-  val noncesCodec: Codec[Nonces] = list(publicNonce).xmap(l => Nonces(l), _.nonces.toList)
-
+  case class CommitNonces(nonces: List[IndividualNonce]) extends TxCompleteTlv
+  object CommitNonces {
+    val codec: Codec[CommitNonces] = list(publicNonce).xmap(l => CommitNonces(l), _.nonces.toList)
+  }
   val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
-    .typecase(UInt64(4), tlvField(noncesCodec))
+    .typecase(UInt64(4), tlvField(FundingNonces.codec))
+    .typecase(UInt64(6), tlvField(CommitNonces.codec))
   )
 }
 

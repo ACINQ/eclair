@@ -1150,11 +1150,6 @@ object Transactions {
   }
 
   def makeMainPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: ByteVector, toRemoteDelay: CltvExpiryDelta, remoteDelayedPaymentPubkey: PublicKey, feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, MainPenaltyTx] = {
-    val redeemScript = if (commitmentFormat.useTaproot) {
-      Nil
-    } else {
-      toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
-    }
     val pubkeyScript = if (commitmentFormat.useTaproot) {
       val toLocalScriptTree = Scripts.Taproot.toLocalScriptTree(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
       pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree))

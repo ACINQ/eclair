@@ -120,8 +120,8 @@ case class TxRemoveOutput(channelId: ByteVector32,
 
 case class TxComplete(channelId: ByteVector32,
                       tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId {
-  // there should be a musig2 nonce for each input that requires one, ordered by serial id
-  val publicNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.Nonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
+  val fundingNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.FundingNonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
+  val commitNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.CommitNonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
 }
 
 object TxComplete {
@@ -129,7 +129,7 @@ object TxComplete {
 
   def apply(channelId: ByteVector32, tlvStream: TlvStream[TxCompleteTlv]) = new TxComplete(channelId, tlvStream)
 
-  def apply(channelId: ByteVector32, publicNonces: List[IndividualNonce]) = new TxComplete(channelId, TlvStream(TxCompleteTlv.Nonces(publicNonces)))
+  def apply(channelId: ByteVector32, fundingNonces: List[IndividualNonce], commitNonces: List[IndividualNonce]) = new TxComplete(channelId, TlvStream(TxCompleteTlv.FundingNonces(fundingNonces), TxCompleteTlv.CommitNonces(commitNonces)))
 }
 
 case class TxSignatures(channelId: ByteVector32,
@@ -157,18 +157,14 @@ case class TxInitRbf(channelId: ByteVector32,
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object TxInitRbf {
-  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding], nextLocalNonces: List[IndividualNonce]): TxInitRbf = {
+  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): TxInitRbf = {
     val tlvs: Set[TxInitRbfTlv] = Set(
       Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
-      requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
-      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
     ).flatten
     TxInitRbf(channelId, lockTime, feerate, TlvStream(tlvs))
   }
@@ -178,18 +174,14 @@ case class TxAckRbf(channelId: ByteVector32, tlvStream: TlvStream[TxAckRbfTlv] =
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object TxAckRbf {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], nextLocalNonces: List[IndividualNonce]): TxAckRbf = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund]): TxAckRbf = {
     val tlvs: Set[TxAckRbfTlv] = Set(
       Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
-      willFund_opt.map(ChannelTlv.ProvideFundingTlv),
-      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv)
     ).flatten
     TxAckRbf(channelId, TlvStream(tlvs))
   }
@@ -287,9 +279,6 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 // NB: this message is named accept_channel2 in the specification.
@@ -314,9 +303,6 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
@@ -353,18 +339,14 @@ case class SpliceInit(channelId: ByteVector32,
   val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding], nextLocalNonces: List[IndividualNonce]): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
       if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
-      requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
-      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
     ).flatten
     SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
@@ -377,19 +359,15 @@ case class SpliceAck(channelId: ByteVector32,
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
-  val firstRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(0))
-  val secondRemoteNonce: Option[IndividualNonce] = if (nexLocalNonces.isEmpty) None else Some(nexLocalNonces(1))
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi], nextLocalNonces: List[IndividualNonce]): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
       if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
       willFund_opt.map(ChannelTlv.ProvideFundingTlv),
       feeCreditUsed_opt.map(ChannelTlv.FeeCreditUsedTlv),
-      if (nextLocalNonces.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextLocalNonces)) else None
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
