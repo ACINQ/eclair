@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.BitcoinError.ChainHashMismatch
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Script, TxHash, TxId, addressToPublicKeyScript}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
+import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -114,14 +115,14 @@ class PackageSpec extends AnyFunSuite {
     assert(ShortChannelId(Long.MaxValue) < ShortChannelId(Long.MaxValue + 1))
   }
 
-  test("node fees") {
+  test("node fees", Tag("fuzzy")) {
     val rng = new scala.util.Random()
     for (_ <- 1 to 100) {
       val amount = rng.nextLong(1_000_000_000_000L) msat
       val baseFee = rng.nextLong(10_000) msat
       val proportionalFee = rng.nextLong(5_000)
       val amountWithFees = amount + nodeFee(baseFee, proportionalFee, amount)
-      assert(amountAfterFee(baseFee, proportionalFee, amountWithFees) == amount)
+      assert(amountAfterFee(baseFee, proportionalFee, amountWithFees) == amount, s"amount=$amount baseFee=$baseFee proportionalFee=$proportionalFee")
     }
   }
 
