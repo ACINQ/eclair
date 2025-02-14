@@ -34,7 +34,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 10
+  val CURRENT_VERSION = 9
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -114,18 +114,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
     }
 
-    def migration910(statement: Statement): Unit = {
-      statement.executeUpdate("ALTER TABLE received RENAME TO received_old")
-      statement.executeUpdate("CREATE TABLE received (virtual_amount_msat INTEGER NOT NULL, real_amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-      statement.executeUpdate("INSERT INTO received SELECT amount_msat, amount_msat, payment_hash, from_channel_id, timestamp FROM received_old")
-      statement.executeUpdate("DROP TABLE received_old")
-      statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
-    }
-
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE received (virtual_amount_msat INTEGER NOT NULL, real_amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -153,7 +145,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -178,9 +170,6 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         }
         if (v < 9) {
           migration89(statement)
-        }
-        if (v < 10) {
-          migration910(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -221,13 +210,12 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
-        statement.setLong(1, p.virtualAmount.toLong)
-        statement.setLong(2, p.realAmount.toLong)
-        statement.setBytes(3, e.paymentHash.toArray)
-        statement.setBytes(4, p.fromChannelId.toArray)
-        statement.setLong(5, p.timestamp.toLong)
+        statement.setLong(1, p.amount.toLong)
+        statement.setBytes(2, e.paymentHash.toArray)
+        statement.setBytes(3, p.fromChannelId.toArray)
+        statement.setLong(4, p.timestamp.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -386,8 +374,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
           val paymentHash = rs.getByteVector32("payment_hash")
           val part = PaymentReceived.PartialPayment(
-            MilliSatoshi(rs.getLong("virtual_amount_msat")),
-            MilliSatoshi(rs.getLong("real_amount_msat")),
+            MilliSatoshi(rs.getLong("amount_msat")),
             rs.getByteVector32("from_channel_id"),
             TimestampMilli(rs.getLong("timestamp")))
           val received = receivedByHash.get(paymentHash) match {

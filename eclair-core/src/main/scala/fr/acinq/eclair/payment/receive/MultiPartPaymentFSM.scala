@@ -58,7 +58,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       if (totalAmount != part.totalAmount) {
         log.warning("multi-part payment total amount mismatch: previously {}, now {}", totalAmount, part.totalAmount)
         goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
-      } else if (d.paidAmount + part.virtualAmount >= totalAmount) {
+      } else if (d.paidAmount + part.amount >= totalAmount) {
         goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
       } else {
         stay() using d.copy(parts = updatedParts)
@@ -71,7 +71,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     // intermediate nodes will be able to fulfill that htlc anyway. This is a harmless spec violation.
     case Event(part: PaymentPart, _) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
-      log.info("received extraneous payment part with virtualAmount={}, realAmount={}", part.virtualAmount, part.realAmount)
+      log.info("received extraneous payment part with amount={}", part.amount)
       replyTo ! ExtraPaymentReceived(paymentHash, part, None)
       stay()
   }
@@ -130,15 +130,16 @@ object MultiPartPaymentFSM {
   /** An incoming payment that we're currently holding until we decide to fulfill or fail it (depending on whether we receive the complete payment). */
   sealed trait PaymentPart {
     def paymentHash: ByteVector32
-    def virtualAmount: MilliSatoshi
-    def realAmount: MilliSatoshi
+    def amount: MilliSatoshi
     def totalAmount: MilliSatoshi
   }
   /** An incoming HTLC. */
-  case class HtlcPart(totalAmount: MilliSatoshi, virtualAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart {
+  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart {
     override def paymentHash: ByteVector32  = htlc.paymentHash
-    override def realAmount: MilliSatoshi  = htlc.amountMsat
+    override def amount: MilliSatoshi  = htlc.amountMsat
   }
+  /** The fee of a blinded route paid by the receiver (us). */
+  case class HiddenFeePart(paymentHash: ByteVector32, amount: MilliSatoshi, totalAmount: MilliSatoshi) extends PaymentPart
   /** We successfully received all parts of the payment. */
   case class MultiPartPaymentSucceeded(paymentHash: ByteVector32, parts: Queue[PaymentPart])
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
@@ -157,7 +158,7 @@ object MultiPartPaymentFSM {
   // @formatter:off
   sealed trait Data {
     def parts: Queue[PaymentPart]
-    lazy val paidAmount = parts.map(_.virtualAmount).sum
+    lazy val paidAmount = parts.map(_.amount).sum
   }
   case class WaitingForHtlc(parts: Queue[PaymentPart]) extends Data
   case class PaymentSucceeded(parts: Queue[PaymentPart]) extends Data

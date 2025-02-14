@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 13
+  val CURRENT_VERSION = 12
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -114,20 +114,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
       }
 
-      def migration1213(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE audit.received RENAME TO received_old")
-        statement.executeUpdate("CREATE TABLE audit.received (virtual_amount_msat BIGINT NOT NULL, real_amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-        statement.executeUpdate("INSERT INTO audit.received SELECT amount_msat, amount_msat, payment_hash, from_channel_id, timestamp FROM audit.received_old")
-        statement.executeUpdate("DROP TABLE audit.received_old")
-        statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
-      }
-
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
 
           statement.executeUpdate("CREATE TABLE audit.sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.received (virtual_amount_msat BIGINT NOT NULL, real_amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
@@ -157,7 +149,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -182,9 +174,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
           if (v < 12) {
             migration1112(statement)
-          }
-          if (v < 13) {
-            migration1213(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -231,13 +220,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.received VALUES (?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.received VALUES (?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
-          statement.setLong(1, p.virtualAmount.toLong)
-          statement.setLong(2, p.realAmount.toLong)
-          statement.setString(3, e.paymentHash.toHex)
-          statement.setString(4, p.fromChannelId.toHex)
-          statement.setTimestamp(5, p.timestamp.toSqlTimestamp)
+          statement.setLong(1, p.amount.toLong)
+          statement.setString(2, e.paymentHash.toHex)
+          statement.setString(3, p.fromChannelId.toHex)
+          statement.setTimestamp(4, p.timestamp.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -416,8 +404,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
             val part = PaymentReceived.PartialPayment(
-              MilliSatoshi(rs.getLong("virtual_amount_msat")),
-              MilliSatoshi(rs.getLong("real_amount_msat")),
+              MilliSatoshi(rs.getLong("amount_msat")),
               rs.getByteVector32FromHex("from_channel_id"),
               TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
             val received = receivedByHash.get(paymentHash) match {

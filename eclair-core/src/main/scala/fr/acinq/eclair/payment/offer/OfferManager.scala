@@ -267,7 +267,7 @@ object OfferManager {
           case AcceptPayment(additionalTlvs, customTlvs) =>
             val minimalInvoice = MinimalBolt12Invoice(offer, nodeParams.chainHash, metadata.amount, metadata.quantity, Crypto.sha256(metadata.preimage), metadata.payerKey, metadata.createdAt, additionalTlvs, customTlvs)
             val incomingPayment = IncomingBlindedPayment(minimalInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
-            replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment, metadata.hiddenFees)
+            replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment)
             Behaviors.stopped
           case RejectPayment(reason) =>
             replyTo ! MultiPartHandler.GetIncomingPaymentActor.RejectPayment(reason)

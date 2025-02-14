@@ -36,13 +36,13 @@ trait IncomingPaymentsDb {
    * Mark an incoming payment as received (paid). The received amount may exceed the invoice amount.
    * If there was no matching invoice in the DB, this will return false.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
   /**
    * Add a new incoming offer payment as received.
    * If the invoice is already paid, adds `amount` to the amount paid.
    */
-  def receiveIncomingOfferPayment(pr: MinimalBolt12Invoice, preimage: ByteVector32, virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
+  def receiveIncomingOfferPayment(pr: MinimalBolt12Invoice, preimage: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now(), paymentType: String = PaymentType.Blinded): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
@@ -150,11 +150,10 @@ object IncomingPaymentStatus {
   /**
    * Payment has been successfully received.
    *
-   * @param virtualAmount amount of the payment received, in milli-satoshis (may exceed the invoice amount).
-   * @param realAmount    amount of the payment received, in milli-satoshis (may be less or more than the invoice amount).
-   * @param receivedAt    absolute time in milli-seconds since UNIX epoch when the payment was received.
+   * @param amount     amount of the payment received, in milli-satoshis (may exceed the invoice amount).
+   * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
    */
-  case class Received(virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
+  case class Received(amount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
 
 }
 

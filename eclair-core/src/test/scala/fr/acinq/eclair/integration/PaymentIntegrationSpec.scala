@@ -373,7 +373,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
   }
 
@@ -430,7 +430,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid == 0.msat), paymentParts)
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
   }
 
@@ -482,7 +482,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid == amount * 0.002) // 0.2%
 
     awaitCond(nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("F").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
 
     awaitCond({
@@ -515,7 +515,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.recipientAmount == amount, paymentSent)
 
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
@@ -553,7 +553,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.recipientAmount == amount, paymentSent)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
+    val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(receivedAmount == amount)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
 
@@ -650,7 +650,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid > 0.msat, paymentSent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 
@@ -683,7 +683,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid == 0.msat, paymentSent)
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount == amount)
   }
 
@@ -717,7 +717,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
 
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 
@@ -754,7 +754,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 
@@ -786,7 +786,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid >= 0.msat, paymentSent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 
@@ -836,7 +836,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(invoice.blindedPaths.forall(_.route.firstNodeId.isInstanceOf[EncodedNodeId.ShortChannelIdDir]))
 
     awaitCond(nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
-    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
+    val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("C").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
   }
 

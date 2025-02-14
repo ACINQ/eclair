@@ -120,14 +120,13 @@ object PaymentRelayed {
 
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
-  val virtualAmount: MilliSatoshi = parts.map(_.virtualAmount).sum
-  val realAmount: MilliSatoshi = parts.map(_.realAmount).sum
+  val amount: MilliSatoshi = parts.map(_.amount).sum
   val timestamp: TimestampMilli = parts.map(_.timestamp).max // we use max here because we fulfill the payment only once we received all the parts
 }
 
 object PaymentReceived {
 
-  case class PartialPayment(virtualAmount: MilliSatoshi, realAmount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
+  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
 
 }
 

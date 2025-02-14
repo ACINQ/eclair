@@ -62,13 +62,21 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   private var pendingPayments: Map[ByteVector32, (IncomingPayment, ActorRef)] = Map.empty
 
   private def addHtlcPart(ctx: ActorContext, add: UpdateAddHtlc, payload: FinalPayload, payment: IncomingPayment): Unit = {
-    pendingPayments.get(add.paymentHash) match {
+    val handler = pendingPayments.get(add.paymentHash) match {
       case Some((_, handler)) =>
-        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, payload.amount, add)
+        handler
       case None =>
         val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, payload.totalAmount, ctx.self))
-        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, payload.amount, add)
         pendingPayments = pendingPayments + (add.paymentHash -> (payment, handler))
+        handler
+    }
+    handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
+    payload match {
+      case payload: FinalPayload.Blinded if payload.amount - add.amountMsat > 0.msat =>
+        val hiddenFee = payload.amount - add.amountMsat
+        handler ! MultiPartPaymentFSM.HiddenFeePart(add.paymentHash, hiddenFee, payload.totalAmount)
+      case _: FinalPayload.Blinded => ()
+      case _: FinalPayload.Standard => ()
     }
   }
 
@@ -133,7 +141,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
       }
 
-    case ProcessBlindedPacket(add, payload, payment, hiddenRelayFees) if doHandle(add.paymentHash) =>
+    case ProcessBlindedPacket(add, payload, payment) if doHandle(add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(add.paymentHash))) {
         validateBlindedPayment(nodeParams, add, payload, payment) match {
           case Some(cmdFail) =>
@@ -153,7 +161,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
     case MultiPartPaymentFSM.MultiPartPaymentFailed(paymentHash, failure, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, failure.getClass.getSimpleName).increment()
-        log.warning("payment with paidAmount={} failed ({})", parts.map(_.virtualAmount).sum, failure)
+        log.warning("payment with paidAmount={} failed ({})", parts.map(_.amount).sum, failure)
         pendingPayments.get(paymentHash).foreach { case (_, handler: ActorRef) => handler ! PoisonPill }
         parts.collect {
           case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(failure), commit = true))
@@ -163,7 +171,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 
     case s@MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.info("received complete payment for amount={}", parts.map(_.virtualAmount).sum)
+        log.info("received complete payment for amount={}", parts.map(_.amount).sum)
         pendingPayments.get(paymentHash).foreach {
           case (payment: IncomingPayment, handler: ActorRef) =>
             handler ! PoisonPill
@@ -177,38 +185,41 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         failure match {
           case Some(failure) => p match {
             case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(failure), commit = true))
+            case _: MultiPartPaymentFSM.HiddenFeePart => ()
           }
           case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
-              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.virtualAmount, p.realAmount, p.htlc.channelId) :: Nil)
-              if (db.receiveIncomingPayment(paymentHash, p.virtualAmount, p.realAmount, received.timestamp)) {
+              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
+              if (db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)) {
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
                 ctx.system.eventStream.publish(received)
               } else {
-                val cmdFail = CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(received.virtualAmount, nodeParams.currentBlockHeight)), commit = true)
+                val cmdFail = CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
               }
             })
+            case _: MultiPartPaymentFSM.HiddenFeePart => ()
           }
         }
       }
 
     case DoFulfill(payment, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts)) if doHandle(paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
-        log.debug("fulfilling payment for virtualAmount={}, realAmount={}", parts.map(_.virtualAmount).sum, parts.map(_.realAmount).sum)
-        val received = PaymentReceived(paymentHash, parts.map {
-          case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.virtualAmount, p.realAmount, p.htlc.channelId)
+        log.debug("fulfilling payment for amount={}", parts.map(_.amount).sum)
+        val received = PaymentReceived(paymentHash, parts.flatMap {
+          case p: MultiPartPaymentFSM.HtlcPart => Some(PaymentReceived.PartialPayment(p.amount, p.htlc.channelId))
+          case _: MultiPartPaymentFSM.HiddenFeePart => None
         })
         val recordedInDb = payment match {
           // Incoming offer payments are not stored in the database until they have been paid.
           case IncomingBlindedPayment(invoice, preimage, paymentType, _, _) =>
-            db.receiveIncomingOfferPayment(invoice, preimage, received.virtualAmount, received.realAmount, received.timestamp, paymentType)
+            db.receiveIncomingOfferPayment(invoice, preimage, received.amount, received.timestamp, paymentType)
             true
           // Incoming standard payments are already stored and need to be marked as received.
           case _: IncomingStandardPayment =>
-            db.receiveIncomingPayment(paymentHash, received.virtualAmount, received.realAmount, received.timestamp)
+            db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         }
         if (recordedInDb) {
           parts.collect {
@@ -220,7 +231,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           parts.collect {
             case p: MultiPartPaymentFSM.HtlcPart =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
-              val cmdFail = CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(received.virtualAmount, nodeParams.currentBlockHeight)), commit = true)
+              val cmdFail = CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
           }
         }
@@ -237,7 +248,7 @@ object MultiPartHandler {
 
   // @formatter:off
   case class ProcessPacket(add: UpdateAddHtlc, payload: FinalPayload.Standard, payment_opt: Option[IncomingStandardPayment])
-  case class ProcessBlindedPacket(add: UpdateAddHtlc, payload: FinalPayload.Blinded, payment: IncomingBlindedPayment, hiddenRelayFees: RelayFees)
+  case class ProcessBlindedPacket(add: UpdateAddHtlc, payload: FinalPayload.Blinded, payment: IncomingBlindedPayment)
   case class RejectPacket(add: UpdateAddHtlc, failure: FailureMessage)
   case class DoFulfill(payment: IncomingPayment, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
 
@@ -364,7 +375,7 @@ object MultiPartHandler {
     // @formatter:off
     sealed trait Command
     case class GetIncomingPayment(replyTo: ActorRef) extends Command
-    case class ProcessPayment(payment: IncomingBlindedPayment, hiddenRelayFees: RelayFees) extends Command
+    case class ProcessPayment(payment: IncomingBlindedPayment) extends Command
     case class RejectPayment(reason: String) extends Command
     // @formatter:on
 
@@ -394,8 +405,8 @@ object MultiPartHandler {
 
     private def waitForPayment(context: typed.scaladsl.ActorContext[Command], nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
       Behaviors.receiveMessagePartial {
-        case ProcessPayment(payment, hiddenRelayFees) =>
-          replyTo ! ProcessBlindedPacket(add, payload, payment, hiddenRelayFees)
+        case ProcessPayment(payment) =>
+          replyTo ! ProcessBlindedPacket(add, payload, payment)
           Behaviors.stopped
         case RejectPayment(reason) =>
           context.log.info("rejecting blinded htlc #{} from channel {}: {}", add.id, add.channelId, reason)

@@ -908,7 +908,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val defaultPayment = IncomingStandardPayment(Bolt11Invoice.fromString(invoice).get, ByteVector32.One, PaymentType.Standard, 42 unixms, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val received = randomBytes32()
-    eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, 42 msat, TimestampMilli(1633439543777L)))))
+    eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, TimestampMilli(1633439543777L)))))
     val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> received.toHex).toEntity) ~>
@@ -1198,8 +1198,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(ptrel)
         wsClient.expectMessage(expectedSerializedPtrel)
 
-        val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, 21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))))
-        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"virtualAmount":21,"realAmount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
+        val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))))
+        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
         assert(serialization.write(precv) == expectedSerializedPrecv)
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)

@@ -125,11 +125,10 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(handlePayment.offerId == offer.offerId)
     assert(handlePayment.pluginData_opt.contains(hex"deadbeef"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
-    val ProcessPayment(incomingPayment, hiddenRelayFees) = paymentHandler.expectMessageType[ProcessPayment]
+    val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
     assert(incomingPayment.invoice.nodeId == nodeParams.nodeId)
     assert(incomingPayment.invoice.paymentHash == invoice.paymentHash)
-    assert(hiddenRelayFees == RelayFees.zero)
   }
 
   test("pay offer without path_id") { f =>
@@ -316,11 +315,10 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handlePayment = handler.expectMessageType[HandlePayment]
     assert(handlePayment.offerId == offer.offerId)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
-    val ProcessPayment(incomingPayment, hiddenRelayFees) = paymentHandler.expectMessageType[ProcessPayment]
+    val ProcessPayment(incomingPayment) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
     assert(incomingPayment.invoice.nodeId == nodeParams.nodeId)
     assert(incomingPayment.invoice.paymentHash == invoice.paymentHash)
-    assert(hiddenRelayFees == RelayFees(1000 msat, 200))
   }
 
   test("invalid payment (incorrect amount with hidden fee)") { f =>
