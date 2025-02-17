@@ -139,7 +139,7 @@ object MultiPartPaymentFSM {
     override def amount: MilliSatoshi  = htlc.amountMsat
   }
   /** The fee of a blinded route paid by the receiver (us). */
-  case class HiddenFeePart(paymentHash: ByteVector32, amount: MilliSatoshi, totalAmount: MilliSatoshi) extends PaymentPart
+  case class RecipientBlindedPathFeePart(paymentHash: ByteVector32, amount: MilliSatoshi, totalAmount: MilliSatoshi) extends PaymentPart
   /** We successfully received all parts of the payment. */
   case class MultiPartPaymentSucceeded(paymentHash: ByteVector32, parts: Queue[PaymentPart])
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */

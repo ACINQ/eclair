@@ -462,7 +462,7 @@ object Router {
       for {
         scid <- aliases.remoteAlias_opt
         update <- remoteUpdate_opt
-      } yield (Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta))
+      } yield Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta)
     }
   }
   // @formatter:on
@@ -512,11 +512,6 @@ object Router {
       override val htlcMaximum_opt = extraHop.htlcMaximum_opt
     }
 
-    case class Dummy(relayFees: Relayer.RelayFees, cltvExpiryDelta: CltvExpiryDelta) extends HopRelayParams {
-      override val htlcMinimum: MilliSatoshi = 1 msat
-      override val htlcMaximum_opt: Option[MilliSatoshi] = None
-    }
-
     def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
@@ -539,8 +534,11 @@ object Router {
   }
 
   object ChannelHop {
-    def dummy(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelHop =
-      ChannelHop(ShortChannelId.toSelf, nodeId, nodeId, HopRelayParams.Dummy(Relayer.RelayFees(feeBase, feeProportionalMillionths), cltvExpiryDelta))
+    /** Create a dummy channel hop, used for example when padding blinded routes to a fixed length. */
+    def dummy(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelHop = {
+      val dummyEdge = ExtraEdge(nodeId, nodeId, ShortChannelId.toSelf, feeBase, feeProportionalMillionths, cltvExpiryDelta, 1 msat, None)
+      ChannelHop(ShortChannelId.toSelf, nodeId, nodeId, HopRelayParams.FromHint(dummyEdge))
+    }
   }
 
   sealed trait FinalHop extends Hop
@@ -678,11 +676,13 @@ object Router {
     }
   }
 
+  // @formatter:off
   sealed trait PaymentRouteResponse
   case class RouteResponse(routes: Seq[Route]) extends PaymentRouteResponse {
     require(routes.nonEmpty, "routes cannot be empty")
   }
   case class PaymentRouteNotFound(error: Throwable) extends PaymentRouteResponse
+  // @formatter:on
 
   // @formatter:off
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */

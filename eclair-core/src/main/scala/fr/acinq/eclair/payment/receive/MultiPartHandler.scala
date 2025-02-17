@@ -18,13 +18,11 @@ package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
 import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import akka.util.Timeout
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.Logs.LogCategory
@@ -35,19 +33,13 @@ import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.OfferManager
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.BlindedRouteCreation.{aggregatePaymentInfo, createBlindedRouteFromHops}
+import fr.acinq.eclair.router.BlindedRouteCreation.createBlindedRouteFromHops
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, PaymentRouteResponse}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampMilli, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, FeatureSupport, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, randomBytes32}
 import scodec.bits.{ByteVector, HexStringSyntax}
-
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{ExecutionContextExecutor, Future}
-import scala.util.{Failure, Success, Try}
 
 /**
  * Simple payment handler that generates invoices and fulfills incoming htlcs.
@@ -62,21 +54,13 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   private var pendingPayments: Map[ByteVector32, (IncomingPayment, ActorRef)] = Map.empty
 
   private def addHtlcPart(ctx: ActorContext, add: UpdateAddHtlc, payload: FinalPayload, payment: IncomingPayment): Unit = {
-    val handler = pendingPayments.get(add.paymentHash) match {
+    pendingPayments.get(add.paymentHash) match {
       case Some((_, handler)) =>
-        handler
+        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
       case None =>
         val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, payload.totalAmount, ctx.self))
+        handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
         pendingPayments = pendingPayments + (add.paymentHash -> (payment, handler))
-        handler
-    }
-    handler ! MultiPartPaymentFSM.HtlcPart(payload.totalAmount, add)
-    payload match {
-      case payload: FinalPayload.Blinded if payload.amount - add.amountMsat > 0.msat =>
-        val hiddenFee = payload.amount - add.amountMsat
-        handler ! MultiPartPaymentFSM.HiddenFeePart(add.paymentHash, hiddenFee, payload.totalAmount)
-      case _: FinalPayload.Blinded => ()
-      case _: FinalPayload.Standard => ()
     }
   }
 
@@ -141,15 +125,20 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
       }
 
-    case ProcessBlindedPacket(add, payload, payment) if doHandle(add.paymentHash) =>
+    case ProcessBlindedPacket(add, payload, payment, recipientPathFees) if doHandle(add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(add.paymentHash))) {
-        validateBlindedPayment(nodeParams, add, payload, payment) match {
+        validateBlindedPayment(nodeParams, add, payload, payment, recipientPathFees) match {
           case Some(cmdFail) =>
             Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
           case None =>
-            log.debug("received payment for virtualAmount={} realAmount={} totalAmount={}", payload.amount, add.amountMsat, payload.totalAmount)
+            log.debug("received payment for amount={} recipientPathFees={} totalAmount={}", add.amountMsat, recipientPathFees, payload.totalAmount)
             addHtlcPart(ctx, add, payload, payment)
+            if (recipientPathFees > 0.msat) {
+              // We've opted into deducing the blinded paths fees from the amount we receive for this payment.
+              // We add an artificial payment part for those fees, otherwise we will never reach the total amount.
+              pendingPayments.get(add.paymentHash).foreach(_._2 ! MultiPartPaymentFSM.RecipientBlindedPathFeePart(add.paymentHash, recipientPathFees, payload.totalAmount))
+            }
         }
       }
 
@@ -185,7 +174,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         failure match {
           case Some(failure) => p match {
             case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, FailureReason.LocalFailure(failure), commit = true))
-            case _: MultiPartPaymentFSM.HiddenFeePart => ()
+            case _: MultiPartPaymentFSM.RecipientBlindedPathFeePart => ()
           }
           case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
@@ -200,7 +189,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
               }
             })
-            case _: MultiPartPaymentFSM.HiddenFeePart => ()
+            case _: MultiPartPaymentFSM.RecipientBlindedPathFeePart => ()
           }
         }
       }
@@ -210,7 +199,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         log.debug("fulfilling payment for amount={}", parts.map(_.amount).sum)
         val received = PaymentReceived(paymentHash, parts.flatMap {
           case p: MultiPartPaymentFSM.HtlcPart => Some(PaymentReceived.PartialPayment(p.amount, p.htlc.channelId))
-          case _: MultiPartPaymentFSM.HiddenFeePart => None
+          case _: MultiPartPaymentFSM.RecipientBlindedPathFeePart => None
         })
         val recordedInDb = payment match {
           // Incoming offer payments are not stored in the database until they have been paid.
@@ -247,9 +236,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 object MultiPartHandler {
 
   // @formatter:off
-  case class ProcessPacket(add: UpdateAddHtlc, payload: FinalPayload.Standard, payment_opt: Option[IncomingStandardPayment])
-  case class ProcessBlindedPacket(add: UpdateAddHtlc, payload: FinalPayload.Blinded, payment: IncomingBlindedPayment)
-  case class RejectPacket(add: UpdateAddHtlc, failure: FailureMessage)
+  private case class ProcessPacket(add: UpdateAddHtlc, payload: FinalPayload.Standard, payment_opt: Option[IncomingStandardPayment])
+  private case class ProcessBlindedPacket(add: UpdateAddHtlc, payload: FinalPayload.Blinded, payment: IncomingBlindedPayment, recipientPathFees: MilliSatoshi)
+  private case class RejectPacket(add: UpdateAddHtlc, failure: FailureMessage)
   case class DoFulfill(payment: IncomingPayment, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
 
   case object GetPendingPayments
@@ -295,7 +284,7 @@ object MultiPartHandler {
    * @param routes          routes that must be blinded and provided in the invoice.
    * @param paymentPreimage payment preimage.
    */
-  case class ReceiveOfferPayment(replyTo: typed.ActorRef[CreateInvoiceActor.Bolt12InvoiceResponse],
+  case class ReceiveOfferPayment(replyTo: typed.ActorRef[Bolt12Invoice],
                                  nodeKey: PrivateKey,
                                  invoiceRequest: InvoiceRequest,
                                  routes: Seq[ReceivingRoute],
@@ -313,12 +302,6 @@ object MultiPartHandler {
     sealed trait Command
     case class CreateBolt11Invoice(receivePayment: ReceiveStandardPayment) extends Command
     case class CreateBolt12Invoice(receivePayment: ReceiveOfferPayment) extends Command
-    private case class WrappedInvoiceResult(invoice: Try[Bolt12Invoice]) extends Command
-
-    sealed trait Bolt12InvoiceResponse
-    case class InvoiceCreated(invoice: Bolt12Invoice) extends Bolt12InvoiceResponse
-    sealed trait InvoiceCreationFailed extends Bolt12InvoiceResponse { def message: String }
-    case class BlindedRouteCreationFailed(message: String) extends InvoiceCreationFailed
     // @formatter:on
 
     def apply(nodeParams: NodeParams): Behavior[Command] = {
@@ -363,7 +346,7 @@ object MultiPartHandler {
             val invoiceFeatures = nodeParams.features.bolt12Features()
             val invoice = Bolt12Invoice(r.invoiceRequest, r.paymentPreimage, r.nodeKey, nodeParams.invoiceExpiry, invoiceFeatures, paths, r.additionalTlvs, r.customTlvs)
             context.log.debug("generated invoice={} for offer={}", invoice.toString, r.invoiceRequest.offer.toString)
-            r.replyTo ! InvoiceCreated(invoice)
+            r.replyTo ! invoice
             Behaviors.stopped
         }
       }
@@ -375,7 +358,7 @@ object MultiPartHandler {
     // @formatter:off
     sealed trait Command
     case class GetIncomingPayment(replyTo: ActorRef) extends Command
-    case class ProcessPayment(payment: IncomingBlindedPayment) extends Command
+    case class ProcessPayment(payment: IncomingBlindedPayment, recipientPathFees: MilliSatoshi) extends Command
     case class RejectPayment(reason: String) extends Command
     // @formatter:on
 
@@ -395,7 +378,7 @@ object MultiPartHandler {
                   }
                   Behaviors.stopped
                 case payload: FinalPayload.Blinded =>
-                  offerManager ! OfferManager.ReceivePayment(context.self, packet.add.paymentHash, payload, packet.add.amountMsat)
+                  offerManager ! OfferManager.ReceivePayment(context.self, packet.add.paymentHash, payload)
                   waitForPayment(context, nodeParams, replyTo, packet.add, payload)
               }
           }
@@ -405,8 +388,8 @@ object MultiPartHandler {
 
     private def waitForPayment(context: typed.scaladsl.ActorContext[Command], nodeParams: NodeParams, replyTo: ActorRef, add: UpdateAddHtlc, payload: FinalPayload.Blinded): Behavior[Command] = {
       Behaviors.receiveMessagePartial {
-        case ProcessPayment(payment) =>
-          replyTo ! ProcessBlindedPacket(add, payload, payment)
+        case ProcessPayment(payment, recipientPathFees) =>
+          replyTo ! ProcessBlindedPacket(add, payload, payment, recipientPathFees)
           Behaviors.stopped
         case RejectPayment(reason) =>
           context.log.info("rejecting blinded htlc #{} from channel {}: {}", add.id, add.channelId, reason)
@@ -490,11 +473,14 @@ object MultiPartHandler {
     if (commonOk && secretOk) None else Some(cmdFail)
   }
 
-  private def validateBlindedPayment(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
+  private def validateBlindedPayment(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload.Blinded, record: IncomingBlindedPayment, recipientPathFees: MilliSatoshi)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val commonOk = validateCommon(nodeParams, add, payload, record)
-    if (commonOk) None else Some(cmdFail)
+    // The payer isn't aware of the blinded path fees if we decided to hide them. The HTLC amount will thus be smaller
+    // than the onion amount, but should match when re-adding the blinded path fees.
+    val pathFeesOk = add.amountMsat + recipientPathFees >= payload.amount
+    if (commonOk && pathFeesOk) None else Some(cmdFail)
   }
 
 }
