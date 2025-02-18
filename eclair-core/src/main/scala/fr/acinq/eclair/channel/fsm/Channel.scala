@@ -2238,7 +2238,17 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
         case _ => Set.empty
       }
-      val lastFundingLockedTlv = d.commitments.lastFundingLockedTlv
+      val lastFundingLockedTlv: Set[ChannelReestablishTlv] =
+      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && d.commitments.params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+        (d.commitments.lastLocalLocked_opt, d.commitments.lastRemoteLocked_opt) match {
+          case (Some(myCurrent), Some(yourLast)) => Set(ChannelReestablishTlv.LastFundingLockedTlv(yourLast.fundingTxId, myCurrent.fundingTxId))
+          // When no remote funding tx is locked, there is a special case for the initial funding tx which only requires a
+          // local lock because channel_ready doesn't explicitly reference a funding tx.
+          case (Some(myCurrent), None) if myCurrent.fundingTxIndex == 0 => Set(ChannelReestablishTlv.LastFundingLockedTlv(myCurrent.fundingTxId, myCurrent.fundingTxId))
+          case _ => Set.empty
+        }
+      } else Set.empty
+
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommitIndex + 1,
@@ -2385,8 +2395,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
           // Prune previous funding transactions and RBF attempts if we already sent splice_locked for the last funding
           // transaction confirmed by our counterparty; we either missed their splice_locked or it confirmed while disconnected.
-          val commitments1: Commitments = channelReestablish.lastFundingLocked_opt.flatMap(lastFundingLocked =>
-              d.commitments.updateRemoteFundingStatus(lastFundingLocked.myCurrent, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
+          val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt.flatMap(myCurrentFundingLocked =>
+              d.commitments.updateRemoteFundingStatus(myCurrentFundingLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
             .getOrElse(d.commitments)
 
           // Retransmit splice_locked (must come *after* potentially retransmitting tx_signatures):
@@ -2398,10 +2408,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices
           // We must send our most recent splice_locked until our counterparty receives it and, for a public
           // channel, also sends their announcement signatures.
-          val yourLast_opt = channelReestablish.lastFundingLocked_opt.map(_.yourLast)
           val spliceLocked = commitments1.active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked])
             .filter(c => c.fundingTxIndex > 0) // only consider splice txs
-            .collect { case c if !yourLast_opt.contains(c.fundingTxId) ||
+            .collect { case c if !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId) ||
               (commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))) =>
               log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
               SpliceLocked(d.channelId, c.fundingTxId)

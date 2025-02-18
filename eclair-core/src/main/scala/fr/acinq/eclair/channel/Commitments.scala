@@ -1270,8 +1270,6 @@ case class Commitments(params: ChannelParams,
     // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
     // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
     // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
-    val lastLocalLocked_opt = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked])
-    val lastRemoteLocked_opt = active.find(_.remoteFundingStatus == RemoteFundingStatus.Locked)
     val lastLocked_opt = (lastLocalLocked_opt, lastRemoteLocked_opt) match {
       // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
       // If both have the same fundingTxIndex, they must actually be the same commitment, because:
@@ -1348,22 +1346,8 @@ case class Commitments(params: ChannelParams,
     all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
 
-  def lastFundingLockedTlv: Set[ChannelReestablishTlv] =
-    if (params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
-      // When no remote funding tx is locked, there is a special case for the initial funding tx which only
-      // requires a local lock because channel_ready doesn't explicitly reference a funding tx.
-      val yourLast_opt = active.filter(c => c.fundingTxIndex == 0 || c.remoteFundingStatus == RemoteFundingStatus.Locked)
-        .sortBy(_.fundingTxIndex)
-        .lastOption
-        .map(_.fundingTxId)
-      val myCurrent_opt = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).map(_.fundingTxId)
-      (yourLast_opt, myCurrent_opt) match {
-        case (Some(yourLast), Some(myCurrent)) => Set(ChannelReestablishTlv.LastFundingLockedTlv(yourLast, myCurrent))
-        case _ => Set.empty
-      }
-    } else {
-      Set.empty
-    }
+  val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
+  val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
 }
 
 object Commitments {
