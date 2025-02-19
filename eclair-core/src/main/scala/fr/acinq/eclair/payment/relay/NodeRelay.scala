@@ -301,7 +301,7 @@ class NodeRelay private(nodeParams: NodeParams,
           }
           walletNodeId_opt match {
             case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => attemptWakeUp(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
-            case _ => relay(upstream, recipient, None, None, nextPayload, nextPacket_opt)
+            case _ => relay(upstream, recipient, walletNodeId_opt, None, nextPayload, nextPacket_opt)
           }
       }
     }
