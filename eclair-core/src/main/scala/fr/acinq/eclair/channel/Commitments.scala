@@ -1278,13 +1278,13 @@ case class Commitments(params: ChannelParams,
       //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
       //    would become invalid if another of the RBF attempts end up being confirmed)
       case (Some(lastLocalLocked), Some(lastRemoteLocked)) => Some(Seq(lastLocalLocked, lastRemoteLocked).minBy(_.fundingTxIndex))
-      // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
+      // Special case for the initial funding tx, we only require a local lock because our peer may have never sent channel_ready.
       case (Some(lastLocalLocked), None) if lastLocalLocked.fundingTxIndex == 0 => Some(lastLocalLocked)
       case _ => None
     }
     lastLocked_opt match {
       case Some(lastLocked) =>
-        // all commitments older than this one are inactive
+        // All commitments older than this one, and RBF alternatives, become inactive.
         val inactive1 = active.filter(c => c.fundingTxId != lastLocked.fundingTxId && c.fundingTxIndex <= lastLocked.fundingTxIndex)
         inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(

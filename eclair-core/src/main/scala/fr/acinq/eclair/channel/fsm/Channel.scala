@@ -775,10 +775,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
-    case Event(_: ChannelReady, _: DATA_NORMAL) =>
-      // This happens on reconnection, because channel_ready is sent again if the channel hasn't been used yet,
-      // otherwise we cannot be sure that it was correctly received before disconnecting.
-      stay()
+    case Event(_: ChannelReady, d: DATA_NORMAL) =>
+      // After a reconnection, if the channel hasn't been used yet, our peer cannot be sure we received their channel_ready
+      // so they will resend it. Their remote funding status must also be set to Locked if it wasn't already.
+      // NB: Their remote funding status will be stored when the commitment is next updated, or channel_ready will
+      // be sent again if a reconnection occurs first.
+      stay() using d.copy(commitments = d.commitments.copy(active = d.commitments.active.collect {
+        case c if c.fundingTxIndex == 0 => c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
+      }))
 
     // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
@@ -2238,16 +2242,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
         case _ => Set.empty
       }
-      val lastFundingLockedTlv: Set[ChannelReestablishTlv] =
-      if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && d.commitments.params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
-        (d.commitments.lastLocalLocked_opt, d.commitments.lastRemoteLocked_opt) match {
-          case (Some(myCurrent), Some(yourLast)) => Set(ChannelReestablishTlv.LastFundingLockedTlv(yourLast.fundingTxId, myCurrent.fundingTxId))
-          // When no remote funding tx is locked, there is a special case for the initial funding tx which only requires a
-          // local lock because channel_ready doesn't explicitly reference a funding tx.
-          case (Some(myCurrent), None) if myCurrent.fundingTxIndex == 0 => Set(ChannelReestablishTlv.LastFundingLockedTlv(myCurrent.fundingTxId, myCurrent.fundingTxId))
-          case _ => Set.empty
-        }
-      } else Set.empty
+      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] =
+        if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && d.commitments.params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+          d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
+            d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
+        } else Set.empty
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
@@ -2255,7 +2254,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-        tlvStream = TlvStream(rbfTlv ++ lastFundingLockedTlv)
+        tlvStream = TlvStream(rbfTlv ++ lastFundingLockedTlvs)
       )
       // we update local/remote connection-local global/local features, we don't persist it right now
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
@@ -2400,16 +2399,16 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             .getOrElse(d.commitments)
 
           // Retransmit splice_locked (must come *after* potentially retransmitting tx_signatures):
-          // 1) If the last_funding_locked tlv is not set;
-          // 2) or the last splice_locked they received is different from our last locked commitment;
-          // 3) or we have not received their announcement_signatures for our latest locked commitment.
-          // NB: there is a key difference between channel_ready and splice_confirmed:
+          // 1) If they did not receive our last splice_locked;
+          // 2) or the last splice_locked they received is different from our what we sent;
+          // 3) or (public channels only) we have not received their announcement_signatures for our latest locked commitment.
+          // NB: there is a key difference between channel_ready and splice_locked:
           // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
-          // - splice_confirmed: the commitment index can be updated as long as it is compatible with all splices
+          // - splice_locked: the commitment index can be updated as long as it is compatible with all splices
           // We must send our most recent splice_locked until our counterparty receives it and, for a public
           // channel, also sends their announcement signatures.
-          val spliceLocked = commitments1.active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked])
-            .filter(c => c.fundingTxIndex > 0) // only consider splice txs
+          val spliceLocked = commitments1.lastLocalLocked_opt
+            .filter(_.fundingTxIndex > 0) // only consider splice txs
             .collect { case c if !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId) ||
               (commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))) =>
               log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)

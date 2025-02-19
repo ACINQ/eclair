@@ -72,17 +72,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
   val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
 
-  private def lastFundingLockedTlv(commitments: Commitments): Set[ChannelReestablishTlv] = {
-    val yourLast_opt = commitments.lastRemoteLocked_opt
-    val myCurrent_opt = commitments.lastLocalLocked_opt
-    (myCurrent_opt, yourLast_opt) match {
-      case (Some(myCurrent), Some(yourLast)) => Set(ChannelReestablishTlv.LastFundingLockedTlv(yourLast.fundingTxId, myCurrent.fundingTxId))
-      // When no remote funding tx is locked, there is a special case for the initial funding tx which only requires a
-      // local lock because channel_ready doesn't explicitly reference a funding tx.
-      case (Some(myCurrent), None) if myCurrent.fundingTxIndex == 0 => Set(ChannelReestablishTlv.LastFundingLockedTlv(myCurrent.fundingTxId, myCurrent.fundingTxId))
-      case _ => Set.empty
-    }
-  }
+  private def lastFundingLockedTlvs(commitments: Commitments): Set[ChannelReestablishTlv] =
+    commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
+      commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
 
   test("reconnect after creating channel", Tag(IgnoreChannelUpdates)) { f =>
     import f._
@@ -133,8 +125,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
@@ -192,8 +184,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     disconnect(alice, bob)
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
@@ -240,8 +232,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlv(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -272,8 +264,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
       val fundingTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
-      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint,TlvStream(ChannelReestablishTlv.LastFundingLockedTlv(fundingTxId, fundingTxId))))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint,TlvStream(ChannelReestablishTlv.LastFundingLockedTlv(fundingTxId, fundingTxId))))
+      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
