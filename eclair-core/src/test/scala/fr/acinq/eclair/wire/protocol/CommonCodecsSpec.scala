@@ -129,6 +129,7 @@ class CommonCodecsSpec extends AnyFunSuite {
 
   test("decode invalid varintoverflow") {
     val testCases = Seq(
+      hex"",
       hex"ff 80 00 00 00 00 00 00 00",
       hex"ff ff ff ff ff ff ff ff ff"
     ).map(_.toBitVector)
@@ -287,6 +288,8 @@ class CommonCodecsSpec extends AnyFunSuite {
     assert(wire.length == 33 * 8)
     val value1 = CommonCodecs.publicKey.decode(wire).require.value
     assert(value1 == value)
+    val invalidKey = hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370d0c863e8f0ce56"
+    assert(CommonCodecs.publicKey.decode(invalidKey.bits).isFailure)
   }
 
   test("encode/decode with zeropaddedstring codec") {

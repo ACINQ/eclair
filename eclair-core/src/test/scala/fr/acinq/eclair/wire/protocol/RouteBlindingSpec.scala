@@ -96,6 +96,7 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
       hex"02080000000000000231 0a0a00000000000003e8002a 0820025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce14 0c08000b35702d0fa9d2", // invalid next path key length
       hex"0a0a00000000000003e8002a 02080000000000000231 0103000000 0c08000b35702d0fa9d2", // invalid tlv stream ordering
       hex"02080000000000000231 0a0a00000000000003e8002a 0c08000b35702d0fa9d2 10080000000000000231", // unknown even tlv field
+      hex"042103864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370d0c863e8f0ce56", // invalid public key in encoded_node_id
     )
 
     for (testCase <- testCases) {

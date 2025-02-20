@@ -159,7 +159,7 @@ object CommonCodecs {
 
   val publicKey: Codec[PublicKey] = Codec[PublicKey](
     (pub: PublicKey) => bytes(33).encode(pub.value),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
+    (wire: BitVector) => bytes(33).decode(wire).flatMap(decoded => Attempt.fromTry(Try(DecodeResult(PublicKey(decoded.value), decoded.remainder))))
   )
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
@@ -172,7 +172,7 @@ object CommonCodecs {
    * When encoding, prepend a valid mac to the output of the given codec.
    * When decoding, verify that a valid mac is prepended.
    */
-  def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
+  def prependmac[A](codec: Codec[A], mac: Mac32): Codec[A] = Codec[A](
     (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
     (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
       case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)

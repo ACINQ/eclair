@@ -23,8 +23,10 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.Codec
 import scodec.codecs._
+import scodec.{Attempt, Codec}
+
+import scala.util.Try
 
 object OfferCodecs {
   private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
@@ -42,7 +44,7 @@ object OfferCodecs {
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
   /** A 32-bytes codec for public keys where the first byte is set manually. */
-  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = bytes(32).xmap(b => PublicKey(prefix +: b), _.value.drop(1))
+  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = bytes(32).exmap(b => Attempt.fromTry(Try(PublicKey(prefix +: b))), pub => Attempt.successful(pub.value.drop(1)))
 
   // The first byte encodes what type of identifier is used.
   val encodedNodeIdCodec: Codec[EncodedNodeId] = discriminated[EncodedNodeId].by(uint8)

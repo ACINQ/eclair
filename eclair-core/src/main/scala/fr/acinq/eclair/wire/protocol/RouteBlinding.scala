@@ -24,7 +24,7 @@ import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, t
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 19/10/2021.
@@ -156,7 +156,12 @@ object RouteBlindingEncryptedDataCodecs {
     .typecase(UInt64(12), paymentConstraints)
     .typecase(UInt64(14), allowedFeatures)
 
-  val blindedRouteDataCodec = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
+  private val internalBlindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
+
+  val blindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = Codec(
+    tlvs => internalBlindedRouteDataCodec.encode(tlvs),
+    bin => Attempt.fromTry(Try(internalBlindedRouteDataCodec.decode(bin).require)),
+  )
 
   // @formatter:off
   case class RouteBlindingDecryptedData(tlvs: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey)
@@ -169,7 +174,7 @@ object RouteBlindingEncryptedDataCodecs {
    * Decrypt and decode the contents of an encrypted_recipient_data TLV field.
    *
    * @param nodePrivKey   this node's private key.
-   * @param pathKey   path key (usually provided in the lightning message).
+   * @param pathKey       path key (usually provided in the lightning message).
    * @param encryptedData encrypted route blinding data (usually provided inside an onion).
    */
   def decode(nodePrivKey: PrivateKey, pathKey: PublicKey, encryptedData: ByteVector): Either[InvalidEncryptedData, RouteBlindingDecryptedData] = {

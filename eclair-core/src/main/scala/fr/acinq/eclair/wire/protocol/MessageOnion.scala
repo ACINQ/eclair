@@ -22,7 +22,10 @@ import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
 import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64}
+import scodec.Attempt
 import scodec.bits.ByteVector
+
+import scala.util.Try
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
 sealed trait OnionMessagePayloadTlv extends Tlv
@@ -116,25 +119,25 @@ object MessageOnion {
   object FinalPayload {
     def validate(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, FinalPayload] = {
       BlindedRouteData.validateMessageRecipientData(blindedRecords).map(_ =>
-          (records.get[InvoiceRequest], records.get[Invoice], records.get[InvoiceError], records.get[ReplyPath]) match {
-            case _ if records.unknown.nonEmpty => InvalidResponsePayload(records, blindedRecords, ForbiddenTlv(records.unknown.head.tag))
-            case (Some(invoiceRequest), None, None, Some(_)) =>
-              OfferTypes.InvoiceRequest.validate(invoiceRequest.tlvs) match {
-                case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
-                case Right(_) => InvoiceRequestPayload(records, blindedRecords)
-              }
-            case (None, Some(invoice), None, None) =>
-              Bolt12Invoice.validate(invoice.tlvs) match {
-                case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
-                case Right(_) => InvoicePayload(records, blindedRecords)
-              }
-            case (None, None, Some(invoiceError), _) =>
-              OfferTypes.InvoiceError.validate(invoiceError.tlvs) match {
-                case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
-                case Right(_) => InvoiceErrorPayload(records, blindedRecords)
-              }
-            case _ => InvalidResponsePayload(records, blindedRecords, MissingRequiredTlv(UInt64(0)))
-          }
+        (records.get[InvoiceRequest], records.get[Invoice], records.get[InvoiceError], records.get[ReplyPath]) match {
+          case _ if records.unknown.nonEmpty => InvalidResponsePayload(records, blindedRecords, ForbiddenTlv(records.unknown.head.tag))
+          case (Some(invoiceRequest), None, None, Some(_)) =>
+            OfferTypes.InvoiceRequest.validate(invoiceRequest.tlvs) match {
+              case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
+              case Right(_) => InvoiceRequestPayload(records, blindedRecords)
+            }
+          case (None, Some(invoice), None, None) =>
+            Bolt12Invoice.validate(invoice.tlvs) match {
+              case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
+              case Right(_) => InvoicePayload(records, blindedRecords)
+            }
+          case (None, None, Some(invoiceError), _) =>
+            OfferTypes.InvoiceError.validate(invoiceError.tlvs) match {
+              case Left(failure) => InvalidResponsePayload(records, blindedRecords, failure)
+              case Right(_) => InvoiceErrorPayload(records, blindedRecords)
+            }
+          case _ => InvalidResponsePayload(records, blindedRecords, MissingRequiredTlv(UInt64(0)))
+        }
       )
     }
   }
@@ -159,7 +162,12 @@ object MessageOnionCodecs {
     .typecase(UInt64(66), OfferCodecs.invoiceCodec)
     .typecase(UInt64(68), OfferCodecs.invoiceErrorCodec)
 
-  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
+  private val internalPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
+
+  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = Codec(
+    tlvs => internalPerHopPayloadCodec.encode(tlvs),
+    bin => Attempt.fromTry(Try(internalPerHopPayloadCodec.decode(bin).require)),
+  )
 
   val messageOnionPacketCodec: Codec[OnionRoutingPacket] = variableSizeBytes(uint16, bytes).exmap[OnionRoutingPacket](
     // The Sphinx packet header contains a version (1 byte), a public key (33 bytes) and a mac (32 bytes) -> total 66 bytes
