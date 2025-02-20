@@ -116,7 +116,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
 
   def singleFundingMinDepth(d: ChannelDataWithCommitments): Long = {
     val minDepth_opt = if (d.commitments.params.localParams.isChannelOpener) {
-      d.commitments.params.minDepthFunder
+      d.commitments.params.minDepthFunder(nodeParams.channelConf.minDepth)
     } else {
       // When we're not the channel initiator we scale the min_depth confirmations depending on the funding amount.
       d.commitments.params.minDepthFundee(nodeParams.channelConf.minDepth, d.commitments.latest.commitInput.txOut.amount)

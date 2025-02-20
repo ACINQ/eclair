@@ -342,7 +342,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")
-          watchFundingConfirmed(commitment.fundingTxId, params.minDepthFunder, delay_opt = None)
+          watchFundingConfirmed(commitment.fundingTxId, params.minDepthFunder(nodeParams.channelConf.minDepth), delay_opt = None)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(d.channelId, fundingTx, fundingTxFee, d.replyTo)
