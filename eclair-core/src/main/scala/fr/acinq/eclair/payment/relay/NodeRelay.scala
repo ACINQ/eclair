@@ -66,7 +66,7 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
-  private case class WrappedPeerInfo(isPeer: Boolean, remoteFeatures_opt: Option[Features[InitFeature]]) extends Command
+  private case class WrappedPeerInfo(remoteFeatures_opt: Option[Features[InitFeature]]) extends Command
   private case class WrappedOnTheFlyFundingResponse(result: Peer.ProposeOnTheFlyFundingResponse) extends Command
   // @formatter:on
 
@@ -285,16 +285,16 @@ class NodeRelay private(nodeParams: NodeParams,
 
   /** The next node may be a mobile wallet directly connected to us: in that case, we'll need to wake them up before relaying the payment. */
   private def attemptWakeUpIfRecipientIsWallet(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
-    val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.GetPeerInfo]](_ => WrappedPeerInfo(isPeer = false, remoteFeatures_opt = None))
+    val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.GetPeerInfo]](_ => WrappedPeerInfo(remoteFeatures_opt = None))
     val peerInfoAdapter = context.messageAdapter[Peer.PeerInfoResponse] {
-      case _: Peer.PeerNotFound => WrappedPeerInfo(isPeer = false, remoteFeatures_opt = None)
-      case info: Peer.PeerInfo => WrappedPeerInfo(isPeer = true, info.features)
+      case _: Peer.PeerNotFound => WrappedPeerInfo(remoteFeatures_opt = None)
+      case info: Peer.PeerInfo => WrappedPeerInfo(remoteFeatures_opt = info.features)
     }
     register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, recipient.nodeId, Peer.GetPeerInfo(Some(peerInfoAdapter)))
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         case info: WrappedPeerInfo =>
-          val walletNodeId_opt = if (info.isPeer && info.remoteFeatures_opt.exists(_.hasFeature(Features.WakeUpNotificationClient))) {
+          val walletNodeId_opt = if (info.remoteFeatures_opt.exists(_.hasFeature(Features.WakeUpNotificationClient))) {
             Some(recipient.nodeId)
           } else {
             None
