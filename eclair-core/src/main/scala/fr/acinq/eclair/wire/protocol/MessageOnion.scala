@@ -22,10 +22,7 @@ import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvField
 import fr.acinq.eclair.{EncodedNodeId, ShortChannelId, UInt64}
-import scodec.Attempt
 import scodec.bits.ByteVector
-
-import scala.util.Try
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
 sealed trait OnionMessagePayloadTlv extends Tlv
@@ -96,8 +93,10 @@ object MessageOnion {
 
   /** Per-hop payload for a final node. */
   sealed trait FinalPayload extends PerHopPayload {
+    // @formatter:off
     def blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]
     def pathId_opt: Option[ByteVector] = blindedRecords.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data)
+    // @formatter:on
   }
 
   case class InvoiceRequestPayload(records: TlvStream[OnionMessagePayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
@@ -162,12 +161,7 @@ object MessageOnionCodecs {
     .typecase(UInt64(66), OfferCodecs.invoiceCodec)
     .typecase(UInt64(68), OfferCodecs.invoiceErrorCodec)
 
-  private val internalPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
-
-  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = Codec(
-    tlvs => internalPerHopPayloadCodec.encode(tlvs),
-    bin => Attempt.fromTry(Try(internalPerHopPayloadCodec.decode(bin).require)),
-  )
+  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = catchAllCodec(TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete)
 
   val messageOnionPacketCodec: Codec[OnionRoutingPacket] = variableSizeBytes(uint16, bytes).exmap[OnionRoutingPacket](
     // The Sphinx packet header contains a version (1 byte), a public key (33 bytes) and a mac (32 bytes) -> total 66 bytes

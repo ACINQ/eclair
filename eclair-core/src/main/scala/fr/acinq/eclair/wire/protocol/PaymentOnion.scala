@@ -24,10 +24,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, EncodedNodeId, Features, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
-
-import scala.util.Try
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -608,11 +605,6 @@ object PaymentOnionCodecs {
     .typecase(UInt64(181324718L), asyncPayment)
     .typecase(UInt64(5482373484L), keySend)
 
-  private val internalPerHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
-
-  val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = Codec(
-    tlvs => internalPerHopPayloadCodec.encode(tlvs),
-    bin => Attempt.fromTry(Try(internalPerHopPayloadCodec.decode(bin).require)),
-  )
+  val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = catchAllCodec(TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete)
 
 }

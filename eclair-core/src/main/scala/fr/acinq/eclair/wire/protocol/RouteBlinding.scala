@@ -18,13 +18,13 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, featuresCodec}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{catchAllCodec, cltvExpiry, cltvExpiryDelta, featuresCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 19/10/2021.
@@ -156,12 +156,7 @@ object RouteBlindingEncryptedDataCodecs {
     .typecase(UInt64(12), paymentConstraints)
     .typecase(UInt64(14), allowedFeatures)
 
-  private val internalBlindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
-
-  val blindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = Codec(
-    tlvs => internalBlindedRouteDataCodec.encode(tlvs),
-    bin => Attempt.fromTry(Try(internalBlindedRouteDataCodec.decode(bin).require)),
-  )
+  val blindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = catchAllCodec(TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete)
 
   // @formatter:off
   case class RouteBlindingDecryptedData(tlvs: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey)

@@ -152,15 +152,9 @@ object CommonCodecs {
       ("remoteAlias_opt" | optional(bool8, alias))
     ).as[ShortIdAliases]
 
-  val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b)))
-  )
+  val privateKey: Codec[PrivateKey] = bytes(32).xmap(bin => PrivateKey(bin), priv => priv.value)
 
-  val publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(pub.value),
-    (wire: BitVector) => bytes(33).decode(wire).flatMap(decoded => Attempt.fromTry(Try(DecodeResult(PublicKey(decoded.value), decoded.remainder))))
-  )
+  val publicKey: Codec[PublicKey] = catchAllCodec(bytes(33).xmap(bin => PublicKey(bin), pub => pub.value))
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
@@ -194,5 +188,11 @@ object CommonCodecs {
   val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = variableSizeBytes(uint16, featuresCodec)
 
   val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+
+  /** Returns the same codec, that catches all exceptions when decoding. */
+  def catchAllCodec[T](codec: Codec[T]): Codec[T] = Codec[T](
+    (o: T) => codec.encode(o),
+    (bits: BitVector) => Attempt.fromTry(Try(codec.decode(bits))).flatten
+  )
 
 }
