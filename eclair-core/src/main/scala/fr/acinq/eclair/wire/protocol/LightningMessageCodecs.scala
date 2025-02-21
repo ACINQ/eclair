@@ -497,7 +497,7 @@ object LightningMessageCodecs {
       ("message" | bytes)
     ).as[UnknownMessage]
 
-  val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
+  val lightningMessageCodec = catchAllCodec(discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
     .typecase(2, stfuCodec)
     .typecase(7, peerStorageStore)
@@ -573,9 +573,9 @@ object LightningMessageCodecs {
   //
 
   //
+  )
 
-  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
-    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
+  val lightningMessageCodecWithFallback: Codec[LightningMessage] = discriminatorWithDefault(lightningMessageCodec, catchAllCodec(unknownMessageCodec.upcast))
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),
