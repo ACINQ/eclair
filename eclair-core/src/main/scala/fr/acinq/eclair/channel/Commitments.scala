@@ -49,16 +49,16 @@ case class ChannelParams(channelId: ByteVector32,
   )
 
   /**
-   * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
-   * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
-   * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
-   * alias in that case).
+   * Returns the number of confirmations needed to safely handle a funding transaction that we unilaterally funded.
+   * As funder we trust ourselves to not double spend funding txs, so we don't need to scale the number of confirmations
+   * based on the funding amount. We want to wait a few blocks though to ensure that the short_channel_id we obtain will
+   * not be invalidated by a reorg.
    */
-  def minDepthFunder: Option[Long] = {
+  def minDepthFunder(defaultMinDepth: Int): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      Some(1)
+      Some(defaultMinDepth.toLong)
     }
   }
 

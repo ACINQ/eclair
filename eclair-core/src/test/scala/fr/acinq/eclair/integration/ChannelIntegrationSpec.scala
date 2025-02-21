@@ -124,13 +124,10 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     connect(nodes("C"), nodes("F"), 5000000 sat, 500000000 msat)
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
     awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds)
-    generateBlocks(1, Some(minerAddress))
-    // the funder sends its channel_ready after only one block
-    awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == WAIT_FOR_CHANNEL_READY, max = 30 seconds)
-    generateBlocks(5, Some(minerAddress))
-    // the fundee sends its channel_ready after 6 blocks
-    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    // we exchange channel_ready and move to the NORMAL state after 6 blocks
+    generateBlocks(6, Some(minerAddress))
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL, max = 30 seconds)
     awaitAnnouncements(2)
     // first we make sure we are in sync with current blockchain height
     val currentBlockHeight = getBlockHeight()
