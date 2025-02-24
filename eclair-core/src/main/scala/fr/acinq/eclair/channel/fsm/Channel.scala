@@ -222,6 +222,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   var announcementSigsStash = Map.empty[RealShortChannelId, AnnouncementSignatures]
   // we record the announcement_signatures messages we already sent to avoid unnecessary retransmission
   var announcementSigsSent = Set.empty[RealShortChannelId]
+  // we keep track of the splice_locked we sent after channel_reestablish to avoid sending it again
+  private var spliceLockedSentAfterReestablish: Option[RealShortChannelId] = None
 
   private def trimAnnouncementSigsStashIfNeeded(): Unit = {
     if (announcementSigsStash.size >= 10) {
@@ -1386,12 +1388,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // If we already have a signed channel announcement for this commitment, then we are receiving splice_locked
           // again after a reconnection and must retransmit our splice_locked and new announcement_signatures. Nodes
           // retransmit splice_locked after a reconnection when they have received splice_locked but NOT matching signatures
-          // before the last disconnect. If announcement_signatures have been sent since a reconnect, then do not
+          // before the last disconnect. If a matching splice_locked has already been sent since reconnecting, then do not
           // retransmit splice_locked to avoid a loop.
           // NB: It is important both nodes retransmit splice_locked after reconnecting to ensure new Taproot nonces
           // are exchanged for channel announcements.
           val spliceLocked_opt = d.lastAnnouncement_opt.collect {
-            case ann if announcementSigsSent.isEmpty && commitment.shortChannelId_opt.contains(ann.shortChannelId) =>
+            case ann if !spliceLockedSentAfterReestablish.contains(ann.shortChannelId) && commitment.shortChannelId_opt.contains(ann.shortChannelId) =>
+              spliceLockedSentAfterReestablish = Some(ann.shortChannelId)
               SpliceLocked(d.channelId, msg.fundingTxId)
           }
           // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
@@ -2400,7 +2403,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
           // Retransmit splice_locked (must come *after* potentially retransmitting tx_signatures):
           // 1) If they did not receive our last splice_locked;
-          // 2) or the last splice_locked they received is different from our what we sent;
+          // 2) or the last splice_locked they received is different from what we sent;
           // 3) or (public channels only) we have not received their announcement_signatures for our latest locked commitment.
           // NB: there is a key difference between channel_ready and splice_locked:
           // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
@@ -2412,6 +2415,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             .collect { case c if !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId) ||
               (commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))) =>
               log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
+              spliceLockedSentAfterReestablish = c.shortChannelId_opt
               SpliceLocked(d.channelId, c.fundingTxId)
           }
           sendQueue = sendQueue ++ spliceLocked
@@ -2901,6 +2905,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       sigStash = Nil
       announcementSigsStash = Map.empty
       announcementSigsSent = Set.empty
+      spliceLockedSentAfterReestablish = None
   }
 
   /*
