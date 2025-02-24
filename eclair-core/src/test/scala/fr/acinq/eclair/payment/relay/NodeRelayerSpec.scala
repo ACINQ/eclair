@@ -259,6 +259,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(fwd.channelId == extra.add.channelId)
     val failure = FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(extra.add.amountMsat, nodeParams.currentBlockHeight))
     assert(fwd.message == CMD_FAIL_HTLC(extra.add.id, failure, commit = true))
+
+    register.expectNoMessage(100 millis)
   }
 
   test("fail all additional incoming HTLCs once already relayed out") { f =>
