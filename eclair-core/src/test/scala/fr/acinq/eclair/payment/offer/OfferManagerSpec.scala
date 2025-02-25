@@ -28,17 +28,16 @@ import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{ProcessPayment, RejectPayment}
-import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivingRoute
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, amountAfterFee, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, amountAfterFee, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.DurationInt
 
 class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
@@ -86,19 +85,24 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     invoice
   }
 
+  /** Decrypt the provided encrypted payloads, assuming we're using only dummy hops for the target node. */
+  @tailrec
+  private def decryptBlindedPayload(nodeKey: PrivateKey, pathKey: PublicKey, encryptedPayloads: Seq[ByteVector]): TlvStream[RouteBlindingEncryptedDataTlv] = {
+    if (encryptedPayloads.size == 1) {
+      val Right(RouteBlindingDecryptedData(encryptedDataTlvs, _)) = RouteBlindingEncryptedDataCodecs.decode(nodeKey, pathKey, encryptedPayloads.head)
+      encryptedDataTlvs
+    } else {
+      val Right(RouteBlindingDecryptedData(_, nextPathKey)) = RouteBlindingEncryptedDataCodecs.decode(nodeKey, pathKey, encryptedPayloads.head)
+      decryptBlindedPayload(nodeKey, nextPathKey, encryptedPayloads.tail)
+    }
+  }
+
   def createPaymentPayload(f: FixtureParam, invoice: Bolt12Invoice): PaymentOnion.FinalPayload.Blinded = {
     import f._
 
     assert(invoice.blindedPaths.length == 1)
     val blindedPath = invoice.blindedPaths.head.route
-    val Right(RouteBlindingDecryptedData(tlvs, nextPathKey)) = RouteBlindingEncryptedDataCodecs.decode(nodeParams.privateKey, blindedPath.firstPathKey, blindedPath.encryptedPayloads.head)
-    var encryptedDataTlvs = tlvs
-    var pathKey = nextPathKey
-    for (encryptedPayload <- blindedPath.encryptedPayloads.drop(1)) {
-      val Right(RouteBlindingDecryptedData(tlvs, nextPathKey)) = RouteBlindingEncryptedDataCodecs.decode(nodeParams.privateKey, pathKey, encryptedPayload)
-      encryptedDataTlvs = tlvs
-      pathKey = nextPathKey
-    }
+    val encryptedDataTlvs = decryptBlindedPayload(nodeParams.privateKey, blindedPath.firstPathKey, blindedPath.encryptedPayloads)
     val paymentTlvs = TlvStream[OnionPaymentPayloadTlv](
       OnionPaymentPayloadTlv.AmountToForward(invoice.amount),
       OnionPaymentPayloadTlv.TotalAmount(invoice.amount),

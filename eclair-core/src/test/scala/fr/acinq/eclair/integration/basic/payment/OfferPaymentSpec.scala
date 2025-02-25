@@ -235,6 +235,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
+    assert(payment.parts.head.feesPaid > 0.msat)
   }
 
   test("send blinded payment a->b->c, hidden fees") { f =>
@@ -250,7 +251,6 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
-    assert(payment.parts.head.amount == amount)
     assert(payment.parts.head.feesPaid == 0.msat)
   }
 
@@ -270,6 +270,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
+    assert(payment.parts.forall(_.feesPaid > 0.msat))
   }
 
   test("send blinded multi-part payment a->b->c, hidden fees") { f =>
@@ -353,6 +354,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
+    assert(payment.parts.forall(_.feesPaid > 0.msat))
   }
 
   test("send blinded payment a->b->c with dummy hops, hidden fees") { f =>
@@ -384,7 +386,8 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val routes = Seq(InvoiceRequestActor.Route(route.hops, recipientPaysFees = false, maxFinalExpiryDelta))
     val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes)
-    verifyPaymentSuccess(offer, amount, result)
+    val payment = verifyPaymentSuccess(offer, amount, result)
+    assert(payment.parts.forall(_.feesPaid > 0.msat))
   }
 
   test("send blinded payment a->b->c through private channels, hidden fees", Tag(PrivateChannels)) { f =>
@@ -420,6 +423,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val (offer, result) = sendOfferPayment(f, alice, bob, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
+    assert(payment.parts.forall(_.feesPaid > 0.msat))
   }
 
   test("send blinded payment a->b with dummy hops, hidden fees") { f =>
