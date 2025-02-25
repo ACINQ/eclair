@@ -148,7 +148,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = d.initFundee.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
-          val tlvStream: TlvStream[AcceptChannelTlv] = if (d.initFundee.channelType.commitmentFormat.useTaproot) {
+          val tlvStream: TlvStream[AcceptChannelTlv] = if (channelFeatures.hasFeature(Features.SimpleTaproot) || channelFeatures.hasFeature(Features.SimpleTaprootStaging)) {
             // include our verification nonce at funding_index = 0, commit_index = 0
             val localNonce = keyManager.verificationNonce(TxId(ByteVector32.One), fundingPubkey, 0)
             TlvStream(
@@ -211,7 +211,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           log.debug("remote params: {}", remoteParams)
           log.info("remote will use fundingMinDepth={}", accept.minimumDepth)
           val localFundingPubkey = keyManager.fundingPublicKey(init.localParams.fundingKeyPath, fundingTxIndex = 0)
-          val fundingPubkeyScript = if (init.channelType.commitmentFormat.useTaproot) {
+          val fundingPubkeyScript = if (channelFeatures.hasFeature(Features.SimpleTaproot) || (channelFeatures.hasFeature(Features.SimpleTaprootStaging))) {
             Script.write(Scripts.Taproot.musig2FundingScript(localFundingPubkey.publicKey, accept.fundingPubkey))
           } else {
             Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, accept.fundingPubkey)))
@@ -249,7 +249,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
           val fundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
           // signature of their initial commitment tx that pays remote pushMsat
-          val fundingCreated = if (params.commitmentFormat.useTaproot) {
+          val fundingCreated = if (localCommitTx.input.isP2tr) {
             val localNonce = keyManager.verificationNonce(TxId(ByteVector32.One), fundingPubkey.publicKey, 0)
             val Right(sig) = keyManager.partialSign(remoteCommitTx,
               fundingPubkey, remoteFundingPubKey, TxOwner.Remote,
@@ -312,7 +312,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // check remote signature validity
           val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
 
-          val signedLocalCommitTx = if (params.commitmentFormat.useTaproot) {
+          val signedLocalCommitTx = if (localCommitTx.input.isP2tr) {
             val localNonce = keyManager.verificationNonce(TxId(ByteVector32.One), fundingPubKey.publicKey, 0)
             val Right(signedLocalCommitTx) = for {
               localPartialSigOfLocalTx <- keyManager.partialSign(localCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Local, localNonce, remoteNextLocalNonce.get)
@@ -334,7 +334,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, fundingTxIndex = 0, localCommitTx.tx), d, None)
             case Success(_) =>
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
-              val fundingSigned = if (params.commitmentFormat.useTaproot) {
+              val fundingSigned = if (signedLocalCommitTx.input.isP2tr) {
                 val localNonce = keyManager.verificationNonce(TxId(ByteVector32.One), fundingPubKey.publicKey, 0)
                 val Right(localPartialSigOfRemoteTx) = keyManager.partialSign(remoteCommitTx, fundingPubKey, remoteFundingPubKey, TxOwner.Remote, localNonce, remoteNextLocalNonce.get)
                 FundingSigned(
@@ -387,7 +387,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(msg@FundingSigned(_, _, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingPubKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0)
-      val signedLocalCommitTx = Try(if (params.commitmentFormat.useTaproot) {
+      val signedLocalCommitTx = Try(if (localCommitTx.input.isP2tr) {
         require(msg.sigOrPartialSig.isRight, "missing partial signature and nonce")
         val localNonce = keyManager.verificationNonce(TxId(ByteVector32.One), fundingPubKey.publicKey, 0)
         val Right(remotePartialSigWithNonce) = msg.sigOrPartialSig
@@ -466,7 +466,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
+      if (d.commitments.latest.commitInput.isP2tr) {
         require(remoteChannelReady.nexLocalNonce_opt.isDefined, "missing next local nonce")
       }
       // We are here if:
@@ -493,7 +493,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // But since this is a zero-conf channel, the minimum depth isn't critical: we use the default one.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments.params, d.commitments.latest.fundingTxId)
+          val channelReady = createChannelReady(shortIds, d.commitments)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
         case Left(_) => stay()
@@ -503,7 +503,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments.params, d.commitments.latest.fundingTxId)
+          val channelReady = createChannelReady(shortIds, d.commitments)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_CHANNEL_READY) using DATA_WAIT_FOR_CHANNEL_READY(commitments1, shortIds) storing() sending channelReady
         case Left(_) => stay()

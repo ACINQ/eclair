@@ -736,7 +736,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           // But since this is a zero-conf channel, the minimum depth isn't critical: we use the default one.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments.params, d.commitments.latest.fundingTxId)
+          val channelReady = createChannelReady(shortIds, d.commitments)
           d.deferred.foreach(self ! _)
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
         case Left(_) => stay()
@@ -746,7 +746,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
           val shortIds = createShortIdAliases(d.channelId)
-          val channelReady = createChannelReady(shortIds, d.commitments.params, d.commitments.latest.fundingTxId)
+          val channelReady = createChannelReady(shortIds, d.commitments)
           reportRbfFailure(d.status, InvalidRbfTxConfirmed(d.channelId))
           val toSend = d.status match {
             case DualFundingStatus.WaitingForConfirmations | DualFundingStatus.RbfAborted => Seq(channelReady)

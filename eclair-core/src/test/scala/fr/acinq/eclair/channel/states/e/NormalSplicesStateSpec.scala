@@ -623,7 +623,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
-    if (commitment.params.commitmentFormat.useTaproot) {
+    if (commitment.commitInput.isP2tr) {
       assert(commitFees > 7_000.sat)
     } else {
       assert(commitFees > 20_000.sat)

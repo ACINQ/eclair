@@ -463,7 +463,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(keyManager: ChannelKeyManager, commitments: Commitments, remoteChannelReestablish: ChannelReestablish)(implicit log: LoggingAdapter): SyncResult = {
+    def checkSync(keyManager: ChannelKeyManager, commitments: Commitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
@@ -526,14 +526,14 @@ object Helpers {
         val channelKeyPath = keyManager.keyPath(commitments.params.localParams, commitments.params.channelConfig)
         val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommitIndex + 1)
-        val tlvStream: TlvStream[RevokeAndAckTlv] = if (commitments.params.commitmentFormat.useTaproot) {
-          val nonces = commitments.active.map(c => {
-            val fundingPubkey = keyManager.fundingPublicKey(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
-            keyManager.verificationNonce(c.fundingTxId, fundingPubkey, commitments.localCommitIndex + 1)
-          })
-          TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
-        } else {
+        val nonces = commitments.active.filter(_.commitInput.isP2tr).map { c =>
+          val fundingPubkey = keyManager.fundingPublicKey(commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
+          keyManager.verificationNonce(c.fundingTxId, fundingPubkey, commitments.localCommitIndex + 1)
+        }
+        val tlvStream: TlvStream[RevokeAndAckTlv] = if (nonces.isEmpty) {
           TlvStream.empty
+        } else {
+          TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.map(_._2).toList))
         }
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
@@ -723,7 +723,7 @@ object Helpers {
           val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
-              val dummySignedTx = if (commitment.params.commitmentFormat.useTaproot) {
+              val dummySignedTx = if (commitment.commitInput.isP2tr) {
                 Transactions.addAggregatedSignature(dummyTx, Transactions.PlaceHolderSig)
               } else {
                 Transactions.addSigs(dummyTx, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig)
@@ -739,7 +739,7 @@ object Helpers {
           case _ => return Left(CannotGenerateClosingTx(commitment.channelId))
         }
         val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-        val tlvs = if (commitment.params.commitmentFormat.useTaproot) {
+        val tlvs = if (commitment.commitInput.isP2tr) {
           def partialSign(tx: ClosingTx) = {
             val Right(psig) = keyManager.partialSign(tx, localFundingPubKey, commitment.remoteFundingPubKey, TxOwner.Local, localClosingNonce_opt.get, remoteClosingNonce_opt.get)
             psig
@@ -773,7 +773,7 @@ object Helpers {
         val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
         // Note that we're the closee, so we look for signatures including the closee output.
-        if (commitment.params.commitmentFormat.useTaproot) {
+        if (commitment.commitInput.isP2tr) {
           (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
             case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty && closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
             case (Some(_), None) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
@@ -789,7 +789,7 @@ object Helpers {
           }
         }
 
-        if (commitment.params.commitmentFormat.useTaproot) {
+        if (commitment.commitInput.isP2tr) {
           // We choose the closing signature that matches our preferred closing transaction.
           val closingTxsWithSigs = Seq(
             closingComplete.closerAndCloseeOutputsPartialSig_opt.flatMap(remoteSig => closingTxs.localAndRemote_opt.map(tx => (tx, remoteSig, localSig => ClosingTlv.CloserAndCloseeOutputsPartialSignature(localSig)))),
@@ -838,7 +838,7 @@ object Helpers {
        * for their next closing_sig that will match our latest closing_complete.
        */
       def receiveSimpleClosingSig(keyManager: ChannelKeyManager, commitment: FullCommitment, closingTxs: ClosingTxs, closingSig: ClosingSig, localNonce: Option[(SecretNonce, IndividualNonce)] = None, remoteNonce: Option[IndividualNonce] = None): Either[ChannelException, ClosingTx] = {
-        if (commitment.params.commitmentFormat.useTaproot) {
+        if (commitment.commitInput.isP2tr) {
           val closingTxsWithSig = Seq(
             closingSig.closerAndCloseeOutputsPartialSig_opt.flatMap(sig => closingTxs.localAndRemote_opt.map(tx => (tx, sig))),
             closingSig.closerOutputOnlyPartialSig_opt.flatMap(sig => closingTxs.localOnly_opt.map(tx => (tx, sig))),
@@ -948,7 +948,7 @@ object Helpers {
 
         // first we will claim our main output as soon as the delay is over
         val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
-          Transactions.makeClaimLocalDelayedOutputTx(tx, commitment.localParams.dustLimit, localRevocationPubkey, commitment.remoteParams.toSelfDelay, localDelayedPubkey, finalScriptPubKey, feeratePerKwDelayed, commitment.params.commitmentFormat).map(claimDelayed => {
+          Transactions.makeClaimLocalDelayedOutputTx(tx, commitment.localParams.dustLimit, localRevocationPubkey, commitment.remoteParams.toSelfDelay, localDelayedPubkey, finalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
             val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat)
             Transactions.addSigs(claimDelayed, sig)
           })
@@ -992,10 +992,10 @@ object Helpers {
           }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localPaymentKey, confirmationTarget, commitment.params.commitmentFormat)
+              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localPaymentKey, confirmationTarget)
             },
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, remotePaymentKey, commitment.params.commitmentFormat)
+              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, remotePaymentKey)
             }
           ).flatten
           lcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -1062,7 +1062,7 @@ object Helpers {
           val localRevocationPubkey = Generators.revocationPubKey(commitment.remoteParams.revocationBasepoint, localPerCommitmentPoint)
           val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
           val htlcDelayedTx = withTxGenerationLog("htlc-delayed") {
-            Transactions.makeHtlcDelayedTx(tx, commitment.localParams.dustLimit, localRevocationPubkey, commitment.remoteParams.toSelfDelay, localDelayedPubkey, finalScriptPubKey, feeratePerKwDelayed, commitment.params.commitmentFormat).map(claimDelayed => {
+            Transactions.makeHtlcDelayedTx(tx, commitment.localParams.dustLimit, localRevocationPubkey, commitment.remoteParams.toSelfDelay, localDelayedPubkey, finalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
               val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat)
               Transactions.addSigs(claimDelayed, sig)
             })
@@ -1127,10 +1127,10 @@ object Helpers {
           }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localPaymentKey, confirmationTarget, commitment.params.commitmentFormat)
+              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localPaymentKey, confirmationTarget)
             },
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, remotePaymentKey, commitment.params.commitmentFormat)
+              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, remotePaymentKey)
             }
           ).flatten
           rcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -1164,7 +1164,7 @@ object Helpers {
               })
             }
             case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-              Transactions.makeClaimRemoteDelayedOutputTx(tx, params.localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feeratePerKwMain, params.commitmentFormat).map(claimMain => {
+              Transactions.makeClaimRemoteDelayedOutputTx(tx, params.localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, params.commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
@@ -1300,7 +1300,7 @@ object Helpers {
               })
             }
             case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feerateMain, commitmentFormat).map(claimMain => {
+              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feerateMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
@@ -1310,7 +1310,7 @@ object Helpers {
 
         // then we punish them by stealing their main output
         val mainPenaltyTx = withTxGenerationLog("main-penalty") {
-          Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, finalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePenalty, commitmentFormat).map(txinfo => {
+          Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, finalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePenalty).map(txinfo => {
             val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
             Transactions.addSigs(txinfo, sig)
           })

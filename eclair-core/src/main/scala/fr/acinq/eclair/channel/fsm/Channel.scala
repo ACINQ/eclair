@@ -690,7 +690,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           if (d.remoteShutdown.isDefined && !commitments1.changes.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-            val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
+            require(d.commitments.params.commitmentFormat.useTaproot == d.commitments.latest.commitInput.isP2tr, s"commitmentFormat = ${d.commitments.params.commitmentFormat.useTaproot} is not consistent with commit input") // TODO: remove this
+            val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.latest.commitInput.isP2tr) {
              val localFundingPubKey = keyManager.fundingPublicKey(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex).publicKey
               log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", localClosingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
                localClosingNonce = Some(keyManager.signingNonce(localFundingPubKey))
@@ -724,7 +725,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         d.commitments.params.validateLocalShutdownScript(localScriptPubKey) match {
           case Left(e) => handleCommandError(e, c)
           case Right(localShutdownScript) =>
-            val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
+            val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.latest.commitInput.isP2tr) {
               val localFundingPubKey = keyManager.fundingPublicKey(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex).publicKey
               log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", localClosingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
               localClosingNonce = Some(keyManager.signingNonce(localFundingPubKey))
@@ -776,7 +777,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // in the meantime we won't send new changes
             stay() using d.copy(remoteShutdown = Some(remoteShutdown))
           } else {
-            if (d.commitments.params.commitmentFormat.useTaproot) {
+            if (d.commitments.latest.commitInput.isP2tr) {
               require(remoteShutdown.shutdownNonce_opt.isDefined, "missing shutdown nonce")
             }
             remoteClosingNonce = remoteShutdown.shutdownNonce_opt
@@ -786,7 +787,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               case Some(localShutdown) =>
                 (localShutdown, Nil)
               case None =>
-                val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
+                val tlvStream: TlvStream[ShutdownTlv] = if (d.commitments.latest.commitInput.isP2tr) {
                   val localFundingPubKey = keyManager.fundingPublicKey(d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex).publicKey
                   log.info("generating closing nonce {} with fundingKeyPath = {} fundingTxIndex = {}", localClosingNonce, d.commitments.latest.localParams.fundingKeyPath, d.commitments.latest.fundingTxIndex)
                   localClosingNonce = Some(keyManager.signingNonce(localFundingPubKey))
@@ -1054,7 +1055,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey, d.commitments.latest.params.commitmentFormat)
-            val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+            val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
               Musig2Input(parentCommitment)
             } else {
               Multisig2of2Input(parentCommitment)
@@ -1117,7 +1118,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+          val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
             Musig2Input(parentCommitment)
           } else {
             Multisig2of2Input(parentCommitment)
@@ -1196,7 +1197,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
                   log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
                   val txAckRbf = TxAckRbf(d.channelId, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund))
-                  val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+                  val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
                     Musig2Input(rbf.parentCommitment)
                   } else {
                     Multisig2of2Input(rbf.parentCommitment)
@@ -1254,7 +1255,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
                 case Right(liquidityPurchase_opt) =>
                   log.info("our peer accepted our rbf request and will contribute {} to the funding transaction", msg.fundingContribution)
-                  val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+                  val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
                     Musig2Input(rbf.parentCommitment)
                   } else {
                     Multisig2of2Input(rbf.parentCommitment)
@@ -2266,7 +2267,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val channelKeyPath = keyManager.keyPath(d.channelParams.localParams, d.channelParams.channelConfig)
       val myFirstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
-      val myNextLocalNonce = if (d.channelParams.commitmentFormat.useTaproot) {
+      val myNextLocalNonce = if (d.signingSession.commitInput.isP2tr) {
         val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.channelParams.localParams.fundingKeyPath, 0).publicKey
         val (_, publicNonce) = keyManager.verificationNonce(d.signingSession.fundingTx.txId, localFundingPubKey, 1)
         Set(NextLocalNoncesTlv(List(publicNonce)))
@@ -2307,25 +2308,23 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
         case _ => Set.empty
       }
-      // for taproot channels, send a "next remote nonce" for each active commitment
-      val myNextLocalNonces = if (d.commitments.params.commitmentFormat.useTaproot) {
-        val nonces = d.commitments.active.map(c => {
-          val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
-          keyManager.verificationNonce(c.fundingTxId, localFundingPubKey, d.commitments.localCommitIndex + 1)._2
-        })
-        val nonces1 = d match {
-          case d: DATA_NORMAL => d.spliceStatus match {
-            case w: SpliceStatus.SpliceWaitingForSigs =>
-              val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, w.signingSession.fundingTxIndex).publicKey
-              val nonce = keyManager.verificationNonce(w.signingSession.fundingTx.txId, localFundingPubKey, w.signingSession.localCommitIndex + 1)._2
-              nonce +: nonces
-            case _ => nonces
-          }
+
+      val nonces = d.commitments.active.filter(_.commitInput.isP2tr).map(c => {
+        val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, c.fundingTxIndex).publicKey
+        keyManager.verificationNonce(c.fundingTxId, localFundingPubKey, d.commitments.localCommitIndex + 1)._2
+      })
+      val nonces1 = d match {
+        case d: DATA_NORMAL => d.spliceStatus match {
+          case w: SpliceStatus.SpliceWaitingForSigs if w.signingSession.commitInput.isP2tr =>
+            val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, w.signingSession.fundingTxIndex).publicKey
+            val nonce = keyManager.verificationNonce(w.signingSession.fundingTx.txId, localFundingPubKey, w.signingSession.localCommitIndex + 1)._2
+            nonce +: nonces
           case _ => nonces
         }
+        case _ => nonces
+      }
+      val myNextLocalNonces = if (nonces1.isEmpty) Set.empty else {
         Set(NextLocalNoncesTlv(nonces1.toList))
-      } else {
-        Set.empty
       }
 
       val channelReestablish = ChannelReestablish(
@@ -2367,14 +2366,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
   when(SYNCING)(handleExceptions {
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
+      require(channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
       setRemoteNextLocalNonces("received channelReestablish", channelReestablish.nextLocalNonces)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
-      if (d.channelParams.commitmentFormat.useTaproot) {
+      if (d.signingSession.commitInput.isP2tr) {
         require(channelReestablish.nextLocalNonces.size == 1, "missing next local nonce")
       }
       setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
@@ -2387,9 +2384,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
+      require(channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
       setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
 
       channelReestablish.nextFundingTxId_opt match {
@@ -2419,37 +2414,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
+      require(channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
       setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
       log.debug("re-sending channelReady")
-      val channelReady = createChannelReady(d.aliases, d.commitments.params, d.commitments.latest.fundingTxId)
+      val channelReady = createChannelReady(d.aliases, d.commitments)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
+      require(channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
       log.debug("re-sending channelReady")
       setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      val channelReady = createChannelReady(d.aliases, d.commitments.params, d.commitments.latest.fundingTxId)
+      val channelReady = createChannelReady(d.aliases, d.commitments)
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       log.debug(s"received $channelReestablish")
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        d.spliceStatus match {
-          case _: SpliceStatus.SpliceWaitingForSigs if channelReestablish.nextLocalNonces.size == d.commitments.active.size + 1 =>
-            this.pendingRemoteNextLocalNonce = channelReestablish.nextLocalNonces.headOption
-            setRemoteNextLocalNonces(s"received ChannelReestablish (waiting for sigs)", channelReestablish.nextLocalNonces.tail)
-          case _ if channelReestablish.nextLocalNonces.size == d.commitments.active.size - 1 =>
-            ()
-          case _ =>
-            require(channelReestablish.nextLocalNonces.size >= d.commitments.active.size, "missing next local nonce")
-            setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-            this.pendingRemoteNextLocalNonce = None
-        }
+      d.spliceStatus match {
+        case _: SpliceStatus.SpliceWaitingForSigs if channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr) + 1 =>
+          this.pendingRemoteNextLocalNonce = channelReestablish.nextLocalNonces.headOption
+          setRemoteNextLocalNonces(s"received ChannelReestablish (waiting for sigs)", channelReestablish.nextLocalNonces.tail)
+        case _ if channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr) - 1 =>
+          ()
+        case _ =>
+          require(channelReestablish.nextLocalNonces.size >= d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
+          setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
+          this.pendingRemoteNextLocalNonce = None
       }
 
       Syncing.checkSync(keyManager, d.commitments, channelReestablish) match {
@@ -2465,7 +2454,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             log.debug("re-sending channelReady")
             val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-            val tlvStream: TlvStream[ChannelReadyTlv] = if (d.commitments.params.commitmentFormat.useTaproot) {
+            val tlvStream: TlvStream[ChannelReadyTlv] = if (d.commitments.latest.commitInput.isP2tr) {
               val localFundingPubkey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, 0).publicKey
               val (_, nextLocalNonce) = keyManager.verificationNonce(d.commitments.latest.fundingTxId, localFundingPubkey, 1) // README: check!!
               TlvStream(ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
@@ -2610,9 +2599,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
+      require(channelReestablish.nextLocalNonces.size == d.commitments.active.count(_.commitInput.isP2tr), "missing next local nonce")
       setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
       Syncing.checkSync(keyManager, d.commitments, channelReestablish) match {
         case syncFailure: SyncResult.Failure =>
@@ -2625,10 +2612,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NEGOTIATING) =>
-      if (d.commitments.params.commitmentFormat.useTaproot) {
-        require(channelReestablish.nextLocalNonces.size == d.commitments.active.size, "missing next local nonce")
-      }
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
       // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
       // negotiation restarts from the beginning, and is initialized by the channel initiator
       // note: in any case we still need to keep all previously sent closing_signed, because they may publish one of them
@@ -3265,7 +3248,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   private def initiateSplice(cmd: CMD_SPLICE, d: DATA_NORMAL): Either[ChannelException, SpliceInit] = {
     val parentCommitment = d.commitments.latest.commitment
     val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)
-    val sharedInput = if (d.commitments.latest.params.commitmentFormat.useTaproot) {
+    val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
       Musig2Input(parentCommitment)
     } else {
       Multisig2of2Input(parentCommitment)

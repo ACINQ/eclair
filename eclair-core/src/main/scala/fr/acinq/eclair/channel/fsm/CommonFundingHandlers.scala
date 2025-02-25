@@ -123,10 +123,12 @@ trait CommonFundingHandlers extends CommonHandlers {
     aliases
   }
 
-  def createChannelReady(aliases: ShortIdAliases, params: ChannelParams, fundingTxId: TxId): ChannelReady = {
+  def createChannelReady(aliases: ShortIdAliases, commitments: Commitments): ChannelReady = {
+    val params = commitments.params
+    val fundingTxId = commitments.latest.fundingTxId
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-    val tlvStream: TlvStream[ChannelReadyTlv] = if (params.commitmentFormat.useTaproot) {
+    val tlvStream: TlvStream[ChannelReadyTlv] = if (commitments.latest.commitInput.isP2tr) {
       val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
       val (_, nextLocalNonce) = keyManager.verificationNonce(fundingTxId, localFundingPubkey, 1)
       TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias), ChannelTlv.NextLocalNonceTlv(nextLocalNonce))

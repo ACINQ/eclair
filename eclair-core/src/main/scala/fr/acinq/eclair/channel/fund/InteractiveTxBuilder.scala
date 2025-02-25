@@ -904,12 +904,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
         val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
-        val localSigOfRemoteTx = if (channelParams.commitmentFormat.useTaproot) {
+        val localSigOfRemoteTx = if (localCommitTx.input.isP2tr) {
           ByteVector64.Zeroes
         } else {
           keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
         }
-        val tlvStream: TlvStream[CommitSigTlv] = if (channelParams.commitmentFormat.useTaproot) {
+        val tlvStream: TlvStream[CommitSigTlv] = if (remoteCommitTx.input.isP2tr) {
           val localFundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
           val localNonce = keyManager.signingNonce(localFundingPubKey)
           val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.commitNonces.headOption)
