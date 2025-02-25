@@ -93,7 +93,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
-    val offerManager = system.spawn(OfferManager(nodeParams, router, 1 minute), "offer-manager")
+    val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)

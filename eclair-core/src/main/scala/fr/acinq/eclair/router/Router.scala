@@ -462,7 +462,7 @@ object Router {
       for {
         scid <- aliases.remoteAlias_opt
         update <- remoteUpdate_opt
-      } yield (Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta))
+      } yield Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta)
     }
   }
   // @formatter:on
@@ -531,6 +531,14 @@ object Router {
     override val cltvExpiryDelta = params.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     // @formatter:on
+  }
+
+  object ChannelHop {
+    /** Create a dummy channel hop, used for example when padding blinded routes to a fixed length. */
+    def dummy(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelHop = {
+      val dummyEdge = ExtraEdge(nodeId, nodeId, ShortChannelId.toSelf, feeBase, feeProportionalMillionths, cltvExpiryDelta, 1 msat, None)
+      ChannelHop(ShortChannelId.toSelf, nodeId, nodeId, HopRelayParams.FromHint(dummyEdge))
+    }
   }
 
   sealed trait FinalHop extends Hop
@@ -668,11 +676,13 @@ object Router {
     }
   }
 
+  // @formatter:off
   sealed trait PaymentRouteResponse
   case class RouteResponse(routes: Seq[Route]) extends PaymentRouteResponse {
     require(routes.nonEmpty, "routes cannot be empty")
   }
   case class PaymentRouteNotFound(error: Throwable) extends PaymentRouteResponse
+  // @formatter:on
 
   // @formatter:off
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */

@@ -40,9 +40,8 @@ object BlindedRouteCreation {
     }
   }
 
-  /** Create a blinded route from a non-empty list of channel hops. */
-  def createBlindedRouteFromHops(hops: Seq[Router.ChannelHop], pathId: ByteVector, minAmount: MilliSatoshi, routeFinalExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
-    require(hops.nonEmpty, "route must contain at least one hop")
+  /** Create a blinded route from a list of channel hops. */
+  def createBlindedRouteFromHops(hops: Seq[Router.ChannelHop], finalNodeId: PublicKey, pathId: ByteVector, minAmount: MilliSatoshi, routeFinalExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
     // We use the same constraints for all nodes so they can't use it to guess their position.
     val routeExpiry = hops.foldLeft(routeFinalExpiry) { case (expiry, hop) => expiry + hop.cltvExpiryDelta }
     val routeMinAmount = hops.foldLeft(minAmount) { case (amount, hop) => amount.max(hop.params.htlcMinimum) }
@@ -82,17 +81,8 @@ object BlindedRouteCreation {
       tlvs.copy(records = tlvs.records + RouteBlindingEncryptedDataTlv.Padding(ByteVector.fill(targetLength - payloadLength)(0)))
     })
     val encodedPayloads = paddedPayloads.map(RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(_).require.bytes) :+ finalPayload
-    val nodeIds = hops.map(_.nodeId) :+ hops.last.nextNodeId
+    val nodeIds = hops.map(_.nodeId) :+ finalNodeId
     Sphinx.RouteBlinding.create(randomKey(), nodeIds, encodedPayloads)
-  }
-
-  /** Create a blinded route where the recipient is also the introduction point (which reveals the recipient's identity). */
-  def createBlindedRouteWithoutHops(nodeId: PublicKey, pathId: ByteVector, minAmount: MilliSatoshi, routeExpiry: CltvExpiry): Sphinx.RouteBlinding.BlindedRouteDetails = {
-    val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
-      RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
-      RouteBlindingEncryptedDataTlv.PathId(pathId),
-    )).require.bytes
-    Sphinx.RouteBlinding.create(randomKey(), Seq(nodeId), Seq(finalPayload))
   }
 
   /** Create a blinded route where the recipient is a wallet node. */
