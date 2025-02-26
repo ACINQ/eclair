@@ -1398,14 +1398,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               SpliceLocked(d.channelId, msg.fundingTxId)
           }
           // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
-          val localAnnSigs_opt = if (d.commitments.announceChannel) commitment.signAnnouncement(nodeParams, commitments1.params) else None
-          localAnnSigs_opt match {
-            case Some(localAnnSigs) =>
-              // The commitment was locked on our side and we were waiting to receive the remote splice_locked before sending our announcement_signatures.
+          val localAnnSigs_opt = commitment.signAnnouncement(nodeParams, commitments1.params) match {
+            case Some(localAnnSigs) if !announcementSigsSent.contains(localAnnSigs.shortChannelId) =>
               announcementSigsSent += localAnnSigs.shortChannelId
               // If we've already received the remote announcement_signatures, we're now ready to process them.
               announcementSigsStash.get(localAnnSigs.shortChannelId).foreach(self ! _)
-            case None => // The channel is private or the commitment isn't locked on our side.
+              Some(localAnnSigs)
+            case Some(_) => None // We've already sent these announcement_signatures since the last reconnect.
+            case None => None // The channel is private or the commitment isn't locked on our side.
           }
           maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)

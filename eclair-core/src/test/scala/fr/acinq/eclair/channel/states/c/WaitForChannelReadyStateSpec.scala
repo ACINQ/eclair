@@ -118,7 +118,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
     bob2alice.forward(alice)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
@@ -142,7 +142,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -167,7 +167,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
     bob2alice.forward(alice)
     listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -188,7 +188,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     val channelReadyNoAlias = channelReady.modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelReadyTlv.ShortChannelIdTlv]))
     bob2alice.forward(alice, channelReadyNoAlias)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -213,7 +213,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     bob2alice.forward(alice)
     alice2bob.expectMsgType[AnnouncementSignatures]
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -235,7 +235,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     bob2alice.forward(alice)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)

@@ -1494,6 +1494,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Alice and Bob reconnect.
     reconnect(f)
+    bob2alice.expectNoMessage(100 millis)
     assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid) // Alice resends `splice_locked` because she hasn't received Bob's announcement_signatures.
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
@@ -2435,7 +2436,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Because `your_last_funding_locked_txid` from Bob matches the last `splice_locked` txid sent by Alice; there is no need
     // for Alice to resend `splice_locked`. Alice processes the `my_current_funding_locked` from Bob as if she received
     // `splice_locked` from Bob and prunes the initial funding commitment.
-    assert(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
     assert(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.head.fundingTxId == fundingTx.txid)
     alice2bob.expectNoMessage(100 millis)
 
@@ -2443,6 +2444,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val bobSpliceLocked = bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
 
+    // Alice sends an HTLC before receiving Bob's splice_locked: see https://github.com/lightning/bolts/issues/1223.
     addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
     val sender = TestProbe()
     alice ! CMD_SIGN(Some(sender.ref))
@@ -2523,14 +2525,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
-    // If either node receives `splice_locked` again before reconnecting, reply with `announcement_signatures` and not
-    // `splice_locked` to avoid a loop.
+    // If either node receives `splice_locked` again, it should be ignored; `announcement_signatures have already been sent.
     alice2bob.forward(bob, aliceSpliceLocked)
     bob2alice.forward(alice, bobSpliceLocked)
-    alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
@@ -2639,14 +2636,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
-    // If either node receives `splice_locked` again before reconnecting, reply with `announcement_signatures` and not
-    // `splice_locked` to avoid a loop.
+    // If either node receives `splice_locked` again, it should be ignored; `announcement_signatures have already been sent.
     alice2bob.forward(bob, aliceSpliceLocked)
     bob2alice.forward(alice, bobSpliceLocked)
-    alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
