@@ -47,18 +47,13 @@ object Scripts {
     case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
-  def sort(pubkeys: Seq[PublicKey]): Seq[PublicKey] = pubkeys.sortWith { (a, b) => fr.acinq.bitcoin.LexicographicalOrdering.isLessThan(a.pub.value, b.pub.value) }
+  /** Sort public keys using lexicographic ordering. */
+  def sort(pubkeys: Seq[PublicKey]): Seq[PublicKey] = pubkeys.sortWith { (a, b) => LexicographicalOrdering.isLessThan(a.value, b.value) }
 
-
-  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] =
-    if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-      Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
-    } else {
-      Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
-    }
+  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = Script.createMultiSigMofN(2, sort(Seq(pubkey1, pubkey2)))
 
   /**
-   * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
+   * @return a script witness that matches the [[multiSig2of2]] pubkey script for pubkey1 and pubkey2
    */
   def witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness =
     if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
@@ -313,7 +308,7 @@ object Scripts {
     implicit def scala2kmpscript(input: Seq[fr.acinq.bitcoin.scalacompat.ScriptElt]): java.util.List[fr.acinq.bitcoin.ScriptElt] = input.map(e => scala2kmp(e)).asJava
 
     /**
-     * Sort and aggregate the public keys of a musig2 session
+     * Sort and aggregate the public keys of a musig2 session.
      *
      * @param pubkey1 public key
      * @param pubkey2 public key
@@ -323,40 +318,43 @@ object Scripts {
     def musig2Aggregate(pubkey1: PublicKey, pubkey2: PublicKey): XonlyPublicKey = Musig2.aggregateKeys(sort(Seq(pubkey1, pubkey2)))
 
     /**
-     * "Nothing Up My Sleeve" point, for which there is no private key
+     * "Nothing Up My Sleeve" point, for which there is no known private key.
      */
     val NUMS_POINT = PublicKey(ByteVector.fromValidHex("02dca094751109d0bd055d03565874e8276dd53e926b44e3bd1bb6bf4bc130a279"))
 
     // miniscript: older(16)
     val anchorScript: Seq[ScriptElt] = OP_16 :: OP_CHECKSEQUENCEVERIFY :: Nil
-
     val anchorScriptTree = new ScriptTree.Leaf(anchorScript)
 
     /**
-     * sends to a single revocation key
+     * Script that can be spent with the revocation key and reveals the delayed payment key to allow observers to claim
+     * unused anchor outputs.
+     *
      * miniscript: this is not miniscript compatible
      *
      * @param localDelayedPaymentPubkey local delayed key
-     * @param revocationPubkey revocation key
+     * @param revocationPubkey          revocation key
      * @return a script that will be used to add a "revocation" leaf to a script tree
      */
-    def toRevokeScript(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {
+    def toRevocationKey(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {
       OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_DROP :: OP_PUSHDATA(revocationPubkey.xOnly) :: OP_CHECKSIG :: Nil
     }
 
     /**
-     * sends to a single key after a delay
+     * Script that can be spent by the owner of the commitment transaction after a delay.
+     *
      * miniscript: and_v(v:pk(delayed_key),older(delay))
      *
      * @param localDelayedPaymentPubkey delayed payment key
      * @param toLocalDelay              delay
-     * @return a script that will be used to add a "to local key" leak to a script tree
+     * @return a script that will be used to add a "to local key" leaf to a script tree
      */
-    def toDelayScript(localDelayedPaymentPubkey: PublicKey, toLocalDelay: CltvExpiryDelta): Seq[ScriptElt] = {
+    def toLocalDelayed(localDelayedPaymentPubkey: PublicKey, toLocalDelay: CltvExpiryDelta): Seq[ScriptElt] = {
       OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_CHECKSIGVERIFY :: Scripts.encodeNumber(toLocalDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: Nil
     }
 
     /**
+     * Script tree used for the main balance of the owner of the commitment transaction.
      *
      * @param revocationPubkey          revocation key
      * @param toSelfDelay               to-self CSV delay
@@ -365,54 +363,59 @@ object Scripts {
      */
     def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(toDelayScript(localDelayedPaymentPubkey, toSelfDelay)),
-        new ScriptTree.Leaf(toRevokeScript(localDelayedPaymentPubkey, revocationPubkey)),
+        new ScriptTree.Leaf(toLocalDelayed(localDelayedPaymentPubkey, toSelfDelay)),
+        new ScriptTree.Leaf(toRevocationKey(localDelayedPaymentPubkey, revocationPubkey)),
       )
     }
 
     /**
-     * sends to a key after a 1 block delay
+     * Script that can be spent by the channel counterparty after a 1-block delay.
+     *
      * miniscript: and_v(v:pk(remote_key),older(1))
      *
      * @param remotePaymentPubkey remote payment key
-     * @return a script that will be used to add a "to remote key" leak to a script tree
+     * @return a script that will be used to add a "to remote key" leaf to a script tree
      */
-    def toRemoteScript(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
+    def toRemoteDelayed(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
       OP_PUSHDATA(remotePaymentPubkey.xOnly) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
     }
 
     /**
+     * Script tree used for the main balance of the remote node in our commitment transaction.
+     * Note that there is no need for a revocation leaf in that case.
      *
      * @param remotePaymentPubkey remote key
      * @return a script tree with a single leaf (to remote key, with a 1-block CSV delay)
      */
     def toRemoteScriptTree(remotePaymentPubkey: PublicKey): ScriptTree.Leaf = {
-      new ScriptTree.Leaf(toRemoteScript(remotePaymentPubkey))
+      new ScriptTree.Leaf(toRemoteDelayed(remotePaymentPubkey))
     }
 
     /**
-     * spending requires signatures from both keys
+     * Script that can be spent when an offered (outgoing) HTLC times out.
+     * It is spent using a pre-signed HTLC transaction signed with both keys.
+     *
      * miniscript: and_v(v:pk(local_htlc_key),pk(remote_htlc_key))
      *
      * @param localHtlcPubkey  local HTLC key
      * @param remoteHtlcPubkey remote HTLC key
      * @return a script used to create a "HTLC timeout" leaf in a script tree
      */
-    def offeredHtlcTimeoutScript(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey): Seq[ScriptElt] = {
+    def offeredHtlcTimeout(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey): Seq[ScriptElt] = {
       OP_PUSHDATA(localHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY :: OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG :: Nil
     }
 
-    // miniscript: and_v(v:hash160(H),and_v(v:pk(remote_htlc_key),older(1)))
-
     /**
-     * spending requires a signature and a valid preimage, with a 1-block delay
+     * Script that can be spent when an offered (outgoing) HTLC is fulfilled.
+     * It is spent using a signature from the receiving node and the preimage, with a 1-block delay.
+     *
      * miniscript: and_v(v:hash160(H),and_v(v:pk(remote_htlc_key),older(1)))
      *
      * @param remoteHtlcPubkey remote HTLC key
      * @param paymentHash      payment hash
      * @return a script used to create a "spend offered HTLC" leaf in a script tree
      */
-    def offeredHtlcSuccessScript(remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    def offeredHtlcSuccess(remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
       OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
@@ -421,22 +424,26 @@ object Scripts {
       // @formatter:on
     }
 
-    def offeredHtlcTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): ScriptTree.Branch = {
+    /**
+     * Script tree used for offered HTLCs.
+     */
+    def offeredHtlcScriptTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(offeredHtlcTimeoutScript(localHtlcPubkey, remoteHtlcPubkey)),
-        new ScriptTree.Leaf(offeredHtlcSuccessScript(remoteHtlcPubkey, paymentHash)),
+        new ScriptTree.Leaf(offeredHtlcTimeout(localHtlcPubkey, remoteHtlcPubkey)),
+        new ScriptTree.Leaf(offeredHtlcSuccess(remoteHtlcPubkey, paymentHash)),
       )
     }
 
     /**
-     * spending requires a signature, an absolute HTLC delay, and a 1-block relative delay
+     * Script that can be spent when a received (incoming) HTLC times out.
+     * It is spent using a signature from the receiving node after an absolute delay and a 1-block relative delay.
+     *
      * miniscript: and_v(v:pk(remote_htlc_key),and_v(v:older(1),after(delay)))
      *
      * @param remoteHtlcPubkey remote HTLC key
-     * @param lockTime         HTLC delay
-     * @return
+     * @param lockTime         HTLC expiry
      */
-    def receivedHtlcTimeoutScript(remoteHtlcPubkey: PublicKey, lockTime: CltvExpiry): Seq[ScriptElt] = {
+    def receivedHtlcTimeout(remoteHtlcPubkey: PublicKey, lockTime: CltvExpiry): Seq[ScriptElt] = {
       // @formatter:off
       OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG ::
       OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
@@ -445,6 +452,9 @@ object Scripts {
     }
 
     /**
+     * Script that can be spent when a received (incoming) HTLC is fulfilled.
+     * It is spent using a pre-signed HTLC transaction signed with both keys and the preimage.
+     *
      * miniscript: and_v(v:hash160(H),and_v(v:pk(local_key),pk(remote_key)))
      *
      * @param localHtlcPubkey  local HTLC key
@@ -452,7 +462,7 @@ object Scripts {
      * @param paymentHash      payment hash
      * @return
      */
-    def receivedHtlcSuccessScript(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    def receivedHtlcSuccess(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
       OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
@@ -461,10 +471,13 @@ object Scripts {
       // @formatter:on
     }
 
-    def receivedHtlcTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, lockTime: CltvExpiry): ScriptTree.Branch = {
+    /**
+     * Script tree used for received HTLCs.
+     */
+    def receivedHtlcScriptTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, lockTime: CltvExpiry): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(receivedHtlcTimeoutScript(remoteHtlcPubkey, lockTime)),
-        new ScriptTree.Leaf(receivedHtlcSuccessScript(localHtlcPubkey, remoteHtlcPubkey, paymentHash)),
+        new ScriptTree.Leaf(receivedHtlcTimeout(remoteHtlcPubkey, lockTime)),
+        new ScriptTree.Leaf(receivedHtlcSuccess(localHtlcPubkey, remoteHtlcPubkey, paymentHash)),
       )
     }
   }
