@@ -144,8 +144,10 @@ trait CommonFundingHandlers extends CommonHandlers {
     // We need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network.
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     val commitments1 = commitments.modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
+    // Set the remote status for all initial funding commitments to Locked. If there are RBF attempts, only one will be confirmed locally.
+    val commitments2 = commitments1.copy(active = commitments.active.collect { case c if c.fundingTxIndex == 0 => c.copy(remoteFundingStatus = RemoteFundingStatus.Locked) })
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
-    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments2, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {
