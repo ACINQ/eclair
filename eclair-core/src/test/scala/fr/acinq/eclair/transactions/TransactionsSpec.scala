@@ -16,17 +16,17 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
 import fr.acinq.bitcoin.SigHash._
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160, sha256}
+import fr.acinq.bitcoin.scalacompat.Crypto._
 import fr.acinq.bitcoin.scalacompat.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_PUSHDATA, OP_RETURN, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
-import fr.acinq.eclair.transactions.Scripts.{Taproot, anchor, htlcOffered, htlcReceived, toLocalDelayed}
+import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
@@ -36,7 +36,6 @@ import scodec.bits._
 
 import java.nio.ByteOrder
 import scala.io.Source
-import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.util.Random
 
 /**
@@ -745,72 +744,46 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
   }
 
-  test("build taproot transactions") {
+  test("generate valid commitment and htlc transactions (taproot)") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
     import fr.acinq.eclair.transactions.Scripts.Taproot
-    import fr.acinq.eclair.transactions.Scripts.Taproot.scala2kmpscript
 
     // funding tx sends to musig2 aggregate of local and remote funding keys
     val fundingTxOutpoint = OutPoint(randomTxId(), 0)
     val fundingOutput = TxOut(Btc(1), Script.pay2tr(Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), None))
 
-    // to-local output script tree, with 2 leaves
-    val toLocalScriptTree = new ScriptTree.Branch(
-      new ScriptTree.Leaf(Taproot.toDelayScript(localDelayedPaymentPriv.publicKey, toLocalDelay)),
-      new ScriptTree.Leaf(Taproot.toRevokeScript(localDelayedPaymentPriv.publicKey, localRevocationPriv.publicKey)),
-    )
-
-    // to-remote output script tree,  with a single leaf
-    val toRemoteScriptTree = new ScriptTree.Leaf(Taproot.toRemoteScript(remotePaymentPriv.publicKey))
-
     // offered HTLC
     val preimage = ByteVector32.fromValidHex("01" * 32)
     val paymentHash = Crypto.sha256(preimage)
-    val offeredHtlcTree = Scripts.Taproot.offeredHtlcTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash)
-    val receivedHtlcTree = Scripts.Taproot.receivedHtlcTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, CltvExpiry(300))
 
     val txNumber = 0x404142434445L
     val (sequence, lockTime) = encodeTxNumber(txNumber)
     val commitTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(fundingTxOutpoint, Seq(), sequence) :: Nil,
+        txIn = TxIn(fundingTxOutpoint, Nil, sequence) :: Nil,
         txOut = Seq(
-          TxOut(300.millibtc, Script.pay2tr(Taproot.NUMS_POINT.xOnly, Some(toLocalScriptTree))),
-          TxOut(400.millibtc, Script.pay2tr(Taproot.NUMS_POINT.xOnly, Some(toRemoteScriptTree))),
-          TxOut(330.sat, Script.pay2tr(localDelayedPaymentPriv.xOnlyPublicKey(), Some(Scripts.Taproot.anchorScriptTree))),
-          TxOut(330.sat, Script.pay2tr(remotePaymentPriv.xOnlyPublicKey(), Some(Scripts.Taproot.anchorScriptTree))),
-          TxOut(100.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(offeredHtlcTree))),
-          TxOut(150.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(receivedHtlcTree)))
+          TxOut(300.millibtc, Taproot.toLocal(localDelayedPaymentPriv.publicKey, toLocalDelay, localRevocationPriv.publicKey)),
+          TxOut(400.millibtc, Taproot.toRemote(remotePaymentPriv.publicKey)),
+          TxOut(330.sat, Taproot.anchor(localDelayedPaymentPriv.publicKey)),
+          TxOut(330.sat, Taproot.anchor(remotePaymentPriv.publicKey)),
+          TxOut(25_000.sat, Taproot.offeredHtlc(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, localRevocationPriv.publicKey)),
+          TxOut(15_000.sat, Taproot.receivedHtlc(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, CltvExpiry(300), localRevocationPriv.publicKey))
         ),
         lockTime
       )
 
-      val localNonce = Musig2.generateNonce(randomBytes32(), localFundingPriv, Seq(localFundingPriv.publicKey))
-      val remoteNonce = Musig2.generateNonce(randomBytes32(), remoteFundingPriv, Seq(remoteFundingPriv.publicKey))
+      val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), localFundingPriv, Seq(localFundingPriv.publicKey))
+      val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), remoteFundingPriv, Seq(remoteFundingPriv.publicKey))
+      val publicKeys = Scripts.sort(Seq(localFundingPriv.publicKey, remoteFundingPriv.publicKey))
+      val publicNonces = Seq(publicLocalNonce, publicRemoteNonce)
+      val Right(sig) = for {
+        localPartialSig <- Musig2.signTaprootInput(localFundingPriv, tx, 0, Seq(fundingOutput), publicKeys, secretLocalNonce, publicNonces, None)
+        remotePartialSig <- Musig2.signTaprootInput(remoteFundingPriv, tx, 0, Seq(fundingOutput), publicKeys, secretRemoteNonce, publicNonces, None)
+        sig <- Musig2.aggregateTaprootSignatures(Seq(localPartialSig, remotePartialSig), tx, 0, Seq(fundingOutput), publicKeys, publicNonces, None)
+      } yield sig
 
-      val Right(aggSig) = for {
-        localPartialSig <- Musig2.signTaprootInput(
-          localFundingPriv,
-          tx, 0, Seq(fundingOutput),
-          Scripts.sort(Seq(localFundingPriv.publicKey, remoteFundingPriv.publicKey)),
-          localNonce._1, Seq(localNonce._2, remoteNonce._2),
-          None)
-        remotePartialSig <- Musig2.signTaprootInput(
-          remoteFundingPriv,
-          tx, 0, Seq(fundingOutput),
-          Scripts.sort(Seq(localFundingPriv.publicKey, remoteFundingPriv.publicKey)),
-          remoteNonce._1, Seq(localNonce._2, remoteNonce._2),
-          None)
-        aggSig <- Musig2.aggregateTaprootSignatures(
-          Seq(localPartialSig, remotePartialSig),
-          tx, 0, Seq(fundingOutput),
-          Scripts.sort(Seq(localFundingPriv.publicKey, remoteFundingPriv.publicKey)),
-          Seq(localNonce._2, remoteNonce._2),
-          None)
-      } yield aggSig
-
-      tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig))
+      tx.updateWitness(0, Script.witnessKeyPathPay2tr(sig))
     }
     Transaction.correctlySpends(commitTx, Map(fundingTxOutpoint -> fundingOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
@@ -822,21 +795,35 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         txIn = TxIn(OutPoint(commitTx, 0), Seq(), sequence = toLocalDelay.toInt) :: Nil,
         txOut = TxOut(300.millibtc, finalPubKeyScript) :: Nil,
         lockTime = 0)
-      val sig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(commitTx.txOut(0)), SigHash.SIGHASH_DEFAULT, toLocalScriptTree.getLeft.hash())
-      val witness = Script.witnessScriptPathPay2tr(Taproot.NUMS_POINT.xOnly, toLocalScriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(sig)), toLocalScriptTree)
+      val scriptTree = Taproot.toLocalScriptTree(localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey)
+      val sig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(commitTx.txOut(0)), SigHash.SIGHASH_DEFAULT, scriptTree.getLeft.hash())
+      val witness = Script.witnessScriptPathPay2tr(Taproot.NUMS_POINT.xOnly, scriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(sig)), scriptTree)
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(spendToLocalOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
+    val mainPenaltyTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 0), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(300.millibtc, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.toLocalScriptTree(localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey)
+      val sig = Transaction.signInputTaprootScriptPath(localRevocationPriv, tx, 0, Seq(commitTx.txOut(0)), SigHash.SIGHASH_DEFAULT, scriptTree.getRight.hash())
+      val witness = Script.witnessScriptPathPay2tr(XonlyPublicKey(Taproot.NUMS_POINT), scriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(sig)), scriptTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(mainPenaltyTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     val spendToRemoteOutputTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 1), Seq(), sequence = 1) :: Nil,
+        txIn = TxIn(OutPoint(commitTx, 1), Nil, sequence = 1) :: Nil,
         txOut = TxOut(400.millibtc, finalPubKeyScript) :: Nil,
         lockTime = 0)
-      val sig = Transaction.signInputTaprootScriptPath(remotePaymentPriv, tx, 0, Seq(commitTx.txOut(1)), SigHash.SIGHASH_DEFAULT, toRemoteScriptTree.hash())
-      val witness = Script.witnessScriptPathPay2tr(Taproot.NUMS_POINT.xOnly, toRemoteScriptTree, ScriptWitness(Seq(sig)), toRemoteScriptTree)
+      val scriptTree = Taproot.toRemoteScriptTree(remotePaymentPriv.publicKey)
+      val sig = Transaction.signInputTaprootScriptPath(remotePaymentPriv, tx, 0, Seq(commitTx.txOut(1)), SigHash.SIGHASH_DEFAULT, scriptTree.hash())
+      val witness = Script.witnessScriptPathPay2tr(Taproot.NUMS_POINT.xOnly, scriptTree, ScriptWitness(Seq(sig)), scriptTree)
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(spendToRemoteOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -844,7 +831,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val spendLocalAnchorTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 2), Seq(), sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txIn = TxIn(OutPoint(commitTx, 2), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
         txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
         lockTime = 0)
       val sig = Transaction.signInputTaprootKeyPath(localDelayedPaymentPriv, tx, 0, Seq(commitTx.txOut(2)), SigHash.SIGHASH_DEFAULT, Some(Scripts.Taproot.anchorScriptTree))
@@ -856,7 +843,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val spendLocalAnchorAfterDelayTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 2), Seq(), sequence = 16) :: Nil,
+        txIn = TxIn(OutPoint(commitTx, 2), Nil, sequence = 16) :: Nil,
         txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
         lockTime = 0)
       // after 16 blocks, anchor outputs can be spent without a signature BUT spenders still need to know the local/remote payment public key
@@ -868,7 +855,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val spendRemoteAnchorTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 3), Seq(), sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txIn = TxIn(OutPoint(commitTx, 3), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
         txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
         lockTime = 0)
       val sig = Transaction.signInputTaprootKeyPath(remotePaymentPriv, tx, 0, Seq(commitTx.txOut(3)), SigHash.SIGHASH_DEFAULT, Some(Scripts.Taproot.anchorScriptTree))
@@ -880,7 +867,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val spendRemoteAnchorAfterDelayTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 3), Seq(), sequence = 16) :: Nil,
+        txIn = TxIn(OutPoint(commitTx, 3), Nil, sequence = 16) :: Nil,
         txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
         lockTime = 0)
       val witness = Script.witnessScriptPathPay2tr(remotePaymentPriv.xOnlyPublicKey(), Scripts.Taproot.anchorScriptTree, ScriptWitness.empty, Scripts.Taproot.anchorScriptTree)
@@ -888,79 +875,132 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     Transaction.correctlySpends(spendRemoteAnchorAfterDelayTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-    val mainPenaltyTx = {
-      val tx = Transaction(
-        version = 2,
-        txIn = TxIn(OutPoint(commitTx, 0), Seq(), sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
-        lockTime = 0)
-      val sig = Transaction.signInputTaprootScriptPath(localRevocationPriv, tx, 0, Seq(commitTx.txOut(0)), SigHash.SIGHASH_DEFAULT, toLocalScriptTree.getRight.hash())
-      val witness = Script.witnessScriptPathPay2tr(XonlyPublicKey(Taproot.NUMS_POINT), toLocalScriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(sig)), toLocalScriptTree)
-      tx.updateWitness(0, witness)
-    }
-    Transaction.correctlySpends(mainPenaltyTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-    // sign and spend received HTLC with HTLC-Success tx
-    val htlcSuccessTree = new ScriptTree.Leaf(Taproot.toDelayScript(localDelayedPaymentPriv.publicKey, toLocalDelay).map(scala2kmp).asJava)
-    val htlcSuccessTx = {
-      val tx = Transaction(
-        version = 2,
-        txIn = TxIn(OutPoint(commitTx, 5), Seq(), sequence = 1) :: Nil,
-        txOut = TxOut(150.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(htlcSuccessTree))) :: Nil,
-        lockTime = 0)
-      val sigHash = SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY
-      val localSig = Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, receivedHtlcTree.getRight.hash()).bytes :+ sigHash.toByte
-      val remoteSig = Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, receivedHtlcTree.getRight.hash()).bytes :+ sigHash.toByte
-      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), receivedHtlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig, preimage)), receivedHtlcTree)
-      tx.updateWitness(0, witness)
-    }
-    Transaction.correctlySpends(htlcSuccessTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-    val spendHtlcSuccessTx = {
-      val tx = Transaction(
-        version = 2,
-        txIn = TxIn(OutPoint(htlcSuccessTx, 0), Seq(), sequence = toLocalDelay.toInt) :: Nil,
-        txOut = TxOut(150.sat, finalPubKeyScript) :: Nil,
-        lockTime = 0)
-      val localSig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(htlcSuccessTx.txOut(0)), SigHash.SIGHASH_DEFAULT, htlcSuccessTree.hash())
-      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), htlcSuccessTree, ScriptWitness(Seq(localSig)), htlcSuccessTree)
-      tx.updateWitness(0, witness)
-    }
-    Transaction.correctlySpends(spendHtlcSuccessTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-
-    // sign and spend offered HTLC with HTLC-Timeout tx
-    val htlcTimeoutTree = htlcSuccessTree
+    // Spend offered HTLC with HTLC-Timeout tx.
     val htlcTimeoutTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(commitTx, 4), Seq(), sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-        txOut = TxOut(100.sat, Script.pay2tr(localRevocationPriv.xOnlyPublicKey(), Some(htlcTimeoutTree))) :: Nil,
-        lockTime = CltvExpiry(300).toLong)
+        txIn = TxIn(OutPoint(commitTx, 4), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(25_000.sat, Taproot.htlcDelayed(localDelayedPaymentPriv.publicKey, toLocalDelay, localRevocationPriv.publicKey)) :: Nil,
+        lockTime = 300)
+      val scriptTree = Taproot.offeredHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash)
       val sigHash = SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY
-      val localSig = Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, offeredHtlcTree.getLeft.hash()).bytes :+ sigHash.toByte
-      val remoteSig = Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, offeredHtlcTree.getLeft.hash()).bytes :+ sigHash.toByte
-      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), offeredHtlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig)), offeredHtlcTree)
+      val localSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, scriptTree.getLeft.hash()), sigHash)
+      val remoteSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, scriptTree.getLeft.hash()), sigHash)
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), scriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig)), scriptTree)
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(htlcTimeoutTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
+    val offeredHtlcPenaltyTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 4), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(25_000.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.offeredHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash)
+      val sig = Transaction.signInputTaprootKeyPath(localRevocationPriv, tx, 0, Seq(commitTx.txOut(4)), SigHash.SIGHASH_DEFAULT, Some(scriptTree))
+      val witness = Script.witnessKeyPathPay2tr(sig)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(offeredHtlcPenaltyTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
     val spendHtlcTimeoutTx = {
       val tx = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(htlcTimeoutTx, 0), Seq(), sequence = toLocalDelay.toInt) :: Nil,
-        txOut = TxOut(100.sat, finalPubKeyScript) :: Nil,
+        txIn = TxIn(OutPoint(htlcTimeoutTx, 0), Nil, sequence = toLocalDelay.toInt) :: Nil,
+        txOut = TxOut(25_000.sat, finalPubKeyScript) :: Nil,
         lockTime = 0)
-      val localSig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(htlcTimeoutTx.txOut(0)), SigHash.SIGHASH_DEFAULT, htlcTimeoutTree.hash())
-      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), htlcTimeoutTree, ScriptWitness(Seq(localSig)), htlcTimeoutTree)
+      val scriptTree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPriv.publicKey, toLocalDelay)
+      val localSig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(htlcTimeoutTx.txOut(0)), SigHash.SIGHASH_DEFAULT, scriptTree.hash())
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), scriptTree, ScriptWitness(Seq(localSig)), scriptTree)
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(spendHtlcTimeoutTx, Seq(htlcTimeoutTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val htlcTimeoutPenaltyTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(htlcTimeoutTx, 0), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(25_000.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPriv.publicKey, toLocalDelay)
+      val sig = Transaction.signInputTaprootKeyPath(localRevocationPriv, tx, 0, Seq(htlcTimeoutTx.txOut(0)), SigHash.SIGHASH_DEFAULT, Some(scriptTree))
+      val witness = Script.witnessKeyPathPay2tr(sig)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(htlcTimeoutPenaltyTx, Seq(htlcTimeoutTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    // Spend received HTLC with HTLC-Success tx.
+    val htlcSuccessTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 5), Nil, sequence = 1) :: Nil,
+        txOut = TxOut(15_000.sat, Taproot.htlcDelayed(localDelayedPaymentPriv.publicKey, toLocalDelay, localRevocationPriv.publicKey)) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.receivedHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, CltvExpiry(300))
+      val sigHash = SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY
+      val localSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, scriptTree.getRight.hash()), sigHash)
+      val remoteSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(5)), sigHash, scriptTree.getRight.hash()), sigHash)
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), scriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig, preimage)), scriptTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(htlcSuccessTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val receivedHtlcPenaltyTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 5), Nil, sequence = 1) :: Nil,
+        txOut = TxOut(15_000.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.receivedHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash, CltvExpiry(300))
+      val sig = Transaction.signInputTaprootKeyPath(localRevocationPriv, tx, 0, Seq(commitTx.txOut(5)), SigHash.SIGHASH_DEFAULT, Some(scriptTree))
+      val witness = Script.witnessKeyPathPay2tr(sig)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(receivedHtlcPenaltyTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val spendHtlcSuccessTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(htlcSuccessTx, 0), Nil, sequence = toLocalDelay.toInt) :: Nil,
+        txOut = TxOut(15_000.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPriv.publicKey, toLocalDelay)
+      val localSig = Transaction.signInputTaprootScriptPath(localDelayedPaymentPriv, tx, 0, Seq(htlcSuccessTx.txOut(0)), SigHash.SIGHASH_DEFAULT, scriptTree.hash())
+      val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), scriptTree, ScriptWitness(Seq(localSig)), scriptTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(spendHtlcSuccessTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val htlcSuccessPenaltyTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(htlcSuccessTx, 0), Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(15_000.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val scriptTree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPriv.publicKey, toLocalDelay)
+      val sig = Transaction.signInputTaprootKeyPath(localRevocationPriv, tx, 0, Seq(htlcSuccessTx.txOut(0)), SigHash.SIGHASH_DEFAULT, Some(scriptTree))
+      val witness = Script.witnessKeyPathPay2tr(sig)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(htlcSuccessPenaltyTx, Seq(htlcSuccessTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("generate taproot NUMS point") {
     val bin = 2.toByte +: Crypto.sha256(ByteVector.fromValidHex("0000000000000002") ++ ByteVector.view("Lightning Simple Taproot".getBytes))
     val pub = PublicKey(bin)
     assert(pub == Taproot.NUMS_POINT)
+  }
+
+  test("sort public keys using lexicographic ordering") {
+    val pubkey1 = PublicKey(hex"0277174bdb8e0003a03334f0f5d0be2b9f4c0812ee4097b0c23d29f505b8e9d9f8")
+    val pubkey2 = PublicKey(hex"03e27a9ca7c8d6348868f8b4a3974e9eb91f7df7d6532f9b0a50f0314cb28c8d31")
+    assert(Seq(pubkey1, pubkey2) == Scripts.sort(Seq(pubkey1, pubkey2)))
+    assert(Seq(pubkey1, pubkey2) == Scripts.sort(Seq(pubkey2, pubkey1)))
+    assert(multiSig2of2(pubkey1, pubkey2) == multiSig2of2(pubkey2, pubkey1))
+    assert(multiSig2of2(pubkey2, pubkey1) == Seq(OP_2, OP_PUSHDATA(pubkey1.value), OP_PUSHDATA(pubkey2.value), OP_2, OP_CHECKMULTISIG))
+    assert(Taproot.musig2Aggregate(pubkey1, pubkey2) == Taproot.musig2Aggregate(pubkey2, pubkey1))
+    assert(Taproot.musig2Aggregate(pubkey2, pubkey1) == Musig2.aggregateKeys(Seq(pubkey1, pubkey2)))
   }
 
   test("sort the htlc outputs using BIP69 and cltv expiry") {
