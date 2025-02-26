@@ -757,7 +757,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     // to-local output script tree, with 2 leaves
     val toLocalScriptTree = new ScriptTree.Branch(
       new ScriptTree.Leaf(Taproot.toDelayScript(localDelayedPaymentPriv.publicKey, toLocalDelay)),
-      new ScriptTree.Leaf(Taproot.toRevokeScript(localRevocationPriv.publicKey)),
+      new ScriptTree.Leaf(Taproot.toRevokeScript(localDelayedPaymentPriv.publicKey, localRevocationPriv.publicKey)),
     )
 
     // to-remote output script tree,  with a single leaf
@@ -853,6 +853,18 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     Transaction.correctlySpends(spendLocalAnchorTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
+    val spendLocalAnchorAfterDelayTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 2), Seq(), sequence = 16) :: Nil,
+        txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      // after 16 blocks, anchor outputs can be spent without a signature BUT spenders still need to know the local/remote payment public key
+      val witness = Script.witnessScriptPathPay2tr(localDelayedPaymentPriv.xOnlyPublicKey(), Scripts.Taproot.anchorScriptTree, ScriptWitness.empty, Scripts.Taproot.anchorScriptTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(spendLocalAnchorAfterDelayTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
     val spendRemoteAnchorTx = {
       val tx = Transaction(
         version = 2,
@@ -864,6 +876,17 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(spendRemoteAnchorTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    val spendRemoteAnchorAfterDelayTx = {
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx, 3), Seq(), sequence = 16) :: Nil,
+        txOut = TxOut(330.sat, finalPubKeyScript) :: Nil,
+        lockTime = 0)
+      val witness = Script.witnessScriptPathPay2tr(remotePaymentPriv.xOnlyPublicKey(), Scripts.Taproot.anchorScriptTree, ScriptWitness.empty, Scripts.Taproot.anchorScriptTree)
+      tx.updateWitness(0, witness)
+    }
+    Transaction.correctlySpends(spendRemoteAnchorAfterDelayTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     val mainPenaltyTx = {
       val tx = Transaction(

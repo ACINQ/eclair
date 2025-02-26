@@ -334,13 +334,14 @@ object Scripts {
 
     /**
      * sends to a single revocation key
-     * miniscript: pk(revocation_key))
+     * miniscript: this is not miniscript compatible
      *
+     * @param localDelayedPaymentPubkey local delayed key
      * @param revocationPubkey revocation key
      * @return a script that will be used to add a "revocation" leaf to a script tree
      */
-    def toRevokeScript(revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      OP_PUSHDATA(revocationPubkey.xOnly) :: OP_CHECKSIG :: Nil
+    def toRevokeScript(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {
+      OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_DROP :: OP_PUSHDATA(revocationPubkey.xOnly) :: OP_CHECKSIG :: Nil
     }
 
     /**
@@ -365,7 +366,7 @@ object Scripts {
     def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree.Branch = {
       new ScriptTree.Branch(
         new ScriptTree.Leaf(toDelayScript(localDelayedPaymentPubkey, toSelfDelay)),
-        new ScriptTree.Leaf(toRevokeScript(revocationPubkey)),
+        new ScriptTree.Leaf(toRevokeScript(localDelayedPaymentPubkey, revocationPubkey)),
       )
     }
 
