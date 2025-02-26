@@ -445,9 +445,9 @@ object Scripts {
      */
     def receivedHtlcTimeout(remoteHtlcPubkey: PublicKey, lockTime: CltvExpiry): Seq[ScriptElt] = {
       // @formatter:off
-      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG ::
-      OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY  :: OP_DROP :: Nil
+      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY ::
+      OP_1 :: OP_CHECKSEQUENCEVERIFY ::
+      OP_VERIFY :: encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: Nil
       // @formatter:on
     }
 
