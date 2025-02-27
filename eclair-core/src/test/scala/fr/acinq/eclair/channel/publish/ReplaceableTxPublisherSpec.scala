@@ -341,9 +341,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       publisher ! Publish(probe.ref, anchorTx)
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd == anchorTx)
-      // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
-      // commit is then published.
-      assert(result.reason == TxSkipped(retryNextBlock = true))
+      assert(result.reason == TxSkipped(retryNextBlock = false))
     }
   }
 
@@ -572,7 +570,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("remote commit tx not published, not spending remote anchor output") {
+  test("remote commit tx not published, publishing it and spending anchor output") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
@@ -580,14 +578,28 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Note that we don't publish the remote commit, to simulate the case where the watch triggers but the remote commit is then evicted from our mempool.
       probe.send(alice, WatchFundingSpentTriggered(commitTx))
       val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(publishAnchor.commitTx == commitTx)
       assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
       assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+
+      val targetFeerate = FeeratePerKw(3000 sat)
+      setFeerate(targetFeerate)
       val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
       publisher ! Publish(probe.ref, anchorTx)
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
 
-      val result = probe.expectMsgType[TxRejected]
+      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+      generateBlocks(6)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
-      assert(result.reason == TxSkipped(retryNextBlock = true))
+      assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.txid))
+      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
     }
   }
 
