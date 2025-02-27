@@ -794,8 +794,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // so they will resend it. Their remote funding status must also be set to Locked if it wasn't already.
       // NB: Their remote funding status will be stored when the commitment is next updated, or channel_ready will
       // be sent again if a reconnection occurs first.
-      stay() using d.copy(commitments = d.commitments.copy(active = d.commitments.active.collect {
+      stay() using d.copy(commitments = d.commitments.copy(active = d.commitments.active.map {
         case c if c.fundingTxIndex == 0 => c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
+        case c => c
       }))
 
     // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
