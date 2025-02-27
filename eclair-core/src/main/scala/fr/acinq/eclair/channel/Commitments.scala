@@ -873,6 +873,9 @@ case class Commitments(params: ChannelParams,
   // We always use the last commitment that was created, to make sure we never go back in time.
   val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
+  val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
+  val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
+
   def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
 
   // @formatter:off
@@ -1345,9 +1348,6 @@ case class Commitments(params: ChannelParams,
   def resolveCommitment(shortChannelId: RealShortChannelId): Option[Commitment] = {
     all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
-
-  val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
-  val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
 }
 
 object Commitments {
