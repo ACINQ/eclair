@@ -2482,14 +2482,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     checkWatchConfirmed(f, fundingTx)
 
     // The splice confirms on Alice's side.
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
     alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
 
     // The splice confirms on Bob's side.
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
     bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     bob2alice.forward(alice)
@@ -2594,14 +2594,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     checkWatchConfirmed(f, fundingTx)
 
     // The splice confirms on Alice's side.
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
     alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
 
     // The splice confirms on Bob's side.
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
     bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     bob2alice.forward(alice)
