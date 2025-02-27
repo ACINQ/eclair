@@ -28,6 +28,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType.P2wpkh
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
@@ -93,11 +94,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val address1 = sender.expectMsgType[String]
     assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
 
-    if (!useEclairSigner) {
-      bitcoinClient.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
-      val address2 = sender.expectMsgType[String]
-      assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
-    }
+    bitcoinClient.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+    val address2 = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
   }
 
   test("get change addresses") {
@@ -113,11 +112,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val address1 = sender.expectMsgType[String]
     assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
 
-    if (!useEclairSigner) {
-      bitcoinClient.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
-      val address2 = sender.expectMsgType[String]
-      assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
-    }
+    bitcoinClient.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+    val address2 = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
   }
 
   test("fund transactions") {
@@ -1836,10 +1833,8 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     createEclairBackedWallet(wallet.rpcClient, keyManager)
 
     // this account xpub can be used to create a watch-only wallet
-    val accountXPub = DeterministicWallet.encode(
-      DeterministicWallet.publicKey(DeterministicWallet.derivePrivateKey(master, DeterministicWallet.KeyPath("m/84'/1'/0'"))),
-      DeterministicWallet.vpub)
-    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0) == accountXPub)
+    val accountXPub = master.derivePrivateKey("m/84'/1'/0'").extendedPublicKey.encode(DeterministicWallet.vpub)
+    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, P2wpkh) == accountXPub)
 
     def getBip32Path(address: String): DeterministicWallet.KeyPath = {
       wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
@@ -1852,13 +1847,49 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       val address = sender.expectMsgType[String]
       val bip32path = getBip32Path(address)
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/84'/1'/0'/0"))
-      assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
+      assert(computeBIP84Address(master.derivePrivateKey(bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
       wallet.getChangeAddress().pipeTo(sender.ref)
       val changeAddress = sender.expectMsgType[String]
       val bip32ChangePath = getBip32Path(changeAddress)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))
-      assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
+      assert(computeBIP84Address(master.derivePrivateKey(bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
+    }
+  }
+
+  test("wallets managed by eclair implement BIP86") {
+    import KotlinUtils._
+    import fr.acinq.bitcoin.Bitcoin.computeBIP86Address
+
+    val sender = TestProbe()
+    val entropy = randomBytes32()
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
+    val master = DeterministicWallet.generate(seed)
+    val (wallet, keyManager) = createWallet(seed)
+    createEclairBackedWallet(wallet.rpcClient, keyManager)
+
+    // this account xpub can be used to create a watch-only wallet
+    val accountXPub = master.derivePrivateKey("m/86'/1'/0'").extendedPublicKey.encode(DeterministicWallet.tpub)
+    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.P2tr) == accountXPub)
+
+    def getBip32Path(address: String): DeterministicWallet.KeyPath = {
+      wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
+      val JString(bip32path) = sender.expectMsgType[JValue] \ "hdkeypath"
+      DeterministicWallet.KeyPath(bip32path)
+    }
+
+    (0 to 10).foreach { _ =>
+      wallet.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+      val bip32path = getBip32Path(address)
+      assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/86'/1'/0'/0"))
+      assert(computeBIP86Address(master.derivePrivateKey(bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
+
+      wallet.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+      val changeAddress = sender.expectMsgType[String]
+      val bip32ChangePath = getBip32Path(changeAddress)
+      assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/86'/1'/0'/1"))
+      assert(computeBIP86Address(master.derivePrivateKey(bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
     }
   }
 
