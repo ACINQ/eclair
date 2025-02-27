@@ -24,6 +24,7 @@ import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, addressToPublicKeyScript}
+import fr.acinq.eclair.NodeParams.hashFromChain
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
@@ -177,6 +178,7 @@ class Setup(val datadir: File,
     }
 
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      chainHash = hashFromChain(chain),
       rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),

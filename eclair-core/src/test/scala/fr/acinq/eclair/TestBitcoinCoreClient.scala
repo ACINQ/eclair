@@ -30,7 +30,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * Created by PM on 26/04/2016.
  */
-class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreClient(new BasicBitcoinJsonRPCClient(UserPassword("", ""), "", 0)(sb = null)) {
+class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreClient(new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, UserPassword("", ""), "", 0)(sb = null)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
