@@ -80,6 +80,46 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsgType[JValue]
   }
 
+  test("get receive addresses") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    // wallet is configured with address_type=bech32
+    bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh) == Right(true))
+
+    bitcoinClient.getReceiveAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
+    val address1 = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
+
+    if (!useEclairSigner) {
+      bitcoinClient.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+      val address2 = sender.expectMsgType[String]
+      assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
+    }
+  }
+
+  test("get change addresses") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    // wallet is configured with address_type=bech32
+    bitcoinClient.getChangeAddress(None).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh) == Right(true))
+
+    bitcoinClient.getChangeAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
+    val address1 = sender.expectMsgType[String]
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
+
+    if (!useEclairSigner) {
+      bitcoinClient.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
+      val address2 = sender.expectMsgType[String]
+      assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
+    }
+  }
+
   test("fund transactions") {
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
