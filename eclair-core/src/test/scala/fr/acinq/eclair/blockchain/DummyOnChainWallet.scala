@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.SignTransactionResponse
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Transactions
@@ -46,7 +47,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String, addressTYpe: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -101,7 +102,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -148,7 +149,10 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
+  override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
+    case Some(AddressType.P2tr) => Future.successful(pubkey.xOnly.pub.p2trAddress(fr.acinq.bitcoin.Block.RegtestGenesisBlock.hash))
+    case _ => Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
+  }
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
 

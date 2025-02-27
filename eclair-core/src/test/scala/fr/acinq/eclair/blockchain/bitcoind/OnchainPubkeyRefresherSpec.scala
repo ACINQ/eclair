@@ -4,6 +4,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, Crypto, computeBIP84Address}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import fr.acinq.eclair.{TestKitBaseClass, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -15,7 +16,7 @@ class OnchainPubkeyRefresherSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("renew onchain scripts") {
     val finalPubkey = new AtomicReference[PublicKey](randomKey().publicKey)
     val generator = new OnChainAddressGenerator {
-      override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash))
+      override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash))
 
       override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(randomKey().publicKey)
     }

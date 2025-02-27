@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -119,7 +120,7 @@ trait OnChainAddressGenerator {
   /**
    * @param label used if implemented with bitcoin core, can be ignored by implementation
    */
-  def getReceiveAddress(label: String = "")(implicit ec: ExecutionContext): Future[String]
+  def getReceiveAddress(label: String = "", addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
