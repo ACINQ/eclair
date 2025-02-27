@@ -2263,10 +2263,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => Set.empty
       }
       val lastFundingLockedTlvs: Set[ChannelReestablishTlv] =
-        if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype) && d.commitments.params.localParams.initFeatures.hasFeature(Features.SplicePrototype)) {
           d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
             d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
-        } else Set.empty
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
@@ -2413,47 +2411,48 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           }
 
           // Prune previous funding transactions and RBF attempts if we already sent splice_locked for the last funding
-          // transaction confirmed by our counterparty; we either missed their splice_locked or it confirmed while disconnected.
-          val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt.flatMap(myCurrentFundingLocked =>
-              d.commitments.updateRemoteFundingStatus(myCurrentFundingLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
+          // transaction that is also locked by our counterparty; we either missed their splice_locked or it confirmed
+          // while disconnected.
+          val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt
+            .flatMap(remoteFundingTxLocked => d.commitments.updateRemoteFundingStatus(remoteFundingTxLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
             .getOrElse(d.commitments)
+            // We then clean up unsigned updates that haven't been received before the disconnection.
+            .discardUnsignedUpdates()
 
-          // Retransmit splice_locked (must come *after* potentially retransmitting tx_signatures):
-          // 1) If they did not receive our last splice_locked;
-          // 2) or the last splice_locked they received is different from what we sent;
-          // 3) or (public channels only) we have not received their announcement_signatures for our latest locked commitment.
-          // NB: there is a key difference between channel_ready and splice_locked:
-          // - channel_ready: a non-zero commitment index implies that both sides have seen the channel_ready
-          // - splice_locked: the commitment index can be updated as long as it is compatible with all splices
-          // We must send our most recent splice_locked until our counterparty receives it and, for a public
-          // channel, also sends their announcement signatures.
-          val spliceLocked_opt = commitments1.lastLocalLocked_opt
-            .filter(_.fundingTxIndex > 0) // only consider splice txs
-            .collect { case c if !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId) ||
-              (commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))) =>
-              log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
-              val spliceLocked = SpliceLocked(d.channelId, c.fundingTxId)
-              spliceLockedSent += (c.fundingTxId -> spliceLocked)
-              trimSpliceLockedSentIfNeeded(d)
-              spliceLocked
+          val spliceLocked_opt = commitments1.lastLocalLocked_opt match {
+            case None => None
+            // We only send splice_locked for splice transactions.
+            case Some(c) if c.fundingTxIndex == 0 => None
+            case Some(c) =>
+              // If our peer has not received our splice_locked, we retransmit it.
+              val notReceivedByRemote = !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId)
+              // If this is a public channel and we haven't announced the splice, we retransmit our splice_locked and
+              // will exchange announcement_signatures afterwards.
+              val notAnnouncedYet = commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))
+              if (notReceivedByRemote || notAnnouncedYet) {
+                log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
+                val spliceLocked = SpliceLocked(d.channelId, c.fundingTxId)
+                spliceLockedSent += (c.fundingTxId -> spliceLocked)
+                trimSpliceLockedSentIfNeeded(d)
+                Some(spliceLocked)
+              } else {
+                None
+              }
           }
           sendQueue = sendQueue ++ spliceLocked_opt.toSeq
 
           // we may need to retransmit updates and/or commit_sig and/or revocation
           sendQueue = sendQueue ++ syncSuccess.retransmit
 
-          // then we clean up unsigned updates
-          val commitments2 = commitments1.discardUnsignedUpdates()
-
-          commitments2.remoteNextCommitInfo match {
+          commitments1.remoteNextCommitInfo match {
             case Left(_) =>
               // we expect them to (re-)send the revocation immediately
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments2.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
+              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
             case _ => ()
           }
 
           // do I have something to sign?
-          if (commitments2.changes.localHasChanges) {
+          if (commitments1.changes.localHasChanges) {
             self ! CMD_SIGN()
           }
 
@@ -2501,11 +2500,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
           // We tell the peer that the channel is ready to process payments that may be queued.
           if (!shutdownInProgress) {
-            val fundingTxIndex = commitments2.active.map(_.fundingTxIndex).min
+            val fundingTxIndex = commitments1.active.map(_.fundingTxIndex).min
             peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
           }
 
-          goto(NORMAL) using d.copy(commitments = commitments2, spliceStatus = spliceStatus1) sending sendQueue
+          goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
