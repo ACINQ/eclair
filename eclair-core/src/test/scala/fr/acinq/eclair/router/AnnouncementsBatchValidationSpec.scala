@@ -49,7 +49,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     implicit val system = ActorSystem("test")
     implicit val sttpBackend = OkHttpFutureBackend()
 
-    val bitcoinClient = new BitcoinCoreClient(new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("foo", "bar"), host = "localhost", port = 18332))
+    val bitcoinClient = new BitcoinCoreClient(new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = UserPassword("foo", "bar"), host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
       // let's generate a block every 10 txs so that we can compute short ids
