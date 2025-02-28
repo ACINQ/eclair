@@ -2109,11 +2109,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(keyManager, d.commitments.latest, lcp, c.confirmationTarget))
           val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, rcp, c.confirmationTarget))
           val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, nrcp, c.confirmationTarget))
-          val claimAnchorTxs = lcp1.toSeq.flatMap(_.claimAnchorTxs) ++ rcp1.toSeq.flatMap(_.claimAnchorTxs) ++ nrcp1.toSeq.flatMap(_.claimAnchorTxs)
-          claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest) }
-          if (claimAnchorTxs.nonEmpty) {
+          // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
+          if (rcp1.nonEmpty) {
+            rcp1.foreach(rcp => rcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
-            stay() using d.copy(localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1) storing()
+            stay() using d.copy(remoteCommitPublished = rcp1) storing()
+          } else if (nrcp1.nonEmpty) {
+            nrcp1.foreach(rcp => rcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
+            c.replyTo ! RES_SUCCESS(c, d.channelId)
+            stay() using d.copy(nextRemoteCommitPublished = nrcp1) storing()
+          } else if (lcp1.nonEmpty) {
+            lcp1.foreach(lcp => lcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, lcp.commitTx) })
+            c.replyTo ! RES_SUCCESS(c, d.channelId)
+            stay() using d.copy(localCommitPublished = lcp1) storing()
           } else {
             log.warning("cannot bump force-close fees, local or remote commit not published")
             c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
@@ -2778,7 +2786,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case (SYNCING, NORMAL, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("syncing->normal", d2, sendToPeer = d2.lastAnnouncement_opt.isEmpty))
         case (NORMAL, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("normal->offline", d2, sendToPeer = false))
         case (OFFLINE, OFFLINE, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate != d2.channelUpdate || d1.lastAnnouncement_opt != d2.lastAnnouncement_opt => Some(EmitLocalChannelUpdate("offline->offline", d2, sendToPeer = false))
-        case (NORMAL | SYNCING | OFFLINE, SHUTDOWN | NEGOTIATING | NEGOTIATING_SIMPLE| CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
+        case (NORMAL | SYNCING | OFFLINE, SHUTDOWN | NEGOTIATING | NEGOTIATING_SIMPLE | CLOSING | CLOSED | ERR_INFORMATION_LEAK | WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, d: DATA_NORMAL, _) => Some(EmitLocalChannelDown(d))
         case _ => None
       }
       emitEvent_opt.foreach {
