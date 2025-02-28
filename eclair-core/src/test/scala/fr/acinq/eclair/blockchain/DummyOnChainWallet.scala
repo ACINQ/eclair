@@ -18,10 +18,10 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
-import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt}
+import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPath}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{Block, Crypto, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
@@ -144,10 +144,17 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
   val keyManager = new LocalOnChainKeyManager("test-wallet", seed = randomBytes32(), walletTimestamp = TimestampSecond.now(), chainHash = Block.RegtestGenesisBlock.hash)
+
   val keypath84 = KeyPath("m/84'/1'/0'/0/0")
   val (pubkey, _) = keyManager.derivePublicKey(keypath84)
   val address84 = pubkey.pub.p2wpkhAddress(Block.RegtestGenesisBlock.hash)
   val Right(script84) = addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address84)
+
+  val keypath86 = KeyPath("m/86'/1'/0'/0/0")
+  val xpubkey86 = keyManager.derivePublicKey(keypath86)._1.xOnly
+  val address86 = xpubkey86.pub.p2trAddress(Block.RegtestGenesisBlock.hash)
+  val Right(script86) = addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address86)
+
   // We create a new dummy input transaction for every funding request.
   var inputs = Seq.empty[Transaction]
   val published = collection.concurrent.TrieMap.empty[TxId, Transaction]
@@ -169,12 +176,14 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     val amountOut = tx.txOut.map(_.amount).sum
     // We add a single input to reach the desired feerate.
     val inputAmount = amountOut + 100_000.sat
-    val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, script84)), 0)
+    val usep2tr = true
+    val script = if (usep2tr) script86 else script84
+    val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, script)), 0)
     inputs = inputs :+ inputTx
-    val dummyWitness = Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))
+    val dummyWitness = if (usep2tr) Script.witnessKeyPathPay2tr(ByteVector64.Zeroes) else Script.witnessPay2wpkh(pubkey, ByteVector.fill(73)(0))
     val dummySignedTx = tx.copy(
       txIn = tx.txIn.filterNot(i => externalInputsWeight.contains(i.outPoint)).map(_.copy(witness = dummyWitness)) :+ TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, dummyWitness),
-      txOut = tx.txOut :+ TxOut(inputAmount, script84),
+      txOut = tx.txOut :+ TxOut(inputAmount, script),
     )
     val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight() + externalInputsWeight.values.sum.toInt)
     feeBudget_opt match {
@@ -183,7 +192,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
       case _ =>
         val fundedTx = tx.copy(
           txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), Nil, 0),
-          txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, script84),
+          txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, script),
         )
         Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
     }
@@ -210,6 +219,8 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
             p1 <- p0.updateNonWitnessInput(inputTx, txIn.outPoint.index.toInt, null, null, java.util.Map.of())
           } yield p1
           updated
+        case Some(inputTx) if inputTx.txOut(txIn.outPoint.index.toInt).publicKeyScript == Script.write(script86) =>
+          currentPsbt.updateWitnessInput(txIn.outPoint, inputTx.txOut(txIn.outPoint.index.toInt), null, null, null, java.util.Map.of(), null, xpubkey86, java.util.Map.of(xpubkey86, new TaprootBip32DerivationPath(java.util.List.of(), 0, keypath86))).getRight
         case _ => currentPsbt
       }
     }
@@ -218,6 +229,9 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
     val updatedPsbt1 = globalTx.txOut.zipWithIndex.foldLeft(upatedPsbt) {
       case (currentPsbt, (txOut, index)) if txOut.publicKeyScript == Script.write(script84) => {
         currentPsbt.updateWitnessOutput(index, null, null, java.util.Map.of(pubkey, new KeyPathWithMaster(0, keypath84)), null, java.util.Map.of()).getRight
+      }
+      case (currentPsbt, (txOut, index)) if txOut.publicKeyScript == Script.write(script86) => {
+        currentPsbt.updateWitnessOutput(index, null, null, java.util.Map.of(), xpubkey86, java.util.Map.of(xpubkey86, new TaprootBip32DerivationPath(java.util.List.of(), 0, keypath86))).getRight
       }
       case (currentPsbt, _) => currentPsbt
     }
