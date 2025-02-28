@@ -606,13 +606,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     pubKey <- extractPublicKey(address)
   } yield pubKey
 
-  /** @return the public key hash of a bech32 raw change address. */
-  def getP2wpkhPubkeyHashForChange()(implicit ec: ExecutionContext): Future[ByteVector] = for {
-    JString(changeAddress) <- rpcClient.invoke("getrawchangeaddress", "bech32")
-    _ <- extractPublicKey(changeAddress)
-    pubkeyHash = ByteVector.view(Bech32.decodeWitnessAddress(changeAddress).getThird)
-  } yield pubkeyHash
-
   /**
    * Ask Bitcoin Core to fund and broadcast a tx that sends funds to a given pubkey script.
    * If the current wallet uses Eclair to sign transaction, then we'll use our on-chain key manager to sign the transaction,
