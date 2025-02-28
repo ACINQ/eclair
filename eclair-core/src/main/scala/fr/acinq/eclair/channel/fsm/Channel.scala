@@ -222,8 +222,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   var announcementSigsStash = Map.empty[RealShortChannelId, AnnouncementSignatures]
   // we record the announcement_signatures messages we already sent to avoid unnecessary retransmission
   var announcementSigsSent = Set.empty[RealShortChannelId]
-  // we keep track of the splice_locked we sent after channel_reestablish to avoid sending it again
-  private var spliceLockedSent = Map.empty[TxId, SpliceLocked]
+  // we keep track of the splice_locked we sent after channel_reestablish and it's funding tx index to avoid sending it again
+  private var spliceLockedSent = Map.empty[TxId, Long]
 
   private def trimAnnouncementSigsStashIfNeeded(): Unit = {
     if (announcementSigsStash.size >= 10) {
@@ -235,14 +235,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     }
   }
 
-  private def trimSpliceLockedSentIfNeeded(d: DATA_NORMAL): Unit = {
+  private def trimSpliceLockedSentIfNeeded(): Unit = {
     if (spliceLockedSent.size >= 10) {
-      // We shouldn't store an unbounded number of splice_locked, otherwise it can be used as a DoS vector.
-      // We remove the oldest funding txid, which is the one with the smallest fundingTxIndex (or 0 if not found).
-      val oldestFundingTxId = spliceLockedSent.keys.map { txId =>
-        d.commitments.all.find(_.fundingTxId == txId).fold((txId,0L))(c => (c.fundingTxId, c.fundingTxIndex))
-      }.minBy(_._2)._1
-      log.warning ("too many pending splice_locked sent: dropping funding txid={}", oldestFundingTxId)
+      // We shouldn't store an unbounded number of splice_locked: on long-lived connections where we do a lot of splice
+      // transactions, we only need to keep track of the most recent ones.
+      val oldestFundingTxId = spliceLockedSent.toSeq
+        .sortBy { case (_, fundingTxIndex) => fundingTxIndex }
+        .map { case (fundingTxId, _) => fundingTxId }.head
       spliceLockedSent -= oldestFundingTxId
     }
   }
@@ -1360,11 +1359,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
-        case Right((commitments1, _)) =>
+        case Right((commitments1, commitment)) =>
           // This is a zero-conf channel, the min-depth isn't critical: we use the default.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
+          spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
+          trimSpliceLockedSentIfNeeded()
           stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
         case Left(_) => stay()
       }
@@ -1375,7 +1376,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // We check if this commitment was already locked before receiving the event (which happens when using 0-conf
           // or for the initial funding transaction). If it was previously not locked, we must send splice_locked now.
           val previouslyNotLocked = d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])
-          val spliceLocked_opt = if (previouslyNotLocked) Some(SpliceLocked(d.channelId, w.tx.txid)) else None
+          val spliceLocked_opt = if (previouslyNotLocked) {
+            spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
+            trimSpliceLockedSentIfNeeded()
+            Some(SpliceLocked(d.channelId, w.tx.txid))
+          } else None
           // If the channel is public and we've received the remote splice_locked, we send our announcement_signatures
           // in order to generate the channel_announcement.
           val remoteLocked = commitment.fundingTxIndex == 0 || d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.remoteFundingStatus == RemoteFundingStatus.Locked)
@@ -1405,15 +1410,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // retransmit splice_locked to avoid a loop.
           // NB: It is important both nodes retransmit splice_locked after reconnecting to ensure new Taproot nonces
           // are exchanged for channel announcements.
-          val spliceLocked_opt = for {
-            localLocked <- d.commitments.lastLocalLocked_opt if localLocked.fundingTxId == commitment.fundingTxId
-            remoteLocked <- d.commitments.lastRemoteLocked_opt if remoteLocked.fundingTxId == commitment.fundingTxId
-            if d.commitments.announceChannel && !spliceLockedSent.contains(commitment.fundingTxId)
-          } yield {
-            val spliceLocked = SpliceLocked(d.channelId, commitment.fundingTxId)
-            spliceLockedSent += (commitment.fundingTxId -> spliceLocked)
-            trimSpliceLockedSentIfNeeded(d)
-            spliceLocked
+          val isLatestLocked = d.commitments.lastLocalLocked_opt.exists(_.fundingTxId == msg.fundingTxId) && d.commitments.lastRemoteLocked_opt.exists(_.fundingTxId == msg.fundingTxId)
+          val spliceLocked_opt = if (d.commitments.announceChannel && isLatestLocked && !spliceLockedSent.contains(commitment.fundingTxId)) {
+            spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
+            trimSpliceLockedSentIfNeeded()
+            Some(SpliceLocked(d.channelId, commitment.fundingTxId))
+          } else {
+            None
           }
           // If the commitment is confirmed, we were waiting to receive the remote splice_locked before sending our announcement_signatures.
           val localAnnSigs_opt = commitment.signAnnouncement(nodeParams, commitments1.params) match {
@@ -2365,6 +2368,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // re-send channel_ready if necessary
           if (d.commitments.latest.fundingTxIndex == 0 && channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommitIndex == 0) {
             // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
+            // TODO: when the remote node enables option_splice we can use your_last_funding_locked to detect they did not receive our channel_ready.
             log.debug("re-sending channelReady")
             val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
             val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
@@ -2432,10 +2436,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val notAnnouncedYet = commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))
               if (notReceivedByRemote || notAnnouncedYet) {
                 log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
-                val spliceLocked = SpliceLocked(d.channelId, c.fundingTxId)
-                spliceLockedSent += (c.fundingTxId -> spliceLocked)
-                trimSpliceLockedSentIfNeeded(d)
-                Some(spliceLocked)
+                spliceLockedSent += (c.fundingTxId -> c.fundingTxIndex)
+                trimSpliceLockedSentIfNeeded()
+                Some(SpliceLocked(d.channelId, c.fundingTxId))
               } else {
                 None
               }
@@ -2924,7 +2927,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       sigStash = Nil
       announcementSigsStash = Map.empty
       announcementSigsSent = Set.empty
-      spliceLockedSent = Map.empty[TxId, SpliceLocked]
+      spliceLockedSent = Map.empty[TxId, Long]
   }
 
   /*
