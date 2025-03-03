@@ -124,10 +124,12 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     alice2bob.forward(bob, aliceChannelReady)
     listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
     awaitCond(bob.stateName == NORMAL)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
     listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 
     // The channel is now ready to process payments.
     alicePeer.fishForMessage() {
@@ -180,10 +182,12 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     alice2bob.forward(bob, aliceChannelReady)
     listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
     awaitCond(bob.stateName == NORMAL)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
     listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
     awaitCond(alice.stateName == NORMAL)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(aliceCommitments.commitment.shortChannelId_opt.isEmpty)
@@ -208,9 +212,11 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob, aliceChannelReady)
     awaitCond(bob.stateName == NORMAL)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
     awaitCond(alice.stateName == NORMAL)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 
     // Alice sends announcement_signatures to Bob.
     val aliceAnnSigs = alice2bob.expectMsgType[AnnouncementSignatures]

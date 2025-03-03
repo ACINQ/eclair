@@ -95,7 +95,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                                          |                .                |
                                          |                .                |
             WAIT_FOR_DUAL_FUNDING_LOCKED |                                 | WAIT_FOR_DUAL_FUNDING_LOCKED
-                                         | funding_locked   funding_locked |
+                                         | channel_ready     channel_ready |
                                          |----------------  ---------------|
                                          |                \/               |
                                          |                /\               |

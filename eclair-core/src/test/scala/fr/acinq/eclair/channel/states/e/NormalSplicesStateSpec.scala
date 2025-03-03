@@ -1493,10 +1493,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Alice and Bob reconnect.
     reconnect(f)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    bob2alice.expectNoMessage(100 millis)
+    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid) // Alice resends `splice_locked` because she hasn't received Bob's announcement_signatures.
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
+    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid) // Bob resends `splice_locked` in response to Alice's `splice_locked` after channel_reestablish.
     bob2alice.forward(alice)
     assert(bob2alice.expectMsgType[AnnouncementSignatures].shortChannelId == spliceAnn.shortChannelId)
     bob2alice.forward(alice)
@@ -2340,8 +2341,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     reconnect(f)
 
     // NB: channel_ready are not re-sent because the channel has already been used (for building splices).
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
-    bob2alice.forward(alice)
+    // Alice has already received `splice_locked` from Bob for the first splice, so he doesn't need to resend it.
+    bob2alice.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
 
     // The first splice confirms on Alice's side.
@@ -2353,10 +2354,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     reconnect(f)
 
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
-    alice2bob.forward(bob)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
-    bob2alice.forward(alice)
+    // Alice and Bob have already exchanged `splice_locked` for the first splice, so there is need to resend it.
+    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
 
     // The second splice confirms on Alice's side.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
@@ -2367,10 +2367,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     reconnect(f)
 
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
-    alice2bob.forward(bob)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
-    bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
@@ -2383,8 +2379,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     reconnect(f)
 
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
-    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     // This time alice received the splice_locked for the second splice.
     bob2alice.forward(alice)
@@ -2394,10 +2389,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     reconnect(f)
 
-    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
-    alice2bob.forward(bob)
-    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
-    bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
@@ -2408,6 +2399,255 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
     bobPeer.fishForMessage() {
       case e: ChannelReadyForPayments => e.fundingTxIndex == 2
+      case _ => false
+    }
+  }
+
+  test("disconnect and update channel before receiving final splice_locked") { f =>
+    import f._
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    // The splice confirms on Alice's side.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+
+    disconnect(f)
+
+    // The splice confirms on Bob's side while disconnected.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    bob2alice.expectNoMessage(100 millis)
+
+    // From Alice's point of view, we still have two active commitments, FundingTx1 and FundingTx2.
+    // From Bob's point of view, we have one active commitment, FundingTx2.
+    assert(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 2)
+    assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
+
+    reconnect(f)
+
+    // Because `your_last_funding_locked_txid` from Bob matches the last `splice_locked` txid sent by Alice; there is no need
+    // for Alice to resend `splice_locked`. Alice processes the `my_current_funding_locked` from Bob as if she received
+    // `splice_locked` from Bob and prunes the initial funding commitment.
+    awaitCond(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
+    assert(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.head.fundingTxId == fundingTx.txid)
+    alice2bob.expectNoMessage(100 millis)
+
+    // The `your_last_funding_locked_txid` from Alice does not match the last `splice_locked` sent by Bob, so Bob must resend `splice_locked`.
+    val bobSpliceLocked = bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    assert(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.size == 1)
+
+    // Alice sends an HTLC before receiving Bob's splice_locked: see https://github.com/lightning/bolts/issues/1223.
+    addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
+    val sender = TestProbe()
+    alice ! CMD_SIGN(Some(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.forward(alice, bobSpliceLocked)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+
+    bob2relayer.expectMsgType[Relayer.RelayForward]
+
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // the splice is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+  }
+
+  test("disconnect before receiving announcement_signatures from one peer", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    // The splice confirms on Alice's side.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // The splice confirms on Bob's side.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    bob2alice.forward(alice)
+
+    // Alice sends announcement_signatures to Bob.
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+
+    // Alice disconnects before Bob can send announcement_signatures.
+    bob2alice.expectMsgType[AnnouncementSignatures]
+
+    disconnect(f)
+    reconnect(f)
+
+    // Bob will not resend `splice_locked` because he has already received `announcement_signatures` from Alice.
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice resends `splice_locked` because she did not receive `announcement_signatures` from Bob before the disconnect.
+    val aliceSpliceLocked = alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Bob receives Alice's `splice_locked` after `channel_reestablish` and must retransmit both `splice_locked` and `announcement_signatures`.
+    val bobSpliceLocked = bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice retransmits `announcement_signatures` to Bob after receiving `splice_locked` from Bob.
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // If either node receives `splice_locked` again, it should be ignored; `announcement_signatures have already been sent.
+    alice2bob.forward(bob, aliceSpliceLocked)
+    bob2alice.forward(alice, bobSpliceLocked)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // the splice is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+  }
+
+  test("disconnect before receiving splice_locked from a legacy peer") { f =>
+    import f._
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    // The splice confirms for both.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    bob2alice.forward(alice)
+
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+
+    disconnect(f)
+    val (aliceReestablish, bobReestablish) = reconnect(f, sendReestablish = false)
+
+    // remove the last_funding_locked tlv from the reestablish messages
+    alice2bob.forward(bob, aliceReestablish.copy(tlvStream = TlvStream.empty))
+    bob2alice.forward(alice, bobReestablish.copy(tlvStream = TlvStream.empty))
+
+    // always send last splice_locked after reconnection if the last_funding_locked tlv is not set
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+    bob2alice.forward(alice)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // the splice is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+  }
+
+  test("disconnect before receiving announcement_signatures from both peers", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    // The splice confirms on Alice's side.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // The splice confirms on Bob's side.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    bob2alice.forward(alice)
+
+    // Alice sends announcement_signatures to Bob.
+    alice2bob.expectMsgType[AnnouncementSignatures]
+
+    // Bob sends announcement_signatures to Alice.
+    bob2alice.expectMsgType[AnnouncementSignatures]
+
+    disconnect(f)
+    reconnect(f)
+
+    // Bob resends `splice_locked` because he did not receive `announcement_signatures` from Alice before the disconnect.
+    val bobSpliceLocked = bob2alice.expectMsgType[SpliceLocked]
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice resends `splice_locked` because she did not receive `announcement_signatures` from Bob before the disconnect.
+    val aliceSpliceLocked = alice2bob.expectMsgType[SpliceLocked]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Alice receives Bob's `splice_locked` after already resending their `splice_locked` and retransmits `announcement_signatures`.
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Bob retransmits `announcement_signatures` to Alice after receiving `announcement_signatures` from Alice.
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // If either node receives `splice_locked` again, it should be ignored; `announcement_signatures have already been sent.
+    alice2bob.forward(bob, aliceSpliceLocked)
+    bob2alice.forward(alice, bobSpliceLocked)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // the splice is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
       case _ => false
     }
   }

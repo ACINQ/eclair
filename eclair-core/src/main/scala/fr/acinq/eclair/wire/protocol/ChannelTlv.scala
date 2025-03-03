@@ -235,13 +235,24 @@ sealed trait ChannelReestablishTlv extends Tlv
 object ChannelReestablishTlv {
 
   case class NextFundingTlv(txId: TxId) extends ChannelReestablishTlv
+  case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+  case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
   object NextFundingTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
 
+  object YourLastFundingLockedTlv {
+    val codec: Codec[YourLastFundingLockedTlv] = tlvField("your_last_funding_locked_txid" | txIdAsHash)
+  }
+  object MyCurrentFundingLockedTlv {
+    val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+  }
+
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
+    .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
+    .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
   )
 }
 
