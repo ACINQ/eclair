@@ -324,11 +324,10 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
-    val pubkey_opt = if (upfrontShutdownScript || channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None
     makeChannelParams(
       nodeParams, initFeatures,
-      if (upfrontShutdownScript) Some(Script.write(Script.pay2wpkh(pubkey_opt.get))) else None,
-      if (channelType.paysDirectlyToWallet) Some(pubkey_opt.get) else None,
+      if (upfrontShutdownScript) Some(Script.write(wallet.getReceivePubkeyScript())) else None,
+      if (channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None,
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
       dualFunded = dualFunded,

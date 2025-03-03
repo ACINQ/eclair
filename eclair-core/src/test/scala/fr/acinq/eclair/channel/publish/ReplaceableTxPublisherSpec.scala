@@ -22,7 +22,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, ScriptElt, Transaction, TxId}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -129,8 +129,14 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
+      val pubkeyScript = {
+        getReceivePublicKeyScript(None).pipeTo(probe.ref)
+        probe.expectMsgType[Seq[ScriptElt]]
+      }
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+
+      override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
 
     (walletRpcClient, walletClient)
@@ -1860,8 +1866,14 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
+      lazy val pubkeyScript = {
+        getReceivePublicKeyScript(None).pipeTo(probe.ref)
+        probe.expectMsgType[Seq[ScriptElt]]
+      }
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+
+      override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
     createEclairBackedWallet(walletRpcClient, keyManager)
 
