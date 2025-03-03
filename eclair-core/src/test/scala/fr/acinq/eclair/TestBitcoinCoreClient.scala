@@ -49,7 +49,7 @@ class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreC
 
   override def listUnspent()(implicit ec: ExecutionContext): Future[Seq[BitcoinCoreClient.Utxo]] = Future.successful(Seq(BitcoinCoreClient.Utxo(randomTxId(), outputIndex = 0, 10_000 millibtc, ancestorCount_opt = None, confirmations = 10, safe = true, label_opt = None)))
 
-  override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
+  override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
     case Some(AddressType.P2tr) => Future.successful(randomKey().xOnlyPublicKey().pub.p2trAddress(fr.acinq.bitcoin.Block.RegtestGenesisBlock.hash))
     case _ => Future.successful(computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash))
   }
