@@ -4,21 +4,14 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin
-import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
-import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
-import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReestablish, ChannelUpdate, CommitSig, Error, Init, RevokeAndAck}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, CommitSig, Error, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -36,10 +29,6 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       withFixture(test.toNoArgTest(setup))
     }
   }
-
-  private def aliceInit = Init(Alice.nodeParams.features.initFeatures())
-
-  private def bobInit = Init(Bob.nodeParams.features.initFeatures())
 
   test("use funding pubkeys from publish commitment to spend our output", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._
@@ -177,7 +166,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     // and we terminate Alice
     alice.stop()
 
-    // there should ne no pending messages
+    // there should be no pending messages
     alice2bob.expectNoMessage()
     bob2alice.expectNoMessage()
 
@@ -207,10 +196,6 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
       alice2bob.expectMsgType[ChannelReestablish]
       bob2alice.expectMsgType[ChannelReestablish]
-      alice2bob.forward(bob)
-      bob2alice.forward(newAlice)
-      alice2bob.expectMsgType[ChannelReady]
-      bob2alice.expectMsgType[ChannelReady]
       alice2bob.forward(bob)
       bob2alice.forward(newAlice)
       alice2bob.expectMsgType[ChannelUpdate]

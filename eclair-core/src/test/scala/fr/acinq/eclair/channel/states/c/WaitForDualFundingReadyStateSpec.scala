@@ -244,14 +244,13 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[ChannelReady]
-    bob2alice.forward(alice)
+    // Bob does not retransmit channel_ready and announcement_signatures because Alice already sent them.
     bob2alice.expectNoMessage(100 millis)
-    // When receiving channel_ready, Bob retransmits announcement_signatures.
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
+    // When receiving channel_ready, Bob retransmits announcement_signatures.
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
