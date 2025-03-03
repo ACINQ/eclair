@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, ScriptElt, Transaction, TxId}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
@@ -117,10 +117,7 @@ trait OnChainChannelFunder {
 /** This trait lets users generate on-chain addresses and public keys. */
 trait OnChainAddressGenerator {
 
-  /**
-   * @param label used if implemented with bitcoin core, can be ignored by implementation
-   */
-  def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String]
+  def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
@@ -133,6 +130,8 @@ trait OnchainPubkeyCache {
    * @param renew applies after requesting the current pubkey, and is asynchronous
    */
   def getP2wpkhPubkey(renew: Boolean = true): PublicKey
+
+  def getReceivePubkeyScript(renew: Boolean = true): Seq[ScriptElt]
 }
 
 /** This trait lets users check the wallet's on-chain balance. */

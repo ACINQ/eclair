@@ -4,6 +4,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ScriptElt, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 
 import java.util.concurrent.atomic.AtomicReference
@@ -19,27 +20,29 @@ object OnchainPubkeyRefresher {
   // @formatter:off
   sealed trait Command
   case object Renew extends Command
+  case object RenewPubkeyScript extends Command
   private case class Set(pubkey: PublicKey) extends Command
+  private case class SetPubkeyScript(script: Seq[ScriptElt]) extends Command
   private case class Error(reason: Throwable) extends Command
   private case object Done extends Command
   // @formatter:on
 
-  def apply(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], delay: FiniteDuration): Behavior[Command] = {
+  def apply(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], finalPubkeyScript: AtomicReference[Seq[ScriptElt]], delay: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        new OnchainPubkeyRefresher(generator, finalPubkey, context, timers, delay).idle()
+        new OnchainPubkeyRefresher(generator, finalPubkey, finalPubkeyScript, context, timers, delay).idle()
       }
     }
   }
 }
 
-private class OnchainPubkeyRefresher(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], context: ActorContext[OnchainPubkeyRefresher.Command], timers: TimerScheduler[OnchainPubkeyRefresher.Command], delay: FiniteDuration) {
+private class OnchainPubkeyRefresher(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], finalPubkeyScript: AtomicReference[Seq[ScriptElt]], context: ActorContext[OnchainPubkeyRefresher.Command], timers: TimerScheduler[OnchainPubkeyRefresher.Command], delay: FiniteDuration) {
 
   import OnchainPubkeyRefresher._
 
   def idle(): Behavior[Command] = Behaviors.receiveMessagePartial {
     case Renew =>
-      context.log.debug(s"received Renew current script is ${finalPubkey.get()}")
+      context.log.debug(s"received Renew current pubkey is ${finalPubkey.get()}")
       context.pipeToSelf(generator.getP2wpkhPubkey()) {
         case Success(pubkey) => Set(pubkey)
         case Failure(reason) => Error(reason)
@@ -52,12 +55,33 @@ private class OnchainPubkeyRefresher(generator: OnChainAddressGenerator, finalPu
           context.log.error("cannot generate new onchain address", reason)
           Behaviors.same
       }
+    case RenewPubkeyScript =>
+      context.log.debug(s"received Renew current script is ${finalPubkeyScript.get()}")
+      context.pipeToSelf(generator.getReceivePublicKeyScript()) {
+        case Success(script) => SetPubkeyScript(script)
+        case Failure(reason) => Error(reason)
+      }
+      Behaviors.receiveMessagePartial {
+        case SetPubkeyScript(script) =>
+          timers.startSingleTimer(Done, delay) // wait a bit to avoid generating too many addresses in case of mass channel force-close
+          waiting(script)
+        case Error(reason) =>
+          context.log.error("cannot generate new onchain address", reason)
+          Behaviors.same
+      }
   }
 
-  def waiting(script: PublicKey): Behavior[Command] = Behaviors.receiveMessagePartial {
+  def waiting(pubkey: PublicKey): Behavior[Command] = Behaviors.receiveMessagePartial {
+    case Done =>
+      context.log.info(s"setting final onchain pubkey to $pubkey")
+      finalPubkey.set(pubkey)
+      idle()
+  }
+
+  def waiting(script: Seq[ScriptElt]): Behavior[Command] = Behaviors.receiveMessagePartial {
     case Done =>
       context.log.info(s"setting final onchain script to $script")
-      finalPubkey.set(script)
+      finalPubkeyScript.set(script)
       idle()
   }
 }

@@ -592,6 +592,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     }
   }
 
+  def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = getReceiveAddress(addressType).map { address =>
+    addressToPublicKeyScript(this.rpcClient.chainHash, address).getOrElse(throw new RuntimeException(s"cannot convert $address to a public key script"))
+  }
+
   def getChangeAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = for {
     JString(address) <- rpcClient.invoke("getrawchangeaddress", addressType.map(_.bitcoinCoreName).toList: _*)
     verifiedAddress <- verifyAddress(address)

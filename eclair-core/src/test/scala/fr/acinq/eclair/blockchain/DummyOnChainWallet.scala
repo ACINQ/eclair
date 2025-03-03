@@ -49,7 +49,10 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(addressTYpe: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = Future.successful(addressType match {
+    case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly)
+    case _ => Script.pay2wpkh(dummyReceivePubkey)
+  })
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -92,6 +95,8 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
+
+  override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly)
 }
 
 class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
@@ -104,7 +109,10 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = Future.successful(addressType match {
+    case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly)
+    case _ => Script.pay2wpkh(dummyReceivePubkey)
+  })
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -137,6 +145,8 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
+
+  override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly)
 }
 
 class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
@@ -164,10 +174,10 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
-    case Some(AddressType.P2tr) => Future.successful(pubkey.xOnly.pub.p2trAddress(fr.acinq.bitcoin.Block.RegtestGenesisBlock.hash))
-    case _ => Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
-  }
+  override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = Future.successful(addressType match {
+    case Some(AddressType.P2wpkh) => script84
+    case _ => script86
+  })
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(pubkey)
 
@@ -280,11 +290,11 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+
+  override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = script86
 }
 
 object DummyOnChainWallet {
-
-  val dummyReceiveAddress: String = "bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux"
   val dummyReceivePubkey: PublicKey = PublicKey(hex"028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12")
 
   def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): MakeFundingTxResponse = {
