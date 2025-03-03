@@ -1808,8 +1808,8 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/84'/1'/0'/0"))
       assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
-      wallet.getP2wpkhPubkeyHashForChange().pipeTo(sender.ref)
-      val Right(changeAddress) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.pay2wpkh(sender.expectMsgType[ByteVector]))
+      wallet.getChangeAddress().pipeTo(sender.ref)
+      val changeAddress = sender.expectMsgType[String]
       val bip32ChangePath = getBip32Path(changeAddress)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))
       assert(computeBIP84Address(DeterministicWallet.derivePrivateKey(master, bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)

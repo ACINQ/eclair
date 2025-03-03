@@ -393,15 +393,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         getTxOutputs(outpoints).transformWith {
           case Failure(ex) => Future.failed(new IllegalArgumentException("some outpoints are invalid or cannot be resolved", ex))
           case Success(txOutputs) =>
-            getP2wpkhPubkeyHashForChange().transformWith {
+            getChangePublicKeyScript().transformWith {
               case Failure(ex) => Future.failed(new IllegalArgumentException("change address generation failed", ex))
-              case Success(changePubkeyHash) =>
+              case Success(changePubkeyScript) =>
                 val amountIn = txOutputs.values.map(_.amount).sum
                 // We build a transaction spending all the inputs provided to a single change output. Our  inputs are
                 // using either p2wpkh or p2tr: p2tr inputs are slightly smaller, but we don't bother doing an exact
                 // calculation and always use the weight of p2wpkh inputs for simplicity.
                 val p2wpkhInputWeight = 272
-                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, Script.pay2wpkh(changePubkeyHash))), 0).weight()
+                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, changePubkeyScript)), 0).weight()
                 val totalWeight = mempoolPackage.values.map(_.weight).sum + txWeight
                 val targetFees = Transactions.weight2fee(targetFeerate, totalWeight.toInt)
                 val currentFees = mempoolPackage.values.map(_.fees).sum
@@ -411,7 +411,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
                 } else if (amountIn <= missingFees + 660.sat) {
                   Future.failed(new IllegalArgumentException("input amount is not sufficient to cover the target feerate"))
                 } else {
-                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, Script.pay2wpkh(changePubkeyHash))), 0)
+                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, changePubkeyScript)), 0)
                   signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, unsignedTx.txOut.indices).transformWith {
                     case Failure(ex) => Future.failed(new IllegalArgumentException("tx signing failed", ex))
                     case Success(response) => response.finalTx_opt match {
@@ -597,6 +597,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     verifiedAddress <- verifyAddress(address)
   } yield verifiedAddress
 
+  def getChangePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = getChangeAddress(addressType).map { address =>
+    addressToPublicKeyScript(this.rpcClient.chainHash, address).getOrElse(throw new RuntimeException(s"cannot convert $address to a public key script"))
+  }
 
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
     address <- getReceiveAddress(Some(P2wpkh))
