@@ -47,7 +47,7 @@ class DummyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String, addressTYpe: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(addressTYpe: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -102,7 +102,7 @@ class NoOpOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
@@ -149,7 +149,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnchainPubkeyCache {
 
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
+  override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = addressType match {
     case Some(AddressType.P2tr) => Future.successful(pubkey.xOnly.pub.p2trAddress(fr.acinq.bitcoin.Block.RegtestGenesisBlock.hash))
     case _ => Future.successful(Bech32.encodeWitnessAddress("bcrt", 0, pubkey.hash160.toArray))
   }

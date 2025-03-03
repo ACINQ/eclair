@@ -566,17 +566,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   /**
    *
-   * @param label       used if implemented with bitcoin core, can be ignored by implementation
    * @param addressType optional address type. For bitcoin core wallets, if no address type is specified, then the default address type configured with
    *                    the bitcoin node's `addresstype` option will be used.
    * @return a new receive address
    */
-  def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = for {
-    JString(address) <- rpcClient.invoke("getnewaddress", label +: addressType.map(_.bitcoinCoreName).toList: _*)
+  def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = for {
+    JString(address) <- rpcClient.invoke("getnewaddress", "" +: addressType.map(_.bitcoinCoreName).toList: _*)
     verifiedAddress <- verifyAddress(address)
   } yield verifiedAddress
 
-  def getReceiveAddress(addressType: Option[AddressType])(implicit ec: ExecutionContext): Future[String] = getReceiveAddress("", addressType)
 
   private def verifyAddress(address: String)(implicit ec: ExecutionContext): Future[String] = {
     for {

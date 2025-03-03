@@ -16,7 +16,7 @@ class OnchainPubkeyRefresherSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("renew onchain scripts") {
     val finalPubkey = new AtomicReference[PublicKey](randomKey().publicKey)
     val generator = new OnChainAddressGenerator {
-      override def getReceiveAddress(label: String, addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash))
+      override def getReceiveAddress(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = Future.successful(computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash))
 
       override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(randomKey().publicKey)
     }
