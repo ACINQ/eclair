@@ -241,8 +241,15 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: RouteRequest, d) =>
       stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
 
+    case Event(r: BlindedRouteRequest, d) =>
+      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r)
+
     case Event(r: MessageRouteRequest, d) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
+
+    case Event(r: GetCentralNode , d) =>
+      r.replyTo ! d.graphWithBalances.graph.centralNode
+      stay()
 
     case Event(GetNodeId(replyTo, shortChannelId, isNode1), d) =>
       replyTo ! d.channels.get(shortChannelId).map(channel => if (isNode1) channel.nodeId1 else channel.nodeId2)
@@ -614,6 +621,14 @@ object Router {
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
 
+  case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                                 source: PublicKey,
+                                 target: PublicKey,
+                                 amount: MilliSatoshi,
+                                 routeParams: RouteParams,
+                                 pathsToFind: Int,
+                                 ignore: Ignore = Ignore.empty)
+
   case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
                            route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
@@ -635,6 +650,8 @@ object Router {
   case class MessageRoute(intermediateNodes: Seq[PublicKey], target: PublicKey) extends MessageRouteResponse
   case class MessageRouteNotFound(target: PublicKey) extends MessageRouteResponse
   // @formatter:on
+
+  case class GetCentralNode(replyTo: typed.ActorRef[PublicKey])
 
   /**
    * Useful for having appropriate logging context at hand when finding routes
