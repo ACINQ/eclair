@@ -481,17 +481,21 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      if (!d.latestFundingTx.fundingParams.isInitiator) {
-        cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfNonInitiator(d.channelId))
-        stay()
-      } else if (d.commitments.channelParams.zeroConf) {
-        cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfZeroConf(d.channelId))
-        stay()
-      } else if (cmd.requestFunding_opt.isEmpty && d.latestFundingTx.liquidityPurchase_opt.nonEmpty) {
-        cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfMissingLiquidityPurchase(d.channelId, d.latestFundingTx.liquidityPurchase_opt.get.amount))
-        stay()
-      } else {
-        d.status match {
+      d.latestFundingTx.liquidityPurchase_opt match {
+        case Some(purchase) if !d.latestFundingTx.fundingParams.isInitiator =>
+          // If we're not the channel initiator and they are purchasing liquidity, they must initiate RBF, otherwise
+          // the liquidity purchase will be lost (since only the initiator can purchase liquidity).
+          cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfOverridesLiquidityPurchase(d.channelId, purchase.amount))
+          stay()
+        case Some(purchase) if cmd.requestFunding_opt.isEmpty =>
+          // If we were purchasing liquidity, we must keep purchasing liquidity across RBF attempts, otherwise our
+          // peer will simply reject the RBF attempt.
+          cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfMissingLiquidityPurchase(d.channelId, purchase.amount))
+          stay()
+        case _ if d.commitments.channelParams.zeroConf =>
+          cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfZeroConf(d.channelId))
+          stay()
+        case _ => d.status match {
           case DualFundingStatus.WaitingForConfirmations =>
             val minNextFeerate = d.latestFundingTx.fundingParams.minNextFeerate
             if (cmd.targetFeerate < minNextFeerate) {
@@ -509,11 +513,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(msg: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      if (d.latestFundingTx.fundingParams.isInitiator) {
-        // Only the initiator is allowed to initiate RBF.
-        log.info("rejecting tx_init_rbf, we're the initiator, not them!")
-        stay() sending Error(d.channelId, InvalidRbfNonInitiator(d.channelId).getMessage)
-      } else if (d.commitments.channelParams.zeroConf) {
+      if (d.commitments.channelParams.zeroConf) {
         log.info("rejecting tx_init_rbf, we're using zero-conf")
         stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfZeroConf(d.channelId).getMessage)
       } else {
@@ -551,6 +551,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                   val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(d.latestFundingTx.fundingParams.localContribution)
                   log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
                   val fundingParams = d.latestFundingTx.fundingParams.copy(
+                    isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
                     lockTime = msg.lockTime,
@@ -594,6 +595,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, error.getMessage)
         case DualFundingStatus.RbfRequested(cmd) =>
           val fundingParams = d.latestFundingTx.fundingParams.copy(
+            isInitiator = true,
             // we don't change our funding contribution
             remoteContribution = msg.fundingContribution,
             lockTime = cmd.lockTime,
