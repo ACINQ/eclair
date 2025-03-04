@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
+import akka.http.scaladsl.server.Route
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Transaction, TxId}
@@ -54,17 +54,6 @@ trait Control {
     }
   }
 
-  val manualBumpRemote: Route = postRequest("manualbumpforceclose") { implicit t =>
-    formFields(channelIdFormParam, "feerate".as[FeeratePerByte], "type") {
-      (channelId, feerate, `type`) =>
-        `type` match {
-          case "local" => complete(eclairApi.manualBumpForceClose(channelId, FeeratePerKw(feerate), local = true))
-          case "remote" => complete(eclairApi.manualBumpForceClose(channelId, FeeratePerKw(feerate), local = false))
-          case _ => reject(MalformedFormFieldRejection("type", "type must be 'local' or 'remote'"))
-        }
-    }
-  }
-
   val spendFromChannelAddressPrep: Route = postRequest("spendfromchanneladdressprep") { implicit t =>
     formFields("t".as[ByteVector32], "o".as[Int], "kp", "fi".as[Int], "address", "f".as[FeeratePerByte]) {
       (txId, outputIndex, keyPath, fundingTxIndex, address, feerate) =>
@@ -79,6 +68,6 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ manualBumpRemote ~ spendFromChannelAddressPrep ~ spendFromChannelAddress
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ spendFromChannelAddressPrep ~ spendFromChannelAddress
 
 }

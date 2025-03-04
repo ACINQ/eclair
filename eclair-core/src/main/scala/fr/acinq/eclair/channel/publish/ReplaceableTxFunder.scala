@@ -85,7 +85,7 @@ object ReplaceableTxFunder {
     }
   }
 
-  def commitWeight(commitment: FullCommitment): Int = {
+  private def commitWeight(commitment: FullCommitment): Int = {
     val unsignedCommitTx = commitment.localCommit.commitTxAndRemoteSig.commitTx
     val dummySignedCommitTx = addSigs(unsignedCommitTx, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderSig, PlaceHolderSig)
     dummySignedCommitTx.tx.weight()

@@ -23,9 +23,8 @@ import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
@@ -35,8 +34,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.commitWeight
-import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.ClaimLocalAnchorWithWitnessData
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus}
@@ -209,8 +206,6 @@ trait Eclair {
   def stop(): Future[Unit]
 
   def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId
-
-  def manualBumpForceClose(channelId: ByteVector32, targetFeerate: FeeratePerKw, local: Boolean)(implicit timeout: Timeout): Future[Transaction]
 
   def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
 
@@ -842,73 +837,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId = {
     appKit.register ! Register.Forward(null, channelId, WatchFundingSpentTriggered(tx))
     tx.txid
-  }
-
-  override def manualBumpForceClose(channelId: ByteVector32, targetFeerate: FeeratePerKw, local: Boolean)(implicit timeout: Timeout): Future[Transaction] = {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-    for {
-      data <- sendToChannel[CMD_GET_CHANNEL_DATA, RES_GET_CHANNEL_DATA[_]](Left(channelId), CMD_GET_CHANNEL_DATA(ActorRef.noSender)).map(_.data).mapTo[DATA_CLOSING]
-      commitment = data.commitments.latest
-      dustLimit = commitment.localParams.dustLimit
-      commitTxWeight = commitWeight(commitment)
-      // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
-      // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
-      // (note that bitcoind doesn't let us publish a transaction with no outputs). To work around these limitations, we
-      // start with a dummy output and later merge that dummy output with the optional change output added by bitcoind.
-      dummyChangeOutput = TxOut(dustLimit, Script.pay2wpkh(PlaceHolderPubKey))
-      anchorTx = (if (local) data.localCommitPublished.get.claimAnchorTxs else data.remoteCommitPublished.get.claimAnchorTxs).collect { case tx: ClaimLocalAnchorOutputTx => tx }.head
-      // we remove the anchor input so funding works even when the commit tx is not in the local mempool
-      txNotFunded = anchorTx.tx.copy(txIn = Nil, txOut = dummyChangeOutput :: Nil)
-      // The anchor transaction is paying for the weight of the commitment transaction, we tweak the feerate to take that into account.
-      // We assume bitcoin core will use one input from the wallet and one change output
-      oneInputOneOutputWeight = 391
-      bitcoinClient = appKit.wallet.asInstanceOf[BitcoinCoreClient]
-      correctedFeerate = targetFeerate * (anchorInputWeight + commitTxWeight - KotlinUtils.scala2kmp(dummyChangeOutput).weight() + oneInputOneOutputWeight) / oneInputOneOutputWeight
-      claimAnchorTx <- bitcoinClient.fundTransaction(txNotFunded, correctedFeerate).flatMap { fundTxResponse =>
-        // We add back the anchor as the first input.
-        val txIn = anchorTx.tx.txIn ++ fundTxResponse.tx.txIn
-        // The commitment transaction was already paying some fees that we're paying again in the anchor transaction since
-        // we included the commit weight, so we need to increase our change output to avoid overshooting the feerate.
-        val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
-        fundTxResponse.changePosition match {
-          case Some(changePos) =>
-            val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = fundTxResponse.tx.txOut.map(_.amount).sum + commitFee)
-            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
-            Future.successful(ClaimLocalAnchorWithWitnessData(anchorTx).updateTx(txSingleOutput))
-          case None =>
-            bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
-              // replace PlaceHolderPubKey with a real wallet key
-              val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit + commitFee, Script.pay2wpkh(pubkeyHash))))
-              ClaimLocalAnchorWithWitnessData(anchorTx).updateTx(txSingleOutput)
-            })
-        }
-      }
-      keyManager = appKit.nodeParams.channelKeyManager
-      localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex), TxOwner.Local, commitment.params.commitmentFormat)
-      locallySignedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
-      // We create a PSBT with the non-wallet input already signed:
-      psbt = new Psbt(locallySignedTx.txInfo.tx)
-        .updateWitnessInput(
-          locallySignedTx.txInfo.input.outPoint,
-          locallySignedTx.txInfo.input.txOut,
-          null,
-          fr.acinq.bitcoin.Script.parse(locallySignedTx.txInfo.input.asInstanceOf[InputInfo.SegwitInput].redeemScript),
-          fr.acinq.bitcoin.SigHash.SIGHASH_ALL,
-          java.util.Map.of(),
-          null,
-          null,
-          java.util.Map.of()
-        )
-        .flatMap(_.finalizeWitnessInput(0, locallySignedTx.txInfo.tx.txIn.head.witness))
-        .toOption.get
-      // The transaction that we want to fund/replace has one input, the first one. Additional inputs are provided by our on-chain wallet.
-      ourWalletInputs = locallySignedTx.txInfo.tx.txIn.indices.tail
-      // For "claim anchor txs" there is a single change output that sends to our on-chain wallet.
-      // For htlc txs the first output is the one we want to fund/bump, additional outputs send to our on-chain wallet.
-      ourWalletOutputs = Seq(0)
-      processPsbtResponse <- bitcoinClient.signPsbt(psbt, ourWalletInputs, ourWalletOutputs)
-      signedTx = processPsbtResponse.finalTx_opt.toOption.get
-    } yield signedTx
   }
 
   /** these dummy witnesses are used as a placeholder to accurately compute the weight */
