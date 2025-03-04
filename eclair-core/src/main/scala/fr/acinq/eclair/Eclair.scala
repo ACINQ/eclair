@@ -24,7 +24,7 @@ import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
@@ -47,9 +47,6 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.transactions.Scripts.multiSig2of2
-import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -212,7 +209,7 @@ trait Eclair {
   def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult]
 }
 
-class EclairImpl(appKit: Kit) extends Eclair with Logging {
+class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
   implicit val scheduler: Scheduler = appKit.system.scheduler.toTyped
@@ -839,45 +836,4 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     tx.txid
   }
 
-  /** these dummy witnesses are used as a placeholder to accurately compute the weight */
-  private val dummy2of2Witness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey)
-
-  private def buildTx(outPoint: OutPoint, outputAmount: Satoshi, pubKeyScript: ByteVector, witness: ScriptWitness) = Transaction(2,
-    txIn = Seq(TxIn(outPoint, ByteVector.empty, 0, witness)),
-    txOut = Seq(TxOut(outputAmount, pubKeyScript)),
-    lockTime = 0)
-
-
-  def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep] = {
-    for {
-      inputTx <- appKit.wallet.getTransaction(outPoint.txid)
-      inputAmount = inputTx.txOut(outPoint.index.toInt).amount
-      Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
-      // build the tx a first time with a zero amount to compute the weight
-      fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummy2of2Witness).weight())
-      _ = assert(inputAmount - fee > Transactions.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
-      unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummy2of2Witness)
-      // the following are not used, but need to be sent to the counterparty
-      localFundingPubkey = appKit.nodeParams.channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex).publicKey
-    } yield SpendFromChannelPrep(fundingTxIndex, localFundingPubkey, inputAmount, unsignedTx)
-  }
-
-  override def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult] = {
-    for {
-      _ <- Future.successful(())
-      outPoint = unsignedTx.txIn.head.outPoint
-      inputTx <- appKit.wallet.getTransaction(outPoint.txid)
-      localFundingPubkey = appKit.nodeParams.channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex)
-      fundingRedeemScript = multiSig2of2(localFundingPubkey.publicKey, remoteFundingPubkey)
-      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), fundingRedeemScript)
-      localSig = appKit.nodeParams.channelKeyManager.sign(
-        Transactions.SpliceTx(inputInfo, unsignedTx), // classify as splice, doesn't really matter
-        localFundingPubkey,
-        TxOwner.Local, // unused
-        DefaultCommitmentFormat // unused
-      )
-      witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey.publicKey, remoteFundingPubkey)
-      signedTx = unsignedTx.updateWitness(0, witness)
-    } yield SpendFromChannelResult(signedTx)
-  }
 }
