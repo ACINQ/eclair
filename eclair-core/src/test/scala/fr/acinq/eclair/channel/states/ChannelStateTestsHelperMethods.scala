@@ -93,6 +93,8 @@ object ChannelStateTestsTags {
   val RejectRbfAttempts = "reject_rbf_attempts"
   /** If set, the non-initiator will require a 1-block delay between RBF attempts. */
   val DelayRbfAttempts = "delay_rbf_attempts"
+  /** If set, the non-initiator will not enforce any restriction between RBF attempts. */
+  val UnlimitedRbfAttempts = "unlimited_rbf_attempts"
   /** If set, channels will adapt their max HTLC amount to the available balance. */
   val AdaptMaxHtlcAmount = "adapt_max_htlc_amount"
   /** If set, closing will use option_simple_close. */
@@ -225,6 +227,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+      .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.UnlimitedRbfAttempts))(100)
+      .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.UnlimitedRbfAttempts))(0)
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioLow).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(0.000001)
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
@@ -235,7 +239,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.channelConf.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
       .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.RejectRbfAttempts))(0)
+      .modify(_.channelConf.remoteRbfLimits.maxAttempts).setToIf(tags.contains(ChannelStateTestsTags.UnlimitedRbfAttempts))(100)
       .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.DelayRbfAttempts))(1)
+      .modify(_.channelConf.remoteRbfLimits.attemptDeltaBlocks).setToIf(tags.contains(ChannelStateTestsTags.UnlimitedRbfAttempts))(0)
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioLow).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(0.000001)
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
