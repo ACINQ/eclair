@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -206,11 +206,20 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
-        d.transport forward msg
+        val useExperimentalSplice = d.remoteInit.features.unknown.map(_.bitIndex).contains(155)
+        msg match {
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: SpliceInit if useExperimentalSplice => d.transport forward ExperimentalSpliceInit.from(msg)
+          case msg: SpliceAck if useExperimentalSplice => d.transport forward ExperimentalSpliceAck.from(msg)
+          case msg: SpliceLocked if useExperimentalSplice => d.transport forward ExperimentalSpliceLocked.from(msg)
+          case msg: TxAddInput if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxAddInputTlv.SharedInputTxId])))
+          case msg: CommitSig if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv])))
+          case msg: TxSignatures if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxSignaturesTlv.PreviousFundingTxSig])))
+          case _ => d.transport forward msg
+        }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
-          case _: ChannelMessage if !d.isPersistent =>
-            stay() using d.copy(isPersistent = true)
+          case _: ChannelMessage if !d.isPersistent => stay() using d.copy(isPersistent = true)
           case _ => stay()
         }
 
@@ -343,7 +352,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(msg: LightningMessage, d: ConnectedData) =>
         // we acknowledge and pass all other messages to the peer
         d.transport ! TransportHandler.ReadAck(msg)
-        d.peer ! msg
+        msg match {
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: ExperimentalSpliceInit => d.peer ! msg.toSpliceInit()
+          case msg: ExperimentalSpliceAck => d.peer ! msg.toSpliceAck()
+          case msg: ExperimentalSpliceLocked => d.peer ! msg.toSpliceLocked()
+          case _ => d.peer ! msg
+        }
         stay()
 
       case Event(readAck: TransportHandler.ReadAck, d: ConnectedData) =>
