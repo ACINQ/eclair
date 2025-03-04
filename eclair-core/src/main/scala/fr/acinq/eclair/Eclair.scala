@@ -840,7 +840,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   /** these dummy witnesses are used as a placeholder to accurately compute the weight */
-  private val dummy2of2Witness = Scripts.witness2of2(randomBytes64(), randomBytes64(), randomKey().publicKey, randomKey().publicKey)
+  private val dummy2of2Witness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey)
 
   private def buildTx(outPoint: OutPoint, outputAmount: Satoshi, pubKeyScript: ByteVector, witness: ScriptWitness) = Transaction(2,
     txIn = Seq(TxIn(outPoint, ByteVector.empty, 0, witness)),
@@ -855,7 +855,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
       // build the tx a first time with a zero amount to compute the weight
       fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummy2of2Witness).weight())
-      _ = assert(fee < inputAmount, s"amount insufficient (fee=$fee)")
+      _ = assert(inputAmount - fee > Transactions.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
       unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummy2of2Witness)
       // the following are not used, but need to be sent to the counterparty
       localFundingPubkey = appKit.nodeParams.channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex).publicKey
