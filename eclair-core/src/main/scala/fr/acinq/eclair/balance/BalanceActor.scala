@@ -75,7 +75,7 @@ private class BalanceActor(context: ActorContext[Command],
           )
           filteredByStatus.foreach {
             case (status, filteredUtxos) =>
-              val amount = filteredUtxos.map(_.amount).fold(MilliBtc(0))(_ + _)
+              val amount = filteredUtxos.map(_.amount.toSatoshi).sum.toMilliBtc
               log.info(s"we have {} {} utxos ({})", filteredUtxos.length, status, amount.toBtc)
               Monitoring.Metrics.UtxoCount.withTag(Monitoring.Tags.UtxoStatus, status).update(filteredUtxos.length)
               Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount.toDouble)
