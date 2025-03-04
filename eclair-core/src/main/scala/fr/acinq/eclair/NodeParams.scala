@@ -23,7 +23,7 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelType, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
@@ -163,7 +163,12 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
  * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
  * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.
  */
-case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration)
+case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration) {
+  // NB: we don't use the arguments here, but they can be used in feature branches to override the default value.
+  def getWriteDelay(nodeId: PublicKey, remoteFeatures_opt: Option[Features[InitFeature]]): FiniteDuration = {
+    writeDelay
+  }
+}
 
 object NodeParams extends Logging {
 
