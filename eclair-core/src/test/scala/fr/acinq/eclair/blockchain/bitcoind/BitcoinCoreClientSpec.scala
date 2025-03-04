@@ -194,6 +194,52 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
   }
 
+  test("fund transactions with confirmed inputs") {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val sender = TestProbe()
+    val miner = makeBitcoinCoreClient()
+    val wallet = new BitcoinCoreClient(createWallet("funding_confirmed_inputs", sender))
+    wallet.getReceiveAddress().pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    val pubkeyScript = Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get)
+
+    // We first receive some confirmed funds.
+    miner.sendToPubkeyScript(pubkeyScript, 150_000 sat, FeeratePerKw(FeeratePerByte(5 sat))).pipeTo(sender.ref)
+    val externalTxId = sender.expectMsgType[TxId]
+    generateBlocks(1)
+
+    // Our utxo has 1 confirmation: we can spend it if we allow this confirmation count.
+    val tx1 = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(125_000 sat, pubkeyScript)), 0)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(2)).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(1)).pipeTo(sender.ref)
+      val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+      wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    assert(tx1.txIn.map(_.outPoint.txid).toSet == Set(externalTxId))
+
+    // We now have an unconfirmed utxo, which we can spend if we allow spending unconfirmed transactions.
+    val tx2 = {
+      val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, pubkeyScript)), 0)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(1)).pipeTo(sender.ref)
+      assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = None).pipeTo(sender.ref)
+      val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
+      wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
+      val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
+      wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+      sender.expectMsg(signedTx.txid)
+      signedTx
+    }
+    assert(tx2.txIn.map(_.outPoint.txid).toSet == Set(tx1.txid))
+  }
+
   test("fund transactions with external inputs") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
