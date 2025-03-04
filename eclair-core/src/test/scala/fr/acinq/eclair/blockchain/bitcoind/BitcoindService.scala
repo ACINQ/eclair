@@ -123,7 +123,7 @@ trait BitcoindService extends Logging {
     } else {
       UserPassword("foo", "bar")
     }
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method).pipeTo(sender())
@@ -217,7 +217,7 @@ trait BitcoindService extends Logging {
   def createWallet(walletName: String, sender: TestProbe = TestProbe()): BitcoinJsonRPCClient = {
     sender.send(bitcoincli, BitcoinReq("createwallet", walletName))
     sender.expectMsgType[JValue]
-    new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
   }
 
   def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient, addressType_opt: Option[String] = None): String = {
