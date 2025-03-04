@@ -154,7 +154,7 @@ class Peer(val nodeParams: NodeParams,
 
     case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
       if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
-        startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+        startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, d.remoteFeatures_opt.map(_.features)))
       }
       val remoteFeatures_opt = d.remoteFeatures_opt match {
         case Some(remoteFeatures) if !remoteFeatures.written =>
@@ -459,7 +459,7 @@ class Peer(val nodeParams: NodeParams,
             }
         }
         if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
-          startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+          startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
         }
         if (!d.remoteFeaturesWritten) {
           // We have a channel, so we can write to the DB without any DoS risk.
@@ -580,7 +580,7 @@ class Peer(val nodeParams: NodeParams,
           if (d.activeChannels.isEmpty) {
             log.debug("received peer storage from peer with no active channel")
           } else if (!isTimerActive(WritePeerStorageTimerKey)) {
-            startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.writeDelay)
+            startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
           }
           stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
         } else {
