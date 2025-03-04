@@ -3,7 +3,7 @@ package fr.acinq.eclair.balance
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, MilliBtc, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.balance.BalanceActor._
@@ -87,23 +87,26 @@ private class BalanceActor(context: ActorContext[Command],
               val utxosAfter = balance.onChain.confirmed ++ balance.onChain.unconfirmed
               val utxosAdded = utxosAfter -- utxosBefore.keys
               val utxosRemoved = utxosBefore -- utxosAfter.keys
-              utxosAdded.toList.sortBy(-_._2).foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
-              utxosRemoved.toList.sortBy(-_._2).foreach { case (outPoint, amount) => log.info("- utxo={} amount={}", outPoint, amount) }
+              utxosAdded
+                .toList.sortBy(-_._2)
+                .foreach { case (outPoint, amount) => log.info("+ utxo={} amount={}", outPoint, amount) }
+              utxosRemoved
+                .toList.sortBy(-_._2)
+                .foreach { case (outPoint, amount) => log.info("- utxo={} amount={}", outPoint, amount) }
 
               log.info("off-chain diff={}", balance.offChain.total - previousBalance.offChain.total)
               val offchainBalancesBefore = previousBalance.channels.view.mapValues(computeOffChainBalance(previousBalance.knownPreimages, _).total)
               val offchainBalancesAfter = balance.channels.view.mapValues(computeOffChainBalance(balance.knownPreimages, _).total)
-              val offChainBalanceDiff = offchainBalancesAfter
+              offchainBalancesAfter
                 .map { case (channelId, balanceAfter) => (channelId, balanceAfter - offchainBalancesBefore.getOrElse(channelId, Btc(0))) }
-                .toList
-              offChainBalanceDiff
-                .filter { case (_, diff) => diff > 0.sat }
-                .sortBy(-_._2)
-                .foreach { case (channelId, diff) => log.info("+ channelId={} amount={}", channelId, diff) }
-              offChainBalanceDiff
-                .filter { case (_, diff) => diff < 0.sat }
-                .sortBy(_._2)
-                .foreach { case (channelId, diff) => log.info("- channelId={} amount={}", channelId, -diff) }
+                .filter { case (_, balanceDiff) => balanceDiff > 0.sat }
+                .toList.sortBy(-_._2)
+                .foreach { case (channelId, balanceDiff) => log.info("+ channelId={} amount={}", channelId, balanceDiff) }
+              offchainBalancesBefore
+                .map { case (channelId, balanceBefore) => (channelId, balanceBefore - offchainBalancesAfter.getOrElse(channelId, Btc(0))) }
+                .filter { case (_, balanceDiff) => balanceDiff > 0.sat }
+                .toList.sortBy(-_._2)
+                .foreach { case (channelId, balanceDiff) => log.info("- channelId={} amount={}", channelId, balanceDiff) }
             case None => ()
           }
 
