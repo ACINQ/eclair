@@ -2384,12 +2384,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val notReceivedByRemote = remoteSpliceSupport && channelReestablish.yourLastFundingLocked_opt.isEmpty
               // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
               // MUST retransmit channel_ready, otherwise it MUST NOT
-              val notReceivedByRemote_legacy = !remoteSpliceSupport && channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
+              val notReceivedByRemoteLegacy = !remoteSpliceSupport && channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
               // If this is a public channel and we haven't announced the channel, we retransmit our channel_ready and
               // will also send announcement_signatures.
               val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
-              if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemote_legacy) {
-                log.debug("re-sending channelReady")
+              if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
+                log.debug("re-sending channel_ready")
                 val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
                 val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                 sendQueue = sendQueue :+ ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)

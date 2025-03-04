@@ -11,7 +11,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, CommitSig, Error, RevokeAndAck}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -29,6 +29,10 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       withFixture(test.toNoArgTest(setup))
     }
   }
+
+  private def aliceInit = Init(Alice.nodeParams.features.initFeatures())
+
+  private def bobInit = Init(Bob.nodeParams.features.initFeatures())
 
   test("use funding pubkeys from publish commitment to spend our output", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
     import f._

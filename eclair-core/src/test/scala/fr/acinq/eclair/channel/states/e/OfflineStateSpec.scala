@@ -77,7 +77,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     val channelId = alice2bob.expectMsgType[ChannelReestablish].channelId
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReestablish]
@@ -117,7 +117,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob doesn't receive the sig
     disconnect(alice, bob)
 
-    val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
     val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     alice2bob.forward(bob, reestablishA)
@@ -172,7 +172,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectNoMessage(500 millis)
 
     disconnect(alice, bob)
-    val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
     val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     alice2bob.forward(bob, reestablishA)
@@ -220,7 +220,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     {
-      val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+      val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
       val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
@@ -251,8 +251,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     {
-      val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
-      val fundingTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
+      val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
       val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
@@ -289,7 +288,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[CommitSig]
     disconnect(alice, bob)
 
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
     assert(reestablishA.nextLocalCommitmentNumber == 4)
     assert(reestablishA.nextRemoteRevocationNumber == 3)
@@ -338,7 +337,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice.setState(OFFLINE, oldStateData)
 
     // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
     val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
@@ -388,7 +387,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice.setState(OFFLINE, oldStateData)
 
     // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
     val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
@@ -428,7 +427,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection followed by a reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     // bob sends an invalid channel_reestablish
     alice2bob.expectMsgType[ChannelReestablish]
     val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextRemoteRevocationNumber = 42)
@@ -463,7 +462,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection followed by a reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     // bob sends an invalid channel_reestablish
     alice2bob.expectMsgType[ChannelReestablish]
     val invalidReestablish = bob2alice.expectMsgType[ChannelReestablish].copy(nextLocalCommitmentNumber = 42)
@@ -506,7 +505,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMessage(300 millis)
 
     // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -554,7 +553,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
 
     // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -585,7 +584,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, CMD_FULFILL_HTLC(htlc.id, r, commit = true))
 
     // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -737,7 +736,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage(100 millis)
 
     // then we reconnect them; Alice should send the feerate changes to Bob
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
@@ -818,7 +817,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a disconnection / reconnection.
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
 
     // Alice and Bob exchange channel_reestablish and channel_ready again.
     alice2bob.expectMsgType[ChannelReestablish]
@@ -850,7 +849,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
     TestUtils.waitFor(1 second)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
@@ -870,7 +869,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
     TestUtils.waitFor(1 second)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
@@ -886,7 +885,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
     // we wait 1s so the new channel_update doesn't have the same timestamp
     TestUtils.waitFor(1 second)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
@@ -913,7 +912,18 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == OFFLINE)
   }
 
-  def reconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, aliceInit: Init, bobInit: Init): (PublicKey, PublicKey) = {
+  def reconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe): (PublicKey, PublicKey) = {
+    val aliceInit = Init(alice.stateData match {
+      case d: ChannelDataWithoutCommitments => d.channelParams.localParams.initFeatures
+      case d: ChannelDataWithCommitments => d.commitments.params.localParams.initFeatures
+      case _ => Alice.nodeParams.initFeaturesFor(Bob.nodeParams.nodeId)
+    })
+    val bobInit = Init(bob.stateData match {
+      case d: ChannelDataWithoutCommitments => d.channelParams.localParams.initFeatures
+      case d: ChannelDataWithCommitments => d.commitments.params.localParams.initFeatures
+      case _ => Bob.nodeParams.initFeaturesFor(Alice.nodeParams.nodeId)
+    })
+
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
 
@@ -935,13 +945,13 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
 
-    // Alice will resend her channel_ready at reconnection because there are no channel updates (pre-splice behavior).
+    // Alice will resend her channel_ready on reconnection because the channel hasn't been used for any payment yet (pre-splice behavior).
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.expectNoMessage(100 millis)
 
@@ -951,13 +961,13 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
 
-    // Alice will NOT resend her channel_ready at reconnection because there are channel updates (pre-splice behavior).
+    // Alice will NOT resend her channel_ready on reconnection because the channel has been used for a payment (pre-splice behavior).
     alice2bob.expectNoMessage(100 millis)
   }
 
@@ -966,7 +976,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
@@ -987,13 +997,13 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
 
-    // Alice will resend her channel_ready and announcement_signatures at reconnection after a channel update because
+    // Alice will resend her channel_ready and announcement_signatures on reconnection, even though the channel has already been used, because
     // she still has not received announcement_signatures from bob (pre-splice behavior).
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
@@ -1008,7 +1018,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we simulate a disconnection / reconnection
     disconnect(alice, bob)
-    reconnect(alice, bob, alice2bob, bob2alice, aliceInit, bobInit)
+    reconnect(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)

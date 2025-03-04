@@ -117,9 +117,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           channelUpdateListener: TestProbe,
                           wallet: OnChainWallet with OnchainPubkeyCache,
                           alicePeer: TestProbe,
-                          bobPeer: TestProbe,
-                          aliceInit: Init,
-                          bobInit: Init) {
+                          bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
@@ -180,10 +178,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       implicit val system: ActorSystem = systemB
       TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     }
-    val aliceInit = Init(Alice.nodeParams.features.initFeatures())
-    val bobInit = Init(Bob.nodeParams.features.initFeatures().modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype)).initFeatures())
-
-    SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer, aliceInit, bobInit)
+    SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
