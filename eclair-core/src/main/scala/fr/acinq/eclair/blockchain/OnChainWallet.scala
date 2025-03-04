@@ -37,7 +37,7 @@ trait OnChainChannelFunder {
    * Fund the provided transaction by adding inputs (and a change output if necessary).
    * Callers must verify that the resulting transaction isn't sending funds to unexpected addresses (malicious bitcoin node).
    */
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse]
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
   /**
    * Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. *
