@@ -39,7 +39,7 @@ import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, TimestampS
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
-import org.scalatest.BeforeAndAfterAll
+import org.scalatest.{BeforeAndAfterAll, Tag}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -52,8 +52,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
   implicit val formats: Formats = DefaultFormats
 
+  val defaultAddressType_opt: Option[String] = Some("bech32")
+
   override def beforeAll(): Unit = {
-    startBitcoind(defaultAddressType_opt = Some("bech32"), mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
+    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = defaultAddressType_opt, mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
     waitForBitcoindReady()
   }
 
@@ -1869,4 +1871,66 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       sender.expectMsgType[TxId]
     }
   }
+}
+
+class BitcoinCoreClientChangeOutputSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+
+  implicit val formats: Formats = DefaultFormats
+
+  val defaultAddressType_opt: Option[String] = Some("bech32")
+
+  // We do not specify a default change address type
+  val changeAddressType_opt: Option[String] = None
+
+  override def beforeAll(): Unit = {
+    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = changeAddressType_opt, mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
+    waitForBitcoindReady()
+  }
+
+  override def afterAll(): Unit = {
+    stopBitcoind()
+  }
+
+  test("generate change outputs that match the transaction being funded") {
+    import KotlinUtils._
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    val pubKey = randomKey().publicKey
+
+    {
+      // send to a p2wpkh: bitcoin core should add a p2wpkh change output
+      val pubkeyScript = Script.pay2wpkh(pubKey)
+      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3.sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      val tx = sender.expectMsgType[FundTransactionResponse].tx
+      // We have a change output.
+      assert(tx.txOut.length == 2)
+      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
+      assert(tx.txOut.count(txOut => Script.isPay2wpkh(Script.parse(txOut.publicKeyScript))) == 2)
+      val psbt = new Psbt(tx)
+      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
+      val response = sender.expectMsgType[ProcessPsbtResponse]
+      assert(response.complete && response.finalTx_opt.isRight)
+    }
+    {
+      // send to a p2tr: bitcoin core should add a p2tr change output
+      val pubkeyScript = Script.pay2tr(pubKey.xOnly)
+      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3.sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      val tx = sender.expectMsgType[FundTransactionResponse].tx
+      // We have a change output.
+      assert(tx.txOut.length == 2)
+      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
+      assert(tx.txOut.count(txOut => Script.isPay2tr(Script.parse(txOut.publicKeyScript))) == 2)
+      val psbt = new Psbt(tx)
+      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
+      val response = sender.expectMsgType[ProcessPsbtResponse]
+      assert(response.complete && response.finalTx_opt.isRight)
+    }
+  }
+}
+
+class BitcoinCoreClientWithEclairSignerChangeOutputSpec extends BitcoinCoreClientChangeOutputSpec {
+  override def useEclairSigner = true
 }
