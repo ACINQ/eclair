@@ -212,9 +212,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // Our utxo has 1 confirmation: we can spend it if we allow this confirmation count.
     val tx1 = {
       val txNotFunded = Transaction(2, Nil, Seq(TxOut(125_000 sat, pubkeyScript)), 0)
-      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(2)).pipeTo(sender.ref)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minInputConfirmations_opt = Some(2)).pipeTo(sender.ref)
       assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
-      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(1)).pipeTo(sender.ref)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minInputConfirmations_opt = Some(1)).pipeTo(sender.ref)
       val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
       wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
       val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
@@ -227,9 +227,9 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We now have an unconfirmed utxo, which we can spend if we allow spending unconfirmed transactions.
     val tx2 = {
       val txNotFunded = Transaction(2, Nil, Seq(TxOut(100_000 sat, pubkeyScript)), 0)
-      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = Some(1)).pipeTo(sender.ref)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minInputConfirmations_opt = Some(1)).pipeTo(sender.ref)
       assert(sender.expectMsgType[Failure].cause.getMessage.contains("Insufficient funds"))
-      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minConfirmations_opt = None).pipeTo(sender.ref)
+      wallet.fundTransaction(txNotFunded, FeeratePerKw(1_000 sat), minInputConfirmations_opt = None).pipeTo(sender.ref)
       val unsignedTx = sender.expectMsgType[FundTransactionResponse].tx
       wallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(sender.ref)
       val signedTx = sender.expectMsgType[ProcessPsbtResponse].finalTx_opt.toOption.get
