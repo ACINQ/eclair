@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import akka.actor.{ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import org.json4s.JsonAST
@@ -27,6 +28,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
 class BatchingBitcoinJsonRPCClient(rpcClient: BasicBitcoinJsonRPCClient)(implicit system: ActorSystem, ec: ExecutionContext) extends BitcoinJsonRPCClient {
+  override def chainHash: BlockHash = rpcClient.chainHash
   override def wallet: Option[String] = rpcClient.wallet
 
   implicit val timeout: Timeout = Timeout(1 hour)

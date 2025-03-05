@@ -31,7 +31,7 @@ import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -126,7 +126,7 @@ trait Eclair {
 
   def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice]
 
-  def newAddress(): Future[String]
+  def newAddress(addressType: Option[AddressType] = None): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -388,9 +388,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def newAddress(): Future[String] = {
+  override def newAddress(addressType: Option[AddressType] = None): Future[String] = {
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.getReceiveAddress()
+      case w: BitcoinCoreClient => w.getReceiveAddress(addressType)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.json._
@@ -32,7 +33,7 @@ import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
-class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, override val wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(override val chainHash: BlockHash, rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, override val wallet: Option[String] = None)(implicit sb: SttpBackend[Future, _]) extends BitcoinJsonRPCClient {
 
   implicit val formats: Formats = DefaultFormats.withBigDecimal +
     ByteVector32Serializer + ByteVector32KmpSerializer +
