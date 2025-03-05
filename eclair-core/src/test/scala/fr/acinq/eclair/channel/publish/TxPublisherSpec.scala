@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
@@ -38,6 +38,8 @@ import scala.concurrent.duration.DurationInt
 class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe)
+
+  private def randomScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(max = 30 seconds) {
