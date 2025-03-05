@@ -260,10 +260,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minInputConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     val options = FundTransactionOptions(
-      BigDecimal(FeeratePerKB(feeRate).toLong).bigDecimal.scaleByPowerOfTen(-8),
-      replaceable,
+      feeRate = BigDecimal(FeeratePerKB(feeRate).toLong).bigDecimal.scaleByPowerOfTen(-8),
+      replaceable = replaceable,
       // We must either *always* lock inputs selected for funding or *never* lock them, otherwise locking wouldn't work
       // at all, as the following scenario highlights:
       //  - we fund a transaction for which we don't lock utxos
@@ -272,9 +272,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       //  - but the first transaction confirms, invalidating the second one
       // This would break the assumptions of the second transaction: its inputs are locked, so it doesn't expect to
       // potentially be double-spent.
-      lockUtxos,
-      changePosition,
-      if (externalInputsWeight.isEmpty) None else Some(externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq)
+      lockUnspents = lockUtxos,
+      changePosition = changePosition,
+      minconf = minInputConfirmations_opt,
+      input_weights = if (externalInputsWeight.isEmpty) None else Some(externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq),
     )
     fundTransaction(tx, options, feeBudget_opt = feeBudget_opt)
   }
@@ -746,7 +747,7 @@ object BitcoinCoreClient {
     def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.value.toHex, outPoint.index, weight)
   }
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], minconf: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   /**
    * Information about a transaction currently in the mempool.
