@@ -485,11 +485,11 @@ class GraphSpec extends AnyFunSuite {
 
      +----- B ------+
      |              |
-     A -- C -- D -- H
-     |              |
-     +--- E -- F ---+
-          |         |
-          +--- G ---+
+     A -- C -- D -- H --+
+     |              |   |
+     +--- E -- F ---+   |
+          |             |
+          +--- G -------+
      */
     val graph = DirectedGraph(Seq(
       makeEdge(1L, a, b, 0 msat, 0),

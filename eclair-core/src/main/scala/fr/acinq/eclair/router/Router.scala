@@ -247,10 +247,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: MessageRouteRequest, d) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
 
-    case Event(r: GetCentralNode , d) =>
-      r.replyTo ! d.graphWithBalances.graph.centralNode
-      stay()
-
     case Event(GetNodeId(replyTo, shortChannelId, isNode1), d) =>
       replyTo ! d.channels.get(shortChannelId).map(channel => if (isNode1) channel.nodeId1 else channel.nodeId2)
       stay()

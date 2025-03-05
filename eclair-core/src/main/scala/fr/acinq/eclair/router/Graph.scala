@@ -436,6 +436,7 @@ object Graph {
 
   /**
    * Find non-overlapping (no vertices shared) payment paths that support route blinding
+   * This is used to build blinded routes for Bolt12 invoices where `sourceNode` is the first node of the blinded path and `targetNode` is ourself.
    *
    * @param pathsToFind Number of paths to find. We may return fewer paths if we couldn't find more non-overlapping ones.
    */
@@ -457,6 +458,7 @@ object Graph {
         case Some(path) =>
           val weight = pathWeight(sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true)
           paths += WeightedPath(path, weight)
+          // Additional paths must keep using the source and target nodes, but shouldn't use any of the same intermediate nodes.
           verticesToIgnore.addAll(path.drop(1).map(_.desc.a))
         case None => return paths.toSeq
       }
@@ -746,16 +748,6 @@ object Graph {
             case Some(_) => true
           }
         }
-      }
-
-      /**
-       * @return a node that's very central in the graph, to be used as the first node in blinded routes.
-       */
-      def centralNode: PublicKey = {
-        vertices.view.mapValues(v => {
-          // We only consider channels larger than 0.1 BTC and count the number of connected nodes.
-          v.incomingEdges.values.filter(_.capacity > Satoshi(10_000_000)).map(_.desc.a).toSet.size
-        }).maxBy(_._2)._1
       }
     }
 
