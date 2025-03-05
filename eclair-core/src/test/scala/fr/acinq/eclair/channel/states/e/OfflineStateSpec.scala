@@ -913,16 +913,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   def reconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe): (PublicKey, PublicKey) = {
-    val aliceInit = Init(alice.stateData match {
-      case d: ChannelDataWithoutCommitments => d.channelParams.localParams.initFeatures
-      case d: ChannelDataWithCommitments => d.commitments.params.localParams.initFeatures
-      case _ => Alice.nodeParams.initFeaturesFor(Bob.nodeParams.nodeId)
-    })
-    val bobInit = Init(bob.stateData match {
-      case d: ChannelDataWithoutCommitments => d.channelParams.localParams.initFeatures
-      case d: ChannelDataWithCommitments => d.commitments.params.localParams.initFeatures
-      case _ => Bob.nodeParams.initFeaturesFor(Alice.nodeParams.nodeId)
-    })
+    val aliceInit = Init(alice.nodeParams.initFeaturesFor(bob.nodeParams.nodeId))
+    val bobInit = Init(bob.nodeParams.initFeaturesFor(alice.nodeParams.nodeId))
 
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
