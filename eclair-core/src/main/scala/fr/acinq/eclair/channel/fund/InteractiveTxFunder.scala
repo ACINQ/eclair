@@ -120,14 +120,12 @@ object InteractiveTxFunder {
     }
   }
 
-  private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
+  private def canUseInput(txIn: TxIn, previousTx: Transaction): Boolean = {
     // Wallet input transaction must fit inside the tx_add_input message.
     val previousTxSizeOk = Transaction.write(previousTx).length <= 65000
     // Wallet input must be a native segwit input.
     val isNativeSegwit = Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)
-    // Wallet input must be confirmed if our peer requested it.
-    val confirmationsOk = !fundingParams.requireConfirmedInputs.forLocal || confirmations > 0
-    previousTxSizeOk && isNativeSegwit && confirmationsOk
+    previousTxSizeOk && isNativeSegwit
   }
 
   private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
@@ -238,7 +236,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case _ => None
     }
     val minConfirmations_opt = if (fundingParams.requireConfirmedInputs.forLocal) Some(1) else None
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, externalInputsWeight = sharedInputWeight, minConfirmations_opt = minConfirmations_opt, feeBudget_opt = feeBudget_opt)) {
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, externalInputsWeight = sharedInputWeight, minInputConfirmations_opt = minConfirmations_opt, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }
@@ -346,18 +344,15 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           // We don't need to validate the shared input, it comes from a valid lightning channel.
           Future.successful(Right(Input.Shared(UInt64(0), sharedInput.info.outPoint, sharedInput.info.txOut.publicKeyScript, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)))
         case _ =>
-          for {
-            previousTx <- wallet.getTransaction(txIn.outPoint.txid)
-              // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
-              .map(_.modify(_.txIn.each.witness).setTo(ScriptWitness.empty))
-            confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
-          } yield {
-            if (canUseInput(fundingParams, txIn, previousTx, confirmations_opt.getOrElse(0))) {
-              Right(Input.Local(UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
+          wallet.getTransaction(txIn.outPoint.txid).map(tx => {
+            // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
+            val txWithoutWitness = tx.modify(_.txIn.each.witness).setTo(ScriptWitness.empty)
+            if (canUseInput(txIn, txWithoutWitness)) {
+              Right(Input.Local(UInt64(0), txWithoutWitness, txIn.outPoint.index, txIn.sequence))
             } else {
               Left(UnusableInput(txIn.outPoint))
             }
-          }
+          })
       }
     }
   }
