@@ -237,7 +237,8 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case p: SpliceTxRbf => p.feeBudget_opt
       case _ => None
     }
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {
+    val minConfirmations_opt = if (fundingParams.requireConfirmedInputs.forLocal) Some(1) else None
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, externalInputsWeight = sharedInputWeight, minConfirmations_opt = minConfirmations_opt, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }

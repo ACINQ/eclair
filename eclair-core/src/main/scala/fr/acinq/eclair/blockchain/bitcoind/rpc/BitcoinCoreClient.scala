@@ -260,7 +260,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     })
   }
 
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     val options = FundTransactionOptions(
       BigDecimal(FeeratePerKB(feeRate).toLong).bigDecimal.scaleByPowerOfTen(-8),
       replaceable,
@@ -274,7 +274,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       // potentially be double-spent.
       lockUtxos,
       changePosition,
-      if (externalInputsWeight.isEmpty) None else Some(externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq)
+      minConfirmations_opt,
+      if (externalInputsWeight.isEmpty) None else Some(externalInputsWeight.map { case (outpoint, weight) => InputWeight(outpoint, weight) }.toSeq),
     )
     fundTransaction(tx, options, feeBudget_opt = feeBudget_opt)
   }
@@ -495,6 +496,25 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         // "missing inputs (code: -25)": it may be that the tx has already been published and its output spent.
         getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
+
+  /**
+   * Publish a 1-parent-1-child transaction package, which allows replacing a conflicting parent transaction that has
+   * the same (or a higher) feerate by leveraging CPFP. The child transaction cannot have other unconfirmed parents.
+   */
+  def publishPackage(parentTx: Transaction, childTx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
+    rpcClient.invoke("submitpackage", Seq(parentTx, childTx).map(_.toString())).flatMap(json => {
+      val JString(msg) = json \ "package_msg"
+      if (msg == "success") {
+        // All transactions were accepted into or are already in the mempool.
+        Future.successful(childTx.txid)
+      } else {
+        val childError = (json \ "tx-results" \ childTx.wtxid.toHex \ "error").extractOpt[String]
+        val parentError = (json \ "tx-results" \ parentTx.wtxid.toHex \ "error").extractOpt[String]
+        val error = childError.orElse(parentError).getOrElse("unknown failure")
+        Future.failed(new IllegalArgumentException(error))
+      }
+    })
+  }
 
   override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
@@ -746,7 +766,7 @@ object BitcoinCoreClient {
     def apply(outPoint: OutPoint, weight: Long): InputWeight = InputWeight(outPoint.txid.value.toHex, outPoint.index, weight)
   }
 
-  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], input_weights: Option[Seq[InputWeight]])
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], minconf: Option[Int], input_weights: Option[Seq[InputWeight]])
 
   /**
    * Information about a transaction currently in the mempool.
