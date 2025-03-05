@@ -647,8 +647,6 @@ object Router {
   case class MessageRouteNotFound(target: PublicKey) extends MessageRouteResponse
   // @formatter:on
 
-  case class GetCentralNode(replyTo: typed.ActorRef[PublicKey])
-
   /**
    * Useful for having appropriate logging context at hand when finding routes
    */
