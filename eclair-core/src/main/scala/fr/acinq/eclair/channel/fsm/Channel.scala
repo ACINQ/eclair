@@ -2356,12 +2356,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      log.debug("re-sending channelReady")
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      log.debug("re-sending channelReady")
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
@@ -2492,7 +2492,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           d.localShutdown.foreach {
             localShutdown =>
-              log.debug("re-sending localShutdown")
+              log.debug("re-sending local_shutdown")
               sendQueue = sendQueue :+ localShutdown
           }
 
