@@ -176,7 +176,8 @@ private[channel] object ChannelCodecs0 {
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("txid" | txId) ::
-        ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit].decodeOnly
+        ("remotePerCommitmentPoint" | publicKey) ::
+        ("localCommitSig_opt" | provide[Option[CommitSig]](None))).as[RemoteCommit].decodeOnly
 
     val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
       ("channelId" | bytes32) ::

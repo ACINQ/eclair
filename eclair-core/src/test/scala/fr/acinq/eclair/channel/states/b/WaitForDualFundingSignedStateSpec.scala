@@ -235,6 +235,38 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
+  test("complete interactive-tx protocol (simple taproot channels, with push amount)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStaging), Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+    import f._
+
+    val listener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    val expectedBalanceAlice = TestConstants.fundingSatoshis.toMilliSatoshi + TestConstants.nonInitiatorPushAmount - TestConstants.initiatorPushAmount
+    assert(expectedBalanceAlice == 900_000_000.msat)
+    val expectedBalanceBob = TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi + TestConstants.initiatorPushAmount - TestConstants.nonInitiatorPushAmount
+    assert(expectedBalanceBob == 600_000_000.msat)
+
+    // Bob sends its signatures first as he contributed less than Alice.
+    bob2alice.expectMsgType[TxSignatures]
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    assert(bobData.commitments.latest.localCommit.spec.toLocal == expectedBalanceBob)
+    assert(bobData.commitments.latest.localCommit.spec.toRemote == expectedBalanceAlice)
+
+    // Alice receives Bob's signatures and sends her own signatures.
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures]
+    awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+    val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
+    assert(aliceData.commitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
+    assert(aliceData.commitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
+  }
+
   test("recv invalid CommitSig", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
