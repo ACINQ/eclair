@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, PaymentWeightRatios, dijkstraMessagePath, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, PaymentWeightRatios, dijkstraMessagePath, routeBlindingPaths, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.protocol.Color
@@ -479,4 +479,58 @@ class GraphSpec extends AnyFunSuite {
     assert(g == g.updateChannel(ChannelDesc(ShortChannelId(1), randomKey().publicKey, b), RealShortChannelId(10), 99 sat))
   }
 
+  test("blinded routes for bolt12 invoices") {
+    /*
+     D does not support route blinding
+
+     +----- B ------+
+     |              |
+     A -- C -- D -- H --+
+     |              |   |
+     +--- E -- F ---+   |
+          |             |
+          +--- G -------+
+     */
+    val graph = DirectedGraph(Seq(
+      makeEdge(1L, a, b, 0 msat, 0),
+      makeEdge(1L, b, a, 1 msat, 1),
+      makeEdge(2L, b, h, 2 msat, 2),
+      makeEdge(2L, h, b, 3 msat, 3),
+      makeEdge(3L, a, c, 4 msat, 4),
+      makeEdge(3L, c, a, 5 msat, 5),
+      makeEdge(4L, c, d, 6 msat, 6),
+      makeEdge(4L, d, c, 7 msat, 7),
+      makeEdge(5L, d, h, 8 msat, 8),
+      makeEdge(5L, h, d, 9 msat, 9),
+      makeEdge(6L, a, e, 10 msat, 10),
+      makeEdge(6L, e, a, 11 msat, 11),
+      makeEdge(7L, e, f, 12 msat, 12),
+      makeEdge(7L, f, e, 13 msat, 13),
+      makeEdge(8L, f, h, 14 msat, 14),
+      makeEdge(8L, h, f, 15 msat, 15),
+      makeEdge(9L, e, g, 16 msat, 16),
+      makeEdge(9L, g, e, 17 msat, 17),
+      makeEdge(10L, g, h, 18 msat, 18),
+      makeEdge(10L, h, g, 19 msat, 19),
+    )).addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_b, "B", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_c, "C", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features()))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_f, "F", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_g, "G", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+      .addOrUpdateVertex(makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
+
+    {
+      val paths = routeBlindingPaths(graph, a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true)
+      assert(paths.length == 2)
+      assert(paths(0).path.map(_.desc.a) == Seq(a, b))
+      assert(paths(1).path.map(_.desc.a) == Seq(a, e, f))
+    }
+    {
+      val paths = routeBlindingPaths(graph, c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true)
+      assert(paths.length == 1)
+      assert(paths(0).path.map(_.desc.a) == Seq(c, a, b))
+    }
+  }
 }

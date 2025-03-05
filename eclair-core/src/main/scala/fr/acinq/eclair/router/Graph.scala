@@ -435,6 +435,38 @@ object Graph {
     dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges = Set.empty, ignoredVertices, extraEdges = Set.empty, MessagePathWeight.zero, boundaries, Features(Features.OnionMessages -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true)
 
   /**
+   * Find non-overlapping (no vertices shared) payment paths that support route blinding
+   * This is used to build blinded routes for Bolt12 invoices where `sourceNode` is the first node of the blinded path and `targetNode` is ourself.
+   *
+   * @param pathsToFind Number of paths to find. We may return fewer paths if we couldn't find more non-overlapping ones.
+   */
+  def routeBlindingPaths(graph: DirectedGraph,
+                         sourceNode: PublicKey,
+                         targetNode: PublicKey,
+                         amount: MilliSatoshi,
+                         ignoredEdges: Set[ChannelDesc],
+                         ignoredVertices: Set[PublicKey],
+                         pathsToFind: Int,
+                         wr: WeightRatios[PaymentPathWeight],
+                         currentBlockHeight: BlockHeight,
+                         boundaries: PaymentPathWeight => Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+    val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
+    val verticesToIgnore = new mutable.HashSet[PublicKey]()
+    verticesToIgnore.addAll(ignoredVertices)
+    for (_ <- 1 to pathsToFind) {
+      dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, verticesToIgnore.toSet, extraEdges = Set.empty, PaymentPathWeight(amount), boundaries, Features(Features.RouteBlinding -> FeatureSupport.Mandatory), currentBlockHeight, wr, includeLocalChannelCost = true) match {
+        case Some(path) =>
+          val weight = pathWeight(sourceNode, path, amount, currentBlockHeight, wr, includeLocalChannelCost = true)
+          paths += WeightedPath(path, weight)
+          // Additional paths must keep using the source and target nodes, but shouldn't use any of the same intermediate nodes.
+          verticesToIgnore.addAll(path.drop(1).map(_.desc.a))
+        case None => return paths.toSeq
+      }
+    }
+    paths.toSeq
+  }
+
+  /**
    * Calculate the minimum amount that the start node needs to receive to be able to forward @amountWithFees to the end
    * node.
    *

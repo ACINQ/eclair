@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorContext, ActorRef, Status}
+import akka.actor.{ActorContext, ActorRef}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -227,6 +227,25 @@ object RouteCalculation {
       }
       d
     }
+  }
+
+  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest)(implicit log: DiagnosticLoggingAdapter): Data = {
+    val maxFee = r.routeParams.getMaxFee(r.amount)
+
+    val boundaries: PaymentPathWeight => Boolean = { weight =>
+      weight.amount - r.amount <= maxFee &&
+        weight.length <= r.routeParams.boundaries.maxRouteLength &&
+        weight.length <= ROUTE_MAX_LENGTH &&
+        weight.cltv <= r.routeParams.boundaries.maxCltv
+    }
+
+    val routes = Graph.routeBlindingPaths(d.graphWithBalances.graph, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries)
+    if (routes.isEmpty) {
+      r.replyTo ! PaymentRouteNotFound(RouteNotFound)
+    } else {
+      r.replyTo ! RouteResponse(routes.map(route => Route(r.amount, route.path.map(graphEdgeToHop), None)))
+    }
+    d
   }
 
   def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit log: DiagnosticLoggingAdapter): Data = {
