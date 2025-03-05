@@ -107,7 +107,7 @@ object TestConstants {
           Features.RouteBlinding -> FeatureSupport.Optional,
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
           Features.Quiescence -> FeatureSupport.Optional,
-          Features.SplicePrototype -> FeatureSupport.Optional,
+          Features.Splicing -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
@@ -292,7 +292,7 @@ object TestConstants {
         Features.StaticRemoteKey -> FeatureSupport.Mandatory,
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
         Features.Quiescence -> FeatureSupport.Optional,
-        Features.SplicePrototype -> FeatureSupport.Optional,
+        Features.Splicing -> FeatureSupport.Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
