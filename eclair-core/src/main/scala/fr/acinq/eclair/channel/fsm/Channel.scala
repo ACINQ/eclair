@@ -2242,7 +2242,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = d.signingSession.reconnectNextLocalCommitmentNumber,
+        nextLocalCommitmentNumber = d.signingSession.nextLocalCommitmentNumber,
         nextRemoteRevocationNumber = 0,
         yourLastPerCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
         myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
@@ -2260,11 +2260,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
       val nextLocalCommitmentNumber = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
-          case DualFundingStatus.RbfWaitingForSigs(status) => status.reconnectNextLocalCommitmentNumber
+          case DualFundingStatus.RbfWaitingForSigs(status) => status.nextLocalCommitmentNumber
           case _ => d.commitments.localCommitIndex + 1
         }
         case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => status.reconnectNextLocalCommitmentNumber
+          case SpliceStatus.SpliceWaitingForSigs(status) => status.nextLocalCommitmentNumber
           case _ => d.commitments.localCommitIndex + 1
         }
         case _ => d.commitments.localCommitIndex + 1

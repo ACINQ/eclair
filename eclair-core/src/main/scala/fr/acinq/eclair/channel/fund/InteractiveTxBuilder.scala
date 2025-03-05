@@ -1083,8 +1083,8 @@ object InteractiveTxSigningSession {
     val commitInput: InputInfo = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
     // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
-    val reconnectNextLocalCommitmentNumber: Long = localCommit match {
-      case Left(commit) => commit.index
+    val nextLocalCommitmentNumber: Long = localCommit match {
+      case Left(unsignedCommit) => unsignedCommit.index
       case Right(commit) => commit.index + 1
     }
 
