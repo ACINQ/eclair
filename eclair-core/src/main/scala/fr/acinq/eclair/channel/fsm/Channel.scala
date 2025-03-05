@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
@@ -2626,12 +2627,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
-        case data: PersistentChannelData =>
+        case data: ChannelDataWithCommitments =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-          replyTo ! RES_SUCCESS(c, data.channelId)
-          val failure = ForcedLocalCommit(data.channelId)
-          handleLocalError(failure, data, Some(c))
-        case _: TransientChannelData =>
+          val failure = ForcedLocalCommit(d.channelId)
+          c.resetFundingTxIndex_opt match {
+            case Some(resetFundingTxIndex) =>
+              val isActive = data.commitments.active.exists(_.fundingTxIndex == resetFundingTxIndex)
+              val nextFundingUnconfirmed = data.commitments.active.filter(_.fundingTxIndex > resetFundingTxIndex).forall(_.localFundingStatus.isInstanceOf[LocalFundingStatus.UnconfirmedFundingTx])
+              if (isActive && nextFundingUnconfirmed) {
+                // The commitment hasn't been deactivated yet and more recent funding transactions are unconfirmed, so
+                // we may try force-closing using this commitment index. Note however that if a more recent funding
+                // transaction confirms first, our closing attempt will permanently fail, we will have lost data about
+                // the latest confirmed funding transaction and may not be able to get our funds back. Use with extreme
+                // caution!
+                log.warning("force-closing with fundingTxIndex reset to {} (concurrent funding transactions: {})", resetFundingTxIndex, data.commitments.active.filter(_.fundingTxIndex > resetFundingTxIndex).map(_.fundingTxId).mkString(", "))
+                replyTo ! RES_SUCCESS(c, data.channelId)
+                val resetData = data.modify(_.commitments.active).using(_.filter(_.fundingTxIndex <= resetFundingTxIndex))
+                handleLocalError(failure, resetData, Some(c))
+              } else {
+                handleCommandError(CommandUnavailableInThisState(d.channelId, "forcecloseresetfundingindex", stateName), c)
+              }
+            case None =>
+              replyTo ! RES_SUCCESS(c, data.channelId)
+              handleLocalError(failure, data, Some(c))
+          }
+        case _ =>
           handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 

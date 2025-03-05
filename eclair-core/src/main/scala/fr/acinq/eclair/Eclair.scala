@@ -24,11 +24,12 @@ import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, TxId, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
@@ -67,6 +68,9 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTlv])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
+
+case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, inputAmount: Satoshi, unsignedTx: Transaction)
+case class SpendFromChannelResult(signedTx: Transaction)
 // @formatter:on
 
 case class EnableFromFutureHtlcResponse(enabled: Boolean, failureMessage: Option[String])
@@ -101,6 +105,8 @@ trait Eclair {
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
+
+  def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]]
 
   def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]]
 
@@ -174,6 +180,8 @@ trait Eclair {
 
   def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
 
+  def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]]
+
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
@@ -193,9 +201,15 @@ trait Eclair {
   def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
 
   def stop(): Future[Unit]
+
+  def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId
+
+  def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
+
+  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult]
 }
 
-class EclairImpl(appKit: Kit) extends Eclair with Logging {
+class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
   implicit val scheduler: Scheduler = appKit.system.scheduler.toTyped
@@ -276,6 +290,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
     sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender))
+  }
+
+  override def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]] = {
+    sendToChannel[CMD_FORCECLOSE, CommandResponse[CMD_FORCECLOSE]](channel, CMD_FORCECLOSE(ActorRef.noSender, resetFundingTxIndex_opt = Some(resetFundingTxIndex)))
   }
 
   override def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]] = {
@@ -658,6 +676,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     } yield globalBalance
   }
 
+  override def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]] = {
+    appKit.balanceActor.ask(res => BalanceActor.ResetBalance(res))
+  }
+
   override def signMessage(message: ByteVector): SignedMessage = {
     val bytesToSign = SignedMessage.signedBytes(message)
     val (signature, recoveryId) = appKit.nodeParams.nodeKeyManager.signDigest(bytesToSign)
@@ -808,4 +830,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sys.exit(0)
     Future.successful(())
   }
+
+  override def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId = {
+    appKit.register ! Register.Forward(null, channelId, WatchFundingSpentTriggered(tx))
+    tx.txid
+  }
+
 }
