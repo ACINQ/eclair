@@ -126,6 +126,21 @@ object InteractiveTxBuilder {
     )
   }
 
+  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitIndex: Long) extends SharedFundingInput {
+    override val weight: Int = 234
+
+    override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = ByteVector64.Zeroes
+  }
+
+  object Musig2Input {
+    def apply(commitment: Commitment): Musig2Input = Musig2Input(
+      info = commitment.commitInput,
+      fundingTxIndex = commitment.fundingTxIndex,
+      remoteFundingPubkey = commitment.remoteFundingPubKey,
+      commitIndex = commitment.localCommit.index
+    )
+  }
+
   /**
    * @param channelId              id of the channel.
    * @param isInitiator            true if we initiated the protocol, in which case we will pay fees for the shared parts of the transaction.
@@ -1046,6 +1061,7 @@ object InteractiveTxSigningSession {
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
+      case Some(_: Musig2Input) => return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId))) // TODO: not implemented
       case None => None
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
