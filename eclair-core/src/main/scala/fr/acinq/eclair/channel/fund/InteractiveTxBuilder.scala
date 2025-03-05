@@ -108,6 +108,13 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput match {
+      case inputInfo: InputInfo.SegwitInput => Multisig2of2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case inputInfo: InputInfo.TaprootInput => Musig2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.localCommit.index)
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -117,12 +124,13 @@ object InteractiveTxBuilder {
     }
   }
 
-  object Multisig2of2Input {
-    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
-      info = commitment.commitInput,
-      fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey
-    )
+  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitIndex: Long) extends SharedFundingInput {
+    // witness is a single 64 bytes signature, weight = 1 (# of items) + 1 (size) + 64 = 66
+    // weight is 4 * (unsigned input weight) + witness weight = 4 * (32 + 4 + 4 + 1) + 66 = 230
+    override val weight: Int = 230
+
+    // a valid signature for this input MUST be the Musig2 aggregation of local and remote partial signatures
+    def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = ???
   }
 
   /**
@@ -1049,6 +1057,7 @@ object InteractiveTxSigningSession {
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
+      case Some(_: Musig2Input) => return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId))) // TODO: not implemented
       case None => None
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)

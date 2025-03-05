@@ -55,7 +55,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
     val commitFeerate = channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
+      case _: Transactions.AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
     }
     val aliceListener = TestProbe()
     val bobListener = TestProbe()

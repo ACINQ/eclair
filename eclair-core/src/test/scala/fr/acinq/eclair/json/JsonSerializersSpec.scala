@@ -123,7 +123,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
-    val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
+    val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
@@ -285,7 +285,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("InputInfo serialization") {
-    val inputInfo = InputInfo(
+    val inputInfo = InputInfo.SegwitInput(
       outPoint = OutPoint(TxHash.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
       txOut = TxOut(456651 sat, hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63"),
       redeemScript = hex"00dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773"
@@ -383,7 +383,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("TransactionWithInputInfo serializer") {
     // the input info is ignored when serializing to JSON
-    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
+    val dummyInputInfo = InputInfo.SegwitInput(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
     val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, ConfirmationTarget.Absolute(BlockHeight(1105)))
