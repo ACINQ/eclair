@@ -2357,12 +2357,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       }
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      log.debug("re-sending channelReady")
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      log.debug("re-sending channelReady")
+      log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
 
@@ -2374,15 +2374,37 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           var sendQueue = Queue.empty[LightningMessage]
           // normal case, our data is up-to-date
 
-          // re-send channel_ready if necessary
-          if (d.commitments.latest.fundingTxIndex == 0 && channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommitIndex == 0) {
-            // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
-            // TODO: when the remote node enables option_splice we can use your_last_funding_locked to detect they did not receive our channel_ready.
-            log.debug("re-sending channelReady")
-            val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
-            val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
-            val channelReady = ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
-            sendQueue = sendQueue :+ channelReady
+          // re-send channel_ready and announcement_signatures if necessary
+          d.commitments.lastLocalLocked_opt match {
+            case None => ()
+            // We only send channel_ready for initial funding transactions.
+            case Some(c) if c.fundingTxIndex != 0 => ()
+            case Some(c) =>
+              val remoteSpliceSupport = d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)
+              // If our peer has not received our channel_ready, we retransmit it.
+              val notReceivedByRemote = remoteSpliceSupport && channelReestablish.yourLastFundingLocked_opt.isEmpty
+              // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
+              // MUST retransmit channel_ready, otherwise it MUST NOT
+              val notReceivedByRemoteLegacy = !remoteSpliceSupport && channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
+              // If this is a public channel and we haven't announced the channel, we retransmit our channel_ready and
+              // will also send announcement_signatures.
+              val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
+              if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
+                log.debug("re-sending channel_ready")
+                val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
+                val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+                sendQueue = sendQueue :+ ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+              }
+              if (notAnnouncedYet) {
+                // The funding transaction is confirmed, so we've already sent our announcement_signatures.
+                // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
+                // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
+                val localAnnSigs = c.signAnnouncement(nodeParams, d.commitments.params)
+                localAnnSigs.foreach(annSigs => {
+                  announcementSigsSent += annSigs.shortChannelId
+                  sendQueue = sendQueue :+ annSigs
+                })
+              }
           }
 
           // resume splice signing session if any
@@ -2433,10 +2455,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             // We then clean up unsigned updates that haven't been received before the disconnection.
             .discardUnsignedUpdates()
 
-          val spliceLocked_opt = commitments1.lastLocalLocked_opt match {
-            case None => None
+          commitments1.lastLocalLocked_opt match {
+            case None => ()
             // We only send splice_locked for splice transactions.
-            case Some(c) if c.fundingTxIndex == 0 => None
+            case Some(c) if c.fundingTxIndex == 0 => ()
             case Some(c) =>
               // If our peer has not received our splice_locked, we retransmit it.
               val notReceivedByRemote = !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId)
@@ -2444,15 +2466,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               // will exchange announcement_signatures afterwards.
               val notAnnouncedYet = commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))
               if (notReceivedByRemote || notAnnouncedYet) {
+                // Retransmission of local announcement_signatures for splices are done when receiving splice_locked, no need
+                // to retransmit here.
                 log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
                 spliceLockedSent += (c.fundingTxId -> c.fundingTxIndex)
                 trimSpliceLockedSentIfNeeded()
-                Some(SpliceLocked(d.channelId, c.fundingTxId))
-              } else {
-                None
+                sendQueue = sendQueue :+ SpliceLocked(d.channelId, c.fundingTxId)
               }
           }
-          sendQueue = sendQueue ++ spliceLocked_opt.toSeq
 
           // we may need to retransmit updates and/or commit_sig and/or revocation
           sendQueue = sendQueue ++ syncSuccess.retransmit
@@ -2472,21 +2493,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
           d.localShutdown.foreach {
             localShutdown =>
-              log.debug("re-sending localShutdown")
+              log.debug("re-sending local_shutdown")
               sendQueue = sendQueue :+ localShutdown
-          }
-
-          // Retransmission of local announcement_signatures for splices are done when receiving splice_locked, no need
-          // to retransmit here.
-          d.commitments.all.find(_.fundingTxIndex == 0) match {
-            case Some(c) if d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty =>
-              // The funding transaction is confirmed, so we've already sent our announcement_signatures.
-              // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
-              // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
-              val localAnnSigs_opt = c.signAnnouncement(nodeParams, d.commitments.params)
-              localAnnSigs_opt.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
-              sendQueue = sendQueue ++ localAnnSigs_opt.toSeq
-            case _ => ()
           }
 
           if (d.commitments.announceChannel) {

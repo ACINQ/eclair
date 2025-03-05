@@ -69,9 +69,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
   }
 
-  val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
-  val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
-
   private def lastFundingLockedTlvs(commitments: Commitments): Set[ChannelReestablishTlv] =
     commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
       commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
@@ -81,14 +78,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     disconnect(alice, bob)
     reconnect(alice, bob, alice2bob, bob2alice)
-    alice2bob.expectMsgType[ChannelReestablish]
+    val channelId = alice2bob.expectMsgType[ChannelReestablish].channelId
     alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
-
-    // This is a new channel: peers exchange channel_ready again.
-    val channelId = alice2bob.expectMsgType[ChannelReady].channelId
-    bob2alice.expectMsgType[ChannelReady]
 
     // The channel is ready to process payments.
     alicePeer.fishForMessage() {
@@ -129,10 +122,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
-
-    // both nodes will send the channel_ready message because all updates have been cancelled
-    alice2bob.expectMsgType[ChannelReady]
-    bob2alice.expectMsgType[ChannelReady]
 
     // alice will re-send the update and the sig
     alice2bob.expectMsg(htlc)
@@ -263,7 +252,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-      val fundingTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
       val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
@@ -755,7 +743,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
 
-    alice2bob.expectMsgType[ChannelReady] // since the channel's commitment hasn't been updated, we re-send channel_ready
     if (shouldUpdateFee) {
       alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
     } else {
@@ -837,13 +824,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[ChannelReady]
-    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Bob retransmits his channel_ready and announcement_signatures because he hasn't received Alice's announcement_signatures.
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
 
-    // Bob retransmits his announcement_signatures since he hasn't received Alice's.
-    alice2bob.expectNoMessage(100 millis)
     val annSigsBob = bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice, annSigsBob)
     // Alice retransmits her announcement_signatures when receiving Bob's.
@@ -868,10 +854,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
-
-    // alice and bob resend their channel_ready because there hasn't been payments on the channel
-    alice2bob.expectMsgType[ChannelReady]
-    bob2alice.expectMsgType[ChannelReady]
 
     // alice and bob resend their channel update at reconnection (unannounced channel)
     alice2bob.expectMsgType[ChannelUpdate]
@@ -931,6 +913,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   def reconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe): (PublicKey, PublicKey) = {
+    val aliceInit = Init(alice.nodeParams.initFeaturesFor(bob.nodeParams.nodeId))
+    val bobInit = Init(bob.nodeParams.initFeaturesFor(alice.nodeParams.nodeId))
+
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
 
@@ -945,6 +930,95 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       bobCommitments.localCommitIndex)
 
     (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint)
+  }
+
+  test("re-send channel_ready when peer expects pre-splice behavior", Tag(ChannelStateTestsTags.DisableSplice), Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    // we simulate a disconnection / reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // Alice will resend her channel_ready on reconnection because the channel hasn't been used for any payment yet (pre-splice behavior).
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.expectNoMessage(100 millis)
+
+    // we update the channel
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // we simulate a disconnection / reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // Alice will NOT resend her channel_ready on reconnection because the channel has been used for a payment (pre-splice behavior).
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("re-send announcement_signatures when peer expects pre-splice behavior", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DisableSplice), Tag(IgnoreChannelUpdates)) { f =>
+    import f._
+
+    // we simulate a disconnection / reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // Alice will resend her channel_ready and announcement_signatures at reconnection because she has not received
+    // announcement_signatures from bob (pre-splice behavior).
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectNoMessage(100 millis)
+
+    // we update the channel
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // we simulate a disconnection / reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // Alice will resend her channel_ready and announcement_signatures on reconnection, even though the channel has already been used, because
+    // she still has not received announcement_signatures from bob (pre-splice behavior).
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+
+    // we simulate a disconnection / reconnection
+    disconnect(alice, bob)
+    reconnect(alice, bob, alice2bob, bob2alice)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob)
+
+    // Alice will NOT resend their channel_ready at reconnection because she has received bob's announcement_signatures (pre-splice behavior).
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
   }
 
 }
