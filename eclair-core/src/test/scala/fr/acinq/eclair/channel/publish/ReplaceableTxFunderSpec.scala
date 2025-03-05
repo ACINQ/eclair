@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.channel.{CommitTxAndRemoteSig, FullCommitment, LocalCommit, LocalParams}
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.Transactions.InputInfo.SegwitInput
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
 import org.mockito.IdiomaticMockito.StubbingOps
@@ -39,10 +40,10 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   private def createAnchorTx(): (CommitTx, ClaimLocalAnchorOutputTx) = {
     val anchorScript = Scripts.anchor(PlaceHolderPubKey)
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey, DefaultCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(commitInput.outPoint, commitInput.redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
+      Seq(TxIn(commitInput.outPoint, commitInput.asInstanceOf[SegwitInput].redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
