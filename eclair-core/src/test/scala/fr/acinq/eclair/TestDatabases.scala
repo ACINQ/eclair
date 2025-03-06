@@ -33,7 +33,7 @@ sealed trait TestDatabases extends Databases {
   override def channels: ChannelsDb = db.channels
   override def peers: PeersDb = db.peers
   override def payments: PaymentsDb = db.payments
-  override def managedOffers: OffersDb = db.managedOffers
+  override def offers: OffersDb = db.offers
   override def pendingCommands: PendingCommandsDb = db.pendingCommands
   override def liquidity: LiquidityDb = db.liquidity
   def close(): Unit

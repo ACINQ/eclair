@@ -45,9 +45,9 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME) match {
         case None =>
-          statement.executeUpdate("CREATE SCHEMA offers")
-          statement.executeUpdate("CREATE TABLE offers.managed (offer_id TEXT NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id TEXT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, is_active BOOLEAN NOT NULL)")
-          statement.executeUpdate("CREATE INDEX offer_is_active_idx ON offers.managed(is_active)")
+          statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS payments")
+          statement.executeUpdate("CREATE TABLE payments.offers (offer_id TEXT NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id TEXT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, disabled_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE INDEX offer_disabled_at_idx ON payments.offers(disabled_at)")
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -57,7 +57,7 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
 
   override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32]): Unit = withMetrics("offers/add", DbBackends.Postgres){
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO offers.managed (offer_id, offer, path_id, created_at, is_active) VALUES (?, ?, ?, ?, TRUE)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO payments.offers (offer_id, offer, path_id, created_at, disabled_at) VALUES (?, ?, ?, ?, NULL)")) { statement =>
         statement.setString(1, offer.offerId.toHex)
         statement.setString(2, offer.toString)
         pathId_opt match {
@@ -72,17 +72,9 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
 
   override def disableOffer(offer: OfferTypes.Offer): Unit = withMetrics("offers/disable", DbBackends.Postgres){
     withLock { pg =>
-      using(pg.prepareStatement("UPDATE offers.managed SET is_active = FALSE WHERE offer_id = ?")) { statement =>
-        statement.setString(1, offer.offerId.toHex)
-        statement.executeUpdate()
-      }
-    }
-  }
-
-  override def enableOffer(offer: OfferTypes.Offer): Unit = withMetrics("offers/enable", DbBackends.Postgres){
-    withLock { pg =>
-      using(pg.prepareStatement("UPDATE offers.managed SET is_active = TRUE WHERE offer_id = ?")) { statement =>
-        statement.setString(1, offer.offerId.toHex)
+      using(pg.prepareStatement("UPDATE payments.offers SET disabled_at = ? WHERE offer_id = ?")) { statement =>
+        statement.setTimestamp(1, TimestampMilli.now().toSqlTimestamp)
+        statement.setString(2, offer.offerId.toHex)
         statement.executeUpdate()
       }
     }
@@ -93,18 +85,18 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
       Offer.decode(rs.getString("offer")).get,
       rs.getStringNullable("path_id").map(ByteVector32.fromValidHex),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
-      rs.getBoolean("is_active")
+      { rs.getTimestamp("disabled_at"); rs.wasNull() }
     )
   }
 
   override def listOffers(onlyActive: Boolean): Seq[OfferData] = withMetrics("offers/list", DbBackends.Postgres){
     withLock { pg =>
       if (onlyActive) {
-        using(pg.prepareStatement("SELECT * FROM offers.managed WHERE is_active = TRUE")) { statement =>
+        using(pg.prepareStatement("SELECT * FROM payments.offers WHERE disabled_at IS NULL")) { statement =>
           statement.executeQuery().map(parseOfferData).toSeq
         }
       } else {
-        using(pg.prepareStatement("SELECT * FROM offers.managed")) { statement =>
+        using(pg.prepareStatement("SELECT * FROM payments.offers")) { statement =>
           statement.executeQuery().map(parseOfferData).toSeq
         }
       }

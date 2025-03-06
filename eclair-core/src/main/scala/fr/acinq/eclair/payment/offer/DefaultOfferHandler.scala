@@ -27,7 +27,9 @@ import fr.acinq.eclair.router.Router.{BlindedRouteRequest, ChannelHop}
 import fr.acinq.eclair.wire.protocol.OfferTypes
 import fr.acinq.eclair.{CltvExpiryDelta, EncodedNodeId, MilliSatoshi, MilliSatoshiLong, NodeParams}
 
-object DefaultHandler {
+case class OffersConfig(messagePathMinLength: Int, paymentPathCount: Int, paymentPathLength: Int, paymentPathCltvExpiryDelta: CltvExpiryDelta)
+
+object DefaultOfferHandler {
   def apply(nodeParams: NodeParams, router: ActorRef): Behavior[OfferManager.HandlerCommand] = {
     Behaviors.setup(context =>
       Behaviors.receiveMessage {
@@ -75,5 +77,3 @@ object DefaultHandler {
     })
   }
 }
-
-case class OffersConfig(messagePathMinLength: Int, paymentPathCount: Int, paymentPathLength: Int, paymentPathCltvExpiryDelta: CltvExpiryDelta)

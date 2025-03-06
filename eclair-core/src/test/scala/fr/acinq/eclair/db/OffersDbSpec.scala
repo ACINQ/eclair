@@ -41,7 +41,7 @@ class OffersDbSpec extends AnyFunSuite {
 
   test("add/disable/enable/list offers") {
     forAllDbs { dbs =>
-      val db = dbs.managedOffers
+      val db = dbs.offers
 
       assert(db.listOffers(onlyActive = false).isEmpty)
       val offer1 = Offer(None, Some("test 1"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash)
@@ -63,8 +63,7 @@ class OffersDbSpec extends AnyFunSuite {
       assert(listed2.head.pathId_opt == Some(pathId))
       assert(listed2.head.isActive)
       db.disableOffer(offer2)
-      db.enableOffer(offer1)
-      assert(db.listOffers(onlyActive = true) == listed1)
+      assert(db.listOffers(onlyActive = true).isEmpty)
     }
   }
 }

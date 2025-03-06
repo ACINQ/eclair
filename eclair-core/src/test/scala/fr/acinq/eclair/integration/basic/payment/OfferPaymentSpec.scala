@@ -759,7 +759,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     implicit val timeout: Timeout = 10 seconds
 
     val amount = 20_000_000 msat
-    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expiry_opt = None, issuer_opt = None, firstNodeId_opt = None), 10 seconds)
+    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expireInSeconds_opt = None, issuer_opt = None, blindedPathsFirstNodeId_opt = None), 10 seconds)
 
     assert(offer.nodeId == Some(carol.nodeId))
     assert(offer.description == Some("test offer"))
@@ -776,7 +776,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     implicit val timeout: Timeout = 10 seconds
 
     val amount = 20_000_000 msat
-    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expiry_opt = None, issuer_opt = None, firstNodeId_opt = Some(carol.nodeId)), 10 seconds)
+    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expireInSeconds_opt = None, issuer_opt = None, blindedPathsFirstNodeId_opt = Some(carol.nodeId)), 10 seconds)
 
     assert(offer.nodeId == None)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(carol.nodeId))
@@ -794,7 +794,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     implicit val timeout: Timeout = 10 seconds
 
     val amount = 20_000_000 msat
-    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expiry_opt = None, issuer_opt = None, firstNodeId_opt = Some(bob.nodeId)), 10 seconds)
+    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expireInSeconds_opt = None, issuer_opt = None, blindedPathsFirstNodeId_opt = Some(bob.nodeId)), 10 seconds)
 
     assert(offer.nodeId == None)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(bob.nodeId))
@@ -812,7 +812,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     implicit val timeout: Timeout = 10 seconds
 
     val amount = 20_000_000 msat
-    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expiry_opt = None, issuer_opt = None, firstNodeId_opt = Some(alice.nodeId)), 10 seconds)
+    val offer = Await.result(carol.eclairImpl.createOffer(description_opt = Some("test offer"), amount_opt = Some(amount), expireInSeconds_opt = None, issuer_opt = None, blindedPathsFirstNodeId_opt = Some(alice.nodeId)), 10 seconds)
 
     assert(offer.nodeId == None)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(alice.nodeId))

@@ -40,8 +40,8 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE managed_offers (offer_id BLOB NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id BLOB, created_at INTEGER NOT NULL, is_active INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE INDEX offer_is_active_idx ON managed_offers(is_active)")
+        statement.executeUpdate("CREATE TABLE offers (offer_id BLOB NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id BLOB, created_at INTEGER NOT NULL, disabled_at INTEGER)")
+        statement.executeUpdate("CREATE INDEX offer_disabled_at_idx ON offers(disabled_at)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -50,7 +50,7 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
   }
 
   override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32]): Unit = withMetrics("offers/add", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO managed_offers (offer_id, offer, path_id, created_at, is_active) VALUES (?, ?, ?, ?, TRUE)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO offers (offer_id, offer, path_id, created_at, disabled_at) VALUES (?, ?, ?, ?, NULL)")) { statement =>
       statement.setBytes(1, offer.offerId.toArray)
       statement.setString(2, offer.toString)
       pathId_opt match {
@@ -63,15 +63,9 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
   }
 
   override def disableOffer(offer: OfferTypes.Offer): Unit = withMetrics("offers/disable", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("UPDATE managed_offers SET is_active = FALSE WHERE offer_id = ?")) { statement =>
-      statement.setBytes(1, offer.offerId.toArray)
-      statement.executeUpdate()
-    }
-  }
-
-  override def enableOffer(offer: OfferTypes.Offer): Unit = withMetrics("offers/enable", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("UPDATE managed_offers SET is_active = TRUE WHERE offer_id = ?")) { statement =>
-      statement.setBytes(1, offer.offerId.toArray)
+    using(sqlite.prepareStatement("UPDATE offers SET disabled_at = ? WHERE offer_id = ?")) { statement =>
+      statement.setLong(1, TimestampMilli.now().toLong)
+      statement.setBytes(2, offer.offerId.toArray)
       statement.executeUpdate()
     }
   }
@@ -81,17 +75,17 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
       Offer.decode(rs.getString("offer")).get,
       rs.getByteVector32Nullable("path_id"),
       TimestampMilli(rs.getLong("created_at")),
-      rs.getBoolean("is_active")
+      { rs.getLong("disabled_at"); rs.wasNull() }
     )
   }
 
   override def listOffers(onlyActive: Boolean): Seq[OfferData] = withMetrics("offers/list", DbBackends.Sqlite) {
     if (onlyActive) {
-      using(sqlite.prepareStatement("SELECT * FROM managed_offers WHERE is_active = TRUE")) { statement =>
+      using(sqlite.prepareStatement("SELECT * FROM offers WHERE disabled_at IS NULL")) { statement =>
         statement.executeQuery().map(parseOfferData).toSeq
       }
     } else {
-      using(sqlite.prepareStatement("SELECT * FROM managed_offers")) { statement =>
+      using(sqlite.prepareStatement("SELECT * FROM offers")) { statement =>
         statement.executeQuery().map(parseOfferData).toSeq
       }
     }

@@ -128,9 +128,9 @@ trait Eclair {
 
   def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice]
 
-  def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expiry_opt: Option[TimestampSecond], issuer_opt: Option[String], firstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer]
+  def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], issuer_opt: Option[String], blindedPathsFirstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer]
 
-  def disableOffer(offer: Offer)(implicit timeout: Timeout): Unit
+  def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit]
 
   def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]]
 
@@ -396,22 +396,22 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expiry_opt: Option[TimestampSecond], issuer_opt: Option[String], firstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer] = {
+  override def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expireInSeconds_opt: Option[Long], issuer_opt: Option[String], blindedPathsFirstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer] = {
     val offerCreator = appKit.system.spawnAnonymous(OfferCreator(appKit.nodeParams, appKit.router, appKit.offerManager, appKit.defaultOfferHandler))
-    offerCreator.ask[Either[String, Offer]](replyTo => OfferCreator.Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, firstNodeId_opt))
+    val expiry_opt = expireInSeconds_opt.map(TimestampSecond.now() + _)
+    offerCreator.ask[OfferCreator.CreateOfferResult](replyTo => OfferCreator.Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt))
       .flatMap {
-        case Left(errorMessage) => Future.failed(new Exception(errorMessage))
-        case Right(offer) => Future.successful(offer)
+        case OfferCreator.CreateOfferError(reason) => Future.failed(new Exception(reason))
+        case OfferCreator.CreatedOffer(offer) => Future.successful(offer)
       }
   }
 
-  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Unit = {
+  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit] = Future {
     appKit.offerManager ! OfferManager.DisableOffer(offer)
-    appKit.nodeParams.db.managedOffers.disableOffer(offer)
   }
 
   override def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]] = Future {
-    appKit.nodeParams.db.managedOffers.listOffers(onlyActive).map(_.offer)
+    appKit.nodeParams.db.offers.listOffers(onlyActive).map(_.offer)
   }
 
   override def newAddress(): Future[String] = {

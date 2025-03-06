@@ -709,10 +709,10 @@ object NodeParams extends Logging {
         cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
       ),
       offersConfig = OffersConfig(
-        messagePathMinLength = config.getInt("managed-offers.message-path-min-length"),
-        paymentPathCount = config.getInt("managed-offers.payment-path-count"),
-        paymentPathLength = config.getInt("managed-offers.payment-path-length"),
-        paymentPathCltvExpiryDelta = CltvExpiryDelta(config.getInt("managed-offers.payment-path-expiry-delta")),
+        messagePathMinLength = config.getInt("offers.message-path-min-length"),
+        paymentPathCount = config.getInt("offers.payment-path-count"),
+        paymentPathLength = config.getInt("offers.payment-path-length"),
+        paymentPathCltvExpiryDelta = CltvExpiryDelta(config.getInt("offers.payment-path-expiry-delta")),
       )
     )
   }

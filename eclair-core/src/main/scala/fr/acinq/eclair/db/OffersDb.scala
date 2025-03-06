@@ -37,11 +37,6 @@ trait OffersDb {
   def disableOffer(offer: Offer): Unit
 
   /**
-   * Activate an offer that was previously disabled.
-   */
-  def enableOffer(offer: Offer): Unit
-
-  /**
    * List offers managed by eclair.
    * @param onlyActive Whether to return only active offers or also disabled ones.
    */

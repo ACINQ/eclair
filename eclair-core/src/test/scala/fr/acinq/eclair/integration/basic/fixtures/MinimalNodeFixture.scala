@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter, Swi
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.offer.{DefaultHandler, OfferManager}
+import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
@@ -97,7 +97,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
     val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
-    val defaultOfferHandler = system.spawn(DefaultHandler(nodeParams, router), "default-offer-handler")
+    val defaultOfferHandler = system.spawn(DefaultOfferHandler(nodeParams, router), "default-offer-handler")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
     val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)

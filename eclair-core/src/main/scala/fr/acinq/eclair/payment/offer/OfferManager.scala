@@ -90,7 +90,15 @@ object OfferManager {
    */
   case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offer: Offer, invoiceData: MinimalInvoiceData) extends HandlerCommand
 
-  private case class RegisteredOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
+  /**
+   * Register an offer so that we can respond to invoice requests for it.
+   *
+   * @param offer       The offer to register.
+   * @param nodeKey_opt If the offer has a node id, this must be the associated private key.
+   * @param pathId_opt  If this offer has a blinded path, this must be its path id.
+   * @param handler     Handler for invoice requests and payments for this offer.
+   */
+  private case class RegisteredOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
   def apply(nodeParams: NodeParams, paymentTimeout: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -106,12 +114,13 @@ object OfferManager {
         case RegisterOffer(offer, nodeKey, pathId_opt, handler) =>
           normal(registeredOffers + (offer.offerId -> RegisteredOffer(offer, nodeKey, pathId_opt, handler)))
         case DisableOffer(offer) =>
+          nodeParams.db.offers.disableOffer(offer)
           normal(registeredOffers - offer.offerId)
         case RequestInvoice(messagePayload, blindedKey, postman) =>
           registeredOffers.get(messagePayload.invoiceRequest.offer.offerId) match {
             case Some(registered) if registered.pathId_opt.map(_.bytes) == messagePayload.pathId_opt && messagePayload.invoiceRequest.isValid =>
               context.log.debug("received valid invoice request for offerId={}", messagePayload.invoiceRequest.offer.offerId)
-              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey.getOrElse(blindedKey), messagePayload.replyPath, postman))
+              val child = context.spawnAnonymous(InvoiceRequestActor(nodeParams, messagePayload.invoiceRequest, registered.handler, registered.nodeKey_opt.getOrElse(blindedKey), messagePayload.replyPath, postman))
               child ! InvoiceRequestActor.RequestInvoice
             case _ => context.log.debug("offer {} is not registered or invoice request is invalid", messagePayload.invoiceRequest.offer.offerId)
           }

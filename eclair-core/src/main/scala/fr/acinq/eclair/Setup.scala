@@ -40,7 +40,7 @@ import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler, PeerStorageCleaner}
 import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.Postman
-import fr.acinq.eclair.payment.offer.{DefaultHandler, OfferManager}
+import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
@@ -358,8 +358,8 @@ class Setup(val datadir: File,
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))
       offerManager = system.spawn(Behaviors.supervise(OfferManager(nodeParams, paymentTimeout = 1 minute)).onFailure(typed.SupervisorStrategy.resume), name = "offer-manager")
-      defaultOfferHandler = system.spawn(Behaviors.supervise(DefaultHandler(nodeParams, router)).onFailure(typed.SupervisorStrategy.resume), name = "default-offer-handler")
-      _ = for (offer <- nodeParams.db.managedOffers.listOffers(onlyActive = true)) offerManager ! OfferManager.RegisterOffer(offer.offer, None, offer.pathId_opt, defaultOfferHandler)
+      defaultOfferHandler = system.spawn(Behaviors.supervise(DefaultOfferHandler(nodeParams, router)).onFailure(typed.SupervisorStrategy.resume), name = "default-offer-handler")
+      _ = for (offer <- nodeParams.db.offers.listOffers(onlyActive = true)) offerManager ! OfferManager.RegisterOffer(offer.offer, None, offer.pathId_opt, defaultOfferHandler)
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler", SupervisorStrategy.Resume))
       triggerer = system.spawn(Behaviors.supervise(AsyncPaymentTriggerer()).onFailure(typed.SupervisorStrategy.resume), name = "async-payment-triggerer")
       peerReadyManager = system.spawn(Behaviors.supervise(PeerReadyManager()).onFailure(typed.SupervisorStrategy.restart), name = "peer-ready-manager")
