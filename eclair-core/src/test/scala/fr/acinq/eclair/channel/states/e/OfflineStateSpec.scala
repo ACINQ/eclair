@@ -945,6 +945,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice will resend her channel_ready on reconnection because the channel hasn't been used for any payment yet (pre-splice behavior).
     alice2bob.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[ChannelReady]
     alice2bob.expectNoMessage(100 millis)
 
     // we update the channel
@@ -1015,6 +1016,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
 
     // Alice will NOT resend their channel_ready at reconnection because she has received bob's announcement_signatures (pre-splice behavior).
     alice2bob.expectNoMessage(100 millis)
