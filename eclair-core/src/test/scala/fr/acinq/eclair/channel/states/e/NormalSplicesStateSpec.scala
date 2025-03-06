@@ -87,14 +87,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     r2s.expectMsgType[TxComplete]
     r2s.forward(s)
     if (spliceIn_opt.isDefined) {
-      s2r.expectMsgType[TxAddInput]
-      s2r.forward(r)
-      r2s.expectMsgType[TxComplete]
-      r2s.forward(s)
-      s2r.expectMsgType[TxAddOutput]
-      s2r.forward(r)
-      r2s.expectMsgType[TxComplete]
-      r2s.forward(s)
+        s2r.expectMsgType[TxAddInput]
+        s2r.forward(r)
+        r2s.expectMsgType[TxComplete]
+        r2s.forward(s)
+        s2r.expectMsgType[TxAddOutput]
+        s2r.forward(r)
+        r2s.expectMsgType[TxComplete]
+        r2s.forward(s)
     }
     if (spliceOut_opt.isDefined) {
       s2r.expectMsgType[TxAddOutput]
@@ -366,7 +366,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   }
 
   test("recv CMD_SPLICE (splice-in, non dual-funded channel)") { () =>
-    val f = init(tags = Set(ChannelStateTestsTags.DualFunding))
+    val f = init(tags = Set.empty, wallet_opt = Some(new SingleKeyOnChainWallet()))
     import f._
 
     reachNormal(f, tags = Set.empty) // we open a non dual-funded channel

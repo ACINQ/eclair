@@ -146,7 +146,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     systemB.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     systemB.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val (nodeParamsA1, nodeParamsB1) = computeInitFeature(nodeParamsA, nodeParamsB, tags)
+    val (nodeParamsA1, nodeParamsB1) = updateInitFeatures(nodeParamsA, nodeParamsB, tags)
     val finalNodeParamsA = nodeParamsA1
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
@@ -182,7 +182,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
-  def computeInitFeature(nodeParamsA: NodeParams, nodeParamsB: NodeParams, tags: Set[String]): (NodeParams, NodeParams) = {
+  def updateInitFeatures(nodeParamsA: NodeParams, nodeParamsB: NodeParams, tags: Set[String]): (NodeParams, NodeParams) = {
     (nodeParamsA.copy(features = nodeParamsA.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
@@ -214,7 +214,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
     import setup._
 
-    val (nodeParamsA, nodeParamsB) = computeInitFeature(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams, tags)
+    val (nodeParamsA, nodeParamsB) = updateInitFeatures(alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams, tags)
     val aliceInitFeatures = nodeParamsA.features.initFeatures()
     val bobInitFeatures = nodeParamsB.features.initFeatures()
 
