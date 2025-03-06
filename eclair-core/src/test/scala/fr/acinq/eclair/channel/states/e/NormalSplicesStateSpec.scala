@@ -87,14 +87,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     r2s.expectMsgType[TxComplete]
     r2s.forward(s)
     if (spliceIn_opt.isDefined) {
-        s2r.expectMsgType[TxAddInput]
-        s2r.forward(r)
-        r2s.expectMsgType[TxComplete]
-        r2s.forward(s)
-        s2r.expectMsgType[TxAddOutput]
-        s2r.forward(r)
-        r2s.expectMsgType[TxComplete]
-        r2s.forward(s)
+      s2r.expectMsgType[TxAddInput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
+      s2r.expectMsgType[TxAddOutput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
     }
     if (spliceOut_opt.isDefined) {
       s2r.expectMsgType[TxAddOutput]
@@ -1765,17 +1765,39 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val spliceStatus = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs]
 
     disconnect(f)
-    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
-    assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex)
-    assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
+
+    // If Bob has not implemented https://github.com/lightning/bolts/pull/1214, he will send an incorrect next_commitment_number.
+    val (channelReestablishAlice1, channelReestablishBob1) = reconnect(f, sendReestablish = false)
+    assert(channelReestablishAlice1.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishAlice1.nextLocalCommitmentNumber == aliceCommitIndex)
+    assert(channelReestablishBob1.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishBob1.nextLocalCommitmentNumber == bobCommitIndex)
+    alice2bob.forward(bob, channelReestablishAlice1)
+    bob2alice.forward(alice, channelReestablishBob1.copy(nextLocalCommitmentNumber = bobCommitIndex + 1))
+    // In that case Alice won't retransmit commit_sig and the splice won't complete since they haven't exchanged tx_signatures.
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectNoMessage(100 millis)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
+    // The channel is thus stuck: updates cannot be processed, but the channel won't be immediately force-closed.
+    // If a pending HTLC times out, the channel will however be force-closed.
+    val probe = TestProbe()
+    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
+    alice ! cmd.copy(replyTo = probe.ref)
+    probe.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
+
+    // But when correctly setting their next_commitment_number, they're able to finalize the splice.
+    disconnect(f)
+    val (channelReestablishAlice2, channelReestablishBob2) = reconnect(f)
+    assert(channelReestablishAlice2.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishAlice2.nextLocalCommitmentNumber == aliceCommitIndex + 1)
+    assert(channelReestablishBob2.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(channelReestablishBob2.nextLocalCommitmentNumber == bobCommitIndex)
 
     // Alice and Bob retransmit commit_sig and tx_signatures.
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
     bob2alice.expectMsgType[TxSignatures]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxSignatures]
