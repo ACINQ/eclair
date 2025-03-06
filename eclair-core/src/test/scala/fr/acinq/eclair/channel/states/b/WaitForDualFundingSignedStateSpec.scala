@@ -464,7 +464,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_READY)
-    assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTx.txid)
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTx.txid)
   }
 
