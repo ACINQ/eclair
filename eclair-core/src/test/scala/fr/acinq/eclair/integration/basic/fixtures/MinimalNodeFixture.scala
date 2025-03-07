@@ -61,8 +61,6 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       bitcoinClient: TestBitcoinCoreClient) {
   val nodeId = nodeParams.nodeId
   val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-
-  val eclairImpl = new EclairImpl(Kit(nodeParams, system, watcher.ref.toTyped, paymentHandler, register, relayer, router, switchboard, paymentInitiator, TestProbe()(system).ref, TestProbe()(system).ref.toTyped, TestProbe()(system).ref.toTyped, postman, offerManager, defaultOfferHandler, wallet))
 }
 
 object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
