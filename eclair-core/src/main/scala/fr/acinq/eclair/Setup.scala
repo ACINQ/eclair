@@ -359,7 +359,7 @@ class Setup(val datadir: File,
       register = system.actorOf(SimpleSupervisor.props(Register.props(), "register", SupervisorStrategy.Resume))
       offerManager = system.spawn(Behaviors.supervise(OfferManager(nodeParams, paymentTimeout = 1 minute)).onFailure(typed.SupervisorStrategy.resume), name = "offer-manager")
       defaultOfferHandler = system.spawn(Behaviors.supervise(DefaultOfferHandler(nodeParams, router)).onFailure(typed.SupervisorStrategy.resume), name = "default-offer-handler")
-      _ = for (offer <- nodeParams.db.offers.listOffers(onlyActive = true)) offerManager ! OfferManager.RegisterOffer(offer.offer, None, offer.pathId_opt, defaultOfferHandler)
+      _ = for (offer <- nodeParams.db.offers.listOffers(onlyActive = true)) offerManager ! OfferManager.RegisterOffer(offer.offer, if (offer.pathId_opt.isEmpty) Some(nodeParams.privateKey) else None, offer.pathId_opt, defaultOfferHandler)
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler", SupervisorStrategy.Resume))
       triggerer = system.spawn(Behaviors.supervise(AsyncPaymentTriggerer()).onFailure(typed.SupervisorStrategy.resume), name = "async-payment-triggerer")
       peerReadyManager = system.spawn(Behaviors.supervise(PeerReadyManager()).onFailure(typed.SupervisorStrategy.restart), name = "peer-ready-manager")

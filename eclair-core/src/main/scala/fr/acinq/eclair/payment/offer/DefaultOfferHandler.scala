@@ -44,7 +44,7 @@ object DefaultOfferHandler {
             case OfferTypes.BlindedPath(BlindedRoute(firstNodeId: EncodedNodeId.WithPublicKey, _, _)) =>
               val baseParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
               val routeParams = baseParams.copy(boundaries = baseParams.boundaries.copy(maxRouteLength = nodeParams.offersConfig.paymentPathLength, maxCltv = nodeParams.offersConfig.paymentPathCltvExpiryDelta))
-              router ! BlindedRouteRequest(context.spawnAnonymous(waitForRoute(nodeParams, replyTo, invoiceRequest.offer, amount)), firstNodeId.publicKey, nodeParams.nodeId, amount, routeParams, pathsToFind = 2)
+              router ! BlindedRouteRequest(context.spawnAnonymous(waitForRoute(nodeParams, replyTo, invoiceRequest.offer, amount)), firstNodeId.publicKey, nodeParams.nodeId, amount, routeParams, nodeParams.offersConfig.paymentPathCount)
             case OfferTypes.BlindedPath(BlindedRoute(_: EncodedNodeId.ShortChannelIdDir, _, _)) =>
               context.log.error("unexpected managed offer with compact first node id")
               replyTo ! InvoiceRequestActor.RejectRequest("internal error")
@@ -63,13 +63,14 @@ object DefaultOfferHandler {
         replyTo ! InvoiceRequestActor.ApproveRequest(amount, makeRoutes(nodeParams, routes.map(_.hops)))
         Behaviors.stopped
       case (context, Router.PaymentRouteNotFound(error)) =>
-        context.log.error("Couldn't find blinded route for creating invoice offer={} amount={} : {}", offer, amount, error.getMessage)
+        context.log.error("couldn't find blinded route for creating invoice offer={} amount={} : {}", offer, amount, error.getMessage)
         replyTo ! InvoiceRequestActor.RejectRequest("internal error")
         Behaviors.stopped
     }
   }
 
-  def makeRoutes(nodeParams: NodeParams, routes: Seq[Seq[Router.ChannelHop]]): Seq[InvoiceRequestActor.Route] = {
+  // Ensure that we don't leak routing information by always returning the same number of routes, with the same number of hops and the same fees and CLTV delta.
+  private def makeRoutes(nodeParams: NodeParams, routes: Seq[Seq[Router.ChannelHop]]): Seq[InvoiceRequestActor.Route] = {
     (0 until nodeParams.offersConfig.paymentPathCount).map(i => {
       val hops = routes(i % routes.length)
       val dummyHops = Seq.fill(nodeParams.offersConfig.paymentPathLength - hops.length)(ChannelHop.dummy(nodeParams.nodeId, 0 msat, 0, CltvExpiryDelta(0)))

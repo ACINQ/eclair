@@ -46,8 +46,9 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS payments")
-          statement.executeUpdate("CREATE TABLE payments.offers (offer_id TEXT NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id TEXT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, disabled_at TIMESTAMP WITH TIME ZONE)")
-          statement.executeUpdate("CREATE INDEX offer_disabled_at_idx ON payments.offers(disabled_at)")
+          statement.executeUpdate("CREATE TABLE payments.offers (offer_id TEXT NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id TEXT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, is_active BOOLEAN NOT NULL, disabled_at TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE INDEX offer_created_at_idx ON payments.offers(created_at)")
+          statement.executeUpdate("CREATE INDEX offer_is_active_idx ON payments.offers(is_active)")
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -55,25 +56,22 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
     }
   }
 
-  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32]): Unit = withMetrics("offers/add", DbBackends.Postgres){
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/add", DbBackends.Postgres){
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO payments.offers (offer_id, offer, path_id, created_at, disabled_at) VALUES (?, ?, ?, ?, NULL)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO payments.offers (offer_id, offer, path_id, created_at, is_active, disabled_at) VALUES (?, ?, ?, ?, TRUE, NULL)")) { statement =>
         statement.setString(1, offer.offerId.toHex)
         statement.setString(2, offer.toString)
-        pathId_opt match {
-          case Some(pathId) => statement.setString(3, pathId.toHex)
-          case None => statement.setNull(3, java.sql.Types.VARCHAR)
-        }
-        statement.setTimestamp(4, TimestampMilli.now().toSqlTimestamp)
+        statement.setString(3, pathId_opt.map(_.toHex).orNull)
+        statement.setTimestamp(4, createdAt.toSqlTimestamp)
         statement.executeUpdate()
       }
     }
   }
 
-  override def disableOffer(offer: OfferTypes.Offer): Unit = withMetrics("offers/disable", DbBackends.Postgres){
+  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/disable", DbBackends.Postgres){
     withLock { pg =>
-      using(pg.prepareStatement("UPDATE payments.offers SET disabled_at = ? WHERE offer_id = ?")) { statement =>
-        statement.setTimestamp(1, TimestampMilli.now().toSqlTimestamp)
+      using(pg.prepareStatement("UPDATE payments.offers SET disabled_at = ?, is_active = FALSE WHERE offer_id = ?")) { statement =>
+        statement.setTimestamp(1, disabledAt.toSqlTimestamp)
         statement.setString(2, offer.offerId.toHex)
         statement.executeUpdate()
       }
@@ -81,22 +79,24 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
   }
 
   private def parseOfferData(rs: ResultSet): OfferData = {
+    val disabledAt = rs.getTimestamp("disabled_at")
+    val disabledAt_opt = if (rs.wasNull()) None else Some(TimestampMilli.fromSqlTimestamp(disabledAt))
     OfferData(
       Offer.decode(rs.getString("offer")).get,
       rs.getStringNullable("path_id").map(ByteVector32.fromValidHex),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
-      { rs.getTimestamp("disabled_at"); rs.wasNull() }
+      disabledAt_opt
     )
   }
 
   override def listOffers(onlyActive: Boolean): Seq[OfferData] = withMetrics("offers/list", DbBackends.Postgres){
     withLock { pg =>
       if (onlyActive) {
-        using(pg.prepareStatement("SELECT * FROM payments.offers WHERE disabled_at IS NULL")) { statement =>
+        using(pg.prepareStatement("SELECT * FROM payments.offers WHERE is_active = TRUE ORDER BY created_at DESC")) { statement =>
           statement.executeQuery().map(parseOfferData).toSeq
         }
       } else {
-        using(pg.prepareStatement("SELECT * FROM payments.offers")) { statement =>
+        using(pg.prepareStatement("SELECT * FROM payments.offers ORDER BY created_at DESC")) { statement =>
           statement.executeQuery().map(parseOfferData).toSeq
         }
       }

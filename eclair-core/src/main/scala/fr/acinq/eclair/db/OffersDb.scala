@@ -28,13 +28,13 @@ trait OffersDb {
    * Add an offer managed by eclair.
    * @param pathId_opt If the offer uses a blinded path, this is the corresponding pathId.
    */
-  def addOffer(offer: Offer, pathId_opt: Option[ByteVector32]): Unit
+  def addOffer(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit
 
   /**
    * Disable an offer. The offer is still stored but new invoice requests and new payment attempts for already emitted
    * invoices will be rejected.
    */
-  def disableOffer(offer: Offer): Unit
+  def disableOffer(offer: Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit
 
   /**
    * List offers managed by eclair.
@@ -43,4 +43,4 @@ trait OffersDb {
   def listOffers(onlyActive: Boolean): Seq[OfferData]
 }
 
-case class OfferData(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli, isActive: Boolean)
+case class OfferData(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli, disabledAt: Option[TimestampMilli])

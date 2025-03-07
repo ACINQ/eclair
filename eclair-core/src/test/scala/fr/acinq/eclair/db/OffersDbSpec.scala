@@ -50,7 +50,7 @@ class OffersDbSpec extends AnyFunSuite {
       assert(listed1.length == 1)
       assert(listed1.head.offer == offer1)
       assert(listed1.head.pathId_opt == None)
-      assert(listed1.head.isActive)
+      assert(listed1.head.disabledAt == None)
       val offer2 = Offer(None, Some("test 2"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash)
       val pathId = randomBytes32()
       db.addOffer(offer2, Some(pathId))
@@ -61,7 +61,7 @@ class OffersDbSpec extends AnyFunSuite {
       assert(listed2.length == 1)
       assert(listed2.head.offer == offer2)
       assert(listed2.head.pathId_opt == Some(pathId))
-      assert(listed2.head.isActive)
+      assert(listed2.head.disabledAt == None)
       db.disableOffer(offer2)
       assert(db.listOffers(onlyActive = true).isEmpty)
     }

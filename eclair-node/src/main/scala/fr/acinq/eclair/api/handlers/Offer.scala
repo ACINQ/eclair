@@ -41,7 +41,7 @@ trait Offer {
 
   val listoffers: Route = postRequest("listoffers") { implicit t =>
     formFields("activeOnly".as[Boolean].?) { onlyActive =>
-      complete(eclairApi.listOffers(onlyActive.getOrElse(false)))
+      complete(eclairApi.listOffers(onlyActive.getOrElse(true)))
     }
   }
 

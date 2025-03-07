@@ -168,7 +168,10 @@ object OfferManager {
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
 
     /**
-     * @param recipientPaysFees If true, fees for the blinded route will be hidden to the payer and paid by the recipient.
+     * @param feeOverride           fees that will be published for this route, the difference between these and the
+     *                              actual fees of the route will be paid by the recipient.
+     * @param cltvOverride          Cltv expiry delta to publish for the route.
+     * @param shortChannelIdDir_opt short channel id and direction to use for the first node instead of its node id.
      */
     case class Route(hops: Seq[Router.ChannelHop], maxFinalExpiryDelta: CltvExpiryDelta, feeOverride: Option[RelayFees] = None, cltvOverride: Option[CltvExpiryDelta] = None, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None) {
       def finalize(nodePriv: PrivateKey, preimage: ByteVector32, amount: MilliSatoshi, invoiceRequest: InvoiceRequest, minFinalExpiryDelta: CltvExpiryDelta, pluginData_opt: Option[ByteVector]): ReceivingRoute = {
